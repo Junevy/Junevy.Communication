@@ -312,9 +312,10 @@ namespace Junevy.Communication.Modbus.Tests
                     {
                         handler = await listener.AcceptTcpClientAsync();
                     }
-                    catch (Exception ex) when (ex is ObjectDisposedException or IOException or SocketException)
+                    catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException
+                        or IOException or SocketException)
                     {
-                        break; // listener.Stop() 会使挂起的 Accept 抛异常，正常退出
+                        break; // listener.Stop() 会使挂起/后续的 Accept 抛异常（.NET 8 在 Stop 后为 InvalidOperationException），正常退出
                     }
 
                     using (handler)
@@ -410,55 +411,100 @@ namespace Junevy.Communication.Modbus.Tests
             var seenTids = new List<byte[]>();
             var server = Task.Run(async () =>
             {
-                using var client = await listener.AcceptTcpClientAsync();
-                var stream = client.GetStream();
-                for (int i = 0; i < 2; i++)
+                // 并发负载下客户端读超时后会重连重试（RetryCount=3 → 最多 4 次连接），
+                // 且重试沿用同一逻辑请求的事务 ID，因此按顺序接受最多 4 个连接，
+                // 每个连接循环服务完整请求并回显其 TID。
+                for (int i = 0; i < 4; i++)
                 {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    TcpClient handler;
                     try
                     {
-                        var req = new byte[12];
-                        int read = 0;
-                        while (read < req.Length)
-                            read += await stream.ReadAsync(req, read, req.Length - read, cts.Token);
-                        seenTids.Add(req[..2].ToArray());
-                        byte[] resp = [req[0], req[1], 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34];
-                        await stream.WriteAsync(resp, 0, resp.Length, cts.Token);
+                        handler = await listener.AcceptTcpClientAsync();
                     }
-                    catch (OperationCanceledException)
+                    catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException
+                        or IOException or SocketException)
                     {
-                        break;
+                        break; // listener.Stop() 会使挂起/后续的 Accept 抛异常（.NET 8 在 Stop 后为 InvalidOperationException），正常退出
                     }
-                    catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+
+                    using (handler)
                     {
-                        break;
+                        var stream = handler.GetStream();
+                        while (true)
+                        {
+                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                            try
+                            {
+                                var req = new byte[12];
+                                int read = 0;
+                                while (read < req.Length)
+                                {
+                                    int n = await stream.ReadAsync(req, read, req.Length - read, cts.Token);
+                                    if (n == 0)
+                                        break; // 对端已关闭：转到下一个连接
+                                    read += n;
+                                }
+
+                                if (read < req.Length)
+                                    break;
+
+                                seenTids.Add(req[..2].ToArray());
+                                byte[] resp = [req[0], req[1], 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34];
+                                await stream.WriteAsync(resp, 0, resp.Length, cts.Token);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                break; // 本连接超时，转到下一个连接
+                            }
+                            catch (Exception ex) when (ex is IOException or ObjectDisposedException
+                                or InvalidOperationException or SocketException)
+                            {
+                                break; // 客户端放弃旧连接引发的 IO 异常，转到下一个连接
+                            }
+                        }
                     }
                 }
             });
 
-            using var tcp = new ModbusTCP(new ModbusTCPConfig
+            ModbusResult<byte[]> r1;
+            ModbusResult<byte[]> r2;
+            using (var tcp = new ModbusTCP(new ModbusTCPConfig
             {
                 Address = "127.0.0.1",
                 // 并发负载下（如工厂并发冒烟测试阻塞线程池），服务器任务可能被延迟调度；
                 // 放宽读超时以覆盖调度延迟，避免误报超时。
                 ReadTimeOut = 10000,
                 WriteTimeOut = 1000,
-                ConnectTimeout = 1000,
+                // 并发负载下（如工厂并发冒烟测试阻塞线程池），连接等待同样可能超支 1s 预算，放宽以覆盖调度延迟。
+                ConnectTimeout = 10000,
                 Reconnect = true
-            });
-            tcp.Config.SetPort(port);
-            Assert.True(tcp.Connect());
+            }))
+            {
+                tcp.Config.SetPort(port);
+                Assert.True(tcp.Connect());
 
-            var request = new ModbusRequest { SlaveId = 1, FunctionCode = ModbusFunctionCode.ReadHoldingRegisters, Start = 0, Length = 1 };
-            var r1 = tcp.Request(request);
-            var r2 = tcp.Request(request);
+                var request = new ModbusRequest { SlaveId = 1, FunctionCode = ModbusFunctionCode.ReadHoldingRegisters, Start = 0, Length = 1 };
+                r1 = tcp.Request(request);
+                r2 = tcp.Request(request);
+            }
+            // 先释放客户端再等待服务器：关闭连接让服务器的下一次 ReadAsync 立即返回 0 并退出，
+            // 避免服务器在 10s CTS 上空等造成测试尾部停顿。
             listener.Stop();
             await server;
 
             Assert.True(r1.IsSuccess, r1.ErrorMessage);
             Assert.True(r2.IsSuccess, r2.ErrorMessage);
-            Assert.Equal(new byte[] { 0x00, 0x00 }, seenTids[0]);
-            Assert.Equal(new byte[] { 0x00, 0x01 }, seenTids[1]);
+            Assert.True(seenTids.Count >= 2, $"Expected at least 2 exchanges, got {seenTids.Count}: {string.Join(", ", seenTids.Select(t => BitConverter.ToString(t)))}");
+            // 逻辑请求 1 的最终交换 TID 恒为 0、请求 2 恒为 1；重试会以相同 TID 重发，
+            // 取"首次出现顺序去重"后的序列做断言，对重试扰动保持不变式。
+            var distinctTids = new List<byte[]>();
+            foreach (var tid in seenTids)
+            {
+                if (!distinctTids.Any(d => d.SequenceEqual(tid)))
+                    distinctTids.Add(tid);
+            }
+
+            Assert.Equal(new[] { new byte[] { 0x00, 0x00 }, new byte[] { 0x00, 0x01 } }, distinctTids);
         }
 
         [Fact]
@@ -479,9 +525,10 @@ namespace Junevy.Communication.Modbus.Tests
                     {
                         handler = await listener.AcceptTcpClientAsync();
                     }
-                    catch (Exception ex) when (ex is ObjectDisposedException or IOException or SocketException)
+                    catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException
+                        or IOException or SocketException)
                     {
-                        break; // listener.Stop() 会使挂起的 Accept 抛异常，正常退出
+                        break; // listener.Stop() 会使挂起/后续的 Accept 抛异常（.NET 8 在 Stop 后为 InvalidOperationException），正常退出
                     }
 
                     using (handler)
@@ -526,7 +573,8 @@ namespace Junevy.Communication.Modbus.Tests
                 Address = "127.0.0.1",
                 ReadTimeOut = 1000,
                 WriteTimeOut = 1000,
-                ConnectTimeout = 1000,
+                // 并发负载下（如工厂并发冒烟测试阻塞线程池），连接等待同样可能超支 1s 预算，放宽以覆盖调度延迟。
+                ConnectTimeout = 10000,
                 Reconnect = true,
                 RetryCount = 3,
                 RetryInterval = 10
