@@ -22,6 +22,9 @@
         public ushort TransactionId { get; set; } = 0x0000;
         
         private ModbusProtocolType protocolType = ModbusProtocolType.TCP;
+        /// <summary>
+        /// 协议类型。传输层以客户端自身协议为准，本属性仅由裸帧构建 API 读取，库不会修改它。
+        /// </summary>
         public ModbusProtocolType ProtocolType
         {
             get => protocolType;

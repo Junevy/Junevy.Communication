@@ -196,9 +196,8 @@ namespace Junevy.Communication.Modbus.TCP
             byte[]? frame = null;
             try
             {
-                request.ProtocolType = ProtocolType;
                 frame = ArrayPool<byte>.Shared.Rent(ModbusFrameBuilder.MaxTcpAduLength);
-                if (!frameBuilder.TryWriteRequestFrame(request, frame, out int bytesWritten))
+                if (!frameBuilder.TryWriteRequestFrame(request, ProtocolType, frame, out int bytesWritten))
                     return false;
 
                 int totalSent = 0;

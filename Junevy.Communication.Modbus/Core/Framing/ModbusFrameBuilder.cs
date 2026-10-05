@@ -13,7 +13,7 @@ namespace Junevy.Communication.Modbus.Core.Framing
         public const int MaxRtuAduLength = 256;
         public const int MaxTcpAduLength = 260;
 
-        public int GetRequestFrameLength(ModbusRequest request)
+        public int GetRequestFrameLength(ModbusRequest request, ModbusProtocolType protocolType)
         {
             if (request == null)
                 throw new ArgumentNullException(nameof(request));
@@ -21,7 +21,7 @@ namespace Junevy.Communication.Modbus.Core.Framing
                 throw new ModbusException(ModbusErrorCode.InvalidValue, "Invalid request.");
 
             int rtuLength = GetRtuFrameLength(request);
-            return request.ProtocolType switch
+            return protocolType switch
             {
                 ModbusProtocolType.RTU => rtuLength,
                 ModbusProtocolType.TCP => rtuLength + 4,
@@ -29,7 +29,7 @@ namespace Junevy.Communication.Modbus.Core.Framing
             };
         }
 
-        public bool TryWriteRequestFrame(ModbusRequest request, Span<byte> destination, out int bytesWritten)
+        public bool TryWriteRequestFrame(ModbusRequest request, ModbusProtocolType protocolType, Span<byte> destination, out int bytesWritten)
         {
             bytesWritten = 0;
             if (request == null)
@@ -38,7 +38,7 @@ namespace Junevy.Communication.Modbus.Core.Framing
             if (!ModbusHelper.CheckRequest(request))
                 return false;
 
-            return request.ProtocolType switch
+            return protocolType switch
             {
                 ModbusProtocolType.RTU => TryWriteRtuRequestFrame(request, destination, out bytesWritten),
                 ModbusProtocolType.TCP => TryWriteTcpRequestFrame(request, destination, out bytesWritten),
@@ -46,11 +46,11 @@ namespace Junevy.Communication.Modbus.Core.Framing
             };
         }
 
-        public byte[] BuildRequestFrame(ModbusRequest request)
+        public byte[] BuildRequestFrame(ModbusRequest request, ModbusProtocolType protocolType)
         {
-            int length = GetRequestFrameLength(request);
+            int length = GetRequestFrameLength(request, protocolType);
             var frame = new byte[length];
-            if (!TryWriteRequestFrame(request, frame, out int written) || written != length)
+            if (!TryWriteRequestFrame(request, protocolType, frame, out int written) || written != length)
                 throw new ModbusException(ModbusErrorCode.InvalidValue, "Failed to build request frame.");
 
             return frame;

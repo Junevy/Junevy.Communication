@@ -71,11 +71,34 @@ namespace Junevy.Communication.Modbus.Tests
             var builder = new ModbusFrameBuilder();
             Span<byte> destination = stackalloc byte[ModbusFrameBuilder.MaxTcpAduLength];
 
-            Assert.True(builder.TryWriteRequestFrame(request, destination, out int written));
+            Assert.True(builder.TryWriteRequestFrame(request, ModbusProtocolType.TCP, destination, out int written));
 
             Assert.Equal(12, written);
             Assert.Equal([0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x02, 0x03, 0x00, 0x10, 0x00, 0x02],
                 destination[..written].ToArray());
+        }
+
+        [Fact]
+        public void FrameBuilder_ProtocolComesFromArgumentNotRequest()
+        {
+            var request = new ModbusRequest
+            {
+                ProtocolType = ModbusProtocolType.RTU,   // 故意设错
+                SlaveId = 2,
+                FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
+                Start = 0x0010,
+                Length = 2
+            };
+            var builder = new ModbusFrameBuilder();
+            Span<byte> destination = stackalloc byte[ModbusFrameBuilder.MaxTcpAduLength];
+
+            Assert.True(builder.TryWriteRequestFrame(request, ModbusProtocolType.TCP, destination, out int written));
+            Assert.Equal(12, written);
+            // TCP 帧应有 MBAP 头（前 6 字节非从站 ID 开头）
+            Assert.Equal(0x00, destination[2]); // protocol id hi
+
+            // 且 request 对象未被修改
+            Assert.Equal(ModbusProtocolType.RTU, request.ProtocolType);
         }
 
         [Fact]

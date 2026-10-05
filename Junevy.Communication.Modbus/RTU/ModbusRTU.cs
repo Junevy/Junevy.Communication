@@ -166,11 +166,10 @@ namespace Junevy.Communication.Modbus.RTU
 
             try
             {
-                request.ProtocolType = ProtocolType;
                 var requestFrame = System.Buffers.ArrayPool<byte>.Shared.Rent(ModbusFrameBuilder.MaxRtuAduLength);
                 try
                 {
-                    if (!frameBuilder.TryWriteRequestFrame(request, requestFrame, out int bytesWritten))
+                    if (!frameBuilder.TryWriteRequestFrame(request, ProtocolType, requestFrame, out int bytesWritten))
                         return false;
 
                     serialPort.DiscardInBuffer();
@@ -411,14 +410,13 @@ namespace Junevy.Communication.Modbus.RTU
 
             try
             {
-                request.ProtocolType = ProtocolType;
-                int frameLength = frameBuilder.GetRequestFrameLength(request);
+                int frameLength = frameBuilder.GetRequestFrameLength(request, ProtocolType);
                 byte[] requestFrame = System.Buffers.ArrayPool<byte>.Shared.Rent(frameLength);
                 token.ThrowIfCancellationRequested();
 
                 try
                 {
-                    if (!frameBuilder.TryWriteRequestFrame(request, requestFrame, out int bytesWritten))
+                    if (!frameBuilder.TryWriteRequestFrame(request, ProtocolType, requestFrame, out int bytesWritten))
                         return false;
 
                     serialPort.DiscardInBuffer();

@@ -62,10 +62,12 @@ namespace Junevy.Communication.Modbus.Utils
 
         /// <summary>
         /// Builds a Modbus request frame from a request object.
+        /// Compatibility entry point: the protocol the user explicitly set on the
+        /// request is honored; this API never modifies the request object.
         /// </summary>
         /// <exception cref="ModbusException">Thrown when the request is invalid.</exception>
         public static byte[] BuildRequestFrame(ModbusRequest request)
-            => FrameBuilder.BuildRequestFrame(request);
+            => FrameBuilder.BuildRequestFrame(request, request.ProtocolType);
 
         /// <summary>
         /// Parses coil values from a Modbus response frame.
