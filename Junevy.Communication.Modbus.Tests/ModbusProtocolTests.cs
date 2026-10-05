@@ -109,6 +109,19 @@ namespace Junevy.Communication.Modbus.Tests
         }
 
         [Fact]
+        public void CheckRequest_Diagnostics_OneByteData_IsValid()
+        {
+            var request = new ModbusRequest
+            {
+                ProtocolType = ModbusProtocolType.RTU,
+                SlaveId = 1,
+                FunctionCode = ModbusFunctionCode.Diagnostics,
+                Data = [0x00, 0x00, 0xA5]   // sub=0x0000 + 1 字节数据
+            };
+            Assert.True(ModbusHelper.CheckRequest(request));
+        }
+
+        [Fact]
         public void RtuParser_WriteMultiShortFrame_ReturnsFailureInsteadOfThrowing()
         {
             var parser = new RtuProtocolParser();

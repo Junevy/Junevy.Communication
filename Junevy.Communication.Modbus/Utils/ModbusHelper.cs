@@ -38,7 +38,7 @@ namespace Junevy.Communication.Modbus.Utils
                     true,
 
                 ModbusFunctionCode.Diagnostics =>
-                    request.Data is not null && request.Data.Length >= 4 && request.Data.Length <= 252,
+                    request.Data is not null && request.Data.Length >= 3 && request.Data.Length <= 252,
 
                 ModbusFunctionCode.WriteMultipleCoils =>
                     request.Length is >= 1 and <= 1968
