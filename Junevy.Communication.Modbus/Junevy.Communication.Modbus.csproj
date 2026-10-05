@@ -1,35 +1,43 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFrameworks>net472;net8.0</TargetFrameworks>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <!-- NuGet 包信息 -->
-    <PackageId>Junevy.Communication.Modbus</PackageId>
-    <Version>1.0.0</Version>
-    <Authors>Junevy</Authors>
-    <Company>Junevy</Company>
-    <Description>Modbus communication library for RTU/TCP.</Description>
-    <PackageTags>modbus rtu tcp serial communication</PackageTags>
-    <RepositoryUrl>https://github.com/Junevy/Junevy.Communication</RepositoryUrl>
-    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
-    <LangVersion>latest</LangVersion>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <!-- 公共成员 XML 注释尚未全覆盖（CS1591），文档全覆盖为后续专项；此处仅要求生成文档文件供 NuGet 使用 -->
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFrameworks>net472;net8.0</TargetFrameworks>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
-    <PackageReference Include="System.Buffers" Version="4.5.1" />
-    <PackageReference Include="System.IO.Ports" Version="8.0.0" />
-    <PackageReference Include="System.Memory" Version="4.5.5" />
-    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" />
-  </ItemGroup>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<!-- NuGet 包信息 -->
+		<PackageId>Junevy.Communication.Modbus</PackageId>
+		<Version>1.0.0</Version>
+		<Authors>Junevy</Authors>
+		<Company>Junevy</Company>
+		<Description>
+			This is a modern, fast, high performence library of Modbus.
+			Feature:
+			1) Used the async programming: All of operate of the modbus can be async.
+			2) Lazy auto connect: auto connect the target host when sending or reading fail if detect the host error.
+			3) Thread safety: Have the feature taht thread safety.
+			4) Easy to use: Provide a method that one step injection to Microsoft Dependency Injection.
+		</Description>
+		<PackageTags>modbus rtu and tcp communication</PackageTags>
+		<RepositoryUrl>https://github.com/Junevy/Junevy.Communication</RepositoryUrl>
+		<PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<LangVersion>latest</LangVersion>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<!-- 公共成员 XML 注释尚未全覆盖（CS1591），文档全覆盖为后续专项；此处仅要求生成文档文件供 NuGet 使用 -->
+		<NoWarn>$(NoWarn);CS1591</NoWarn>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
+		<PackageReference Include="System.Buffers" Version="4.5.1" />
+		<PackageReference Include="System.IO.Ports" Version="8.0.0" />
+		<PackageReference Include="System.Memory" Version="4.5.5" />
+		<PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" />
+	</ItemGroup>
 
 </Project>

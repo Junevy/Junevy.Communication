@@ -10,7 +10,7 @@ using System.Net.Sockets;
 namespace Junevy.Communication.Modbus.Core.Transports
 {
     /// <summary>
-    /// TCP/RTU 传输层公共基类（Task 4.3）：实现 <see cref="IModbus"/> 公开 API 与
+    /// TCP/RTU 传输层公共基类：实现 <see cref="IModbus"/> 公开 API 与
     /// 请求/重试/重连骨架 —— 将原 <c>ModbusTcpClient</c>/<c>ModbusRtuClient</c> 中各持一份、
     /// 合计四份近似的重试循环（ExecuteRequestWithRetry(Async) ×2、EnsureConnected(Async) ×2、
     /// WaitBeforeRetry(Async) ×2、GetAttemptCount、IsCommunicationException、ThrowIfDisposed、
@@ -27,6 +27,9 @@ namespace Junevy.Communication.Modbus.Core.Transports
 
         /// <summary>由基类 Dispose 模板置位；子类 <see cref="IsConnected"/> 与 Dispose 依赖它。</summary>
         protected bool disposed;
+        protected ILogger Logger { get; }
+        protected IResponseParser ResponseParser { get; }
+        protected IModbusFrameBuilder FrameBuilder { get; }
 
         protected ModbusTransportBase(
             ILogger logger,
@@ -37,10 +40,6 @@ namespace Junevy.Communication.Modbus.Core.Transports
             ResponseParser = responseParser ?? throw new ArgumentNullException(nameof(responseParser));
             FrameBuilder = frameBuilder ?? throw new ArgumentNullException(nameof(frameBuilder));
         }
-
-        protected ILogger Logger { get; }
-        protected IResponseParser ResponseParser { get; }
-        protected IModbusFrameBuilder FrameBuilder { get; }
 
         // ————————————————— 协议钩子（子类实现） —————————————————
 
