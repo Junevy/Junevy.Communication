@@ -29,6 +29,22 @@ namespace Junevy.Communication.Modbus.Tests
         }
 
         [Fact]
+        public void AddModbusFactory_FactoryAndConnectionManagerShareRegistry()
+        {
+            var services = new ServiceCollection();
+            services.AddModbusFactory();
+            using var provider = services.BuildServiceProvider();
+
+            var factory = provider.GetRequiredService<IModbusFactory>();
+            var manager = provider.GetRequiredService<IModbusConnectionManager>();
+
+            factory.TryAdd("shared", new ModbusTCPConfig(), out _);
+
+            Assert.True(manager.TryGet("shared", out var resolved));
+            Assert.NotNull(resolved);
+        }
+
+        [Fact]
         public void Factory_Dispose_ClearsAllInstances()
         {
             var factory = new ModbusFactory();

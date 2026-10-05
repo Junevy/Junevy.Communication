@@ -26,6 +26,11 @@ namespace Junevy.Communication.Modbus.DependencyInjection
             // Ensure a logger factory is available
             services.TryAddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
 
+            // Ensure a logger is available so DI can select the 6-parameter ModbusFactory
+            // constructor and inject the container-registered IModbusConnectionManager
+            services.TryAddSingleton<ILogger<ModbusFactory>>(sp =>
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger<ModbusFactory>());
+
             // Register shared PDU verifier
             services.TryAddSingleton<ModbusPduVerifier>();
             services.TryAddSingleton<IModbusFrameBuilder, ModbusFrameBuilder>();

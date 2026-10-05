@@ -68,7 +68,7 @@ namespace Junevy.Communication.Modbus.Factory
         {
         }
 
-        internal ModbusFactory(
+        public ModbusFactory(
             ILogger<ModbusFactory> logger,
             ILoggerFactory loggerFactory,
             TcpProtocolParser? tcpParser,
