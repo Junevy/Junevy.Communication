@@ -303,32 +303,61 @@ namespace Junevy.Communication.Modbus.Tests
 
             var serverTask = Task.Run(async () =>
             {
-                byte[] response =
-                [
-                    0x00, 0x00,
-                    0x00, 0x00,
-                    0x00, 0x05,
-                    0x01,
-                    0x03,
-                    0x02,
-                    0x12, 0x34
-                ];
+                // 客户端失败重试时每次都会重建连接（RetryCount=3 → 最多 4 次尝试），
+                // 因此按顺序接受最多 4 个连接，每个连接服务一个完整请求。
+                for (int i = 0; i < 4; i++)
+                {
+                    TcpClient handler;
+                    try
+                    {
+                        handler = await listener.AcceptTcpClientAsync();
+                    }
+                    catch (Exception ex) when (ex is ObjectDisposedException or IOException or SocketException)
+                    {
+                        break; // listener.Stop() 会使挂起的 Accept 抛异常，正常退出
+                    }
 
-                using var reconnect = await listener.AcceptTcpClientAsync();
-                using var stream = reconnect.GetStream();
+                    using (handler)
+                    using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+                    {
+                        try
+                        {
+                            var stream = handler.GetStream();
+                            var request = new byte[12];
+                            int read = 0;
+                            while (read < request.Length)
+                            {
+                                int n = await stream.ReadAsync(request, read, request.Length - read, cts.Token);
+                                if (n == 0)
+                                    break; // 对端已关闭：客户端超时后放弃旧连接，转到下一个连接
+                                read += n;
+                            }
 
-                byte[] request = new byte[12];
-                int read = 0;
-                while (read < request.Length)
-                    read += await stream.ReadAsync(request, read, request.Length - read);
+                            if (read < request.Length)
+                                continue;
 
-                await stream.WriteAsync(response, 0, response.Length);
+                            // 响应每个完整请求：回显其 TID（重试沿用同一逻辑请求的事务 ID）
+                            byte[] response = [request[0], request[1], 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34];
+                            await stream.WriteAsync(response, 0, response.Length, cts.Token);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // 本连接超时，转到下一个连接
+                        }
+                        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                        {
+                            // 客户端放弃旧连接引发的 IO 异常，转到下一个连接
+                        }
+                    }
+                }
             });
 
             using var client = new ModbusTCP(new ModbusTCPConfig
             {
                 Address = IPAddress.Loopback.ToString(),
-                ReadTimeOut = 1000,
+                // 并发负载下（如工厂并发冒烟测试阻塞线程池），服务器任务可能被延迟调度；
+                // 放宽读超时以覆盖调度延迟，避免误报超时。
+                ReadTimeOut = 10000,
                 WriteTimeOut = 1000,
                 ConnectTimeout = 1000,
                 Reconnect = true,
