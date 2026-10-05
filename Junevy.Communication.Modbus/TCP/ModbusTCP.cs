@@ -266,6 +266,10 @@ namespace Junevy.Communication.Modbus.TCP
                         if (lastResult.IsSuccess)
                             return lastResult;
 
+                        // Modbus exception responses are terminal answers — return immediately, no resend.
+                        if (!lastResult.IsSuccess && IsModbusExceptionFrame(lastResult.Data))
+                            return lastResult;
+
                         logger.LogWarning(" [Request] Attempt {Attempt}/{Attempts} failed: {Error}.", attempt, attempts, lastResult.ErrorMessage);
                         if (ShouldReconnectAfterFailure(lastResult))
                             MarkConnectionFaulted();
@@ -321,6 +325,10 @@ namespace Junevy.Communication.Modbus.TCP
                     {
                         lastResult = await ReadAsync(request, cancellationToken);
                         if (lastResult.IsSuccess)
+                            return lastResult;
+
+                        // Modbus exception responses are terminal answers — return immediately, no resend.
+                        if (!lastResult.IsSuccess && IsModbusExceptionFrame(lastResult.Data))
                             return lastResult;
 
                         logger.LogWarning(" [RequestAsync] Attempt {Attempt}/{Attempts} failed: {Error}.", attempt, attempts, lastResult.ErrorMessage);
@@ -537,6 +545,10 @@ namespace Junevy.Communication.Modbus.TCP
                 || ex is InvalidOperationException
                 || ex is EndOfStreamException;
         }
+
+        // TODO(Task 4.1) — replace with ErrorKind.ModbusException once ModbusErrorKind exists.
+        private static bool IsModbusExceptionFrame(byte[]? data)
+            => data is { Length: >= 8 } && (data[7] & 0x80) != 0;
 
         private static bool ShouldReconnectAfterFailure(ModbusResult<byte[]> result)
         {

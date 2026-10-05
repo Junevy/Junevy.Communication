@@ -460,5 +460,95 @@ namespace Junevy.Communication.Modbus.Tests
             Assert.Equal(new byte[] { 0x00, 0x00 }, seenTids[0]);
             Assert.Equal(new byte[] { 0x00, 0x01 }, seenTids[1]);
         }
+
+        [Fact]
+        public async Task TcpClient_ExceptionResponse_IsTerminal_NoRetry()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            var requestsReceived = 0;
+
+            var server = Task.Run(async () =>
+            {
+                // 接受最多 2 个连接：若客户端错误地在异常响应上重试，会重连并再次发送请求。
+                for (int i = 0; i < 2; i++)
+                {
+                    TcpClient handler;
+                    try
+                    {
+                        handler = await listener.AcceptTcpClientAsync();
+                    }
+                    catch (Exception ex) when (ex is ObjectDisposedException or IOException or SocketException)
+                    {
+                        break; // listener.Stop() 会使挂起的 Accept 抛异常，正常退出
+                    }
+
+                    using (handler)
+                    using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+                    {
+                        try
+                        {
+                            var stream = handler.GetStream();
+                            var request = new byte[12];
+                            int read = 0;
+                            while (read < request.Length)
+                            {
+                                int n = await stream.ReadAsync(request, read, request.Length - read, cts.Token);
+                                if (n == 0)
+                                    break;
+                                read += n;
+                            }
+
+                            if (read < request.Length)
+                                continue;
+
+                            Interlocked.Increment(ref requestsReceived);
+
+                            // 9 字节异常响应帧：回显请求 TID，funcCode=0x83（0x03|0x80），异常码=0x02
+                            byte[] response = [request[0], request[1], 0x00, 0x00, 0x00, 0x03, 0x01, 0x83, 0x02];
+                            await stream.WriteAsync(response, 0, response.Length, cts.Token);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // 本连接超时，转到下一个连接
+                        }
+                        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                        {
+                            // 客户端放弃连接引发的 IO 异常，转到下一个连接
+                        }
+                    }
+                }
+            });
+
+            using var tcp = new ModbusTCP(new ModbusTCPConfig
+            {
+                Address = "127.0.0.1",
+                ReadTimeOut = 1000,
+                WriteTimeOut = 1000,
+                ConnectTimeout = 1000,
+                Reconnect = true,
+                RetryCount = 3,
+                RetryInterval = 10
+            });
+            tcp.Config.SetPort(port);
+            Assert.True(tcp.Connect());
+
+            var result = tcp.Request(new ModbusRequest
+            {
+                SlaveId = 1,
+                FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
+                Start = 0,
+                Length = 1
+            });
+
+            listener.Stop();
+            await server;
+
+            // 异常响应是终态：立即失败并携带异常码，绝不重发请求
+            Assert.False(result.IsSuccess);
+            Assert.Contains("0x02", result.ErrorMessage);
+            Assert.Equal(1, requestsReceived);
+        }
     }
 }
