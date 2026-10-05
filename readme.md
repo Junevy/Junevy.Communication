@@ -5,7 +5,7 @@ Modbus RTU/TCP communication library for .NET. It provides low-level request API
 ## Target Frameworks
 
 - .NET Framework 4.7.2 (`net472`)
-- .NET 6 (`net6.0`)
+- .NET 8 (`net8.0`)
 
 Project path:
 
