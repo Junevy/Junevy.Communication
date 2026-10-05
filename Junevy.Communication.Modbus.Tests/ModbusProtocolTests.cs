@@ -885,5 +885,66 @@ namespace Junevy.Communication.Modbus.Tests
             Assert.False(result.IsSuccess);
             Assert.Equal(ModbusErrorKind.Timeout, result.ErrorKind);
         }
+
+        [Fact]
+        public async Task TcpClient_RetryCount_RetriesThenSucceeds()
+        {
+            // 重试次数语义基线（Task 4.3）：RetryCount 为首次失败后的重试次数；
+            // 第一次尝试读超时后客户端销毁连接并重连（新连接），服务器必须逐个 accept。
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            var requestCount = 0;
+            var server = Task.Run(async () =>
+            {
+                // 循环 accept：第一次尝试超时后客户端会销毁连接并重连（新连接），必须逐个接受
+                while (true)
+                {
+                    TcpClient client;
+                    try { client = await listener.AcceptTcpClientAsync(); }
+                    catch { break; }   // listener.Stop() 后退出
+                    _ = HandleClientAsync(client);
+                }
+            });
+            async Task HandleClientAsync(TcpClient client)
+            {
+                using var _ = client;
+                var stream = client.GetStream();
+                var req = new byte[12];
+                int read = 0;
+                while (read < req.Length)
+                    read += await stream.ReadAsync(req, read, req.Length - read);
+                Interlocked.Increment(ref requestCount);
+                if (Volatile.Read(ref requestCount) == 1)
+                    return; // 第一次不回复，制造超时
+                byte[] resp = [req[0], req[1], 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34];
+                await stream.WriteAsync(resp, 0, resp.Length);
+            }
+
+            using var tcp = new ModbusTCP(new ModbusTCPConfig
+            {
+                Address = "127.0.0.1",
+                ReadTimeOut = 300,
+                WriteTimeOut = 300,
+                ConnectTimeout = 1000,
+                Reconnect = true,
+                RetryCount = 2,
+                RetryInterval = 10
+            });
+            tcp.Config.Port = port;
+
+            var result = tcp.Request(new ModbusRequest
+            {
+                SlaveId = 1,
+                FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
+                Start = 0,
+                Length = 1
+            });
+            listener.Stop();
+            await server;
+
+            Assert.True(result.IsSuccess, result.ErrorMessage);
+            Assert.Equal(2, Volatile.Read(ref requestCount));   // 首次超时 + 第二次成功
+        }
     }
 }
