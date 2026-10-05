@@ -63,6 +63,37 @@ namespace Junevy.Communication.Modbus.TCP
         {
             ThrowIfDisposed();
 
+            requestLock.Wait();
+            try
+            {
+                return ConnectCore();
+            }
+            finally
+            {
+                requestLock.Release();
+            }
+        }
+
+        public Task<bool> ConnectAsync()
+        {
+            return Task.Run(Connect);
+        }
+
+        public void Disconnect()
+        {
+            requestLock.Wait();
+            try
+            {
+                DisconnectCore();
+            }
+            finally
+            {
+                requestLock.Release();
+            }
+        }
+
+        private bool ConnectCore()
+        {
             if (!ModbusHelper.VerifyAddress(Config.Address) || !ModbusHelper.VerifyPort(Config.Port))
                 return false;
 
@@ -93,12 +124,7 @@ namespace Junevy.Communication.Modbus.TCP
             }
         }
 
-        public Task<bool> ConnectAsync()
-        {
-            return Task.Run(Connect);
-        }
-
-        public void Disconnect()
+        private void DisconnectCore()
         {
             try
             {
@@ -455,7 +481,7 @@ namespace Junevy.Communication.Modbus.TCP
             logger.LogInformation(" [Reconnect] TCP connection is not available. Reconnecting to {Address}:{Port}.", Config.Address, Config.Port);
             try
             {
-                return Connect();
+                return ConnectCore();               // 已在请求锁内，走无锁核心，避免重入死锁
             }
             catch (Exception ex) when (IsCommunicationException(ex))
             {
@@ -476,7 +502,7 @@ namespace Junevy.Communication.Modbus.TCP
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return await ConnectAsync();
+                return await Task.Run(ConnectCore); // 已在请求锁内，走无锁核心，避免重入死锁
             }
             catch (Exception ex) when (IsCommunicationException(ex))
             {

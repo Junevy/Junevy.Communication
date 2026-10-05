@@ -65,6 +65,28 @@ namespace Junevy.Communication.Modbus.RTU
         {
             ThrowIfDisposed();
 
+            requestLock.Wait();
+            try
+            {
+                return ConnectCore();
+            }
+            finally
+            {
+                requestLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously opens the serial port connection.
+        /// </summary>
+        public Task<bool> ConnectAsync()
+        {
+            // SerialPort does not have an async Open method, so we use Task.Run.
+            return Task.Run(Connect);
+        }
+
+        private bool ConnectCore()
+        {
             if (serialPort.IsOpen)
             {
                 serialPort.Close();
@@ -82,15 +104,6 @@ namespace Junevy.Communication.Modbus.RTU
                 return false;
             }
             return true;
-        }
-
-        /// <summary>
-        /// Asynchronously opens the serial port connection.
-        /// </summary>
-        public Task<bool> ConnectAsync()
-        {
-            // SerialPort does not have an async Open method, so we use Task.Run.
-            return Task.Run(Connect);
         }
 
         private void InitialConnection()
@@ -121,6 +134,19 @@ namespace Junevy.Communication.Modbus.RTU
         /// Closes the serial port connection. The instance can be reconnected afterwards.
         /// </summary>
         public void Disconnect()
+        {
+            requestLock.Wait();
+            try
+            {
+                DisconnectCore();
+            }
+            finally
+            {
+                requestLock.Release();
+            }
+        }
+
+        private void DisconnectCore()
         {
             try
             {
@@ -553,7 +579,7 @@ namespace Junevy.Communication.Modbus.RTU
             logger.LogInformation(" [Reconnect] Serial port {PortName} is not open. Reconnecting.", Config.PortName);
             try
             {
-                return Connect();
+                return ConnectCore();               // 已在请求锁内，走无锁核心，避免重入死锁
             }
             catch (Exception ex) when (IsCommunicationException(ex))
             {
@@ -574,7 +600,7 @@ namespace Junevy.Communication.Modbus.RTU
             try
             {
                 token.ThrowIfCancellationRequested();
-                return await ConnectAsync();
+                return await Task.Run(ConnectCore); // 已在请求锁内，走无锁核心，避免重入死锁
             }
             catch (Exception ex) when (IsCommunicationException(ex))
             {

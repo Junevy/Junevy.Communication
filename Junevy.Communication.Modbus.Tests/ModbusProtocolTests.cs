@@ -741,5 +741,95 @@ namespace Junevy.Communication.Modbus.Tests
             Assert.False(result.IsSuccess);
             Assert.Contains("PDU length", result.ErrorMessage);
         }
+
+        [Fact]
+        public async Task TcpClient_ConcurrentConnectAndRequest_DoNotInterleave()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+            var server = Task.Run(async () =>
+            {
+                // 接受最多 10 个连接：8 个并发任务中的 Connect/内部重连都可能建立新连接。
+                for (int i = 0; i < 10; i++)
+                {
+                    TcpClient handler;
+                    try
+                    {
+                        handler = await listener.AcceptTcpClientAsync();
+                    }
+                    catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException
+                        or IOException or SocketException)
+                    {
+                        break; // listener.Stop() 会使挂起/后续的 Accept 抛异常，正常退出
+                    }
+
+                    using (handler)
+                    using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+                    {
+                        var stream = handler.GetStream();
+                        var buffer = new byte[256];
+                        try
+                        {
+                            // 保持连接打开并丢弃收到的数据（不做协议响应，客户端侧只验证无未归类异常）；
+                            // 对端关闭或 10s 超时后转到下一个连接。
+                            while (await stream.ReadAsync(buffer, 0, buffer.Length, cts.Token) > 0)
+                            {
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // 本连接超时，转到下一个连接
+                        }
+                        catch (Exception ex) when (ex is IOException or ObjectDisposedException
+                            or InvalidOperationException or SocketException)
+                        {
+                            // 客户端放弃连接引发的 IO 异常，转到下一个连接
+                        }
+                    }
+                }
+            });
+
+            using (var tcp = new ModbusTCP(new ModbusTCPConfig
+            {
+                Address = "127.0.0.1",
+                ReadTimeOut = 200,
+                WriteTimeOut = 200,
+                ConnectTimeout = 500
+            }))
+            {
+                tcp.Config.Port = port;   // Task 2.4 之后 Port 为可写属性
+
+                var tasks = Enumerable.Range(0, 8).Select(i => Task.Run(async () =>
+                {
+                    var ex = await Record.ExceptionAsync(() =>
+                    {
+                        if (i % 2 == 0)
+                        {
+                            tcp.Connect();
+                            return Task.CompletedTask;
+                        }
+                        return tcp.RequestAsync(new ModbusRequest
+                        {
+                            SlaveId = 1,
+                            FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
+                            Start = 0,
+                            Length = 1
+                        });
+                    });
+                    // 修复前：ResetSocket 可能在发送/读取中销毁 socket，抛出未归类的异常
+                    Assert.True(ex is null or IOException or SocketException or TimeoutException
+                        or OperationCanceledException or ModbusException,
+                        $"Unexpected exception: {ex}");
+                })).ToArray();
+
+                await Task.WhenAll(tasks);
+            }
+            // 先释放客户端再等待服务器：关闭连接让服务器的下一次 ReadAsync 立即返回 0 并退出，
+            // 避免服务器在 10s CTS 上空等造成测试尾部停顿。
+            listener.Stop();
+            await server;
+        }
     }
 }
