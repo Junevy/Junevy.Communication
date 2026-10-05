@@ -19,6 +19,7 @@ namespace Junevy.Communication.Modbus.TCP
     public sealed class ModbusTCP : ModbusTransportBase
     {
         private Socket? socket;
+        private NetworkStream? stream;
 
         public ModbusTCPConfig Config { get; private set; }
         public override bool IsConnected => !disposed && IsSocketConnected(socket);
@@ -74,6 +75,7 @@ namespace Junevy.Communication.Modbus.TCP
                 }
 
                 socket.EndConnect(result);
+                stream = new NetworkStream(socket, ownsSocket: false);
                 Logger.LogDebug(" [Connect] Connected to {Address}:{Port}.", Config.Address, Config.Port);
                 return true;
             }
@@ -88,8 +90,40 @@ namespace Junevy.Communication.Modbus.TCP
 
         protected override async Task<bool> OpenConnectionAsync(CancellationToken cancellationToken)
         {
+            if (!ModbusHelper.VerifyAddress(Config.Address) || !ModbusHelper.VerifyPort(Config.Port))
+                return false;
+
+            ResetSocket();
+
+#if NET8_0_OR_GREATER
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(Config.ConnectTimeout);
+            try
+            {
+                var asyncResult = socket!.BeginConnect(Config.Address, Config.Port, null, null);
+                await Task.Factory.FromAsync(asyncResult, socket.EndConnect).WaitAsync(timeoutCts.Token);
+                stream = new NetworkStream(socket, ownsSocket: false);
+                Logger.LogDebug(" [Connect] Connected to {Address}:{Port}.", Config.Address, Config.Port);
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.LogWarning(" [ConnectAsync] Connection timed out: {Timeout}ms.", Config.ConnectTimeout);
+                InvalidateConnection();
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, " [ConnectAsync] Connection failed.");
+                InvalidateConnection();
+                return false;
+            }
+#else
+            // net472 无 Task.WaitAsync：退化为同步核心（其 WaitOne 内含 ConnectTimeout 超时），
+            // 取消令牌在连接期间不生效，于下一个 I/O 边界生效。
             cancellationToken.ThrowIfCancellationRequested();
-            return await Task.Run(OpenConnection, cancellationToken);
+            return OpenConnection();
+#endif
         }
 
         protected override void CloseConnection()
@@ -99,6 +133,8 @@ namespace Junevy.Communication.Modbus.TCP
                 if (socket?.Connected ?? false)
                     socket.Disconnect(false);
 
+                stream?.Dispose();
+                stream = null;
                 socket?.Dispose();
                 socket = null;
                 Logger.LogDebug(" [Disconnect] Disconnected from {Address}:{Port}.", Config.Address, Config.Port);
@@ -113,6 +149,7 @@ namespace Junevy.Communication.Modbus.TCP
         {
             try
             {
+                stream?.Dispose();
                 socket?.Dispose();
             }
             catch (Exception ex)
@@ -121,12 +158,15 @@ namespace Junevy.Communication.Modbus.TCP
             }
             finally
             {
+                stream = null;
                 socket = null;
             }
         }
 
         protected override void DisposeConnection()
         {
+            stream?.Dispose();
+            stream = null;
             socket?.Dispose();
             socket = null;
         }
@@ -224,11 +264,32 @@ namespace Junevy.Communication.Modbus.TCP
 
         protected override async Task<bool> SendFrameAsync(ModbusRequest request, CancellationToken cancellationToken)
         {
-            return await Task.Run(() =>
+            var target = stream;
+            if (target is null) return false;
+
+            var frame = ArrayPool<byte>.Shared.Rent(ModbusFrameBuilder.MaxTcpAduLength);
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                return SendFrame(request);
-            }, cancellationToken);
+                if (!FrameBuilder.TryWriteRequestFrame(request, ProtocolType, frame, out int bytesWritten))
+                    return false;
+
+                await target.WriteAsync(frame, 0, bytesWritten, cancellationToken);
+                LogTx("ModbusTCP", new ArraySegment<byte>(frame, 0, bytesWritten).ToArray());
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;  // 由基类请求循环归为 Cancelled
+            }
+            catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException)
+            {
+                Logger.LogError(ex, " [SendAsync] Send failed.");
+                return false;
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(frame);
+            }
         }
 
         protected override ModbusResult<byte[]> ReceiveFrame(ModbusRequest request)
@@ -280,11 +341,70 @@ namespace Junevy.Communication.Modbus.TCP
 
         protected override async Task<ModbusResult<byte[]>> ReceiveFrameAsync(ModbusRequest request, CancellationToken cancellationToken)
         {
-            return await Task.Run(() =>
+            byte[]? frame = null;
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                return ReceiveFrame(request);
-            }, cancellationToken);
+                frame = ArrayPool<byte>.Shared.Rent(ModbusFrameBuilder.MaxTcpAduLength);
+                var headerResult = await ReceiveExactAsync(frame, 0, 6, cancellationToken);
+                if (!headerResult.IsSuccess)
+                    return headerResult;
+
+                ushort pduLength = BinaryExtensions.ToUshort(frame[5], frame[4]);
+                if (pduLength < 1 || pduLength > 254)
+                {
+                    Logger.LogError(" [Read] Invalid PDU length: {PduLength}.", pduLength);
+                    return ModbusResult<byte[]>.Fail($" [Read] Invalid PDU length: {pduLength}.", ModbusErrorKind.ProtocolViolation);
+                }
+
+                int totalLength = 6 + pduLength;
+                var payloadResult = await ReceiveExactAsync(frame, 6, pduLength, cancellationToken);
+                if (!payloadResult.IsSuccess)
+                    return payloadResult;
+
+                var data = new ReadOnlyMemory<byte>(frame, 0, totalLength);
+                LogRx("ModbusTCP", data.Span);
+
+                var parsed = ResponseParser.ParseResponse(data, request);
+                return parsed.IsSuccess
+                    ? ModbusResult<byte[]>.Success(parsed.Data.ToArray())
+                    : ModbusResult<byte[]>.Fail(parsed.ErrorMessage ?? " [Read] Parse error.", parsed.ErrorKind, data.ToArray());
+            }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
+            {
+                Logger.LogError(" [Read] Read timed out.");
+                return ModbusResult<byte[]>.Fail(" [Read] Read timeout.", ModbusErrorKind.Timeout);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;  // 由基类请求循环归为 Cancelled
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, " [Read] Read failed.");
+                throw;
+            }
+            finally
+            {
+                if (frame != null)
+                    ArrayPool<byte>.Shared.Return(frame);
+            }
+        }
+
+        private async Task<ModbusResult<byte[]>> ReceiveExactAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            var target = stream;
+            int totalRead = 0;
+            while (totalRead < count)
+            {
+                // net8.0 上取消令牌即时生效；net472 上在下一个 I/O 边界生效（读超时兜底靠 socket.ReceiveTimeout）。
+                int read = await target.ReadAsync(buffer, offset + totalRead, count - totalRead, cancellationToken);
+                if (read == 0)
+                    return ModbusResult<byte[]>.Fail(" [Read] Connection closed by remote.", ModbusErrorKind.ConnectionClosed);
+
+                totalRead += read;
+            }
+
+            return ModbusResult<byte[]>.Success(Array.Empty<byte>());
         }
 
         // ————————————————— TCP 私有辅助 —————————————————
@@ -306,6 +426,8 @@ namespace Junevy.Communication.Modbus.TCP
 
         private void ResetSocket()
         {
+            stream?.Dispose();
+            stream = null;
             socket?.Dispose();
             socket = CreateSocket();
             socket.ReceiveTimeout = Config.ReadTimeOut;

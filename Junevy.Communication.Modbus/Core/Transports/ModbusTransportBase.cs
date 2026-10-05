@@ -51,7 +51,7 @@ namespace Junevy.Communication.Modbus.Core.Transports
         /// <summary>无锁连接核心（TCP：地址校验 + ResetSocket + 连接；RTU：ConfigurePort + Open）。</summary>
         protected abstract bool OpenConnection();
 
-        /// <summary>无锁异步连接核心（过渡期由子类以 Task.Run(OpenConnection) 过渡实现，Task 4.4 替换为真异步）。</summary>
+        /// <summary>无锁异步连接核心（调用方持有 requestLock；连接超时由实现内部保证）。</summary>
         protected abstract Task<bool> OpenConnectionAsync(CancellationToken cancellationToken);
 
         /// <summary>Disconnect 核心（无锁，调用方持有 requestLock）。</summary>
@@ -142,10 +142,19 @@ namespace Junevy.Communication.Modbus.Core.Transports
             }
         }
 
-        public Task<bool> ConnectAsync()
+        public async Task<bool> ConnectAsync()
         {
-            // 过渡实现（Task 4.4 改为锁内 await OpenConnectionAsync）。
-            return Task.Run(Connect);
+            ThrowIfDisposed();
+
+            await requestLock.WaitAsync();
+            try
+            {
+                return await OpenConnectionAsync(CancellationToken.None);
+            }
+            finally
+            {
+                requestLock.Release();
+            }
         }
 
         public void Disconnect()

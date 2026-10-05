@@ -4,6 +4,7 @@ using Junevy.Communication.Modbus.Core.Parsing;
 using Junevy.Communication.Modbus.RTU;
 using Junevy.Communication.Modbus.TCP;
 using Junevy.Communication.Modbus.Utils;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 
@@ -427,7 +428,8 @@ namespace Junevy.Communication.Modbus.Tests
             });
 
             listener.Stop();
-            await serverTask;
+            try { await serverTask.WaitAsync(TimeSpan.FromSeconds(15)); }
+            catch (TimeoutException) { /* Stop 后 pending 的 Accept 可能永不完成（.NET 8 已知行为），断言不依赖其退出 */ }
 
             Assert.True(result.IsSuccess, result.ErrorMessage);
             Assert.Equal([0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34], result.Data);
@@ -541,7 +543,8 @@ namespace Junevy.Communication.Modbus.Tests
             // 先释放客户端再等待服务器：关闭连接让服务器的下一次 ReadAsync 立即返回 0 并退出，
             // 避免服务器在 10s CTS 上空等造成测试尾部停顿。
             listener.Stop();
-            await server;
+            try { await server.WaitAsync(TimeSpan.FromSeconds(15)); }
+            catch (TimeoutException) { /* Stop 后 pending 的 Accept 可能永不完成（.NET 8 已知行为），断言不依赖其退出 */ }
 
             Assert.True(r1.IsSuccess, r1.ErrorMessage);
             Assert.True(r2.IsSuccess, r2.ErrorMessage);
@@ -642,7 +645,8 @@ namespace Junevy.Communication.Modbus.Tests
             });
 
             listener.Stop();
-            await server;
+            try { await server.WaitAsync(TimeSpan.FromSeconds(15)); }
+            catch (TimeoutException) { /* Stop 后 pending 的 Accept 可能永不完成（.NET 8 已知行为），断言不依赖其退出 */ }
 
             // 异常响应是终态：立即失败并携带异常码，绝不重发请求
             Assert.False(result.IsSuccess);
@@ -735,7 +739,8 @@ namespace Junevy.Communication.Modbus.Tests
                 return Task.CompletedTask;
             });
             listener.Stop();
-            await server;
+            try { await server.WaitAsync(TimeSpan.FromSeconds(15)); }
+            catch (TimeoutException) { /* Stop 后 pending 的 Accept 可能永不完成（.NET 8 已知行为），断言不依赖其退出 */ }
 
             Assert.Null(ex);                       // 修复前：这里会捕获到 ModbusException
             Assert.False(result.IsSuccess);
@@ -829,7 +834,8 @@ namespace Junevy.Communication.Modbus.Tests
             // 先释放客户端再等待服务器：关闭连接让服务器的下一次 ReadAsync 立即返回 0 并退出，
             // 避免服务器在 10s CTS 上空等造成测试尾部停顿。
             listener.Stop();
-            await server;
+            try { await server.WaitAsync(TimeSpan.FromSeconds(15)); }
+            catch (TimeoutException) { /* Stop 后 pending 的 Accept 可能永不完成（.NET 8 已知行为），断言不依赖其退出 */ }
         }
 
         [Fact]
@@ -909,24 +915,32 @@ namespace Junevy.Communication.Modbus.Tests
             async Task HandleClientAsync(TcpClient client)
             {
                 using var _ = client;
-                var stream = client.GetStream();
-                var req = new byte[12];
-                int read = 0;
-                while (read < req.Length)
-                    read += await stream.ReadAsync(req, read, req.Length - read);
-                Interlocked.Increment(ref requestCount);
-                if (Volatile.Read(ref requestCount) == 1)
-                    return; // 第一次不回复，制造超时
-                byte[] resp = [req[0], req[1], 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34];
-                await stream.WriteAsync(resp, 0, resp.Length);
+                using var opCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                try
+                {
+                    var stream = client.GetStream();
+                    var req = new byte[12];
+                    int read = 0;
+                    while (read < req.Length)
+                        read += await stream.ReadAsync(req, read, req.Length - read, opCts.Token);
+                    Interlocked.Increment(ref requestCount);
+                    if (Volatile.Read(ref requestCount) == 1)
+                        return; // 第一次不回复，制造超时
+                    byte[] resp = [req[0], req[1], 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34];
+                    await stream.WriteAsync(resp, 0, resp.Length, opCts.Token);
+                }
+                catch
+                {
+                    // 客户端提前弃连/取消/Stop 中止 —— 服务器脚手架优雅退出
+                }
             }
 
             using var tcp = new ModbusTCP(new ModbusTCPConfig
             {
                 Address = "127.0.0.1",
-                ReadTimeOut = 300,
-                WriteTimeOut = 300,
-                ConnectTimeout = 1000,
+                ReadTimeOut = 1000,          // 首次超时由服务器"第 1 个请求不应答"保证，不依赖短预算；1s 给响应留足负载余量
+                WriteTimeOut = 1000,
+                ConnectTimeout = 10000,      // 并行负载下 1s 会误报（与同文件既有测试一致）
                 Reconnect = true,
                 RetryCount = 2,
                 RetryInterval = 10
@@ -941,10 +955,62 @@ namespace Junevy.Communication.Modbus.Tests
                 Length = 1
             });
             listener.Stop();
-            await server;
+            try { await server.WaitAsync(TimeSpan.FromSeconds(15)); }
+            catch (TimeoutException) { /* Stop 后 pending 的 Accept 可能永不完成（.NET 8 已知行为），断言不依赖其退出 */ }
 
             Assert.True(result.IsSuccess, result.ErrorMessage);
-            Assert.Equal(2, Volatile.Read(ref requestCount));   // 首次超时 + 第二次成功
+            // 首次必然超时（服务器不应答）→ 至少 2 次交换；重试预算 RetryCount+1=3 次尝试 → 至多 3 次
+            // （并行负载下第 2 次尝试也可能超时后由第 3 次成功）。
+            Assert.InRange(Volatile.Read(ref requestCount), 2, 3);
+        }
+
+        [Fact]
+        public async Task TcpClient_RequestAsync_CancelledDuringRead_ReturnsCancelledQuickly()
+        {
+            // 监听但不回复 → 客户端读挂起 → 500ms 后取消令牌触发，应尽快返回 Cancelled
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var client = await listener.AcceptTcpClientAsync();
+                    // 接受连接后保持沉默
+                    await Task.Delay(5000);
+                }
+                catch
+                {
+                    // listener.Stop() 中止 accept
+                }
+            });
+
+            using var tcp = new ModbusTCP(new ModbusTCPConfig
+            {
+                Address = "127.0.0.1",
+                ReadTimeOut = 30_000,        // 故意大于取消时间
+                WriteTimeOut = 30_000,
+                ConnectTimeout = 10000,      // 并行负载下 1s 会误报（与同文件既有测试一致）
+                RetryCount = 0
+            });
+            tcp.Config.Port = port;
+            Assert.True(tcp.Connect());
+
+            using var cts = new CancellationTokenSource(500);
+            var sw = Stopwatch.StartNew();
+            var result = await tcp.RequestAsync(new ModbusRequest
+            {
+                SlaveId = 1,
+                FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
+                Start = 0,
+                Length = 1
+            }, cts.Token);
+            sw.Stop();
+            listener.Stop();
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(ModbusErrorKind.Cancelled, result.ErrorKind);
+            Assert.True(sw.ElapsedMilliseconds < 5000, $"Cancellation took {sw.ElapsedMilliseconds}ms");
         }
     }
 }

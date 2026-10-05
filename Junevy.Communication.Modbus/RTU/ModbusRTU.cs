@@ -346,18 +346,18 @@ namespace Junevy.Communication.Modbus.RTU
         {
             var pool = System.Buffers.ArrayPool<byte>.Shared.Rent(ModbusFrameBuilder.MaxRtuAduLength + 1);
             int readCounts = 0;
+            var readTimeoutToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            readTimeoutToken.CancelAfter(Config.ReadTimeOut);
 
             try
             {
-                var readTimeoutToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                readTimeoutToken.CancelAfter(Config.ReadTimeOut);
                 while (true)
                 {
                     readTimeoutToken.Token.ThrowIfCancellationRequested();
                     int readBytes = 0;
                     try
                     {
-                        readBytes = await Task.Run(() => serialPort.Read(pool, readCounts, pool.Length - readCounts), readTimeoutToken.Token);
+                        readBytes = await serialPort.BaseStream.ReadAsync(pool, readCounts, pool.Length - readCounts, readTimeoutToken.Token);
                         readCounts += readBytes;
                     }
                     catch (TimeoutException)
@@ -394,10 +394,16 @@ namespace Junevy.Communication.Modbus.RTU
                     await Task.Delay(Config.IntervalTime, cancellationToken);
                 }
             }
+            catch (OperationCanceledException ex) when (readTimeoutToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                // 读超时 CTS 触发（区别于用户取消）：BaseStream.ReadAsync 以 OCE 中断
+                Logger.LogError(" [ReadAsync] Read timeout: {Timeout}ms.", Config.ReadTimeOut);
+                return ModbusResult<byte[]>.Fail($" [ReadAsync] Read slave timeout: ({Config.ReadTimeOut}ms).", ModbusErrorKind.Timeout);
+            }
             catch (OperationCanceledException ex)
             {
                 Logger.LogError(ex, " [ReadAsync] Read cancelled.");
-                return ModbusResult<byte[]>.Fail(ex.ToString());
+                return ModbusResult<byte[]>.Fail(ex.ToString(), ModbusErrorKind.Cancelled);
             }
             catch (Exception ex)
             {
@@ -406,6 +412,7 @@ namespace Junevy.Communication.Modbus.RTU
             }
             finally
             {
+                readTimeoutToken.Dispose();
                 System.Buffers.ArrayPool<byte>.Shared.Return(pool);
             }
         }
