@@ -1,8 +1,8 @@
-﻿using Junevy.Communication.Modbus.Core.Interfaces;
+using Junevy.Communication.Modbus.Core.Interfaces;
 
-namespace Junevy.Communication.Modbus.TCP
+namespace Junevy.Communication.Modbus.Tcp
 {
-    public class ModbusTCPConfig : IModbusConfig
+    public class ModbusTcpClientConfig : IModbusConfig
     {
         public string Address { get; set; } = "127.0.0.1";
 

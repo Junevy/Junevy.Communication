@@ -1,8 +1,8 @@
-﻿using Junevy.Communication.Modbus.Core.Framing;
+using Junevy.Communication.Modbus.Core.Framing;
 using Junevy.Communication.Modbus.Core.Models;
 using Junevy.Communication.Modbus.Core.Parsing;
-using Junevy.Communication.Modbus.RTU;
-using Junevy.Communication.Modbus.TCP;
+using Junevy.Communication.Modbus.Rtu;
+using Junevy.Communication.Modbus.Tcp;
 using Junevy.Communication.Modbus.Utils;
 using System.Diagnostics;
 using System.Net;
@@ -265,7 +265,7 @@ namespace Junevy.Communication.Modbus.Tests
         [Fact]
         public void TcpConfig_PortIsDirectlySettable()
         {
-            var config = new ModbusTCPConfig { Port = 1502 };
+            var config = new ModbusTcpClientConfig { Port = 1502 };
             Assert.Equal(1502, config.Port);
         }
 
@@ -405,7 +405,7 @@ namespace Junevy.Communication.Modbus.Tests
                 }
             });
 
-            using var client = new ModbusTCP(new ModbusTCPConfig
+            using var client = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = IPAddress.Loopback.ToString(),
                 // 并发负载下（如工厂并发冒烟测试阻塞线程池），服务器任务可能被延迟调度；
@@ -521,7 +521,7 @@ namespace Junevy.Communication.Modbus.Tests
 
             ModbusResult<byte[]> r1;
             ModbusResult<byte[]> r2;
-            using (var tcp = new ModbusTCP(new ModbusTCPConfig
+            using (var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = "127.0.0.1",
                 // 并发负载下（如工厂并发冒烟测试阻塞线程池），服务器任务可能被延迟调度；
@@ -622,7 +622,7 @@ namespace Junevy.Communication.Modbus.Tests
                 }
             });
 
-            using var tcp = new ModbusTCP(new ModbusTCPConfig
+            using var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = "127.0.0.1",
                 ReadTimeOut = 1000,
@@ -714,7 +714,7 @@ namespace Junevy.Communication.Modbus.Tests
                 }
             });
 
-            using var tcp = new ModbusTCP(new ModbusTCPConfig
+            using var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = "127.0.0.1",
                 ReadTimeOut = 1000,
@@ -796,7 +796,7 @@ namespace Junevy.Communication.Modbus.Tests
                 }
             });
 
-            using (var tcp = new ModbusTCP(new ModbusTCPConfig
+            using (var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = "127.0.0.1",
                 ReadTimeOut = 200,
@@ -866,7 +866,7 @@ namespace Junevy.Communication.Modbus.Tests
             var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            using var tcp = new ModbusTCP(new ModbusTCPConfig
+            using var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = "127.0.0.1",
                 ReadTimeOut = 300,
@@ -935,7 +935,7 @@ namespace Junevy.Communication.Modbus.Tests
                 }
             }
 
-            using var tcp = new ModbusTCP(new ModbusTCPConfig
+            using var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = "127.0.0.1",
                 ReadTimeOut = 1000,          // 首次超时由服务器"第 1 个请求不应答"保证，不依赖短预算；1s 给响应留足负载余量
@@ -985,7 +985,7 @@ namespace Junevy.Communication.Modbus.Tests
                 }
             });
 
-            using var tcp = new ModbusTCP(new ModbusTCPConfig
+            using var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = "127.0.0.1",
                 ReadTimeOut = 30_000,        // 故意大于取消时间

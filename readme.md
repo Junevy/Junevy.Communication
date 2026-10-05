@@ -39,9 +39,9 @@ Communication.Modbus/Communication.Modbus.csproj
 
 ```csharp
 using Junevy.Communication.Modbus.Extensions;
-using Junevy.Communication.Modbus.TCP;
+using Junevy.Communication.Modbus.Tcp;
 
-using var modbus = new ModbusTCP(new ModbusTCPConfig
+using var modbus = new ModbusTcpClient(new ModbusTcpClientConfig
 {
     Address = "192.168.1.100",
     Port = 502,
@@ -69,9 +69,9 @@ modbus.Disconnect();
 ```csharp
 using System.IO.Ports;
 using Junevy.Communication.Modbus.Extensions;
-using Junevy.Communication.Modbus.RTU;
+using Junevy.Communication.Modbus.Rtu;
 
-using var modbus = new ModbusRTU(new ModbusRTUConfig
+using var modbus = new ModbusRtuClient(new ModbusRtuClientConfig
 {
     PortName = "COM3",
     BaudRate = 9600,
@@ -96,7 +96,7 @@ modbus.Disconnect();
 using Junevy.Communication.Modbus.DependencyInjection;
 using Junevy.Communication.Modbus.Extensions;
 using Junevy.Communication.Modbus.Factory;
-using Junevy.Communication.Modbus.TCP;
+using Junevy.Communication.Modbus.Tcp;
 using Microsoft.Extensions.DependencyInjection;
 
 var services = new ServiceCollection();
@@ -107,7 +107,7 @@ services.AddModbusFactory();
 using var provider = services.BuildServiceProvider();
 var factory = provider.GetRequiredService<IModbusFactory>();
 
-var plc = factory.GetOrAdd("plc-1", new ModbusTCPConfig
+var plc = factory.GetOrAdd("plc-1", new ModbusTcpClientConfig
 {
     Address = "192.168.1.100",
     Port = 502,
@@ -129,7 +129,7 @@ plc.Disconnect();
 For RS-485 multi-drop RTU scenarios, register one physical RTU connection and add aliases for logical slave names:
 
 ```csharp
-factory.GetOrAdd("rs485-bus", new ModbusRTUConfig { PortName = "COM3" });
+factory.GetOrAdd("rs485-bus", new ModbusRtuClientConfig { PortName = "COM3" });
 factory.RegisterAlias("slave-1", "rs485-bus");
 factory.RegisterAlias("slave-2", "rs485-bus");
 ```
@@ -154,7 +154,7 @@ var raw = plc.Request(new ModbusRequest
 Both TCP and RTU transports support request-level retry and optional reconnect:
 
 ```csharp
-var tcp = new ModbusTCP(new ModbusTCPConfig
+var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
 {
     Address = "192.168.1.100",
     Port = 502,
@@ -166,7 +166,7 @@ var tcp = new ModbusTCP(new ModbusTCPConfig
     WriteTimeOut = 2000
 });
 
-var rtu = new ModbusRTU(new ModbusRTUConfig
+var rtu = new ModbusRtuClient(new ModbusRtuClientConfig
 {
     PortName = "COM3",
     Reconnect = true,

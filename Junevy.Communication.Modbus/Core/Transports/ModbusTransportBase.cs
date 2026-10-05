@@ -1,4 +1,4 @@
-﻿using Junevy.Communication.Modbus.Core.Interfaces;
+using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
 using Junevy.Communication.Modbus.Extensions;
 using Junevy.Communication.Modbus.Utils;
@@ -11,7 +11,7 @@ namespace Junevy.Communication.Modbus.Core.Transports
 {
     /// <summary>
     /// TCP/RTU 传输层公共基类（Task 4.3）：实现 <see cref="IModbus"/> 公开 API 与
-    /// 请求/重试/重连骨架 —— 将原 <c>ModbusTCP</c>/<c>ModbusRTU</c> 中各持一份、
+    /// 请求/重试/重连骨架 —— 将原 <c>ModbusTcpClient</c>/<c>ModbusRtuClient</c> 中各持一份、
     /// 合计四份近似的重试循环（ExecuteRequestWithRetry(Async) ×2、EnsureConnected(Async) ×2、
     /// WaitBeforeRetry(Async) ×2、GetAttemptCount、IsCommunicationException、ThrowIfDisposed、
     /// requestLock/stopwatch/lastTimestamp/transactionId/disposed 字段）合并为基类中的

@@ -1,7 +1,7 @@
-﻿using Junevy.Communication.Modbus.Core.Interfaces;
+using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
-using Junevy.Communication.Modbus.RTU;
-using Junevy.Communication.Modbus.TCP;
+using Junevy.Communication.Modbus.Rtu;
+using Junevy.Communication.Modbus.Tcp;
 
 namespace Junevy.Communication.Modbus.Factory
 {
@@ -40,22 +40,22 @@ namespace Junevy.Communication.Modbus.Factory
         /// <summary>
         /// Gets an existing instance or creates a new Modbus TCP connection.
         /// </summary>
-        IModbus GetOrAdd(string key, ModbusTCPConfig config);
+        IModbus GetOrAdd(string key, ModbusTcpClientConfig config);
 
         /// <summary>
         /// Gets an existing instance or creates a new Modbus RTU connection.
         /// </summary>
-        IModbus GetOrAdd(string key, ModbusRTUConfig config);
+        IModbus GetOrAdd(string key, ModbusRtuClientConfig config);
 
         /// <summary>
         /// Tries to add a new Modbus TCP connection. Fails if the key already exists.
         /// </summary>
-        bool TryAdd(string key, ModbusTCPConfig config, out IModbus? modbus);
+        bool TryAdd(string key, ModbusTcpClientConfig config, out IModbus? modbus);
 
         /// <summary>
         /// Tries to add a new Modbus RTU connection. Fails if the key already exists.
         /// </summary>
-        bool TryAdd(string key, ModbusRTUConfig config, out IModbus? modbus);
+        bool TryAdd(string key, ModbusRtuClientConfig config, out IModbus? modbus);
 
         /// <summary>
         /// Removes and disposes the Modbus instance registered under the given name.

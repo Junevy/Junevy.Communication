@@ -1,9 +1,9 @@
-﻿using Junevy.Communication.Modbus.Core.Interfaces;
+using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Framing;
 using Junevy.Communication.Modbus.Core.Models;
 using Junevy.Communication.Modbus.Core.Parsing;
-using Junevy.Communication.Modbus.RTU;
-using Junevy.Communication.Modbus.TCP;
+using Junevy.Communication.Modbus.Rtu;
+using Junevy.Communication.Modbus.Tcp;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -101,7 +101,7 @@ namespace Junevy.Communication.Modbus.Factory
             return manager.TryGet(key, out modbus);
         }
 
-        public IModbus GetOrAdd(string key, ModbusTCPConfig config)
+        public IModbus GetOrAdd(string key, ModbusTcpClientConfig config)
         {
             ThrowIfDisposed();
             ValidateAndFillDefaults(config, key);
@@ -109,13 +109,13 @@ namespace Junevy.Communication.Modbus.Factory
 
             return manager.GetOrAdd(key, _ =>
             {
-                var tcp = new ModbusTCP(config, loggerFactory.CreateLogger<ModbusTCP>(), tcpParser, frameBuilder);
-                logger.LogDebug(" [GetOrAdd] Created ModbusTCP: key={Key}.", key);
+                var tcp = new ModbusTcpClient(config, loggerFactory.CreateLogger<ModbusTcpClient>(), tcpParser, frameBuilder);
+                logger.LogDebug(" [GetOrAdd] Created ModbusTcpClient: key={Key}.", key);
                 return tcp;
             });
         }
 
-        public IModbus GetOrAdd(string key, ModbusRTUConfig config)
+        public IModbus GetOrAdd(string key, ModbusRtuClientConfig config)
         {
             ThrowIfDisposed();
             ValidateAndFillDefaults(config, key);
@@ -123,20 +123,20 @@ namespace Junevy.Communication.Modbus.Factory
 
             return manager.GetOrAdd(key, _ =>
             {
-                var rtu = new ModbusRTU(config, loggerFactory.CreateLogger<ModbusRTU>(), rtuParser, frameBuilder);
-                logger.LogDebug(" [GetOrAdd] Created ModbusRTU: key={Key}.", key);
+                var rtu = new ModbusRtuClient(config, loggerFactory.CreateLogger<ModbusRtuClient>(), rtuParser, frameBuilder);
+                logger.LogDebug(" [GetOrAdd] Created ModbusRtuClient: key={Key}.", key);
                 return rtu;
             });
         }
 
-        public bool TryAdd(string key, ModbusTCPConfig config, out IModbus? modbus)
+        public bool TryAdd(string key, ModbusTcpClientConfig config, out IModbus? modbus)
         {
             ThrowIfDisposed();
             modbus = null;
             ValidateAndFillDefaults(config, key);
             logger.LogInformation(" [TryAdd] TCP: key={Key}, address={Address}:{Port}.", key, config.Address, config.Port);
 
-            var tcp = new ModbusTCP(config, loggerFactory.CreateLogger<ModbusTCP>(), tcpParser, frameBuilder);
+            var tcp = new ModbusTcpClient(config, loggerFactory.CreateLogger<ModbusTcpClient>(), tcpParser, frameBuilder);
             if (!manager.Add(key, tcp))
             {
                 tcp.Dispose();
@@ -145,18 +145,18 @@ namespace Junevy.Communication.Modbus.Factory
             }
 
             modbus = tcp;
-            logger.LogDebug(" [TryAdd] Added ModbusTCP: key={Key}.", key);
+            logger.LogDebug(" [TryAdd] Added ModbusTcpClient: key={Key}.", key);
             return true;
         }
 
-        public bool TryAdd(string key, ModbusRTUConfig config, out IModbus? modbus)
+        public bool TryAdd(string key, ModbusRtuClientConfig config, out IModbus? modbus)
         {
             ThrowIfDisposed();
             modbus = null;
             ValidateAndFillDefaults(config, key);
             logger.LogInformation(" [TryAdd] RTU: key={Key}, port={PortName}.", key, config.PortName);
 
-            var rtu = new ModbusRTU(config, loggerFactory.CreateLogger<ModbusRTU>(), rtuParser, frameBuilder);
+            var rtu = new ModbusRtuClient(config, loggerFactory.CreateLogger<ModbusRtuClient>(), rtuParser, frameBuilder);
             if (!manager.Add(key, rtu))
             {
                 rtu.Dispose();
@@ -165,7 +165,7 @@ namespace Junevy.Communication.Modbus.Factory
             }
 
             modbus = rtu;
-            logger.LogDebug(" [TryAdd] Added ModbusRTU: key={Key}.", key);
+            logger.LogDebug(" [TryAdd] Added ModbusRtuClient: key={Key}.", key);
             return true;
         }
 
@@ -210,7 +210,7 @@ namespace Junevy.Communication.Modbus.Factory
             logger.LogInformation(" [DisposeAsync] ModbusFactory disposed ({Count} instances).", count);
         }
 
-        private static void ValidateAndFillDefaults(ModbusTCPConfig config, string key)
+        private static void ValidateAndFillDefaults(ModbusTcpClientConfig config, string key)
         {
             if (config == null)
                 throw new ArgumentNullException(nameof(config));
@@ -232,7 +232,7 @@ namespace Junevy.Communication.Modbus.Factory
                 config.RetryInterval = 100;
         }
 
-        private static void ValidateAndFillDefaults(ModbusRTUConfig config, string key)
+        private static void ValidateAndFillDefaults(ModbusRtuClientConfig config, string key)
         {
             if (config == null)
                 throw new ArgumentNullException(nameof(config));

@@ -1,9 +1,9 @@
-﻿using Junevy.Communication.Modbus.Core.Interfaces;
+using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
 using Junevy.Communication.Modbus.Extensions;
 using Junevy.Communication.Modbus.Factory;
-using Junevy.Communication.Modbus.RTU;
-using Junevy.Communication.Modbus.TCP;
+using Junevy.Communication.Modbus.Rtu;
+using Junevy.Communication.Modbus.Tcp;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
@@ -13,7 +13,7 @@ namespace Junevy.Communication.Test
 {
     public partial class MainWindowViewModel : ObservableObject
     {
-        private readonly ModbusRTU mr;
+        private readonly ModbusRtuClient mr;
         private IModbus tcp;
         private IModbusFactory factory;
 
@@ -38,12 +38,12 @@ namespace Junevy.Communication.Test
         public int[] BaudRates { get; private set; } = [9600, 19200, 38400, 57600, 115200];
         #endregion
 
-        public ModbusRTUConfig Config { get; set; } = new();
+        public ModbusRtuClientConfig Config { get; set; } = new();
         public ModbusRequest Tx { get; set; } = new();
 
         public MainWindowViewModel(IModbusFactory factory)
         {
-            this.mr = new ModbusRTU(Config);
+            this.mr = new ModbusRtuClient(Config);
             this.factory = factory;
 
             StateMonitor();
@@ -53,8 +53,8 @@ namespace Junevy.Communication.Test
         public void Connect()
         {
             //ModbusFactory factory = new();
-            //var result = factory.TryAdd("test", new ModbusTCPConfig(), out tcp);
-            this.tcp = factory.GetOrAdd("test", new ModbusTCPConfig());
+            //var result = factory.TryAdd("test", new ModbusTcpClientConfig(), out tcp);
+            this.tcp = factory.GetOrAdd("test", new ModbusTcpClientConfig());
             tcp.Connect();
             //if (result)
             //    _ = tcp?.Connect();

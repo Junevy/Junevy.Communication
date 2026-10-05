@@ -1,7 +1,7 @@
-﻿using Junevy.Communication.Modbus.Core;
+using Junevy.Communication.Modbus.Core;
 using Junevy.Communication.Modbus.Factory;
-using Junevy.Communication.Modbus.RTU;
-using Junevy.Communication.Modbus.TCP;
+using Junevy.Communication.Modbus.Rtu;
+using Junevy.Communication.Modbus.Tcp;
 using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,7 +38,7 @@ namespace Junevy.Communication.Modbus.Tests
             var factory = provider.GetRequiredService<IModbusFactory>();
             var manager = provider.GetRequiredService<IModbusConnectionManager>();
 
-            factory.TryAdd("shared", new ModbusTCPConfig(), out _);
+            factory.TryAdd("shared", new ModbusTcpClientConfig(), out _);
 
             Assert.True(manager.TryGet("shared", out var resolved));
             Assert.NotNull(resolved);
@@ -48,8 +48,8 @@ namespace Junevy.Communication.Modbus.Tests
         public void Factory_Dispose_ClearsAllInstances()
         {
             var factory = new ModbusFactory();
-            factory.TryAdd("t1", new ModbusTCPConfig(), out var _);
-            factory.TryAdd("rtu", new ModbusRTUConfig { PortName = "COM99" }, out var _);
+            factory.TryAdd("t1", new ModbusTcpClientConfig(), out var _);
+            factory.TryAdd("rtu", new ModbusRtuClientConfig { PortName = "COM99" }, out var _);
             Assert.Equal(2, factory.Count);
 
             factory.Dispose();
@@ -61,7 +61,7 @@ namespace Junevy.Communication.Modbus.Tests
         public async Task Factory_DisposeAsync_ClearsAllInstances()
         {
             var factory = new ModbusFactory();
-            factory.TryAdd("t1", new ModbusTCPConfig(), out var _);
+            factory.TryAdd("t1", new ModbusTcpClientConfig(), out var _);
             await factory.DisposeAsync();
             Assert.Throws<ObjectDisposedException>(() => factory.Get("t1"));
         }
@@ -72,14 +72,14 @@ namespace Junevy.Communication.Modbus.Tests
         public void TryAdd_NullConfig_ThrowsArgumentNullException()
         {
             var factory = new ModbusFactory();
-            Assert.Throws<ArgumentNullException>(() => factory.TryAdd("key", (ModbusTCPConfig)null!, out _));
+            Assert.Throws<ArgumentNullException>(() => factory.TryAdd("key", (ModbusTcpClientConfig)null!, out _));
         }
 
         [Fact]
         public void TryAdd_EmptyKey_ThrowsArgumentException()
         {
             var factory = new ModbusFactory();
-            Assert.Throws<ArgumentException>(() => factory.TryAdd("", new ModbusTCPConfig(), out _));
+            Assert.Throws<ArgumentException>(() => factory.TryAdd("", new ModbusTcpClientConfig(), out _));
         }
 
         [Fact]
@@ -87,14 +87,14 @@ namespace Junevy.Communication.Modbus.Tests
         {
             var factory = new ModbusFactory();
             Assert.Throws<ArgumentException>(() =>
-                factory.TryAdd("key", new ModbusRTUConfig { PortName = "" }, out _));
+                factory.TryAdd("key", new ModbusRtuClientConfig { PortName = "" }, out _));
         }
 
         [Fact]
         public void TryAdd_FillsDefaultValues()
         {
             var factory = new ModbusFactory();
-            var config = new ModbusTCPConfig { ReadTimeOut = 0, WriteTimeOut = 0, ConnectTimeout = 0 };
+            var config = new ModbusTcpClientConfig { ReadTimeOut = 0, WriteTimeOut = 0, ConnectTimeout = 0 };
             factory.TryAdd("key", config, out var modbus);
 
             Assert.NotNull(modbus);
@@ -109,8 +109,8 @@ namespace Junevy.Communication.Modbus.Tests
         public void TryAdd_DuplicateKey_ReturnsFalse()
         {
             var factory = new ModbusFactory();
-            Assert.True(factory.TryAdd("dup", new ModbusTCPConfig(), out var m1));
-            Assert.False(factory.TryAdd("dup", new ModbusTCPConfig(), out var m2));
+            Assert.True(factory.TryAdd("dup", new ModbusTcpClientConfig(), out var m1));
+            Assert.False(factory.TryAdd("dup", new ModbusTcpClientConfig(), out var m2));
             Assert.Null(m2);
         }
 
@@ -118,7 +118,7 @@ namespace Junevy.Communication.Modbus.Tests
         public void TryGet_ExistingKey_ReturnsInstance()
         {
             var factory = new ModbusFactory();
-            factory.TryAdd("k", new ModbusTCPConfig(), out var added);
+            factory.TryAdd("k", new ModbusTcpClientConfig(), out var added);
 
             Assert.True(factory.TryGet("k", out var retrieved));
             Assert.Same(added, retrieved);
@@ -136,7 +136,7 @@ namespace Junevy.Communication.Modbus.Tests
         public void TryRemove_RemovesAndDisposes()
         {
             var factory = new ModbusFactory();
-            factory.TryAdd("k", new ModbusTCPConfig(), out var _);
+            factory.TryAdd("k", new ModbusTcpClientConfig(), out var _);
             Assert.True(factory.TryRemove("k"));
             Assert.False(factory.TryGet("k", out _));
         }
@@ -145,17 +145,17 @@ namespace Junevy.Communication.Modbus.Tests
         public void GetRequired_WrongType_ThrowsInvalidOperation()
         {
             var factory = new ModbusFactory();
-            factory.TryAdd("tcp", new ModbusTCPConfig(), out _);
+            factory.TryAdd("tcp", new ModbusTcpClientConfig(), out _);
 
-            Assert.Throws<InvalidOperationException>(() => factory.GetRequired<ModbusRTU>("tcp"));
+            Assert.Throws<InvalidOperationException>(() => factory.GetRequired<ModbusRtuClient>("tcp"));
         }
 
         [Fact]
         public void Keys_ReturnsAllKeys()
         {
             var factory = new ModbusFactory();
-            factory.TryAdd("a", new ModbusTCPConfig(), out _);
-            factory.TryAdd("b", new ModbusRTUConfig { PortName = "COM99" }, out _);
+            factory.TryAdd("a", new ModbusTcpClientConfig(), out _);
+            factory.TryAdd("b", new ModbusRtuClientConfig { PortName = "COM99" }, out _);
 
             var keys = factory.Keys.ToList();
             Assert.Contains("a", keys);
@@ -176,8 +176,8 @@ namespace Junevy.Communication.Modbus.Tests
         public void GetOrAdd_Idempotent_ReturnsSameInstance()
         {
             var factory = new ModbusFactory();
-            var a = factory.GetOrAdd("x", new ModbusTCPConfig());
-            var b = factory.GetOrAdd("x", new ModbusTCPConfig());
+            var a = factory.GetOrAdd("x", new ModbusTcpClientConfig());
+            var b = factory.GetOrAdd("x", new ModbusTcpClientConfig());
             Assert.Same(a, b);
             Assert.Equal(1, factory.Count);
         }
@@ -226,7 +226,7 @@ namespace Junevy.Communication.Modbus.Tests
                 try
                 {
                     barrier.SignalAndWait();
-                    factory.GetOrAdd(key, new ModbusTCPConfig());
+                    factory.GetOrAdd(key, new ModbusTcpClientConfig());
                     factory.TryGet(key, out _);
                     factory.TryRemove(key);
                 }

@@ -1,4 +1,4 @@
-﻿using Junevy.Communication.Modbus.Core.Framing;
+using Junevy.Communication.Modbus.Core.Framing;
 using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
 using Junevy.Communication.Modbus.Core.Parsing;
@@ -10,39 +10,39 @@ using Microsoft.Extensions.Logging.Abstractions;
 using System.Buffers;
 using System.Net.Sockets;
 
-namespace Junevy.Communication.Modbus.TCP
+namespace Junevy.Communication.Modbus.Tcp
 {
     /// <summary>
     /// Modbus TCP 客户端。请求/重试/重连骨架由 <see cref="ModbusTransportBase"/> 提供，
     /// 本类只实现 TCP 协议相关的连接与收发（MBAP 头封装、6 字节头 + PDU 读取）。
     /// </summary>
-    public sealed class ModbusTCP : ModbusTransportBase
+    public sealed class ModbusTcpClient : ModbusTransportBase
     {
         private Socket? socket;
         private NetworkStream? stream;
 
-        public ModbusTCPConfig Config { get; private set; }
+        public ModbusTcpClientConfig Config { get; private set; }
         public override bool IsConnected => !disposed && IsSocketConnected(socket);
         public override ModbusProtocolType ProtocolType => ModbusProtocolType.TCP;
 
-        public ModbusTCP(ModbusTCPConfig config)
-            : this(config, NullLogger<ModbusTCP>.Instance, new TcpProtocolParser())
+        public ModbusTcpClient(ModbusTcpClientConfig config)
+            : this(config, NullLogger<ModbusTcpClient>.Instance, new TcpProtocolParser())
         {
         }
 
-        public ModbusTCP(ModbusTCPConfig config, ILogger<ModbusTCP> logger)
+        public ModbusTcpClient(ModbusTcpClientConfig config, ILogger<ModbusTcpClient> logger)
             : this(config, logger, new TcpProtocolParser())
         {
         }
 
-        public ModbusTCP(ModbusTCPConfig config, ILogger<ModbusTCP> logger, IResponseParser responseParser)
+        public ModbusTcpClient(ModbusTcpClientConfig config, ILogger<ModbusTcpClient> logger, IResponseParser responseParser)
             : this(config, logger, responseParser, new ModbusFrameBuilder())
         {
         }
 
-        public ModbusTCP(
-            ModbusTCPConfig config,
-            ILogger<ModbusTCP> logger,
+        public ModbusTcpClient(
+            ModbusTcpClientConfig config,
+            ILogger<ModbusTcpClient> logger,
             IResponseParser responseParser,
             IModbusFrameBuilder frameBuilder)
             : base(logger, responseParser, frameBuilder)
@@ -242,7 +242,7 @@ namespace Junevy.Communication.Modbus.TCP
                         return false;
                 }
 
-                LogTx("ModbusTCP", new ArraySegment<byte>(frame, 0, bytesWritten).ToArray());
+                LogTx("ModbusTcpClient", new ArraySegment<byte>(frame, 0, bytesWritten).ToArray());
                 return true;
             }
             catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
@@ -274,7 +274,7 @@ namespace Junevy.Communication.Modbus.TCP
                     return false;
 
                 await target.WriteAsync(frame, 0, bytesWritten, cancellationToken);
-                LogTx("ModbusTCP", new ArraySegment<byte>(frame, 0, bytesWritten).ToArray());
+                LogTx("ModbusTcpClient", new ArraySegment<byte>(frame, 0, bytesWritten).ToArray());
                 return true;
             }
             catch (OperationCanceledException)
@@ -315,7 +315,7 @@ namespace Junevy.Communication.Modbus.TCP
                     return payloadResult;
 
                 var data = new ReadOnlyMemory<byte>(frame, 0, totalLength);
-                LogRx("ModbusTCP", data.Span);
+                LogRx("ModbusTcpClient", data.Span);
 
                 var parsed = ResponseParser.ParseResponse(data, request);
                 return parsed.IsSuccess
@@ -362,7 +362,7 @@ namespace Junevy.Communication.Modbus.TCP
                     return payloadResult;
 
                 var data = new ReadOnlyMemory<byte>(frame, 0, totalLength);
-                LogRx("ModbusTCP", data.Span);
+                LogRx("ModbusTcpClient", data.Span);
 
                 var parsed = ResponseParser.ParseResponse(data, request);
                 return parsed.IsSuccess

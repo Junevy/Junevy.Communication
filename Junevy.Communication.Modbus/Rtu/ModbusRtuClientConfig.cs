@@ -1,9 +1,9 @@
-﻿using Junevy.Communication.Modbus.Core.Interfaces;
+using Junevy.Communication.Modbus.Core.Interfaces;
 using System.IO.Ports;
 
-namespace Junevy.Communication.Modbus.RTU
+namespace Junevy.Communication.Modbus.Rtu
 {
-    public class ModbusRTUConfig : IModbusConfig
+    public class ModbusRtuClientConfig : IModbusConfig
     {
         /// <summary>
         /// Serial port name (e.g., COM1, /dev/ttyUSB0).

@@ -1,4 +1,4 @@
-﻿using Junevy.Communication.Modbus.Core.Interfaces;
+using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Framing;
 using Junevy.Communication.Modbus.Core.Models;
 using Junevy.Communication.Modbus.Core.Parsing;
@@ -8,42 +8,42 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.IO.Ports;
 
-namespace Junevy.Communication.Modbus.RTU
+namespace Junevy.Communication.Modbus.Rtu
 {
     /// <summary>
     /// Modbus RTU 客户端。请求/重试/重连骨架由 <see cref="ModbusTransportBase"/> 提供，
     /// 本类只实现串口相关的连接与收发（DiscardInBuffer/OutBuffer、Read-until-frame 循环、CRC 由解析器处理）。
     /// </summary>
-    public sealed class ModbusRTU : ModbusTransportBase
+    public sealed class ModbusRtuClient : ModbusTransportBase
     {
         private readonly SerialPort serialPort = new();
 
         /// <summary>
         /// Modbus RTU configuration.
         /// </summary>
-        public ModbusRTUConfig Config { get; }
+        public ModbusRtuClientConfig Config { get; }
 
         public override bool IsConnected => !disposed && serialPort.IsOpen;
         public override ModbusProtocolType ProtocolType => ModbusProtocolType.RTU;
 
-        public ModbusRTU(ModbusRTUConfig config)
-            : this(config, NullLogger<ModbusRTU>.Instance, new RtuProtocolParser())
+        public ModbusRtuClient(ModbusRtuClientConfig config)
+            : this(config, NullLogger<ModbusRtuClient>.Instance, new RtuProtocolParser())
         {
         }
 
-        public ModbusRTU(ModbusRTUConfig config, ILogger<ModbusRTU> logger)
+        public ModbusRtuClient(ModbusRtuClientConfig config, ILogger<ModbusRtuClient> logger)
             : this(config, logger, new RtuProtocolParser())
         {
         }
 
-        public ModbusRTU(ModbusRTUConfig config, ILogger<ModbusRTU> logger, IResponseParser responseParser)
+        public ModbusRtuClient(ModbusRtuClientConfig config, ILogger<ModbusRtuClient> logger, IResponseParser responseParser)
             : this(config, logger, responseParser, new ModbusFrameBuilder())
         {
         }
 
-        public ModbusRTU(
-            ModbusRTUConfig config,
-            ILogger<ModbusRTU> logger,
+        public ModbusRtuClient(
+            ModbusRtuClientConfig config,
+            ILogger<ModbusRtuClient> logger,
             IResponseParser responseParser,
             IModbusFrameBuilder frameBuilder)
             : base(logger, responseParser, frameBuilder)
@@ -216,7 +216,7 @@ namespace Junevy.Communication.Modbus.RTU
                     serialPort.DiscardOutBuffer();
 
                     serialPort.Write(requestFrame, 0, bytesWritten);
-                    LogTx("ModbusRTU", new ArraySegment<byte>(requestFrame, 0, bytesWritten).ToArray());
+                    LogTx("ModbusRtuClient", new ArraySegment<byte>(requestFrame, 0, bytesWritten).ToArray());
                     return true;
                 }
                 finally
@@ -255,7 +255,7 @@ namespace Junevy.Communication.Modbus.RTU
                     serialPort.DiscardOutBuffer();
 
                     await serialPort.BaseStream.WriteAsync(requestFrame, 0, bytesWritten, cancellationToken);
-                    LogTx("ModbusRTU", new ArraySegment<byte>(requestFrame, 0, bytesWritten).ToArray());
+                    LogTx("ModbusRtuClient", new ArraySegment<byte>(requestFrame, 0, bytesWritten).ToArray());
                     return true;
                 }
                 finally
@@ -317,11 +317,11 @@ namespace Junevy.Communication.Modbus.RTU
                             Logger.LogWarning(" [Read] Parsed frame has zero length.");
                             return ModbusResult<byte[]>.Fail(" [Read] Parsed frame has zero length.", ModbusErrorKind.ProtocolViolation);
                         }
-                        LogRx("ModbusRTU", parseResult.Data.Span);
+                        LogRx("ModbusRtuClient", parseResult.Data.Span);
                         return ModbusResult<byte[]>.Success(parseResult.Data.ToArray());
                     }
 
-                    LogRx("ModbusRTU", parseResult.Data.Span);
+                    LogRx("ModbusRtuClient", parseResult.Data.Span);
 
                     // Exception responses are authoritative answers, not resync noise — surface them immediately.
                     if (parseResult.ErrorKind == ModbusErrorKind.ModbusException)
@@ -380,11 +380,11 @@ namespace Junevy.Communication.Modbus.RTU
                             return ModbusResult<byte[]>.Fail(" [ReadAsync] Parsed frame has zero length.", ModbusErrorKind.ProtocolViolation);
                         }
 
-                        LogRx("ModbusRTU", parseResult.Data.Span);
+                        LogRx("ModbusRtuClient", parseResult.Data.Span);
                         return ModbusResult<byte[]>.Success(parseResult.Data.Span.ToArray());
                     }
 
-                    LogRx("ModbusRTU", parseResult.Data.Span);
+                    LogRx("ModbusRtuClient", parseResult.Data.Span);
 
                     // Exception responses are authoritative answers, not resync noise — surface them immediately.
                     if (parseResult.ErrorKind == ModbusErrorKind.ModbusException)

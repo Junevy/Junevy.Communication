@@ -1,4 +1,4 @@
-﻿namespace Junevy.Communication.Modbus.Core.Models
+namespace Junevy.Communication.Modbus.Core.Models
 {
     /// <summary>
     /// Modbus 发送数据类，用于封装 Modbus 发送数据（纯数据 DTO，不含事件或行为）。
@@ -6,7 +6,7 @@
     public class ModbusRequest
     {
         /// <summary>
-        /// TCP 事务标识。由 ModbusTCP 客户端在每次请求时自动分配（从 0 递增、回绕），
+        /// TCP 事务标识。由 ModbusTcpClient 客户端在每次请求时自动分配（从 0 递增、回绕），
         /// 用于响应匹配；手动赋值仅对裸帧构建 API（ModbusHelper.BuildRequestFrame）生效。
         /// </summary>
         public ushort TransactionId { get; set; } = 0x0000;

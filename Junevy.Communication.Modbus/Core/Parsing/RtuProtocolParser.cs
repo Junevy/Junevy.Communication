@@ -1,4 +1,4 @@
-﻿using Junevy.Communication.Modbus.Core.Interfaces;
+using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
 using Junevy.Communication.Modbus.Extensions;
 using Junevy.Communication.Modbus.Utils;
@@ -10,7 +10,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
 {
     /// <summary>
     /// Parses Modbus RTU response frames. Implements <see cref="IResponseParser"/> directly
-    /// so it can be injected into <see cref="RTU.ModbusRTU"/> as its response parser.
+    /// so it can be injected into <see cref="RTU.ModbusRtuClient"/> as its response parser.
     /// </summary>
     public sealed class RtuProtocolParser : IResponseParser
     {
