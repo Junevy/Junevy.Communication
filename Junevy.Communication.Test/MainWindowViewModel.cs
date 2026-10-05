@@ -46,33 +46,6 @@ namespace Junevy.Communication.Test
             this.mr = new ModbusRTU(Config);
             this.factory = factory;
 
-            // 监听功能码变化, 对应DataGrid的变化
-            Tx.OnFunctionCodeChanged += (f) =>
-            {
-                if (f >= ModbusFunctionCode.WriteCoil)
-                {
-                    if (DataList.Count < Length)
-                    {
-                        var l = DataList.Count;
-                        for (int i = 0; i < Length - l; i++)
-                        {
-                            DataList.Add(new ModbusData());
-                        }
-                    }
-
-                    if (DataList.Count > Length)
-                    {
-                        var l = DataList.Count;
-
-                        for (int i = 0; i < l - Length; i++)
-                        {
-                            DataList.RemoveAt(DataList.Count - 1);
-                        }
-                    }
-
-                }
-            };
-
             StateMonitor();
         }
 
