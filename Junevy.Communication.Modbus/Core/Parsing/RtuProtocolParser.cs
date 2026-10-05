@@ -33,10 +33,10 @@ namespace Junevy.Communication.Modbus.Core.Parsing
         {
             // Common validation
             if (response.Length == 0)
-                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [RtuParser] The response is empty.");
+                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [RtuParser] The response is empty.", ModbusErrorKind.ProtocolViolation);
 
             if (!ModbusHelper.CheckRequest(request))
-                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [RtuParser] The request is invalid.");
+                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [RtuParser] The request is invalid.", ModbusErrorKind.ProtocolViolation);
 
             // RTU-specific: scan with Span offset (zero-copy)
             var span = response.Span;
@@ -125,7 +125,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             }
 
             logger.LogError(" [RtuParser] Failed to match response in buffer.");
-            return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [RtuParser] Failed to match response.", response);
+            return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [RtuParser] Failed to match response.", ModbusErrorKind.ProtocolViolation, response);
         }
 
         private (ModbusResult<ReadOnlyMemory<byte>> Result, bool Retry) HandleRtuException(ReadOnlyMemory<byte> response)
@@ -137,7 +137,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             {
                 logger.LogWarning(" [HandleRtuException] Exception response too short: {Actual} < {Expected}.", span.Length, exceptionLength);
                 return (ModbusResult<ReadOnlyMemory<byte>>.Fail(
-                    $"Exception response too short. Expected {exceptionLength}, actual {span.Length}.", response), false);
+                    $"Exception response too short. Expected {exceptionLength}, actual {span.Length}.", ModbusErrorKind.ProtocolViolation, response), false);
             }
 
             var candidate = span.Slice(0, exceptionLength);
@@ -147,11 +147,12 @@ namespace Junevy.Communication.Modbus.Core.Parsing
                 byte exceptionCode = span[2];
                 return (ModbusResult<ReadOnlyMemory<byte>>.Fail(
                     $"Modbus exception response. Function=0x{span[1]:X2}, Code=0x{exceptionCode:X2}.",
+                    ModbusErrorKind.ModbusException,
                     response.Slice(0, exceptionLength)), false);
             }
 
             logger.LogWarning(" [HandleRtuException] CRC verification failed. Skipping byte.");
-            return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleRtuException] CRC verification failed.", response.Slice(0, exceptionLength)), true);
+            return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleRtuException] CRC verification failed.", ModbusErrorKind.ProtocolViolation, response.Slice(0, exceptionLength)), true);
         }
 
         private (ModbusResult<ReadOnlyMemory<byte>> Result, bool Retry) HandleRtuRead(
@@ -165,7 +166,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             {
                 logger.LogWarning(" [HandleRtuRead] Response too short: {Actual} < {Expected}.", span.Length, expectedLength);
                 return (ModbusResult<ReadOnlyMemory<byte>>.Fail(
-                    $"Response too short. Expected {expectedLength}, actual {span.Length}.", response), false);
+                    $"Response too short. Expected {expectedLength}, actual {span.Length}.", ModbusErrorKind.ProtocolViolation, response), false);
             }
 
             var candidate = span.Slice(0, expectedLength);
@@ -173,7 +174,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             if (!verifier.VerifyReadPdu(candidate, functionCode, length))
             {
                 logger.LogWarning(" [HandleRtuRead] PDU verification failed.");
-                return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleRtuRead] PDU verification failed.", response), true);
+                return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleRtuRead] PDU verification failed.", ModbusErrorKind.ProtocolViolation, response), true);
             }
 
             if (Crc16Helper.VerifyCrc(candidate))
@@ -183,7 +184,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             }
 
             logger.LogWarning(" [HandleRtuRead] CRC verification failed. Skipping byte.");
-            return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleRtuRead] CRC verification failed.", response.Slice(0, expectedLength)), true);
+            return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleRtuRead] CRC verification failed.", ModbusErrorKind.ProtocolViolation, response.Slice(0, expectedLength)), true);
         }
 
         private (ModbusResult<ReadOnlyMemory<byte>> Result, bool Retry) HandleRtuWriteSingle(
@@ -194,7 +195,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             {
                 logger.LogWarning(" [HandleRtuWriteSingle] Invalid data or response length.");
                 return (ModbusResult<ReadOnlyMemory<byte>>.Fail(
-                    " [HandleRtuWriteSingle] Invalid data or response length.", response), false);
+                    " [HandleRtuWriteSingle] Invalid data or response length.", ModbusErrorKind.ProtocolViolation, response), false);
             }
 
             var candidate = span.Slice(0, 8);
@@ -202,7 +203,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             {
                 logger.LogWarning(" [HandleRtuWriteSingle] PDU verification failed.");
                 return (ModbusResult<ReadOnlyMemory<byte>>.Fail(
-                    " [HandleRtuWriteSingle] PDU verification failed.", response), true);
+                    " [HandleRtuWriteSingle] PDU verification failed.", ModbusErrorKind.ProtocolViolation, response), true);
             }
 
             if (Crc16Helper.VerifyCrc(candidate))
@@ -212,7 +213,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             }
 
             logger.LogWarning(" [HandleRtuWriteSingle] CRC verification failed. Skipping byte.");
-            return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleRtuWriteSingle] CRC verification failed.", response.Slice(0, 8)), true);
+            return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleRtuWriteSingle] CRC verification failed.", ModbusErrorKind.ProtocolViolation, response.Slice(0, 8)), true);
         }
 
         private (ModbusResult<ReadOnlyMemory<byte>> Result, bool Retry) HandleRtuMaskWrite(
@@ -224,7 +225,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             {
                 logger.LogWarning(" [HandleRtuMaskWrite] Invalid data or response length.");
                 return (ModbusResult<ReadOnlyMemory<byte>>.Fail(
-                    " [HandleRtuMaskWrite] Invalid data or response length.", response), false);
+                    " [HandleRtuMaskWrite] Invalid data or response length.", ModbusErrorKind.ProtocolViolation, response), false);
             }
 
             var andMask = BinaryExtensions.ToUshort(data[1], data[0]);
@@ -236,7 +237,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             {
                 logger.LogWarning(" [HandleRtuMaskWrite] PDU verification failed.");
                 return (ModbusResult<ReadOnlyMemory<byte>>.Fail(
-                    " [HandleRtuMaskWrite] PDU verification failed.", response), true);
+                    " [HandleRtuMaskWrite] PDU verification failed.", ModbusErrorKind.ProtocolViolation, response), true);
             }
 
             if (Crc16Helper.VerifyCrc(candidate))
@@ -246,7 +247,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             }
 
             logger.LogWarning(" [HandleRtuMaskWrite] CRC verification failed. Skipping byte.");
-            return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleRtuMaskWrite] CRC verification failed.", response.Slice(0, 10)), true);
+            return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleRtuMaskWrite] CRC verification failed.", ModbusErrorKind.ProtocolViolation, response.Slice(0, 10)), true);
         }
 
         private (ModbusResult<ReadOnlyMemory<byte>> Result, bool Retry) HandleRtuWriteMulti(
@@ -257,7 +258,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             {
                 logger.LogWarning(" [HandleRtuWriteMulti] Response too short: {Actual} < 8.", span.Length);
                 return (ModbusResult<ReadOnlyMemory<byte>>.Fail(
-                    " [HandleRtuWriteMulti] Response too short.", response), false);
+                    " [HandleRtuWriteMulti] Response too short.", ModbusErrorKind.ProtocolViolation, response), false);
             }
 
             var candidate = span.Slice(0, 8);
@@ -265,7 +266,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             {
                 logger.LogWarning(" [HandleRtuWriteMulti] PDU verification failed.");
                 return (ModbusResult<ReadOnlyMemory<byte>>.Fail(
-                    " [HandleRtuWriteMulti] PDU verification failed.", response), true);
+                    " [HandleRtuWriteMulti] PDU verification failed.", ModbusErrorKind.ProtocolViolation, response), true);
             }
 
             if (Crc16Helper.VerifyCrc(candidate))
@@ -275,7 +276,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             }
 
             logger.LogWarning(" [HandleRtuWriteMulti] CRC verification failed. Skipping byte.");
-            return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleRtuWriteMulti] CRC verification failed.", response.Slice(0, 8)), true);
+            return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleRtuWriteMulti] CRC verification failed.", ModbusErrorKind.ProtocolViolation, response.Slice(0, 8)), true);
         }
 
         private (bool Handled, ModbusResult<ReadOnlyMemory<byte>> Result, bool Retry) TryHandleRtuCommonFunction(
@@ -298,19 +299,19 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             if (response.Length < expectedLength)
             {
                 return (true, ModbusResult<ReadOnlyMemory<byte>>.Fail(
-                    $" [RtuParser] Response too short. Expected {expectedLength}, actual {response.Length}.", response), false);
+                    $" [RtuParser] Response too short. Expected {expectedLength}, actual {response.Length}.", ModbusErrorKind.ProtocolViolation, response), false);
             }
 
             var candidate = response.Slice(0, expectedLength);
             if (Crc16Helper.VerifyCrc(candidate.Span))
                 return (true, ModbusResult<ReadOnlyMemory<byte>>.Success(candidate), false);
 
-            return (true, ModbusResult<ReadOnlyMemory<byte>>.Fail(" [RtuParser] CRC verification failed.", candidate), true);
+            return (true, ModbusResult<ReadOnlyMemory<byte>>.Fail(" [RtuParser] CRC verification failed.", ModbusErrorKind.ProtocolViolation, candidate), true);
         }
 
         private static (ModbusResult<ReadOnlyMemory<byte>> Result, bool Retry) DefaultUnmatched(ReadOnlySpan<byte> response)
         {
-            return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [DefaultUnmatched] Unknown function code.", response.ToArray()), false);
+            return (ModbusResult<ReadOnlyMemory<byte>>.Fail(" [DefaultUnmatched] Unknown function code.", ModbusErrorKind.ProtocolViolation, response.ToArray()), false);
         }
     }
 }

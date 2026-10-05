@@ -831,5 +831,50 @@ namespace Junevy.Communication.Modbus.Tests
             listener.Stop();
             await server;
         }
+
+        [Fact]
+        public void ModbusResult_Fail_DefaultsToUnspecifiedKind()
+        {
+            var result = ModbusResult<byte[]>.Fail("boom");
+            Assert.Equal(ModbusErrorKind.Unspecified, result.ErrorKind);
+        }
+
+        [Fact]
+        public void ModbusResult_Fail_CanCarryKind()
+        {
+            var result = ModbusResult<byte[]>.Fail("timeout", ModbusErrorKind.Timeout);
+            Assert.Equal(ModbusErrorKind.Timeout, result.ErrorKind);
+        }
+
+        [Fact]
+        public async Task TcpClient_ReadTimeout_IsClassifiedAsTimeout()
+        {
+            // 监听但不回复 → 客户端读超时
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            using var tcp = new ModbusTCP(new ModbusTCPConfig
+            {
+                Address = "127.0.0.1",
+                ReadTimeOut = 300,
+                WriteTimeOut = 300,
+                ConnectTimeout = 1000,
+                RetryCount = 0   // 单次尝试：否则重连失败后最终 ErrorKind 会变成 ConnectionClosed 而非 Timeout
+            });
+            tcp.Config.Port = port;
+            Assert.True(tcp.Connect());
+
+            var result = tcp.Request(new ModbusRequest
+            {
+                SlaveId = 1,
+                FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
+                Start = 0,
+                Length = 1
+            });
+            listener.Stop();
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(ModbusErrorKind.Timeout, result.ErrorKind);
+        }
     }
 }

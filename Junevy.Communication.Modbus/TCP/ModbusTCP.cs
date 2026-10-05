@@ -146,7 +146,7 @@ namespace Junevy.Communication.Modbus.TCP
             if (!ModbusHelper.CheckRequest(request))
             {
                 logger.LogWarning(" [Request] Invalid request: {@Request}.", request);
-                return ModbusResult<byte[]>.Fail(" [Request] Invalid request.");
+                return ModbusResult<byte[]>.Fail(" [Request] Invalid request.", ModbusErrorKind.InvalidRequest);
             }
 
             requestLock.Wait();
@@ -174,7 +174,7 @@ namespace Junevy.Communication.Modbus.TCP
             if (!ModbusHelper.CheckRequest(request))
             {
                 logger.LogWarning(" [RequestAsync] Invalid request: {@Request}.", request);
-                return ModbusResult<byte[]>.Fail(" [RequestAsync] Invalid request.");
+                return ModbusResult<byte[]>.Fail(" [RequestAsync] Invalid request.", ModbusErrorKind.InvalidRequest);
             }
 
             var lockTaken = false;
@@ -189,7 +189,7 @@ namespace Junevy.Communication.Modbus.TCP
             catch (OperationCanceledException)
             {
                 logger.LogWarning(" [RequestAsync] Request cancelled.");
-                return ModbusResult<byte[]>.Fail(" [RequestAsync] Request cancelled.");
+                return ModbusResult<byte[]>.Fail(" [RequestAsync] Request cancelled.", ModbusErrorKind.Cancelled);
             }
             catch (Exception ex) when (IsCommunicationException(ex))
             {
@@ -266,7 +266,7 @@ namespace Junevy.Communication.Modbus.TCP
             {
                 if (!EnsureConnected())
                 {
-                    lastResult = ModbusResult<byte[]>.Fail(" [Request] Not connected.");
+                    lastResult = ModbusResult<byte[]>.Fail(" [Request] Not connected.", ModbusErrorKind.ConnectionClosed);
                     if (attempt < attempts)
                     {
                         WaitBeforeRetry();
@@ -282,7 +282,7 @@ namespace Junevy.Communication.Modbus.TCP
                 {
                     if (!Send(request))
                     {
-                        lastResult = ModbusResult<byte[]>.Fail(" [Request] Send failed.");
+                        lastResult = ModbusResult<byte[]>.Fail(" [Request] Send failed.", ModbusErrorKind.ConnectionClosed);
                         MarkConnectionFaulted();
                     }
                     else
@@ -292,7 +292,7 @@ namespace Junevy.Communication.Modbus.TCP
                             return lastResult;
 
                         // Modbus exception responses are terminal answers — return immediately, no resend.
-                        if (!lastResult.IsSuccess && IsModbusExceptionFrame(lastResult.Data))
+                        if (!lastResult.IsSuccess && lastResult.ErrorKind == ModbusErrorKind.ModbusException)
                             return lastResult;
 
                         logger.LogWarning(" [Request] Attempt {Attempt}/{Attempts} failed: {Error}.", attempt, attempts, lastResult.ErrorMessage);
@@ -327,7 +327,7 @@ namespace Junevy.Communication.Modbus.TCP
 
                 if (!await EnsureConnectedAsync(cancellationToken))
                 {
-                    lastResult = ModbusResult<byte[]>.Fail(" [RequestAsync] Not connected.");
+                    lastResult = ModbusResult<byte[]>.Fail(" [RequestAsync] Not connected.", ModbusErrorKind.ConnectionClosed);
                     if (attempt < attempts)
                     {
                         await WaitBeforeRetryAsync(cancellationToken);
@@ -343,7 +343,7 @@ namespace Junevy.Communication.Modbus.TCP
                 {
                     if (!await SendAsync(request, cancellationToken))
                     {
-                        lastResult = ModbusResult<byte[]>.Fail(" [RequestAsync] Send failed.");
+                        lastResult = ModbusResult<byte[]>.Fail(" [RequestAsync] Send failed.", ModbusErrorKind.ConnectionClosed);
                         MarkConnectionFaulted();
                     }
                     else
@@ -353,7 +353,7 @@ namespace Junevy.Communication.Modbus.TCP
                             return lastResult;
 
                         // Modbus exception responses are terminal answers — return immediately, no resend.
-                        if (!lastResult.IsSuccess && IsModbusExceptionFrame(lastResult.Data))
+                        if (!lastResult.IsSuccess && lastResult.ErrorKind == ModbusErrorKind.ModbusException)
                             return lastResult;
 
                         logger.LogWarning(" [RequestAsync] Attempt {Attempt}/{Attempts} failed: {Error}.", attempt, attempts, lastResult.ErrorMessage);
@@ -398,7 +398,7 @@ namespace Junevy.Communication.Modbus.TCP
                 if (pduLength < 1 || pduLength > 254)
                 {
                     logger.LogError(" [Read] Invalid PDU length: {PduLength}.", pduLength);
-                    return ModbusResult<byte[]>.Fail($" [Read] Invalid PDU length: {pduLength}.");
+                    return ModbusResult<byte[]>.Fail($" [Read] Invalid PDU length: {pduLength}.", ModbusErrorKind.ProtocolViolation);
                 }
 
                 int totalLength = 6 + pduLength;
@@ -412,12 +412,12 @@ namespace Junevy.Communication.Modbus.TCP
                 var parsed = responseParser.ParseResponse(data, request);
                 return parsed.IsSuccess
                     ? ModbusResult<byte[]>.Success(parsed.Data.ToArray())
-                    : ModbusResult<byte[]>.Fail(parsed.ErrorMessage ?? " [Read] Parse error.", data.ToArray());
+                    : ModbusResult<byte[]>.Fail(parsed.ErrorMessage ?? " [Read] Parse error.", parsed.ErrorKind, data.ToArray());
             }
             catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
             {
                 logger.LogError(" [Read] Read timed out.");
-                return ModbusResult<byte[]>.Fail(" [Read] Read timeout.");
+                return ModbusResult<byte[]>.Fail(" [Read] Read timeout.", ModbusErrorKind.Timeout);
             }
             catch (Exception ex)
             {
@@ -449,7 +449,7 @@ namespace Junevy.Communication.Modbus.TCP
             {
                 int read = socket!.Receive(buffer, offset + totalRead, count - totalRead, SocketFlags.None);
                 if (read == 0)
-                    return ModbusResult<byte[]>.Fail(" [Read] Connection closed by remote.");
+                    return ModbusResult<byte[]>.Fail(" [Read] Connection closed by remote.", ModbusErrorKind.ConnectionClosed);
 
                 totalRead += read;
             }
@@ -571,20 +571,8 @@ namespace Junevy.Communication.Modbus.TCP
                 || ex is EndOfStreamException;
         }
 
-        // TODO(Task 4.1) — replace with ErrorKind.ModbusException once ModbusErrorKind exists.
-        private static bool IsModbusExceptionFrame(byte[]? data)
-            => data is { Length: >= 8 } && (data[7] & 0x80) != 0;
-
         private static bool ShouldReconnectAfterFailure(ModbusResult<byte[]> result)
-        {
-            if (result.IsSuccess || string.IsNullOrEmpty(result.ErrorMessage))
-                return false;
-
-            string message = result.ErrorMessage!;
-            return message.IndexOf("timeout", StringComparison.OrdinalIgnoreCase) >= 0
-                || message.IndexOf("closed", StringComparison.OrdinalIgnoreCase) >= 0
-                || message.IndexOf("not connected", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
+            => result.ErrorKind is ModbusErrorKind.Timeout or ModbusErrorKind.ConnectionClosed;
 
         private void ThrowIfDisposed()
         {

@@ -110,7 +110,7 @@ namespace Junevy.Communication.Modbus.Extensions
             ModbusResult<byte[]> result)
         {
             if (!result.IsSuccess || result.Data == null || result.Data.Length == 0)
-                return ModbusResult<byte[]>.Fail(result.ErrorMessage ?? "Request failed.", result.Data);
+                return ModbusResult<byte[]>.Fail(result.ErrorMessage ?? "Request failed.", result.ErrorKind, result.Data);
 
             byte[] pdu = ExtractPdu(result.Data, protocolType);
             if (pdu.Length >= 2 && (pdu[1] & 0x80) != 0)
@@ -118,7 +118,7 @@ namespace Junevy.Communication.Modbus.Extensions
                 string message = pdu.Length >= 3
                     ? $"Modbus exception response. Function=0x{pdu[1]:X2}, Code=0x{pdu[2]:X2}."
                     : $"Modbus exception response. Function=0x{pdu[1]:X2}.";
-                return ModbusResult<byte[]>.Fail(message, pdu);
+                return ModbusResult<byte[]>.Fail(message, ModbusErrorKind.ModbusException, pdu);
             }
 
             return ModbusResult<byte[]>.Success(pdu);

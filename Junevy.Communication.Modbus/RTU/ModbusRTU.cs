@@ -167,7 +167,7 @@ namespace Junevy.Communication.Modbus.RTU
             logger.LogInformation(" [Request] Executing request: {@Request}", request);
 
             if (!ModbusHelper.CheckRequest(request))
-                return ModbusResult<byte[]>.Fail(" [Request] Invalid request.", request.Data);
+                return ModbusResult<byte[]>.Fail(" [Request] Invalid request.", ModbusErrorKind.InvalidRequest, request.Data);
 
             requestLock.Wait();
             try
@@ -231,7 +231,7 @@ namespace Junevy.Communication.Modbus.RTU
             {
                 if (!EnsureConnected())
                 {
-                    lastResult = ModbusResult<byte[]>.Fail(" [Request] Port not open.");
+                    lastResult = ModbusResult<byte[]>.Fail(" [Request] Port not open.", ModbusErrorKind.ConnectionClosed);
                     if (attempt < attempts)
                     {
                         WaitBeforeRetry();
@@ -247,7 +247,7 @@ namespace Junevy.Communication.Modbus.RTU
                 {
                     if (!Send(request))
                     {
-                        lastResult = ModbusResult<byte[]>.Fail(" [Request] Send frame failed.");
+                        lastResult = ModbusResult<byte[]>.Fail(" [Request] Send frame failed.", ModbusErrorKind.ConnectionClosed);
                         MarkConnectionFaulted();
                     }
                     else
@@ -257,7 +257,7 @@ namespace Junevy.Communication.Modbus.RTU
                             return lastResult;
 
                         // Modbus exception responses are terminal answers — return immediately, no resend.
-                        if (!lastResult.IsSuccess && IsModbusExceptionFrame(lastResult.Data))
+                        if (!lastResult.IsSuccess && lastResult.ErrorKind == ModbusErrorKind.ModbusException)
                             return lastResult;
 
                         logger.LogWarning(" [Request] Attempt {Attempt}/{Attempts} failed: {Error}.", attempt, attempts, lastResult.ErrorMessage);
@@ -295,7 +295,7 @@ namespace Junevy.Communication.Modbus.RTU
                     catch (TimeoutException)
                     {
                         logger.LogError(" [Read] Read timeout: {Timeout}ms.", Config.ReadTimeOut);
-                        return ModbusResult<byte[]>.Fail($" [Read] Read slave timeout: ({Config.ReadTimeOut}ms).");
+                        return ModbusResult<byte[]>.Fail($" [Read] Read slave timeout: ({Config.ReadTimeOut}ms).", ModbusErrorKind.Timeout);
                     }
 
                     logger.LogDebug(" [Read] Bytes received: {Count}.", readCounts);
@@ -312,7 +312,7 @@ namespace Junevy.Communication.Modbus.RTU
                         if (parseResult.Data.Length <= 0)
                         {
                             logger.LogWarning(" [Read] Parsed frame has zero length.");
-                            return ModbusResult<byte[]>.Fail(" [Read] Parsed frame has zero length.");
+                            return ModbusResult<byte[]>.Fail(" [Read] Parsed frame has zero length.", ModbusErrorKind.ProtocolViolation);
                         }
                         logger.Rx("ModbusRTU", parseResult.Data.Span, stopwatch, ref lastTimestamp);
                         return ModbusResult<byte[]>.Success(parseResult.Data.ToArray());
@@ -321,8 +321,8 @@ namespace Junevy.Communication.Modbus.RTU
                     logger.Rx("ModbusRTU", parseResult.Data.Span, stopwatch, ref lastTimestamp);
 
                     // Exception responses are authoritative answers, not resync noise — surface them immediately.
-                    if (parseResult.Data.Length >= 2 && (parseResult.Data.Span[1] & 0x80) != 0)
-                        return ModbusResult<byte[]>.Fail(parseResult.ErrorMessage!, parseResult.Data.ToArray());
+                    if (parseResult.ErrorKind == ModbusErrorKind.ModbusException)
+                        return ModbusResult<byte[]>.Fail(parseResult.ErrorMessage!, parseResult.ErrorKind, parseResult.Data.ToArray());
 
                     logger.LogDebug(" [Read] Waiting {Interval}ms for next frame...", Config.IntervalTime);
                     Thread.Sleep(Config.IntervalTime);
@@ -352,7 +352,7 @@ namespace Junevy.Communication.Modbus.RTU
 
                 if (!await EnsureConnectedAsync(token))
                 {
-                    lastResult = ModbusResult<byte[]>.Fail(" [RequestAsync] Port not open.");
+                    lastResult = ModbusResult<byte[]>.Fail(" [RequestAsync] Port not open.", ModbusErrorKind.ConnectionClosed);
                     if (attempt < attempts)
                     {
                         await WaitBeforeRetryAsync(token);
@@ -368,7 +368,7 @@ namespace Junevy.Communication.Modbus.RTU
                 {
                     if (!await SendAsync(request, token))
                     {
-                        lastResult = ModbusResult<byte[]>.Fail(" [RequestAsync] Send frame failed.");
+                        lastResult = ModbusResult<byte[]>.Fail(" [RequestAsync] Send frame failed.", ModbusErrorKind.ConnectionClosed);
                         MarkConnectionFaulted();
                     }
                     else
@@ -378,7 +378,7 @@ namespace Junevy.Communication.Modbus.RTU
                             return lastResult;
 
                         // Modbus exception responses are terminal answers — return immediately, no resend.
-                        if (!lastResult.IsSuccess && IsModbusExceptionFrame(lastResult.Data))
+                        if (!lastResult.IsSuccess && lastResult.ErrorKind == ModbusErrorKind.ModbusException)
                             return lastResult;
 
                         logger.LogWarning(" [RequestAsync] Attempt {Attempt}/{Attempts} failed: {Error}.", attempt, attempts, lastResult.ErrorMessage);
@@ -403,7 +403,7 @@ namespace Junevy.Communication.Modbus.RTU
             logger.LogInformation(" [RequestAsync] Executing request: {@Request}", request);
 
             if (!ModbusHelper.CheckRequest(request))
-                return ModbusResult<byte[]>.Fail(" [RequestAsync] Invalid request.", request.Data);
+                return ModbusResult<byte[]>.Fail(" [RequestAsync] Invalid request.", ModbusErrorKind.InvalidRequest, request.Data);
 
             var lockTaken = false;
             try
@@ -415,7 +415,7 @@ namespace Junevy.Communication.Modbus.RTU
             catch (OperationCanceledException ex)
             {
                 logger.LogWarning(ex, " [RequestAsync] Request cancelled.");
-                return ModbusResult<byte[]>.Fail(" [RequestAsync] Request cancelled.");
+                return ModbusResult<byte[]>.Fail(" [RequestAsync] Request cancelled.", ModbusErrorKind.Cancelled);
             }
             catch (Exception ex) when (IsCommunicationException(ex))
             {
@@ -495,7 +495,7 @@ namespace Junevy.Communication.Modbus.RTU
                     catch (TimeoutException)
                     {
                         logger.LogError(" [ReadAsync] Read timeout: {Timeout}ms.", Config.ReadTimeOut);
-                        return ModbusResult<byte[]>.Fail($" [ReadAsync] Read slave timeout: ({Config.ReadTimeOut}ms).");
+                        return ModbusResult<byte[]>.Fail($" [ReadAsync] Read slave timeout: ({Config.ReadTimeOut}ms).", ModbusErrorKind.Timeout);
                     }
 
                     if (readCounts < 5) continue;
@@ -509,7 +509,7 @@ namespace Junevy.Communication.Modbus.RTU
                         if (parseResult.Data.Length <= 0)
                         {
                             logger.LogWarning(" [ReadAsync] Parsed frame has zero length.");
-                            return ModbusResult<byte[]>.Fail(" [ReadAsync] Parsed frame has zero length.");
+                            return ModbusResult<byte[]>.Fail(" [ReadAsync] Parsed frame has zero length.", ModbusErrorKind.ProtocolViolation);
                         }
 
                         logger.Rx("ModbusRTU", parseResult.Data.Span, stopwatch, ref lastTimestamp);
@@ -519,8 +519,8 @@ namespace Junevy.Communication.Modbus.RTU
                     logger.Rx("ModbusRTU", parseResult.Data.Span, stopwatch, ref lastTimestamp);
 
                     // Exception responses are authoritative answers, not resync noise — surface them immediately.
-                    if (parseResult.Data.Length >= 2 && (parseResult.Data.Span[1] & 0x80) != 0)
-                        return ModbusResult<byte[]>.Fail(parseResult.ErrorMessage!, parseResult.Data.ToArray());
+                    if (parseResult.ErrorKind == ModbusErrorKind.ModbusException)
+                        return ModbusResult<byte[]>.Fail(parseResult.ErrorMessage!, parseResult.ErrorKind, parseResult.Data.ToArray());
 
                     logger.LogDebug(" [ReadAsync] Waiting {Interval}ms for next frame...", Config.IntervalTime);
                     await Task.Delay(Config.IntervalTime, token);
@@ -646,9 +646,5 @@ namespace Junevy.Communication.Modbus.RTU
                 || ex is UnauthorizedAccessException
                 || ex is ObjectDisposedException;
         }
-
-        // TODO(Task 4.1) — replace with ErrorKind.ModbusException once ModbusErrorKind exists.
-        private static bool IsModbusExceptionFrame(byte[]? data)
-            => data is { Length: >= 2 } && (data[1] & 0x80) != 0;
     }
 }
