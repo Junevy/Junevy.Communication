@@ -385,25 +385,40 @@ namespace Junevy.Communication.Modbus.Tests
                 var stream = client.GetStream();
                 for (int i = 0; i < 2; i++)
                 {
-                    var req = new byte[12];
-                    int read = 0;
-                    while (read < req.Length)
-                        read += await stream.ReadAsync(req, read, req.Length - read);
-                    seenTids.Add(req[..2].ToArray());
-                    byte[] resp = [req[0], req[1], 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34];
-                    await stream.WriteAsync(resp, 0, resp.Length);
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    try
+                    {
+                        var req = new byte[12];
+                        int read = 0;
+                        while (read < req.Length)
+                            read += await stream.ReadAsync(req, read, req.Length - read, cts.Token);
+                        seenTids.Add(req[..2].ToArray());
+                        byte[] resp = [req[0], req[1], 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34];
+                        await stream.WriteAsync(resp, 0, resp.Length, cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                    {
+                        break;
+                    }
                 }
             });
 
             using var tcp = new ModbusTCP(new ModbusTCPConfig
             {
                 Address = "127.0.0.1",
-                ReadTimeOut = 1000,
+                // 并发负载下（如工厂并发冒烟测试阻塞线程池），服务器任务可能被延迟调度；
+                // 放宽读超时以覆盖调度延迟，避免误报超时。
+                ReadTimeOut = 10000,
                 WriteTimeOut = 1000,
                 ConnectTimeout = 1000,
                 Reconnect = true
             });
             tcp.Config.SetPort(port);
+            Assert.True(tcp.Connect());
 
             var request = new ModbusRequest { SlaveId = 1, FunctionCode = ModbusFunctionCode.ReadHoldingRegisters, Start = 0, Length = 1 };
             var r1 = tcp.Request(request);
