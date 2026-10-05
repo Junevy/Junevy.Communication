@@ -46,8 +46,8 @@ using var modbus = new ModbusTcpClient(new ModbusTcpClientConfig
     Address = "192.168.1.100",
     Port = 502,
     ConnectTimeout = 2000,
-    ReadTimeOut = 2000,
-    WriteTimeOut = 2000
+    ReadTimeout = 2000,
+    WriteTimeout = 2000
 });
 
 if (!modbus.Connect())
@@ -78,8 +78,8 @@ using var modbus = new ModbusRtuClient(new ModbusRtuClientConfig
     Parity = Parity.None,
     DataBits = 8,
     StopBits = StopBits.One,
-    ReadTimeOut = 2000,
-    WriteTimeOut = 2000
+    ReadTimeout = 2000,
+    WriteTimeout = 2000
 });
 
 modbus.Connect();
@@ -162,8 +162,8 @@ var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
     RetryCount = 3,
     RetryInterval = 200,
     ConnectTimeout = 2000,
-    ReadTimeOut = 2000,
-    WriteTimeOut = 2000
+    ReadTimeout = 2000,
+    WriteTimeout = 2000
 });
 
 var rtu = new ModbusRtuClient(new ModbusRtuClientConfig

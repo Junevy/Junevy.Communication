@@ -1,4 +1,4 @@
-﻿namespace Junevy.Communication.Modbus.Core.Interfaces
+namespace Junevy.Communication.Modbus.Core.Interfaces
 {
     /// <summary>
     /// Common configuration interface shared by Modbus TCP and RTU configs.
@@ -8,12 +8,12 @@
         /// <summary>
         /// Read timeout in milliseconds.
         /// </summary>
-        int ReadTimeOut { get; set; }
+        int ReadTimeout { get; set; }
 
         /// <summary>
         /// Write timeout in milliseconds.
         /// </summary>
-        int WriteTimeOut { get; set; }
+        int WriteTimeout { get; set; }
 
         /// <summary>
         /// Number of retry attempts on communication failure.

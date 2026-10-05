@@ -24,12 +24,12 @@ namespace Junevy.Communication.Modbus.Tcp
         /// <summary>
         /// Write timeout in milliseconds.
         /// </summary>
-        public int WriteTimeOut { get; set; } = 2000;
+        public int WriteTimeout { get; set; } = 2000;
 
         /// <summary>
         /// Read timeout in milliseconds.
         /// </summary>
-        public int ReadTimeOut { get; set; } = 2000;
+        public int ReadTimeout { get; set; } = 2000;
 
         /// <summary>
         /// Number of retry attempts.

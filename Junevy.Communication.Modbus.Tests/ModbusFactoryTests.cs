@@ -94,12 +94,12 @@ namespace Junevy.Communication.Modbus.Tests
         public void TryAdd_FillsDefaultValues()
         {
             var factory = new ModbusFactory();
-            var config = new ModbusTcpClientConfig { ReadTimeOut = 0, WriteTimeOut = 0, ConnectTimeout = 0 };
+            var config = new ModbusTcpClientConfig { ReadTimeout = 0, WriteTimeout = 0, ConnectTimeout = 0 };
             factory.TryAdd("key", config, out var modbus);
 
             Assert.NotNull(modbus);
-            Assert.Equal(2000, config.ReadTimeOut);
-            Assert.Equal(2000, config.WriteTimeOut);
+            Assert.Equal(2000, config.ReadTimeout);
+            Assert.Equal(2000, config.WriteTimeout);
             Assert.Equal(2000, config.ConnectTimeout);
         }
 

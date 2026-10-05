@@ -430,8 +430,8 @@ namespace Junevy.Communication.Modbus.Tcp
             stream = null;
             socket?.Dispose();
             socket = CreateSocket();
-            socket.ReceiveTimeout = Config.ReadTimeOut;
-            socket.SendTimeout = Config.WriteTimeOut;
+            socket.ReceiveTimeout = Config.ReadTimeout;
+            socket.SendTimeout = Config.WriteTimeout;
             socket.NoDelay = true;
             socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
         }

@@ -27,14 +27,14 @@ namespace Junevy.Communication.Modbus.Core.Models
         public ModbusFunctionCode FunctionCode { get; set; } = ModbusFunctionCode.WriteMultipleHoldingRegisters;
 
         /// <summary>
-        /// 起始地址
+        /// 起始地址（协议级零基地址）。
         /// </summary>
-        public ushort Start { get; set; } = 0x00;
+        public ushort StartAddress { get; set; } = 0x00;
 
         /// <summary>
-        /// 数据长度
+        /// 数量：读/写线圈时为位数，读/写寄存器时为寄存器数（0x08/0x11 等无数量的功能码忽略）。
         /// </summary>
-        public ushort Length { get; set; } = 0x03;
+        public ushort Quantity { get; set; } = 0x03;
 
         /// <summary>
         /// 请求数据，含义随 <see cref="FunctionCode"/> 变化：

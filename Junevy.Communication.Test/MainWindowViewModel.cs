@@ -135,7 +135,7 @@ namespace Junevy.Communication.Test
                 DataList.Add(new ModbusData() { Address = i });
             }
 
-            Tx.Length = newValue;
+            Tx.Quantity = newValue;
         }
 
     }

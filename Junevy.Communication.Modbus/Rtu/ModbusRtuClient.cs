@@ -95,8 +95,8 @@ namespace Junevy.Communication.Modbus.Rtu
                 serialPort.DtrEnable = Config.DtrEnable;
                 serialPort.RtsEnable = Config.RtsEnable;
 
-                serialPort.ReadTimeout = Config.ReadTimeOut;
-                serialPort.WriteTimeout = Config.WriteTimeOut;
+                serialPort.ReadTimeout = Config.ReadTimeout;
+                serialPort.WriteTimeout = Config.WriteTimeout;
             }
             catch (Exception ex)
             {
@@ -226,7 +226,7 @@ namespace Junevy.Communication.Modbus.Rtu
             }
             catch (TimeoutException)
             {
-                Logger.LogError(" [Send] Write timeout: {Timeout}ms.", Config.WriteTimeOut);
+                Logger.LogError(" [Send] Write timeout: {Timeout}ms.", Config.WriteTimeout);
                 return false;
             }
             catch (Exception ex)
@@ -265,7 +265,7 @@ namespace Junevy.Communication.Modbus.Rtu
             }
             catch (TimeoutException)
             {
-                Logger.LogError(" [SendAsync] Write timeout: {Timeout}ms.", Config.WriteTimeOut);
+                Logger.LogError(" [SendAsync] Write timeout: {Timeout}ms.", Config.WriteTimeout);
                 return false;
             }
             catch (OperationCanceledException)
@@ -297,8 +297,8 @@ namespace Junevy.Communication.Modbus.Rtu
                     }
                     catch (TimeoutException)
                     {
-                        Logger.LogError(" [Read] Read timeout: {Timeout}ms.", Config.ReadTimeOut);
-                        return ModbusResult<byte[]>.Fail($" [Read] Read slave timeout: ({Config.ReadTimeOut}ms).", ModbusErrorKind.Timeout);
+                        Logger.LogError(" [Read] Read timeout: {Timeout}ms.", Config.ReadTimeout);
+                        return ModbusResult<byte[]>.Fail($" [Read] Read slave timeout: ({Config.ReadTimeout}ms).", ModbusErrorKind.Timeout);
                     }
 
                     Logger.LogDebug(" [Read] Bytes received: {Count}.", readCounts);
@@ -327,8 +327,8 @@ namespace Junevy.Communication.Modbus.Rtu
                     if (parseResult.ErrorKind == ModbusErrorKind.ModbusException)
                         return ModbusResult<byte[]>.Fail(parseResult.ErrorMessage!, parseResult.ErrorKind, parseResult.Data.ToArray());
 
-                    Logger.LogDebug(" [Read] Waiting {Interval}ms for next frame...", Config.IntervalTime);
-                    Thread.Sleep(Config.IntervalTime);
+                    Logger.LogDebug(" [Read] Waiting {Interval}ms for next frame...", Config.FrameReadInterval);
+                    Thread.Sleep(Config.FrameReadInterval);
                 }
             }
             catch (Exception ex)
@@ -347,7 +347,7 @@ namespace Junevy.Communication.Modbus.Rtu
             var pool = System.Buffers.ArrayPool<byte>.Shared.Rent(ModbusFrameBuilder.MaxRtuAduLength + 1);
             int readCounts = 0;
             var readTimeoutToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            readTimeoutToken.CancelAfter(Config.ReadTimeOut);
+            readTimeoutToken.CancelAfter(Config.ReadTimeout);
 
             try
             {
@@ -362,8 +362,8 @@ namespace Junevy.Communication.Modbus.Rtu
                     }
                     catch (TimeoutException)
                     {
-                        Logger.LogError(" [ReadAsync] Read timeout: {Timeout}ms.", Config.ReadTimeOut);
-                        return ModbusResult<byte[]>.Fail($" [ReadAsync] Read slave timeout: ({Config.ReadTimeOut}ms).", ModbusErrorKind.Timeout);
+                        Logger.LogError(" [ReadAsync] Read timeout: {Timeout}ms.", Config.ReadTimeout);
+                        return ModbusResult<byte[]>.Fail($" [ReadAsync] Read slave timeout: ({Config.ReadTimeout}ms).", ModbusErrorKind.Timeout);
                     }
 
                     if (readCounts < 5) continue;
@@ -390,15 +390,15 @@ namespace Junevy.Communication.Modbus.Rtu
                     if (parseResult.ErrorKind == ModbusErrorKind.ModbusException)
                         return ModbusResult<byte[]>.Fail(parseResult.ErrorMessage!, parseResult.ErrorKind, parseResult.Data.ToArray());
 
-                    Logger.LogDebug(" [ReadAsync] Waiting {Interval}ms for next frame...", Config.IntervalTime);
-                    await Task.Delay(Config.IntervalTime, cancellationToken);
+                    Logger.LogDebug(" [ReadAsync] Waiting {Interval}ms for next frame...", Config.FrameReadInterval);
+                    await Task.Delay(Config.FrameReadInterval, cancellationToken);
                 }
             }
             catch (OperationCanceledException ex) when (readTimeoutToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
                 // 读超时 CTS 触发（区别于用户取消）：BaseStream.ReadAsync 以 OCE 中断
-                Logger.LogError(" [ReadAsync] Read timeout: {Timeout}ms.", Config.ReadTimeOut);
-                return ModbusResult<byte[]>.Fail($" [ReadAsync] Read slave timeout: ({Config.ReadTimeOut}ms).", ModbusErrorKind.Timeout);
+                Logger.LogError(" [ReadAsync] Read timeout: {Timeout}ms.", Config.ReadTimeout);
+                return ModbusResult<byte[]>.Fail($" [ReadAsync] Read slave timeout: ({Config.ReadTimeout}ms).", ModbusErrorKind.Timeout);
             }
             catch (OperationCanceledException ex)
             {

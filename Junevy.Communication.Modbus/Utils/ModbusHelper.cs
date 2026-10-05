@@ -1,4 +1,4 @@
-﻿using Junevy.Communication.Modbus.Core.Interfaces;
+using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Framing;
 using Junevy.Communication.Modbus.Core.Models;
 using Junevy.Communication.Modbus.Extensions;
@@ -21,11 +21,11 @@ namespace Junevy.Communication.Modbus.Utils
             {
                 ModbusFunctionCode.ReadCoils
                     or ModbusFunctionCode.ReadDiscreteInputs =>
-                    request.Length is >= 1 and <= 2000,
+                    request.Quantity is >= 1 and <= 2000,
 
                 ModbusFunctionCode.ReadHoldingRegisters
                     or ModbusFunctionCode.ReadInputRegisters =>
-                    request.Length is >= 1 and <= 125,
+                    request.Quantity is >= 1 and <= 125,
 
                 ModbusFunctionCode.WriteCoil
                     or ModbusFunctionCode.WriteHoldingRegister =>
@@ -41,14 +41,14 @@ namespace Junevy.Communication.Modbus.Utils
                     request.Data is not null && request.Data.Length >= 3 && request.Data.Length <= 252,
 
                 ModbusFunctionCode.WriteMultipleCoils =>
-                    request.Length is >= 1 and <= 1968
+                    request.Quantity is >= 1 and <= 1968
                     && request.Data is not null
-                    && request.Data.Length == (request.Length + 7) / 8,
+                    && request.Data.Length == (request.Quantity + 7) / 8,
 
                 ModbusFunctionCode.WriteMultipleHoldingRegisters =>
-                    request.Length is >= 1 and <= 123
+                    request.Quantity is >= 1 and <= 123
                     && request.Data is not null
-                    && request.Data.Length == request.Length * 2,
+                    && request.Data.Length == request.Quantity * 2,
 
                 ModbusFunctionCode.MaskWriteRegister =>
                     request.Data is { Length: 4 },

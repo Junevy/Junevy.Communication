@@ -1,4 +1,4 @@
-﻿using Junevy.Communication.Modbus.Core.Interfaces;
+using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
 using Junevy.Communication.Modbus.Utils;
 
@@ -74,8 +74,8 @@ namespace Junevy.Communication.Modbus.Extensions
             {
                 SlaveId = slaveId,
                 FunctionCode = functionCode,
-                Start = start,
-                Length = length,
+                StartAddress = start,
+                Quantity = length,
                 Data = data
             };
 
@@ -96,8 +96,8 @@ namespace Junevy.Communication.Modbus.Extensions
             {
                 SlaveId = slaveId,
                 FunctionCode = functionCode,
-                Start = start,
-                Length = length,
+                StartAddress = start,
+                Quantity = length,
                 Data = data
             };
 

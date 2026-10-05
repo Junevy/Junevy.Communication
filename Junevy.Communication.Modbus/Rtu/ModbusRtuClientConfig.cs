@@ -48,12 +48,12 @@ namespace Junevy.Communication.Modbus.Rtu
         /// <summary>
         /// Write timeout in milliseconds.
         /// </summary>
-        public int WriteTimeOut { get; set; } = 2000;
+        public int WriteTimeout { get; set; } = 2000;
 
         /// <summary>
         /// Read timeout in milliseconds.
         /// </summary>
-        public int ReadTimeOut { get; set; } = 2000;
+        public int ReadTimeout { get; set; } = 2000;
 
         /// <summary>
         /// Number of retry attempts.
@@ -68,6 +68,6 @@ namespace Junevy.Communication.Modbus.Rtu
         /// <summary>
         /// Interval in milliseconds to wait between partial frame reads.
         /// </summary>
-        public int IntervalTime { get; set; } = 30;
+        public int FrameReadInterval { get; set; } = 30;
     }
 }

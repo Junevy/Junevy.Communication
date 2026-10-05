@@ -20,7 +20,7 @@ namespace Junevy.Communication.Modbus.Tests
                 ProtocolType = ModbusProtocolType.RTU,
                 SlaveId = 1,
                 FunctionCode = ModbusFunctionCode.MaskWriteRegister,
-                Start = 0x1234,
+                StartAddress = 0x1234,
                 Data = [0xFF, 0x00, 0x00, 0xF0]
             };
 
@@ -66,8 +66,8 @@ namespace Junevy.Communication.Modbus.Tests
                 TransactionId = 0,
                 SlaveId = 2,
                 FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
-                Start = 0x0010,
-                Length = 2
+                StartAddress = 0x0010,
+                Quantity = 2
             };
             var builder = new ModbusFrameBuilder();
             Span<byte> destination = stackalloc byte[ModbusFrameBuilder.MaxTcpAduLength];
@@ -87,8 +87,8 @@ namespace Junevy.Communication.Modbus.Tests
                 ProtocolType = ModbusProtocolType.RTU,   // 故意设错
                 SlaveId = 2,
                 FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
-                Start = 0x0010,
-                Length = 2
+                StartAddress = 0x0010,
+                Quantity = 2
             };
             var builder = new ModbusFrameBuilder();
             Span<byte> destination = stackalloc byte[ModbusFrameBuilder.MaxTcpAduLength];
@@ -130,8 +130,8 @@ namespace Junevy.Communication.Modbus.Tests
             {
                 SlaveId = 1,
                 FunctionCode = ModbusFunctionCode.WriteMultipleHoldingRegisters,
-                Start = 0x0010,
-                Length = 2,
+                StartAddress = 0x0010,
+                Quantity = 2,
                 Data = [0x00, 0x01, 0x00, 0x02]
             };
 
@@ -149,8 +149,8 @@ namespace Junevy.Communication.Modbus.Tests
             {
                 SlaveId = 1,
                 FunctionCode = ModbusFunctionCode.WriteMultipleHoldingRegisters,
-                Start = 0x0010,
-                Length = 2,
+                StartAddress = 0x0010,
+                Quantity = 2,
                 Data = [0x00, 0x01, 0x00, 0x02]
             };
             byte[] response = [0x01, 0x10, 0x00, 0x10, 0x00, 0x02, 0x00, 0x00];
@@ -168,8 +168,8 @@ namespace Junevy.Communication.Modbus.Tests
             {
                 SlaveId = 1,
                 FunctionCode = ModbusFunctionCode.WriteMultipleHoldingRegisters,
-                Start = 0x0010,
-                Length = 2,
+                StartAddress = 0x0010,
+                Quantity = 2,
                 Data = [0x00, 0x01, 0x00, 0x02]
             };
             byte[] response = [0x01, 0x10, 0x00, 0x10, 0x00, 0x02, 0x00, 0x00];
@@ -212,8 +212,8 @@ namespace Junevy.Communication.Modbus.Tests
                 TransactionId = 0,
                 SlaveId = 1,
                 FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
-                Start = 0,
-                Length = 1
+                StartAddress = 0,
+                Quantity = 1
             };
             byte[] response = [0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x02, 0x03, 0x02, 0x12, 0x34];
 
@@ -231,8 +231,8 @@ namespace Junevy.Communication.Modbus.Tests
                 TransactionId = 0,
                 SlaveId = 1,
                 FunctionCode = ModbusFunctionCode.WriteMultipleHoldingRegisters,
-                Start = 0x0010,
-                Length = 2,
+                StartAddress = 0x0010,
+                Quantity = 2,
                 Data = [0x00, 0x01, 0x00, 0x02]
             };
             byte[] response = [0x00, 0x01, 0x00, 0x00, 0x00, 0x03, 0x01, 0x10, 0x00];
@@ -250,8 +250,8 @@ namespace Junevy.Communication.Modbus.Tests
                 TransactionId = 0,
                 SlaveId = 1,
                 FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
-                Start = 0,
-                Length = 1
+                StartAddress = 0,
+                Quantity = 1
             };
             byte[] response = [0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x01, 0x83, 0x02];
 
@@ -339,8 +339,8 @@ namespace Junevy.Communication.Modbus.Tests
             var request = new ModbusRequest
             {
                 FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
-                Start = 0,
-                Length = 1
+                StartAddress = 0,
+                Quantity = 1
             };
 
             Assert.True(ModbusHelper.CheckRequest(request));
@@ -410,8 +410,8 @@ namespace Junevy.Communication.Modbus.Tests
                 Address = IPAddress.Loopback.ToString(),
                 // 并发负载下（如工厂并发冒烟测试阻塞线程池），服务器任务可能被延迟调度；
                 // 放宽读超时以覆盖调度延迟，避免误报超时。
-                ReadTimeOut = 10000,
-                WriteTimeOut = 1000,
+                ReadTimeout = 10000,
+                WriteTimeout = 1000,
                 ConnectTimeout = 1000,
                 Reconnect = true,
                 RetryCount = 3,
@@ -423,8 +423,8 @@ namespace Junevy.Communication.Modbus.Tests
             {
                 SlaveId = 1,
                 FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
-                Start = 0,
-                Length = 1
+                StartAddress = 0,
+                Quantity = 1
             });
 
             listener.Stop();
@@ -443,8 +443,8 @@ namespace Junevy.Communication.Modbus.Tests
                 TransactionId = 7,
                 SlaveId = 1,
                 FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
-                Start = 0,
-                Length = 1
+                StartAddress = 0,
+                Quantity = 1
             };
             // 旧约定下 (7+1) 会通过；精确匹配下必须失败
             byte[] response = [0x00, 0x08, 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34];
@@ -526,8 +526,8 @@ namespace Junevy.Communication.Modbus.Tests
                 Address = "127.0.0.1",
                 // 并发负载下（如工厂并发冒烟测试阻塞线程池），服务器任务可能被延迟调度；
                 // 放宽读超时以覆盖调度延迟，避免误报超时。
-                ReadTimeOut = 10000,
-                WriteTimeOut = 1000,
+                ReadTimeout = 10000,
+                WriteTimeout = 1000,
                 // 并发负载下（如工厂并发冒烟测试阻塞线程池），连接等待同样可能超支 1s 预算，放宽以覆盖调度延迟。
                 ConnectTimeout = 10000,
                 Reconnect = true
@@ -536,7 +536,7 @@ namespace Junevy.Communication.Modbus.Tests
                 tcp.Config.Port = port;
                 Assert.True(tcp.Connect());
 
-                var request = new ModbusRequest { SlaveId = 1, FunctionCode = ModbusFunctionCode.ReadHoldingRegisters, Start = 0, Length = 1 };
+                var request = new ModbusRequest { SlaveId = 1, FunctionCode = ModbusFunctionCode.ReadHoldingRegisters, StartAddress = 0, Quantity = 1 };
                 r1 = tcp.Request(request);
                 r2 = tcp.Request(request);
             }
@@ -625,8 +625,8 @@ namespace Junevy.Communication.Modbus.Tests
             using var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = "127.0.0.1",
-                ReadTimeOut = 1000,
-                WriteTimeOut = 1000,
+                ReadTimeout = 1000,
+                WriteTimeout = 1000,
                 // 并发负载下（如工厂并发冒烟测试阻塞线程池），连接等待同样可能超支 1s 预算，放宽以覆盖调度延迟。
                 ConnectTimeout = 10000,
                 Reconnect = true,
@@ -640,8 +640,8 @@ namespace Junevy.Communication.Modbus.Tests
             {
                 SlaveId = 1,
                 FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
-                Start = 0,
-                Length = 1
+                StartAddress = 0,
+                Quantity = 1
             });
 
             listener.Stop();
@@ -717,8 +717,8 @@ namespace Junevy.Communication.Modbus.Tests
             using var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = "127.0.0.1",
-                ReadTimeOut = 1000,
-                WriteTimeOut = 1000,
+                ReadTimeout = 1000,
+                WriteTimeout = 1000,
                 ConnectTimeout = 1000,
                 Reconnect = true,
                 RetryCount = 0   // 单次尝试，保证最终错误消息就是"PDU length"而不是后续超时
@@ -733,8 +733,8 @@ namespace Junevy.Communication.Modbus.Tests
                 {
                     SlaveId = 1,
                     FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
-                    Start = 0,
-                    Length = 1
+                    StartAddress = 0,
+                    Quantity = 1
                 });
                 return Task.CompletedTask;
             });
@@ -799,8 +799,8 @@ namespace Junevy.Communication.Modbus.Tests
             using (var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = "127.0.0.1",
-                ReadTimeOut = 200,
-                WriteTimeOut = 200,
+                ReadTimeout = 200,
+                WriteTimeout = 200,
                 ConnectTimeout = 500
             }))
             {
@@ -819,8 +819,8 @@ namespace Junevy.Communication.Modbus.Tests
                         {
                             SlaveId = 1,
                             FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
-                            Start = 0,
-                            Length = 1
+                            StartAddress = 0,
+                            Quantity = 1
                         });
                     });
                     // 修复前：ResetSocket 可能在发送/读取中销毁 socket，抛出未归类的异常
@@ -869,10 +869,10 @@ namespace Junevy.Communication.Modbus.Tests
             using var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = "127.0.0.1",
-                ReadTimeOut = 300,
-                WriteTimeOut = 300,
+                ReadTimeout = 300,
+                WriteTimeout = 300,
                 // 并发负载下（如工厂并发冒烟测试阻塞线程池），连接等待可能超支 1s 预算，
-                // 放宽以覆盖调度延迟（与其他 TCP 测试一致）；超时分类仍由 ReadTimeOut=300 决定。
+                // 放宽以覆盖调度延迟（与其他 TCP 测试一致）；超时分类仍由 ReadTimeout=300 决定。
                 ConnectTimeout = 10000,
                 RetryCount = 0   // 单次尝试：否则重连失败后最终 ErrorKind 会变成 ConnectionClosed 而非 Timeout
             });
@@ -883,8 +883,8 @@ namespace Junevy.Communication.Modbus.Tests
             {
                 SlaveId = 1,
                 FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
-                Start = 0,
-                Length = 1
+                StartAddress = 0,
+                Quantity = 1
             });
             listener.Stop();
 
@@ -938,8 +938,8 @@ namespace Junevy.Communication.Modbus.Tests
             using var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = "127.0.0.1",
-                ReadTimeOut = 1000,          // 首次超时由服务器"第 1 个请求不应答"保证，不依赖短预算；1s 给响应留足负载余量
-                WriteTimeOut = 1000,
+                ReadTimeout = 1000,          // 首次超时由服务器"第 1 个请求不应答"保证，不依赖短预算；1s 给响应留足负载余量
+                WriteTimeout = 1000,
                 ConnectTimeout = 10000,      // 并行负载下 1s 会误报（与同文件既有测试一致）
                 Reconnect = true,
                 RetryCount = 2,
@@ -951,8 +951,8 @@ namespace Junevy.Communication.Modbus.Tests
             {
                 SlaveId = 1,
                 FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
-                Start = 0,
-                Length = 1
+                StartAddress = 0,
+                Quantity = 1
             });
             listener.Stop();
             try { await server.WaitAsync(TimeSpan.FromSeconds(15)); }
@@ -988,8 +988,8 @@ namespace Junevy.Communication.Modbus.Tests
             using var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
             {
                 Address = "127.0.0.1",
-                ReadTimeOut = 30_000,        // 故意大于取消时间
-                WriteTimeOut = 30_000,
+                ReadTimeout = 30_000,        // 故意大于取消时间
+                WriteTimeout = 30_000,
                 ConnectTimeout = 10000,      // 并行负载下 1s 会误报（与同文件既有测试一致）
                 RetryCount = 0
             });
@@ -1002,8 +1002,8 @@ namespace Junevy.Communication.Modbus.Tests
             {
                 SlaveId = 1,
                 FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
-                Start = 0,
-                Length = 1
+                StartAddress = 0,
+                Quantity = 1
             }, cts.Token);
             sw.Stop();
             listener.Stop();

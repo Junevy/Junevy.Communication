@@ -1,4 +1,4 @@
-﻿using Junevy.Communication.Modbus.Core.Interfaces;
+using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
 using Junevy.Communication.Modbus.Utils;
 using System.Buffers.Binary;
@@ -139,14 +139,14 @@ namespace Junevy.Communication.Modbus.Core.Framing
                 case ModbusFunctionCode.ReadDiscreteInputs:
                 case ModbusFunctionCode.ReadHoldingRegisters:
                 case ModbusFunctionCode.ReadInputRegisters:
-                    BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(2, 2), request.Start);
-                    BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(4, 2), request.Length);
+                    BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(2, 2), request.StartAddress);
+                    BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(4, 2), request.Quantity);
                     bytesWritten = 6;
                     return true;
 
                 case ModbusFunctionCode.WriteCoil:
                 case ModbusFunctionCode.WriteHoldingRegister:
-                    BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(2, 2), request.Start);
+                    BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(2, 2), request.StartAddress);
                     request.Data!.AsSpan(0, 2).CopyTo(destination.Slice(4));
                     bytesWritten = 6;
                     return true;
@@ -167,15 +167,15 @@ namespace Junevy.Communication.Modbus.Core.Framing
                 case ModbusFunctionCode.WriteMultipleCoils:
                 case ModbusFunctionCode.WriteMultipleHoldingRegisters:
                     var multiWriteData = request.Data!;
-                    BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(2, 2), request.Start);
-                    BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(4, 2), request.Length);
+                    BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(2, 2), request.StartAddress);
+                    BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(4, 2), request.Quantity);
                     destination[6] = GetWriteByteCount(request);
                     multiWriteData.CopyTo(destination.Slice(7));
                     bytesWritten = 7 + multiWriteData.Length;
                     return true;
 
                 case ModbusFunctionCode.MaskWriteRegister:
-                    BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(2, 2), request.Start);
+                    BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(2, 2), request.StartAddress);
                     request.Data!.AsSpan(0, 4).CopyTo(destination.Slice(4));
                     bytesWritten = 8;
                     return true;
@@ -194,8 +194,8 @@ namespace Junevy.Communication.Modbus.Core.Framing
         private static byte GetWriteByteCount(ModbusRequest request)
         {
             return request.FunctionCode == ModbusFunctionCode.WriteMultipleCoils
-                ? (byte)((request.Length + 7) / 8)
-                : (byte)(request.Length * 2);
+                ? (byte)((request.Quantity + 7) / 8)
+                : (byte)(request.Quantity * 2);
         }
     }
 }

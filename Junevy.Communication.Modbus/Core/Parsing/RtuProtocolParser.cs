@@ -92,7 +92,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
                 // 0x16 Mask Write Register — special handling (response is an echo with 4 data bytes)
                 if (request.FunctionCode == ModbusFunctionCode.MaskWriteRegister)
                 {
-                    var maskResult = HandleRtuMaskWrite(remainingMemory, request.Start, data);
+                    var maskResult = HandleRtuMaskWrite(remainingMemory, request.StartAddress, data);
                     if (maskResult.Retry)
                     {
                         offset++;
@@ -104,13 +104,13 @@ namespace Junevy.Communication.Modbus.Core.Parsing
                 var (payloadResult, retry) = category switch
                 {
                     ModbusPduVerifier.FunctionCodeCategory.Read =>
-                        HandleRtuRead(remainingMemory, request.FunctionCode, request.Length),
+                        HandleRtuRead(remainingMemory, request.FunctionCode, request.Quantity),
 
                     ModbusPduVerifier.FunctionCodeCategory.WriteSingle =>
-                        HandleRtuWriteSingle(remainingMemory, request.Start, data),
+                        HandleRtuWriteSingle(remainingMemory, request.StartAddress, data),
 
                     ModbusPduVerifier.FunctionCodeCategory.WriteMulti =>
-                        HandleRtuWriteMulti(remainingMemory, request.Start, request.Length),
+                        HandleRtuWriteMulti(remainingMemory, request.StartAddress, request.Quantity),
 
                     _ => DefaultUnmatched(remaining)
                 };

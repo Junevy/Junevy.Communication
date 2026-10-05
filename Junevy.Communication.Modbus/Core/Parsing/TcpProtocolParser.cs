@@ -103,7 +103,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
 
             // 0x16 Mask Write Register — special handling (response is an echo with 4 data bytes)
             if (request.FunctionCode == ModbusFunctionCode.MaskWriteRegister)
-                return HandleTcpMaskWrite(response.Slice(0, totalLength), request.Start, data);
+                return HandleTcpMaskWrite(response.Slice(0, totalLength), request.StartAddress, data);
 
             var commonResult = TryHandleTcpCommonFunction(response.Slice(0, totalLength), request);
             if (commonResult.Handled)
@@ -112,13 +112,13 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             return verifier.CategorizeFunctionCode(request.FunctionCode) switch
             {
                 ModbusPduVerifier.FunctionCodeCategory.Read =>
-                    HandleTcpRead(response.Slice(0, totalLength), request.FunctionCode, request.Length),
+                    HandleTcpRead(response.Slice(0, totalLength), request.FunctionCode, request.Quantity),
 
                 ModbusPduVerifier.FunctionCodeCategory.WriteSingle =>
-                    HandleTcpWriteSingle(response.Slice(0, totalLength), request.Start, data),
+                    HandleTcpWriteSingle(response.Slice(0, totalLength), request.StartAddress, data),
 
                 ModbusPduVerifier.FunctionCodeCategory.WriteMulti =>
-                    HandleTcpWriteMulti(response.Slice(0, totalLength), request.Start, request.Length),
+                    HandleTcpWriteMulti(response.Slice(0, totalLength), request.StartAddress, request.Quantity),
 
                 _ => DefaultUnmatched(response)
             };

@@ -220,10 +220,10 @@ namespace Junevy.Communication.Modbus.Factory
                 config.Address = "127.0.0.1";
             if (config.Port == 0)
                 config.Port = 502;
-            if (config.ReadTimeOut <= 0)
-                config.ReadTimeOut = 2000;
-            if (config.WriteTimeOut <= 0)
-                config.WriteTimeOut = 2000;
+            if (config.ReadTimeout <= 0)
+                config.ReadTimeout = 2000;
+            if (config.WriteTimeout <= 0)
+                config.WriteTimeout = 2000;
             if (config.ConnectTimeout <= 0)
                 config.ConnectTimeout = 2000;
             if (config.RetryCount < 0)
@@ -244,16 +244,16 @@ namespace Junevy.Communication.Modbus.Factory
                 config.BaudRate = 9600;
             if (config.DataBits < 5 || config.DataBits > 8)
                 config.DataBits = 8;
-            if (config.ReadTimeOut <= 0)
-                config.ReadTimeOut = 2000;
-            if (config.WriteTimeOut <= 0)
-                config.WriteTimeOut = 2000;
+            if (config.ReadTimeout <= 0)
+                config.ReadTimeout = 2000;
+            if (config.WriteTimeout <= 0)
+                config.WriteTimeout = 2000;
             if (config.RetryCount < 0)
                 config.RetryCount = 0;
             if (config.RetryInterval < 0)
                 config.RetryInterval = 100;
-            if (config.IntervalTime < 0)
-                config.IntervalTime = 30;
+            if (config.FrameReadInterval < 0)
+                config.FrameReadInterval = 30;
         }
 
         private void ThrowIfDisposed()
