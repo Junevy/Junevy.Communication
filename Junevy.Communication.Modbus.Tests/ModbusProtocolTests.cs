@@ -102,6 +102,13 @@ namespace Junevy.Communication.Modbus.Tests
         }
 
         [Fact]
+        public void RtuFrameBuilder_MaxRtuAduLength_Is256()
+        {
+            // 缓冲必须比最大 ADU 大 1 字节，使"读满 256 字节完整帧"不会触发溢出分支
+            Assert.Equal(256, ModbusFrameBuilder.MaxRtuAduLength);
+        }
+
+        [Fact]
         public void RtuParser_WriteMultiShortFrame_ReturnsFailureInsteadOfThrowing()
         {
             var parser = new RtuProtocolParser();

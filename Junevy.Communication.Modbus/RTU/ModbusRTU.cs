@@ -253,7 +253,7 @@ namespace Junevy.Communication.Modbus.RTU
 
         private ModbusResult<byte[]> Read(ModbusRequest request)
         {
-            var pool = System.Buffers.ArrayPool<byte>.Shared.Rent(256);
+            var pool = System.Buffers.ArrayPool<byte>.Shared.Rent(ModbusFrameBuilder.MaxRtuAduLength + 1);
             int readCounts = 0;
 
             try
@@ -450,7 +450,7 @@ namespace Junevy.Communication.Modbus.RTU
 
         private async Task<ModbusResult<byte[]>> ReadAsync(ModbusRequest request, CancellationToken token = default)
         {
-            var pool = System.Buffers.ArrayPool<byte>.Shared.Rent(256);
+            var pool = System.Buffers.ArrayPool<byte>.Shared.Rent(ModbusFrameBuilder.MaxRtuAduLength + 1);
             int readCounts = 0;
 
             try
