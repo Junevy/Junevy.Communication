@@ -3,10 +3,5 @@
 ################################################################################
 
 /.vs
-/Junevy.Communication.Modbus/obj/Debug
-/Junevy.Communication.Modbus/obj
-/Junevy.Communication.Modbus.Tests/bin/Debug/net6.0
-/Junevy.Communication.Modbus.Tests/obj/Debug/net6.0
-/Junevy.Communication.Modbus.Tests/obj/Release/net6.0
-/Junevy.Communication.Modbus.Tests/obj
-/Junevy.Communication.Test/obj
+bin/
+obj/
