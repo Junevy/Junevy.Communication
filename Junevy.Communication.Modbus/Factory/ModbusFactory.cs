@@ -219,7 +219,7 @@ namespace Junevy.Communication.Modbus.Factory
             if (string.IsNullOrEmpty(config.Address))
                 config.Address = "127.0.0.1";
             if (config.Port == 0)
-                config.SetPort(502);
+                config.Port = 502;
             if (config.ReadTimeOut <= 0)
                 config.ReadTimeOut = 2000;
             if (config.WriteTimeOut <= 0)

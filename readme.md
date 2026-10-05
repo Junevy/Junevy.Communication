@@ -38,8 +38,8 @@ Communication.Modbus/Communication.Modbus.csproj
 ### Modbus TCP
 
 ```csharp
-using Communication.Modbus.Extensions;
-using Communication.Modbus.TCP;
+using Junevy.Communication.Modbus.Extensions;
+using Junevy.Communication.Modbus.TCP;
 
 using var modbus = new ModbusTCP(new ModbusTCPConfig
 {
@@ -68,8 +68,8 @@ modbus.Disconnect();
 
 ```csharp
 using System.IO.Ports;
-using Communication.Modbus.Extensions;
-using Communication.Modbus.RTU;
+using Junevy.Communication.Modbus.Extensions;
+using Junevy.Communication.Modbus.RTU;
 
 using var modbus = new ModbusRTU(new ModbusRTUConfig
 {
@@ -93,10 +93,10 @@ modbus.Disconnect();
 ## Recommended Usage: Factory + DI
 
 ```csharp
-using Communication.Modbus.DependencyInjection;
-using Communication.Modbus.Extensions;
-using Communication.Modbus.Factory;
-using Communication.Modbus.TCP;
+using Junevy.Communication.Modbus.DependencyInjection;
+using Junevy.Communication.Modbus.Extensions;
+using Junevy.Communication.Modbus.Factory;
+using Junevy.Communication.Modbus.TCP;
 using Microsoft.Extensions.DependencyInjection;
 
 var services = new ServiceCollection();
@@ -139,7 +139,7 @@ factory.RegisterAlias("slave-2", "rs485-bus");
 When a device uses custom behavior, call `Request` / `RequestAsync` directly:
 
 ```csharp
-using Communication.Modbus.Core.Models;
+using Junevy.Communication.Modbus.Core.Models;
 
 var raw = plc.Request(new ModbusRequest
 {

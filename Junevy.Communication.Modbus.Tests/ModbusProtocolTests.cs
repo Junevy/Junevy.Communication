@@ -219,12 +219,20 @@ namespace Junevy.Communication.Modbus.Tests
         }
 
         [Fact]
-        public void TcpConfig_SetPort_AllowsWellKnownModbusPort()
+        public void TcpConfig_PortIsDirectlySettable()
         {
-            var config = new ModbusTCPConfig();
+            var config = new ModbusTCPConfig { Port = 1502 };
+            Assert.Equal(1502, config.Port);
+        }
 
-            Assert.True(config.SetPort(502));
-            Assert.Equal(502, config.Port);
+        [Fact]
+        public void VerifyPort_AcceptsAnyValidPort()
+        {
+            Assert.True(ModbusHelper.VerifyPort(1));
+            Assert.True(ModbusHelper.VerifyPort(502));
+            Assert.True(ModbusHelper.VerifyPort(65535));
+            Assert.False(ModbusHelper.VerifyPort(0));
+            Assert.False(ModbusHelper.VerifyPort(65536));
         }
 
         [Fact]
@@ -365,7 +373,7 @@ namespace Junevy.Communication.Modbus.Tests
                 RetryCount = 3,
                 RetryInterval = 10
             });
-            Assert.True(client.Config.SetPort(port));
+            client.Config.Port = port;
 
             var result = client.Request(new ModbusRequest
             {
@@ -480,7 +488,7 @@ namespace Junevy.Communication.Modbus.Tests
                 Reconnect = true
             }))
             {
-                tcp.Config.SetPort(port);
+                tcp.Config.Port = port;
                 Assert.True(tcp.Connect());
 
                 var request = new ModbusRequest { SlaveId = 1, FunctionCode = ModbusFunctionCode.ReadHoldingRegisters, Start = 0, Length = 1 };
@@ -579,7 +587,7 @@ namespace Junevy.Communication.Modbus.Tests
                 RetryCount = 3,
                 RetryInterval = 10
             });
-            tcp.Config.SetPort(port);
+            tcp.Config.Port = port;
             Assert.True(tcp.Connect());
 
             var result = tcp.Request(new ModbusRequest
@@ -668,7 +676,7 @@ namespace Junevy.Communication.Modbus.Tests
                 Reconnect = true,
                 RetryCount = 0   // 单次尝试，保证最终错误消息就是"PDU length"而不是后续超时
             });
-            tcp.Config.SetPort(port);
+            tcp.Config.Port = port;
             Assert.True(tcp.Connect());
 
             ModbusResult<byte[]> result = null!;

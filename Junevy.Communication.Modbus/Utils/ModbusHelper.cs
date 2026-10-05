@@ -124,7 +124,7 @@ namespace Junevy.Communication.Modbus.Utils
 
         public static bool VerifyAddress(string address) => !string.IsNullOrEmpty(address);
 
-        public static bool VerifyPort(int port) => (port >= 1024 && port <= 65535) || port == 502;
+        public static bool VerifyPort(int port) => port is >= 1 and <= 65535;
 
         private static bool IsValidReadWriteMultipleRegistersRequest(byte[]? data)
         {

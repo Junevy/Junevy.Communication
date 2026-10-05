@@ -6,7 +6,8 @@ namespace Junevy.Communication.Modbus.TCP
     {
         public string Address { get; set; } = "127.0.0.1";
 
-        public int Port { get; private set; } = 502;
+        /// <summary>TCP 端口（1..65535，Modbus 标准端口 502）。</summary>
+        public int Port { get; set; } = 502;
 
         public bool Reconnect { get; set; } = false;
 
@@ -34,16 +35,5 @@ namespace Junevy.Communication.Modbus.TCP
         /// Number of retry attempts.
         /// </summary>
         public int RetryCount { get; set; } = 3;
-
-        public bool SetPort(int port = 502)
-        {
-            if ((port < 1024 || port > 65535) && port != 502)
-            {
-                return false;
-            }
-
-            this.Port = port;
-            return true;
-        }
     }
 }
