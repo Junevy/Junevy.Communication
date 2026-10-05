@@ -16,7 +16,8 @@
         public event Action<ModbusProtocolType>? OnProtocolTypeChanged;
 
         /// <summary>
-        /// 协议类型
+        /// TCP 事务标识。由 ModbusTCP 客户端在每次请求时自动分配（从 0 递增、回绕），
+        /// 用于响应匹配；手动赋值仅对裸帧构建 API（ModbusHelper.BuildRequestFrame）生效。
         /// </summary>
         public ushort TransactionId { get; set; } = 0x0000;
         

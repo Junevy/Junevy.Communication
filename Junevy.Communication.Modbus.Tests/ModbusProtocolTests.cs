@@ -74,7 +74,7 @@ namespace Junevy.Communication.Modbus.Tests
             Assert.True(builder.TryWriteRequestFrame(request, destination, out int written));
 
             Assert.Equal(12, written);
-            Assert.Equal([0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x02, 0x03, 0x00, 0x10, 0x00, 0x02],
+            Assert.Equal([0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x02, 0x03, 0x00, 0x10, 0x00, 0x02],
                 destination[..written].ToArray());
         }
 
@@ -152,7 +152,7 @@ namespace Junevy.Communication.Modbus.Tests
                 Start = 0,
                 Length = 1
             };
-            byte[] response = [0x00, 0x01, 0x00, 0x00, 0x00, 0x05, 0x02, 0x03, 0x02, 0x12, 0x34];
+            byte[] response = [0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x02, 0x03, 0x02, 0x12, 0x34];
 
             var result = parser.ParseResponse(response, request);
 
@@ -266,7 +266,7 @@ namespace Junevy.Communication.Modbus.Tests
             {
                 byte[] response =
                 [
-                    0x00, 0x01,
+                    0x00, 0x00,
                     0x00, 0x00,
                     0x00, 0x05,
                     0x01,
@@ -310,7 +310,72 @@ namespace Junevy.Communication.Modbus.Tests
             await serverTask;
 
             Assert.True(result.IsSuccess, result.ErrorMessage);
-            Assert.Equal([0x00, 0x01, 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34], result.Data);
+            Assert.Equal([0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34], result.Data);
+        }
+
+        [Fact]
+        public void TcpParser_TransactionIdMustMatchExactly()
+        {
+            var request = new ModbusRequest
+            {
+                TransactionId = 7,
+                SlaveId = 1,
+                FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
+                Start = 0,
+                Length = 1
+            };
+            // 旧约定下 (7+1) 会通过；精确匹配下必须失败
+            byte[] response = [0x00, 0x08, 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34];
+
+            var result = new TcpProtocolParser().ParseResponse(response, request);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("Transaction ID", result.ErrorMessage);
+        }
+
+        [Fact]
+        public async Task TcpClient_AssignsSequentialTransactionIds()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            var seenTids = new List<byte[]>();
+            var server = Task.Run(async () =>
+            {
+                using var client = await listener.AcceptTcpClientAsync();
+                var stream = client.GetStream();
+                for (int i = 0; i < 2; i++)
+                {
+                    var req = new byte[12];
+                    int read = 0;
+                    while (read < req.Length)
+                        read += await stream.ReadAsync(req, read, req.Length - read);
+                    seenTids.Add(req[..2].ToArray());
+                    byte[] resp = [req[0], req[1], 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x12, 0x34];
+                    await stream.WriteAsync(resp, 0, resp.Length);
+                }
+            });
+
+            using var tcp = new ModbusTCP(new ModbusTCPConfig
+            {
+                Address = "127.0.0.1",
+                ReadTimeOut = 1000,
+                WriteTimeOut = 1000,
+                ConnectTimeout = 1000,
+                Reconnect = true
+            });
+            tcp.Config.SetPort(port);
+
+            var request = new ModbusRequest { SlaveId = 1, FunctionCode = ModbusFunctionCode.ReadHoldingRegisters, Start = 0, Length = 1 };
+            var r1 = tcp.Request(request);
+            var r2 = tcp.Request(request);
+            listener.Stop();
+            await server;
+
+            Assert.True(r1.IsSuccess, r1.ErrorMessage);
+            Assert.True(r2.IsSuccess, r2.ErrorMessage);
+            Assert.Equal(new byte[] { 0x00, 0x00 }, seenTids[0]);
+            Assert.Equal(new byte[] { 0x00, 0x01 }, seenTids[1]);
         }
     }
 }

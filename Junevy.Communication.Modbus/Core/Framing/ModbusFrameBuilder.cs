@@ -94,7 +94,7 @@ namespace Junevy.Communication.Modbus.Core.Framing
             if (destination.Length < tcpLength)
                 return false;
 
-            ushort transactionId = (ushort)(request.TransactionId + 1);
+            ushort transactionId = request.TransactionId;
             BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(0, 2), transactionId);
             destination[2] = 0x00;
             destination[3] = 0x00;

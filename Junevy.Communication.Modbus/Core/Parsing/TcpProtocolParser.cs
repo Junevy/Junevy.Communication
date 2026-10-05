@@ -53,7 +53,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             byte unitId = span[6];
             byte funcCode = span[7];
             ushort transactionId = BinaryExtensions.ToUshort(span[1], span[0]);
-            ushort expectedTransactionId = (ushort)(request.TransactionId + 1);
+            ushort expectedTransactionId = request.TransactionId;
 
             if (protocolId != 0x00)
             {

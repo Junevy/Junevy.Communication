@@ -21,6 +21,7 @@ namespace Junevy.Communication.Modbus.TCP
         private readonly SemaphoreSlim requestLock = new(1, 1);
         private readonly Stopwatch stopwatch = Stopwatch.StartNew();
         private long lastTimestamp;
+        private ushort transactionId;
         private bool disposed;
 
         public ModbusTCPConfig Config { get; private set; }
@@ -125,6 +126,7 @@ namespace Junevy.Communication.Modbus.TCP
             requestLock.Wait();
             try
             {
+                request.TransactionId = transactionId++;
                 return ExecuteRequestWithRetry(request);
             }
             catch (Exception ex) when (IsCommunicationException(ex))
@@ -155,6 +157,7 @@ namespace Junevy.Communication.Modbus.TCP
                 await requestLock.WaitAsync(cancellationToken);
                 lockTaken = true;
 
+                request.TransactionId = transactionId++;
                 return await ExecuteRequestWithRetryAsync(request, cancellationToken);
             }
             catch (OperationCanceledException)
