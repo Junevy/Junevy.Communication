@@ -21,11 +21,6 @@ namespace Junevy.Communication.Modbus.Utils
             return receivedCRC == calculatedCRC;
         }
 
-        public static void AddCrc16(List<byte> frame)
-        {
-            frame.AddRange(CrcLittleEndian(frame.ToArray()));
-        }
-
         public static ushort ComputeCrc(byte[] data)
             => ComputeCrc((ReadOnlySpan<byte>)data);
 
@@ -54,22 +49,10 @@ namespace Junevy.Communication.Modbus.Utils
             return crc;
         }
 
-        public static byte[] CrcLittleEndian(byte[] data)
-        {
-            ushort crc = ComputeCrc(data);
-            return crc.ToLittleEndian();
-        }
-
         public static byte[] CrcLittleEndian(ReadOnlySpan<byte> data)
         {
             ushort crc = ComputeCrc(data);
             return crc.ToLittleEndian();
-        }
-
-        public static byte[] CrcBigEndian(byte[] data)
-        {
-            ushort crc = ComputeCrc(data);
-            return BinaryExtensions.ToBigEndian(crc);
         }
     }
 }

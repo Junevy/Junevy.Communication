@@ -35,7 +35,6 @@
             }
         }
 
-        public ushort ByteCount {get; set;} = 0x00;
         /// <summary>
         /// 从站ID。
         /// </summary>
@@ -76,11 +75,6 @@
         public void InvokeOnFunctionCodeChanged()
         {
             OnFunctionCodeChanged?.Invoke(FunctionCode);
-        }
-
-        public void InvokeOnProtocolTypeChanged()
-        {
-            OnProtocolTypeChanged?.Invoke(ProtocolType);
         }
     }
 }

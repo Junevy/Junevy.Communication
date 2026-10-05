@@ -72,7 +72,6 @@ namespace Junevy.Communication.Modbus.Extensions
         {
             var request = new ModbusRequest
             {
-                ProtocolType = modBus.ProtocolType,
                 SlaveId = slaveId,
                 FunctionCode = functionCode,
                 Start = start,
@@ -95,7 +94,6 @@ namespace Junevy.Communication.Modbus.Extensions
         {
             var request = new ModbusRequest
             {
-                ProtocolType = modBus.ProtocolType,
                 SlaveId = slaveId,
                 FunctionCode = functionCode,
                 Start = start,

@@ -10,8 +10,6 @@
         /// </summary>
         public bool IsSuccess { get; set; }
 
-        // public bool IsException { get; set; } = false;
-
         /// <summary>
         /// 响应数据
         /// </summary>
@@ -39,8 +37,5 @@
         /// <returns>失败响应对象。</returns>
         public static ModbusResult<T> Fail(string errMsg, T? data = default)
             => new() { IsSuccess = false, ErrorMessage = errMsg, Data = data };
-
-        // public static ModbusResult<T> Exception(string errMsg, T? data = default)
-        //     => new() { IsSuccess = false, IsException = true, ErrorMessage = errMsg, Data = data };
     }
 }
