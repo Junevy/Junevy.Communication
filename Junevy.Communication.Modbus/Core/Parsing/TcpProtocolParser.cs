@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
 using Junevy.Communication.Modbus.Extensions;
@@ -48,11 +49,11 @@ namespace Junevy.Communication.Modbus.Core.Parsing
 
             var span = response.Span;
 
-            ushort protocolId = BinaryExtensions.ToUshort(span[3], span[2]);
-            ushort frameLength = BinaryExtensions.ToUshort(span[5], span[4]);
+            ushort protocolId = BinaryPrimitives.ReadUInt16BigEndian(span.Slice(2, 2));
+            ushort frameLength = BinaryPrimitives.ReadUInt16BigEndian(span.Slice(4, 2));
             byte unitId = span[6];
             byte funcCode = span[7];
-            ushort transactionId = BinaryExtensions.ToUshort(span[1], span[0]);
+            ushort transactionId = BinaryPrimitives.ReadUInt16BigEndian(span.Slice(0, 2));
             ushort expectedTransactionId = request.TransactionId;
 
             if (protocolId != 0x00)
@@ -134,8 +135,8 @@ namespace Junevy.Communication.Modbus.Core.Parsing
                 return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleTcpMaskWrite] Invalid data or response length.", ModbusErrorKind.ProtocolViolation, response);
             }
 
-            var andMask = BinaryExtensions.ToUshort(data[1], data[0]);
-            var orMask = BinaryExtensions.ToUshort(data[3], data[2]);
+            var andMask = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(0, 2));
+            var orMask = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(2, 2));
 
             var pduSpan = response.Span.Slice(TcpPduOffset, 8); // UnitId + FuncCode + Start(2) + And(2) + Or(2)
 

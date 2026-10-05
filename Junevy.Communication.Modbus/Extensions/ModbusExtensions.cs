@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
 using Junevy.Communication.Modbus.Utils;
@@ -427,8 +428,8 @@ namespace Junevy.Communication.Modbus.Extensions
 
             return ModbusResult<ModbusCommEventCounter>.Success(new ModbusCommEventCounter
             {
-                Status = BinaryExtensions.ToUshort(result.Data[3], result.Data[2]),
-                EventCount = BinaryExtensions.ToUshort(result.Data[5], result.Data[4])
+                Status = BinaryPrimitives.ReadUInt16BigEndian(result.Data.AsSpan(2, 2)),
+                EventCount = BinaryPrimitives.ReadUInt16BigEndian(result.Data.AsSpan(4, 2))
             });
         }
 
@@ -444,9 +445,9 @@ namespace Junevy.Communication.Modbus.Extensions
 
             return ModbusResult<ModbusCommEventLog>.Success(new ModbusCommEventLog
             {
-                Status = BinaryExtensions.ToUshort(result.Data[4], result.Data[3]),
-                EventCount = BinaryExtensions.ToUshort(result.Data[6], result.Data[5]),
-                MessageCount = BinaryExtensions.ToUshort(result.Data[8], result.Data[7]),
+                Status = BinaryPrimitives.ReadUInt16BigEndian(result.Data.AsSpan(3, 2)),
+                EventCount = BinaryPrimitives.ReadUInt16BigEndian(result.Data.AsSpan(5, 2)),
+                MessageCount = BinaryPrimitives.ReadUInt16BigEndian(result.Data.AsSpan(7, 2)),
                 Events = events
             });
         }

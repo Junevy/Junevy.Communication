@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
 using Junevy.Communication.Modbus.Extensions;
@@ -228,8 +229,8 @@ namespace Junevy.Communication.Modbus.Core.Parsing
                     " [HandleRtuMaskWrite] Invalid data or response length.", ModbusErrorKind.ProtocolViolation, response), false);
             }
 
-            var andMask = BinaryExtensions.ToUshort(data[1], data[0]);
-            var orMask = BinaryExtensions.ToUshort(data[3], data[2]);
+            var andMask = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(0, 2));
+            var orMask = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(2, 2));
 
             var candidate = span.Slice(0, 10); // SlaveId + FuncCode + Start(2) + And(2) + Or(2) + CRC(2)
 

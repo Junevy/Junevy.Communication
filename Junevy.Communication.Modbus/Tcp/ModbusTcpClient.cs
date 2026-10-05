@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Junevy.Communication.Modbus.Core.Framing;
 using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
@@ -302,7 +303,7 @@ namespace Junevy.Communication.Modbus.Tcp
                 if (!headerResult.IsSuccess)
                     return headerResult;
 
-                ushort pduLength = BinaryExtensions.ToUshort(frame[5], frame[4]);
+                ushort pduLength = BinaryPrimitives.ReadUInt16BigEndian(frame.AsSpan(4, 2));
                 if (pduLength < 1 || pduLength > 254)
                 {
                     Logger.LogError(" [Read] Invalid PDU length: {PduLength}.", pduLength);
@@ -349,7 +350,7 @@ namespace Junevy.Communication.Modbus.Tcp
                 if (!headerResult.IsSuccess)
                     return headerResult;
 
-                ushort pduLength = BinaryExtensions.ToUshort(frame[5], frame[4]);
+                ushort pduLength = BinaryPrimitives.ReadUInt16BigEndian(frame.AsSpan(4, 2));
                 if (pduLength < 1 || pduLength > 254)
                 {
                     Logger.LogError(" [Read] Invalid PDU length: {PduLength}.", pduLength);

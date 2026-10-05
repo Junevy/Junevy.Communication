@@ -1,4 +1,4 @@
-﻿namespace Junevy.Communication.Modbus.Extensions
+namespace Junevy.Communication.Modbus.Extensions
 {
     /// <summary>
     /// Provides methods for converting between ushort values and byte arrays,
@@ -29,11 +29,6 @@
                 (byte)(value & 0xFF)
             ];
         }
-
-        /// <summary>
-        /// Combines a low byte and high byte into a ushort value (big-endian interpretation).
-        /// </summary>
-        public static ushort ToUshort(byte lowByte, byte highByte) => (ushort)((highByte << 8) | lowByte);
 
         /// <summary>
         /// Converts an array of ushort values to a big-endian byte array.
