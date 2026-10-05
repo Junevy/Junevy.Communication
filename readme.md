@@ -1,6 +1,6 @@
-# Communication.Modbus
+# Junevy.Communication.Modbus
 
-Modbus RTU/TCP communication library for .NET. It provides low-level request APIs, convenient extension methods for common function codes, and a factory for managing multiple Modbus connections.
+Modbus RTU/TCP master (client) communication library for .NET. It provides low-level request APIs, convenient extension methods for common function codes, and a factory for managing multiple Modbus connections.
 
 ## Target Frameworks
 
@@ -10,7 +10,7 @@ Modbus RTU/TCP communication library for .NET. It provides low-level request API
 Project path:
 
 ```text
-Communication.Modbus/Communication.Modbus.csproj
+Junevy.Communication.Modbus/Junevy.Communication.Modbus.csproj
 ```
 
 ## Supported Function Codes
@@ -149,6 +149,28 @@ var raw = plc.Request(new ModbusRequest
 });
 ```
 
+`ModbusRequest` is a pure data class. `Data` has a per-function-code layout (documented on the property); the transport never mutates a request you pass in.
+
+## Transaction ID (TCP)
+
+You do not need to manage `TransactionId` for TCP requests. The client assigns an auto-incrementing transaction id per logical request (wrapping at `ushort.MaxValue`) before sending, and matches responses by exact transaction id — a late response from a previous request can never be paired with a new one. Manual assignment only affects the bare frame-building API (`ModbusHelper.BuildRequestFrame`).
+
+## Error Classification
+
+Every failed `ModbusResult` carries a machine-readable `ErrorKind` (`ModbusErrorKind`) in addition to `ErrorMessage`:
+
+| Kind | Meaning |
+|---|---|
+| `Unspecified` | Default for legacy/uncategorized failures |
+| `InvalidRequest` | The request failed local validation before being sent |
+| `ConnectionClosed` | The connection was down, dropped, or could not be (re)established |
+| `Timeout` | Connect/read/write timeout |
+| `ProtocolViolation` | Malformed frame, invalid length, or CRC failure |
+| `ModbusException` | The slave answered with a Modbus exception response (the exception code is in the message, e.g. `Code=0x02`) |
+| `Cancelled` | The `CancellationToken` fired before completion |
+
+Modbus exception responses are terminal: they are returned immediately as failed results and are never retried.
+
 ## Reconnect and Retry
 
 Both TCP and RTU transports support request-level retry and optional reconnect:
@@ -178,9 +200,10 @@ var rtu = new ModbusRtuClient(new ModbusRtuClientConfig
 Behavior:
 
 - `RetryCount` is the number of retries after the first attempt.
-- When `Reconnect = true`, a failed or closed TCP socket is recreated before the next retry.
+- When `Reconnect = true`, a failed or closed TCP socket is recreated before the next retry. Note: this also applies after an explicit `Disconnect()` — the next request silently reconnects. Set `Reconnect = false` if you want `Disconnect()` to stay disconnected.
 - For RTU, a faulted or closed serial port is closed and reopened before the next retry.
-- Communication failures are returned as `ModbusResult.Fail(...)` where possible instead of escaping as unhandled exceptions.
+- Modbus exception responses are never retried (terminal failures).
+- Communication failures are returned as `ModbusResult.Fail(...)` where possible instead of escaping as unhandled exceptions; parameter-validation errors throw standard exceptions (`ArgumentException` etc.).
 
 ## Notes
 

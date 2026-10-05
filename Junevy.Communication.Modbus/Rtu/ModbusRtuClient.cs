@@ -100,7 +100,7 @@ namespace Junevy.Communication.Modbus.Rtu
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, " [InitialConnection] Configure port failed: {@Config}.", Config);
+                Logger.LogError(ex, " [ConfigurePort] Configure port failed: {@Config}.", Config);
                 throw;
             }
         }

@@ -52,8 +52,6 @@ namespace Junevy.Communication.Modbus.Tcp
             socket = CreateSocket();
         }
 
-        public bool CheckConnection() => IsConnected;
-
         // ————————————————— 连接钩子 —————————————————
 
         protected override bool OpenConnection()
