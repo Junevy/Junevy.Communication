@@ -287,7 +287,7 @@ namespace Junevy.Communication.Modbus.RTU
                         if (parseResult.Data.Length <= 0)
                         {
                             logger.LogWarning(" [Read] Parsed frame has zero length.");
-                            throw new ModbusException(ModbusErrorCode.InvalidData, " [Read] Parsed frame has zero length.");
+                            return ModbusResult<byte[]>.Fail(" [Read] Parsed frame has zero length.");
                         }
                         logger.Rx("ModbusRTU", parseResult.Data.Span, stopwatch, ref lastTimestamp);
                         return ModbusResult<byte[]>.Success(parseResult.Data.ToArray());
@@ -485,7 +485,7 @@ namespace Junevy.Communication.Modbus.RTU
                         if (parseResult.Data.Length <= 0)
                         {
                             logger.LogWarning(" [ReadAsync] Parsed frame has zero length.");
-                            throw new InvalidOperationException(" [ReadAsync] Parsed frame has zero length.");
+                            return ModbusResult<byte[]>.Fail(" [ReadAsync] Parsed frame has zero length.");
                         }
 
                         logger.Rx("ModbusRTU", parseResult.Data.Span, stopwatch, ref lastTimestamp);

@@ -372,8 +372,8 @@ namespace Junevy.Communication.Modbus.TCP
                 ushort pduLength = BinaryExtensions.ToUshort(frame[5], frame[4]);
                 if (pduLength < 1 || pduLength > 254)
                 {
-                    throw new ModbusException(ModbusErrorCode.InvalidData,
-                        $" [Read] Invalid PDU length: {pduLength}.");
+                    logger.LogError(" [Read] Invalid PDU length: {PduLength}.", pduLength);
+                    return ModbusResult<byte[]>.Fail($" [Read] Invalid PDU length: {pduLength}.");
                 }
 
                 int totalLength = 6 + pduLength;

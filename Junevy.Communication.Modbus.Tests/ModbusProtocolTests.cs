@@ -550,5 +550,97 @@ namespace Junevy.Communication.Modbus.Tests
             Assert.Contains("0x02", result.ErrorMessage);
             Assert.Equal(1, requestsReceived);
         }
+
+        [Fact]
+        public async Task TcpClient_InvalidPduLength_ReturnsFailureInsteadOfThrowing()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+            var server = Task.Run(async () =>
+            {
+                // 接受最多 2 个连接，防御意外的重连行为
+                for (int i = 0; i < 2; i++)
+                {
+                    TcpClient handler;
+                    try
+                    {
+                        handler = await listener.AcceptTcpClientAsync();
+                    }
+                    // listener.Stop() 会使挂起的 Accept 抛 ObjectDisposedException；
+                    // 若 Stop 先于本轮 Accept 开始，则抛 InvalidOperationException（Not listening）
+                    catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or IOException or SocketException)
+                    {
+                        break; // listener 已停止，正常退出
+                    }
+
+                    using (handler)
+                    using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+                    {
+                        try
+                        {
+                            var stream = handler.GetStream();
+                            var request = new byte[12];
+                            int read = 0;
+                            while (read < request.Length)
+                            {
+                                int n = await stream.ReadAsync(request, read, request.Length - read, cts.Token);
+                                if (n == 0)
+                                    break;
+                                read += n;
+                            }
+
+                            if (read < request.Length)
+                                continue;
+
+                            // MBAP length 字段 = 0：协议违规
+                            byte[] resp = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+                            await stream.WriteAsync(resp, 0, resp.Length, cts.Token);
+                            await Task.Delay(200); // 给客户端留出读取时间
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // 本连接超时，转到下一个连接
+                        }
+                        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+                        {
+                            // 客户端放弃连接引发的 IO 异常，转到下一个连接
+                        }
+                    }
+                }
+            });
+
+            using var tcp = new ModbusTCP(new ModbusTCPConfig
+            {
+                Address = "127.0.0.1",
+                ReadTimeOut = 1000,
+                WriteTimeOut = 1000,
+                ConnectTimeout = 1000,
+                Reconnect = true,
+                RetryCount = 0   // 单次尝试，保证最终错误消息就是"PDU length"而不是后续超时
+            });
+            tcp.Config.SetPort(port);
+            Assert.True(tcp.Connect());
+
+            ModbusResult<byte[]> result = null!;
+            var ex = await Record.ExceptionAsync(() =>
+            {
+                result = tcp.Request(new ModbusRequest
+                {
+                    SlaveId = 1,
+                    FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
+                    Start = 0,
+                    Length = 1
+                });
+                return Task.CompletedTask;
+            });
+            listener.Stop();
+            await server;
+
+            Assert.Null(ex);                       // 修复前：这里会捕获到 ModbusException
+            Assert.False(result.IsSuccess);
+            Assert.Contains("PDU length", result.ErrorMessage);
+        }
     }
 }
