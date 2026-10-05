@@ -144,7 +144,10 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             if (Crc16Helper.VerifyCrc(candidate))
             {
                 logger.Rx("SerialPort", candidate, stopwatch, ref lastTimestamp);
-                return (ModbusResult<ReadOnlyMemory<byte>>.Success(response.Slice(0, exceptionLength)), false);
+                byte exceptionCode = span[2];
+                return (ModbusResult<ReadOnlyMemory<byte>>.Fail(
+                    $"Modbus exception response. Function=0x{span[1]:X2}, Code=0x{exceptionCode:X2}.",
+                    response.Slice(0, exceptionLength)), false);
             }
 
             logger.LogWarning(" [HandleRtuException] CRC verification failed. Skipping byte.");

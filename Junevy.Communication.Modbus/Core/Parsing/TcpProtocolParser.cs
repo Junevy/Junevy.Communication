@@ -85,8 +85,17 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             // Exception response
             if (funcCode == (byte)((byte)request.FunctionCode | 0x80))
             {
-                logger.LogWarning(" [TcpParser] Exception code: {Code}.", funcCode);
-                return ModbusResult<ReadOnlyMemory<byte>>.Success(response.Slice(0, totalLength));
+                if (totalLength < TcpPduOffset + 3)
+                {
+                    logger.LogWarning(" [TcpParser] Exception response too short: {Length} bytes.", totalLength);
+                    return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [TcpParser] Exception response too short.", response);
+                }
+
+                byte exceptionCode = span[TcpPduOffset + 2];
+                logger.LogWarning(" [TcpParser] Modbus exception. Function=0x{Function:X2}, Code=0x{Code:X2}.", funcCode, exceptionCode);
+                return ModbusResult<ReadOnlyMemory<byte>>.Fail(
+                    $"Modbus exception response. Function=0x{funcCode:X2}, Code=0x{exceptionCode:X2}.",
+                    response.Slice(0, totalLength));
             }
 
             var data = request.Data ?? [];

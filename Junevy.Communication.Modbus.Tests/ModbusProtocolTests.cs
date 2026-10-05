@@ -141,6 +141,25 @@ namespace Junevy.Communication.Modbus.Tests
         }
 
         [Fact]
+        public void RtuParser_ExceptionResponse_ReturnsFailureWithCode()
+        {
+            var request = new ModbusRequest
+            {
+                SlaveId = 1,
+                FunctionCode = ModbusFunctionCode.ReadHoldingRegisters
+            };
+            byte[] response = [0x01, 0x83, 0x02, 0x00, 0x00];
+            var crc = Crc16Helper.CrcLittleEndian(response.AsSpan(0, 3));
+            response[3] = crc[0];
+            response[4] = crc[1];
+
+            var result = new RtuProtocolParser().ParseResponse(response, request);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("0x02", result.ErrorMessage);
+        }
+
+        [Fact]
         public void TcpParser_SlaveMismatch_ReturnsFailure()
         {
             var parser = new TcpProtocolParser();
@@ -177,6 +196,26 @@ namespace Junevy.Communication.Modbus.Tests
             var result = parser.ParseResponse(response, request);
 
             Assert.False(result.IsSuccess);
+        }
+
+        [Fact]
+        public void TcpParser_ExceptionResponse_ReturnsFailureWithCode()
+        {
+            var request = new ModbusRequest
+            {
+                TransactionId = 0,
+                SlaveId = 1,
+                FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
+                Start = 0,
+                Length = 1
+            };
+            byte[] response = [0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x01, 0x83, 0x02];
+
+            var result = new TcpProtocolParser().ParseResponse(response, request);
+
+            Assert.False(result.IsSuccess);
+            Assert.Contains("0x02", result.ErrorMessage);
+            Assert.Equal(9, result.Data.Length);
         }
 
         [Fact]
