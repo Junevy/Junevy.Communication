@@ -1,30 +1,22 @@
 ﻿namespace Junevy.Communication.Modbus.Core.Models
 {
+    /// <summary>
+    /// Represents a Modbus wire-level exception response from a server device
+    /// (function code with the MSB set, carrying a <see cref="ModbusExceptionCode"/>).
+    /// Parameter validation failures use standard .NET exceptions instead.
+    /// </summary>
     public class ModbusException : Exception
     {
-        public ModbusErrorCode ErrorCode { get; }
+        public ModbusExceptionCode ErrorCode { get; }
 
-        public ModbusException(ModbusErrorCode errorCode, string message) : base(message)
+        public ModbusException(ModbusExceptionCode errorCode, string message) : base(message)
         {
             ErrorCode = errorCode;
         }
 
-        public ModbusException(ModbusErrorCode errorCode, string message, Exception innerException) : base(message, innerException)
+        public ModbusException(ModbusExceptionCode errorCode, string message, Exception innerException) : base(message, innerException)
         {
             ErrorCode = errorCode;
         }
-    }
-
-    public enum ModbusErrorCode
-    {
-        InvalidAddress = 0x02,
-        InvalidQuantity = 0x03,
-        InvalidValue = 0x03,
-        InvalidData = 0x03,
-        ServerFailure = 0x04,
-        Acknowledge = 0x05,
-        ServerBusy = 0x06,
-        GatewayUnavailable = 0x0A,
-        GatewayPathUnavailable = 0x0B
     }
 }

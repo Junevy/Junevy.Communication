@@ -83,12 +83,11 @@ namespace Junevy.Communication.Modbus.Tests
         }
 
         [Fact]
-        public void TryAdd_RTU_EmptyPortName_ThrowsModbusException()
+        public void TryAdd_RTU_EmptyPortName_ThrowsArgumentException()
         {
             var factory = new ModbusFactory();
-            var ex = Assert.Throws<ModbusException>(() =>
+            Assert.Throws<ArgumentException>(() =>
                 factory.TryAdd("key", new ModbusRTUConfig { PortName = "" }, out _));
-            Assert.Equal(ModbusErrorCode.GatewayUnavailable, ex.ErrorCode);
         }
 
         [Fact]
@@ -143,12 +142,12 @@ namespace Junevy.Communication.Modbus.Tests
         }
 
         [Fact]
-        public void GetRequired_WrongType_Throws()
+        public void GetRequired_WrongType_ThrowsInvalidOperation()
         {
             var factory = new ModbusFactory();
             factory.TryAdd("tcp", new ModbusTCPConfig(), out _);
 
-            Assert.Throws<ModbusException>(() => factory.GetRequired<ModbusRTU>("tcp"));
+            Assert.Throws<InvalidOperationException>(() => factory.GetRequired<ModbusRTU>("tcp"));
         }
 
         [Fact]

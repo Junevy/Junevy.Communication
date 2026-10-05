@@ -52,7 +52,7 @@ namespace Junevy.Communication.Modbus.RTU
             IModbusFrameBuilder frameBuilder)
         {
             this.Config = config
-                ?? throw new ModbusException(ModbusErrorCode.InvalidValue, nameof(config) + " is null!");
+                ?? throw new ArgumentNullException(nameof(config), nameof(config) + " is null!");
             this.logger = logger ?? NullLogger<ModbusRTU>.Instance;
             this.responseParser = responseParser ?? new RtuProtocolParser();
             this.frameBuilder = frameBuilder ?? new ModbusFrameBuilder();

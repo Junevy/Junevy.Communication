@@ -36,7 +36,7 @@ namespace Junevy.Communication.Modbus.Factory
             var modbus = Get(key);
             if (modbus is TResult typed)
                 return typed;
-            throw new ModbusException(ModbusErrorCode.GatewayUnavailable,
+            throw new InvalidOperationException(
                 $"Modbus instance '{key}' not found or type mismatch. Expected {typeof(TResult).Name}.");
         }
 

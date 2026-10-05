@@ -65,7 +65,7 @@ namespace Junevy.Communication.Modbus.Utils
         /// Compatibility entry point: the protocol the user explicitly set on the
         /// request is honored; this API never modifies the request object.
         /// </summary>
-        /// <exception cref="ModbusException">Thrown when the request is invalid.</exception>
+        /// <exception cref="ArgumentException">Thrown when the request is invalid.</exception>
         public static byte[] BuildRequestFrame(ModbusRequest request)
             => FrameBuilder.BuildRequestFrame(request, request.ProtocolType);
 
@@ -75,15 +75,14 @@ namespace Junevy.Communication.Modbus.Utils
         public static bool[] ParseCoils(byte[] response, int length)
         {
             if (response == null)
-                throw new ModbusException(ModbusErrorCode.InvalidData, "The response data cannot be null.");
+                throw new ArgumentNullException(nameof(response), "The response data cannot be null.");
 
             if (length <= 0)
-                throw new ModbusException(ModbusErrorCode.InvalidValue, "Length must be greater than 0.");
+                throw new ArgumentException("Length must be greater than 0.", nameof(length));
 
             int expectedByteCount = (length + 7) / 8;
             if (response.Length < 2 + expectedByteCount)
-                throw new ModbusException(ModbusErrorCode.InvalidData,
-                    "The response data is not enough for the requested length.");
+                throw new ArgumentException("The response data is not enough for the requested length.", nameof(response));
 
             bool[] result = new bool[length];
             var start = 3;
@@ -105,14 +104,13 @@ namespace Junevy.Communication.Modbus.Utils
         public static ushort[] ParseRegisters(byte[] response, int length)
         {
             if (response == null)
-                throw new ModbusException(ModbusErrorCode.InvalidData, "The response data cannot be null.");
+                throw new ArgumentNullException(nameof(response), "The response data cannot be null.");
 
             if (length <= 0)
-                throw new ModbusException(ModbusErrorCode.InvalidData, "Length must be greater than 0.");
+                throw new ArgumentException("Length must be greater than 0.", nameof(length));
 
             if (response.Length < 3 + length * 2)
-                throw new ModbusException(ModbusErrorCode.InvalidData,
-                    "The response data is not enough for the requested length.");
+                throw new ArgumentException("The response data is not enough for the requested length.", nameof(response));
 
             ushort[] result = new ushort[length];
 

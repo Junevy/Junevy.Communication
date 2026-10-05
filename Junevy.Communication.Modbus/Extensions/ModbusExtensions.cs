@@ -467,7 +467,7 @@ namespace Junevy.Communication.Modbus.Extensions
         private static byte[] BuildDiagnosticsData(ushort subFunction, byte[] data)
         {
             if (data == null || data.Length == 0 || data.Length > 250)
-                throw new ModbusException(ModbusErrorCode.InvalidQuantity, "Diagnostics data length must be between 1 and 250.");
+                throw new ArgumentException("Diagnostics data length must be between 1 and 250.", nameof(data));
 
             byte[] sub = subFunction.ToBigEndian();
             return Combine(sub, data);
@@ -493,7 +493,7 @@ namespace Junevy.Communication.Modbus.Extensions
         private static byte[] PackCoils(bool[] values)
         {
             if (values == null || values.Length == 0 || values.Length > 1968)
-                throw new ModbusException(ModbusErrorCode.InvalidQuantity, "Coil quantity must be between 1 and 1968.");
+                throw new ArgumentException("Coil quantity must be between 1 and 1968.", nameof(values));
 
             byte[] data = new byte[(values.Length + 7) / 8];
             for (int i = 0; i < values.Length; i++)
@@ -508,19 +508,19 @@ namespace Junevy.Communication.Modbus.Extensions
         private static void ValidateBitQuantity(ushort quantity, ushort max, string name)
         {
             if (quantity == 0 || quantity > max)
-                throw new ModbusException(ModbusErrorCode.InvalidQuantity, $"[{name}] Quantity must be between 1 and {max}.");
+                throw new ArgumentException($"[{name}] Quantity must be between 1 and {max}.");
         }
 
         private static void ValidateRegisterQuantity(ushort quantity, ushort max, string name)
         {
             if (quantity == 0 || quantity > max)
-                throw new ModbusException(ModbusErrorCode.InvalidQuantity, $"[{name}] Quantity must be between 1 and {max}.");
+                throw new ArgumentException($"[{name}] Quantity must be between 1 and {max}.");
         }
 
         private static void ValidateWriteRegisters(ushort[] values, ushort max, string name)
         {
             if (values == null || values.Length == 0 || values.Length > max)
-                throw new ModbusException(ModbusErrorCode.InvalidQuantity, $"[{name}] Register quantity must be between 1 and {max}.");
+                throw new ArgumentException($"[{name}] Register quantity must be between 1 and {max}.");
         }
 
         private static byte[] Combine(byte[] first, byte[] second)

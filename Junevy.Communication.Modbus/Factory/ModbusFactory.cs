@@ -239,8 +239,7 @@ namespace Junevy.Communication.Modbus.Factory
             if (string.IsNullOrEmpty(key))
                 throw new ArgumentException("Key must not be null or empty.", nameof(key));
             if (string.IsNullOrEmpty(config.PortName))
-                throw new ModbusException(ModbusErrorCode.GatewayUnavailable,
-                    "PortName must not be null or empty.");
+                throw new ArgumentException("PortName must not be null or empty.", nameof(config.PortName));
             if (config.BaudRate <= 0)
                 config.BaudRate = 9600;
             if (config.DataBits < 5 || config.DataBits > 8)

@@ -18,14 +18,14 @@ namespace Junevy.Communication.Modbus.Core.Framing
             if (request == null)
                 throw new ArgumentNullException(nameof(request));
             if (!ModbusHelper.CheckRequest(request))
-                throw new ModbusException(ModbusErrorCode.InvalidValue, "Invalid request.");
+                throw new ArgumentException("Invalid request.", nameof(request));
 
             int rtuLength = GetRtuFrameLength(request);
             return protocolType switch
             {
                 ModbusProtocolType.RTU => rtuLength,
                 ModbusProtocolType.TCP => rtuLength + 4,
-                _ => throw new ModbusException(ModbusErrorCode.InvalidValue, "The protocol is not supported.")
+                _ => throw new ArgumentException("The protocol is not supported.", nameof(protocolType))
             };
         }
 
@@ -51,7 +51,7 @@ namespace Junevy.Communication.Modbus.Core.Framing
             int length = GetRequestFrameLength(request, protocolType);
             var frame = new byte[length];
             if (!TryWriteRequestFrame(request, protocolType, frame, out int written) || written != length)
-                throw new ModbusException(ModbusErrorCode.InvalidValue, "Failed to build request frame.");
+                throw new InvalidOperationException("Failed to build request frame.");
 
             return frame;
         }
@@ -82,7 +82,7 @@ namespace Junevy.Communication.Modbus.Core.Framing
 
                 ModbusFunctionCode.ReadWriteMultipleRegisters => 4 + request.Data!.Length,
 
-                _ => throw new ModbusException(ModbusErrorCode.InvalidValue, "The function code is not supported.")
+                _ => throw new ArgumentException("The function code is not supported.", nameof(request))
             };
         }
 

@@ -847,6 +847,13 @@ namespace Junevy.Communication.Modbus.Tests
         }
 
         [Fact]
+        public void ExceptionCode_Describe_ReturnsKnownText()
+        {
+            Assert.Equal("Illegal data address", ((ModbusExceptionCode)0x02).Describe());
+            Assert.Contains("Unknown", ((ModbusExceptionCode)0x77).Describe());
+        }
+
+        [Fact]
         public async Task TcpClient_ReadTimeout_IsClassifiedAsTimeout()
         {
             // 监听但不回复 → 客户端读超时
@@ -858,7 +865,9 @@ namespace Junevy.Communication.Modbus.Tests
                 Address = "127.0.0.1",
                 ReadTimeOut = 300,
                 WriteTimeOut = 300,
-                ConnectTimeout = 1000,
+                // 并发负载下（如工厂并发冒烟测试阻塞线程池），连接等待可能超支 1s 预算，
+                // 放宽以覆盖调度延迟（与其他 TCP 测试一致）；超时分类仍由 ReadTimeOut=300 决定。
+                ConnectTimeout = 10000,
                 RetryCount = 0   // 单次尝试：否则重连失败后最终 ErrorKind 会变成 ConnectionClosed 而非 Timeout
             });
             tcp.Config.Port = port;
