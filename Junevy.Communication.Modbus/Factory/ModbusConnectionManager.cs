@@ -91,7 +91,14 @@ namespace Junevy.Communication.Modbus.Factory
                 if (entries.TryAdd(key, new Entry(instance)))
                     return instance;
 
-                instance.Dispose();
+                try
+                {
+                    instance.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, " [GetOrAdd] Disposed losing instance for '{Key}' with error.", key);
+                }
                 logger.LogWarning(" [GetOrAdd] Lost creation race for '{Key}', disposed duplicate instance.", key);
             }
         }
