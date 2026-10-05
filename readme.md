@@ -134,6 +134,26 @@ factory.RegisterAlias("slave-1", "rs485-bus");
 factory.RegisterAlias("slave-2", "rs485-bus");
 ```
 
+## Manual Construction Without Microsoft DI (Prism, etc.)
+
+For host containers that do not use `IServiceCollection` (Prism, DryIoc, Unity, ...), build the factory with `ModbusFactoryBuilder` and register the instance directly. Unset options mirror the `AddModbusFactory` defaults; no Microsoft DI package is required:
+
+```csharp
+using Junevy.Communication.Modbus.Factory;
+using Microsoft.Extensions.Logging;
+
+// e.g. inside Prism's RegisterTypes(IContainerRegistry containerRegistry):
+var loggerFactory = LoggerFactory.Create(b => b.AddSerilog(Log.Logger)); // or NullLoggerFactory.Instance
+var factory = ModbusFactoryBuilder.Create()
+    .WithLoggerFactory(loggerFactory)      // optional: used by the factory and every client it creates
+    .WithConnectionManager(manager)        // optional: share the registry with the host container
+    .Build();
+
+containerRegistry.RegisterInstance<IModbusFactory>(factory);
+```
+
+`Build()` returns a new, independent factory per call. Dispose the factory on application shutdown (it owns the connections).
+
 ## Raw Request API
 
 When a device uses custom behavior, call `Request` / `RequestAsync` directly:

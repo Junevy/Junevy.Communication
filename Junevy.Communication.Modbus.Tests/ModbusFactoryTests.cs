@@ -6,6 +6,7 @@ using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Junevy.Communication.Modbus.DependencyInjection;
 using Moq;
 
@@ -237,6 +238,85 @@ namespace Junevy.Communication.Modbus.Tests
             });
 
             Assert.Equal(0, errors);
+        }
+
+        // ── Builder ──────────────────────────────
+
+        [Fact]
+        public void Builder_Defaults_CreatesFunctionalFactory()
+        {
+            var factory = ModbusFactoryBuilder.Create().Build();
+
+            var modbus = factory.GetOrAdd("b1", new ModbusTcpClientConfig());
+            Assert.Same(modbus, factory.Get("b1"));
+            Assert.Equal(1, factory.Count);
+        }
+
+        [Fact]
+        public void Builder_Build_Twice_ReturnsIndependentFactories()
+        {
+            var builder = ModbusFactoryBuilder.Create();
+            var first = builder.Build();
+            var second = builder.Build();
+
+            Assert.NotSame(first, second);
+            first.TryAdd("k", new ModbusTcpClientConfig(), out _);
+            Assert.False(second.TryGet("k", out _));
+        }
+
+        [Fact]
+        public void Builder_WithConnectionManager_SharesRegistryWithFactory()
+        {
+            var manager = new ModbusConnectionManager();
+            var factory = ModbusFactoryBuilder.Create().WithConnectionManager(manager).Build();
+
+            factory.TryAdd("shared", new ModbusTcpClientConfig(), out _);
+
+            Assert.True(manager.TryGet("shared", out var resolved));
+            Assert.NotNull(resolved);
+        }
+
+        [Fact]
+        public void Builder_WithLoggerFactory_ClientsUseProvidedLoggers()
+        {
+            var requested = new List<string>();
+            var loggerFactory = new SpyLoggerFactory(requested);
+
+            var factory = ModbusFactoryBuilder.Create().WithLoggerFactory(loggerFactory).Build();
+            factory.GetOrAdd("k", new ModbusTcpClientConfig());
+
+            Assert.Contains(typeof(ModbusTcpClient).FullName, requested);
+        }
+
+        private sealed class SpyLoggerFactory : ILoggerFactory
+        {
+            private readonly List<string> requested;
+
+            public SpyLoggerFactory(List<string> requested) => this.requested = requested;
+
+            public ILogger CreateLogger(string categoryName)
+            {
+                requested.Add(categoryName);
+                return NullLogger.Instance;
+            }
+
+            public void AddProvider(ILoggerProvider provider)
+            {
+            }
+
+            public void Dispose()
+            {
+            }
+        }
+
+        [Fact]
+        public void Builder_NullArguments_ThrowArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() => ModbusFactoryBuilder.Create().WithLoggerFactory(null!));
+            Assert.Throws<ArgumentNullException>(() => ModbusFactoryBuilder.Create().WithTcpParser(null!));
+            Assert.Throws<ArgumentNullException>(() => ModbusFactoryBuilder.Create().WithRtuParser(null!));
+            Assert.Throws<ArgumentNullException>(() => ModbusFactoryBuilder.Create().WithFrameBuilder(null!));
+            Assert.Throws<ArgumentNullException>(() => ModbusFactoryBuilder.Create().WithConnectionManager(null!));
         }
     }
 }

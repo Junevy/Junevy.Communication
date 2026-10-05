@@ -1,0 +1,29 @@
+# Changelog
+
+本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
+
+## [Unreleased] — 分支 fix/modbus-review-findings
+
+### 新增（Added）
+
+- 2026-10-05 `ModbusFactoryBuilder`：无 Microsoft DI 容器场景下的 `ModbusFactory` 流式构建器（适配 Prism 等第三方容器直接 `RegisterInstance`）。提供 `WithLoggerFactory` / `WithTcpParser` / `WithRtuParser` / `WithFrameBuilder` / `WithConnectionManager` / `Build`；未设置项与 `AddModbusFactory` 的 DI 默认值一致。
+- 2026-10-05 `ModbusErrorKind` 结构化错误分类（`ModbusResult.ErrorKind` + `Fail` 重载），重连判断不再依赖错误消息字符串匹配。
+- 2026-10-05 `ModbusExceptionCode` 线上异常码枚举（含 `Describe()` 扩展）；`ModbusException.ErrorCode` 类型同步更换，参数校验统一改抛标准异常。
+- 2026-10-05 `ModbusTransportBase` 公共传输基类：TCP/RTU 的请求/重试/重连骨架去重（两文件 1233 行 → 752 行）。
+- 2026-10-05 TCP 真异步 I/O（NetworkStream + 全链路 `CancellationToken`，net8.0 取消即时生效；net472 在下一个 I/O 边界生效）。
+
+### 变更（Changed，破坏性）
+
+- 2026-10-05 `ModbusTCP`/`ModbusRTU` 更名 `ModbusTcpClient`/`ModbusRtuClient`；命名空间 `TCP`/`RTU` → `Tcp`/`Rtu`；配置类更名 `ModbusTcpClientConfig`/`ModbusRtuClientConfig`。
+- 2026-10-05 `ReadTimeOut`/`WriteTimeOut` → `ReadTimeout`/`WriteTimeout`；`ModbusRequest.Start`/`Length` → `StartAddress`/`Quantity`；`IntervalTime` → `FrameReadInterval`；删除 `SetPort`（`Port` 改为普通可写属性）与 `CheckConnection`（用 `IsConnected`）。
+- 2026-10-05 库不再修改调用者的 `ModbusRequest`；`IModbusFrameBuilder` 协议参数显式化；`ModbusRequest` 收敛为纯数据类（移除 UI 事件）。
+- 2026-10-05 目标框架 `net472;net6.0` → `net472;net8.0`；Microsoft.Extensions.* 与 System.IO.Ports 升级至 8.0.0；生成 NuGet 文档文件、MIT 许可证表达式。
+
+### 修复（Fixed）
+
+- 2026-10-05 TCP 事务 ID 由库内自增管理并按精确值匹配响应，消除旧响应错配风险（此前上线值恒为 `TransactionId+1` 且从不递增）。
+- 2026-10-05 Modbus 异常响应（FC|0x80）在解析器层即返回失败（含异常码），作为终态不重试——此前在裸 `Request` 层被误报为成功；RTU 侧不再被"等待后续帧"吞成超时。
+- 2026-10-05 结果式 API 不再逃逸异常（非法 MBAP 长度、RTU 零长解析帧改为失败返回），同步/异步行为对齐。
+- 2026-10-05 `ModbusConnectionManager.GetOrAdd` 并发竞态不再泄漏输家实例（输家安全释放后进入赢家路径）。
+- 2026-10-05 DI 容器中 `IModbusConnectionManager` 与 `IModbusFactory` 共享同一注册表。
+- 2026-10-05 Connect/Disconnect 与请求经 `requestLock` 串行化，消除连接重建与在途请求的竞态。
