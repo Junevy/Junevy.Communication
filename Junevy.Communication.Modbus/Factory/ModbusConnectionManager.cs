@@ -76,16 +76,24 @@ namespace Junevy.Communication.Modbus.Factory
             if (string.IsNullOrEmpty(key))
                 throw new ArgumentException("Key must not be null or empty.", nameof(key));
 
-            // First check if an alias target is already registered
-            var entry = entries.GetOrAdd(key, _ =>
+            // ConcurrentDictionary.GetOrAdd 的 valueFactory 在竞态下可能执行多次，
+            // 会创建多份连接实例且除赢家外全部泄漏 —— 改为 TryGetValue/TryAdd 自旋，
+            // 输家立即释放自己创建的实例。
+            while (true)
             {
-                var instance = factory(key);
-                return new Entry(instance);
-            });
+                if (entries.TryGetValue(key, out var existing))
+                {
+                    return ResolveFromEntry(key, existing) ?? throw new InvalidOperationException(
+                        $"Failed to resolve Modbus instance for key '{key}'.");
+                }
 
-            // If the existing entry is an alias, resolve it
-            return ResolveFromEntry(key, entry) ?? throw new InvalidOperationException(
-                $"Failed to resolve Modbus instance for key '{key}'.");
+                var instance = factory(key);
+                if (entries.TryAdd(key, new Entry(instance)))
+                    return instance;
+
+                instance.Dispose();
+                logger.LogWarning(" [GetOrAdd] Lost creation race for '{Key}', disposed duplicate instance.", key);
+            }
         }
 
         public bool TryRemove(string key)

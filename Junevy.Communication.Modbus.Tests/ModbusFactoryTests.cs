@@ -2,10 +2,12 @@
 using Junevy.Communication.Modbus.Factory;
 using Junevy.Communication.Modbus.RTU;
 using Junevy.Communication.Modbus.TCP;
+using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Junevy.Communication.Modbus.DependencyInjection;
+using Moq;
 
 namespace Junevy.Communication.Modbus.Tests
 {
@@ -163,6 +165,35 @@ namespace Junevy.Communication.Modbus.Tests
             var b = factory.GetOrAdd("x", new ModbusTCPConfig());
             Assert.Same(a, b);
             Assert.Equal(1, factory.Count);
+        }
+
+        // ── GetOrAdd concurrency race ────────────
+
+        [Fact]
+        public void GetOrAdd_ConcurrentRace_DisposesLosingInstances()
+        {
+            var manager = new ModbusConnectionManager();
+            var created = new List<IModbus>();
+            var sync = new object();
+
+            var tasks = Enumerable.Range(0, 16).Select(_ => Task.Run(() =>
+                manager.GetOrAdd("race", key =>
+                {
+                    var mock = new Mock<IModbus>();
+                    lock (sync) { created.Add(mock.Object); }
+                    return mock.Object;
+                }))).ToArray();
+
+            Task.WaitAll(tasks);
+            var winner = tasks[0].Result;
+
+            Assert.All(tasks, t => Assert.Same(winner, t.Result));
+            foreach (var instance in created)
+            {
+                if (!ReferenceEquals(instance, winner))
+                    Mock.Get(instance).Verify(m => m.Dispose(), Times.Once);
+            }
+            Assert.Equal(1, manager.Count);
         }
 
         // ── Concurrency smoke test ───────────────
