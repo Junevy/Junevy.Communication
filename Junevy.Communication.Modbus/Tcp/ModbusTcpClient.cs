@@ -63,16 +63,25 @@ public sealed class ModbusTcpClient : ModbusTransportBase
         try
         {
             var result = socket!.BeginConnect(Config.Address, Config.Port, null, null);
-            bool success = result.AsyncWaitHandle.WaitOne(Config.ConnectTimeout, true);
-            if (!success)
+            try
             {
-                socket.Dispose();
-                socket = null;
-                Logger.LogWarning(" [Connect] Connection timed out: {Timeout}ms.", Config.ConnectTimeout);
-                return false;
+                bool success = result.AsyncWaitHandle.WaitOne(Config.ConnectTimeout, true);
+                if (!success)
+                {
+                    socket.Dispose();
+                    socket = null;
+                    Logger.LogWarning(" [Connect] Connection timed out: {Timeout}ms.", Config.ConnectTimeout);
+                    return false;
+                }
+
+                socket.EndConnect(result);
+            }
+            finally
+            {
+                // AsyncWaitHandle 是一次性内核句柄，不释放会泄漏；成功路径同样需要释放
+                result.AsyncWaitHandle.Close();
             }
 
-            socket.EndConnect(result);
             stream = new NetworkStream(socket, ownsSocket: false);
             Logger.LogDebug(" [Connect] Connected to {Address}:{Port}.", Config.Address, Config.Port);
             return true;
@@ -92,16 +101,33 @@ public sealed class ModbusTcpClient : ModbusTransportBase
             return false;
 
         ResetSocket();
+        var connectSocket = socket!;
 
-#if NET8_0_OR_GREATER
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(Config.ConnectTimeout);
         try
         {
-            var asyncResult = socket!.BeginConnect(Config.Address, Config.Port, null, null);
-            await Task.Factory.FromAsync(asyncResult, socket.EndConnect).WaitAsync(timeoutCts.Token);
-            stream = new NetworkStream(socket, ownsSocket: false);
-            Logger.LogDebug(" [Connect] Connected to {Address}:{Port}.", Config.Address, Config.Port);
+#if NET8_0_OR_GREATER
+            await connectSocket.ConnectAsync(Config.Address, Config.Port, timeoutCts.Token).ConfigureAwait(false);
+#else
+            // net472 无 Socket.ConnectAsync(CancellationToken)：用 APM 的 Task 包装 + WhenAny 实现真异步，
+            // 调用线程立即返回。超时时销毁 socket 中止底层连接，并观察其最终异常以免"未观察的任务异常"。
+            var connectTask = Task.Factory.FromAsync(
+                connectSocket.BeginConnect(Config.Address, Config.Port, null, null),
+                connectSocket.EndConnect);
+            var timeoutTask = Task.Delay(Timeout.Infinite, timeoutCts.Token);
+            var finished = await Task.WhenAny(connectTask, timeoutTask).ConfigureAwait(false);
+            if (finished != connectTask)
+            {
+                connectSocket.Dispose();
+                connectTask.ContinueWith(t => { var ignored = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
+                timeoutCts.Token.ThrowIfCancellationRequested();
+            }
+
+            await connectTask.ConfigureAwait(false);
+#endif
+            stream = new NetworkStream(connectSocket, ownsSocket: false);
+            Logger.LogDebug(" [ConnectAsync] Connected to {Address}:{Port}.", Config.Address, Config.Port);
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -122,12 +148,6 @@ public sealed class ModbusTcpClient : ModbusTransportBase
             InvalidateConnection();
             return false;
         }
-#else
-        // net472 无 Task.WaitAsync：退化为同步核心（其 WaitOne 内含 ConnectTimeout 超时），
-        // 取消令牌在连接期间不生效，于下一个 I/O 边界生效。
-        cancellationToken.ThrowIfCancellationRequested();
-        return OpenConnection();
-#endif
     }
 
     protected override void CloseConnection()
