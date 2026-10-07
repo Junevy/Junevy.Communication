@@ -242,7 +242,7 @@ public sealed class ModbusTcpClient : ModbusTransportBase
     }
 
     protected override bool RequiresNewConnection(ModbusResult<byte[]> result)
-        => result.ErrorKind is ModbusErrorKind.Timeout or ModbusErrorKind.ConnectionClosed;
+        => result.ErrorKind is ModbusErrorKind.Timeout or ModbusErrorKind.ConnectionClosed or ModbusErrorKind.ProtocolViolation;
 
     // ————————————————— 收发钩子 —————————————————
 

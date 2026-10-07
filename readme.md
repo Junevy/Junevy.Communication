@@ -185,7 +185,7 @@ Every failed `ModbusResult` carries a machine-readable `ErrorKind` (`ModbusError
 | `InvalidRequest` | The request failed local validation before being sent |
 | `ConnectionClosed` | The connection was down, dropped, or could not be (re)established |
 | `Timeout` | Connect/read/write timeout |
-| `ProtocolViolation` | Malformed frame, invalid length, or CRC failure |
+| `ProtocolViolation` | Malformed frame, invalid length, or CRC failure (TCP: the connection is discarded) |
 | `ModbusException` | The slave answered with a Modbus exception response (the exception code is in the message, e.g. `Code=0x02`) |
 | `Cancelled` | The `CancellationToken` fired before completion |
 

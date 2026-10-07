@@ -35,3 +35,4 @@
 - 2026-10-07 高层 API（ReadCoils / ReadHoldingRegisters / ReadWriteMultipleRegisters / GetCommEvent* / ReportServerId / ReadExceptionStatus 等）保留底层的 ErrorKind（此前一律重置为 Unspecified）；底层返回数据过短时返回 ProtocolViolation，不再抛出 ArgumentException；ModbusHelper.ParseCoils 的长度检查修正为 3 + 字节数；通信异常按类型归类为 Timeout / ConnectionClosed 而非 Unspecified；RTU 接收缓冲溢出报 ProtocolViolation。
 - 2026-10-07 ModbusConnectionManager.TryRemove 移除带别名的主连接时，同时移除所有指向它的别名并释放实例（此前实例既不释放也不可达，串口/套接字泄漏）；同一实例被多个直接键引用时仅在最后一个引用移除时释放。
 - 2026-10-08 TCP 异步连接：net8.0 使用 Socket.ConnectAsync(CancellationToken)，net472 使用 FromAsync + Task.WhenAny 实现真异步（此前 net472 阻塞调用线程到 ConnectTimeout）；同步连接释放 AsyncWaitHandle。
+- 2026-10-08 TCP 收到 ProtocolViolation（非法 PDU 长度、事务 ID 不匹配、协议 ID 非零、从站号不匹配）后销毁连接，避免残帧污染下一次请求；Modbus 异常响应不受影响。
