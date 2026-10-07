@@ -2,7 +2,7 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
-## [Unreleased] — 分支 fix/modbus-review-findings
+## [Unreleased] — 分支 fix/modbus-p1-critical（v1.0.2）
 
 ### 新增（Added）
 

@@ -29,9 +29,9 @@ new ModbusRtuClient(config, logger, responseParser, IModbusFrameBuilder)   // �
 | `StopBits` | `StopBits` / `One` | 停止位 |
 | `DtrEnable` | bool / `false` | DTR 信号 |
 | `RtsEnable` | bool / `false` | RTS 信号 |
-| `ReadTimeout` | int / `2000` | 同步路径设为 `SerialPort.ReadTimeout` |
+| `ReadTimeout` | int / `2000` | 同步路径设为 `SerialPort.ReadTimeout`；异步路径经 linked CTS 强制。⚠️ 与 TCP 不同，它只约束**单次** Read 阻塞，不是整帧总时限 |
 | `WriteTimeout` | int / `2000` | 同步路径设为 `SerialPort.WriteTimeout` |
-| `RetryCount` | int / `3` | 首次失败后重试次数 |
+| `RetryCount` | int / `3` | 首次失败后重试次数。RTU 的失败不需要新连接（如 CRC 错），按此次数重试 |
 | `RetryInterval` | int / `100` | 重试间隔毫秒 |
 | `FrameReadInterval` | int / `30` | **RTU 独有**：Read-until-frame 循环中两次解析尝试之间的等待毫秒 |
 | `Reconnect` | bool / `false` | 串口故障后重开开关 |
@@ -62,7 +62,7 @@ new ModbusRtuClient(config, logger, responseParser, IModbusFrameBuilder)   // �
 
 ## 配置转发 / 骨架钩子取值
 
-`ShouldReconnectAfterFailure` 保持基类默认 **false**——RTU **不**依据 `ErrorKind` 主动销毁串口；重连只发生在 `EnsureConnected` 发现 `IsOpen=false` 时。消息文本用 " [Request] Port not open." / " [Request] Send frame failed."。
+`RequiresNewConnection` 保持基类默认 **false**——RTU **不**依据 `ErrorKind` 销毁串口；重连只发生在 `EnsureConnected` 发现 `IsOpen=false` 时。因此 RTU 的失败（如 CRC 错）即使 `Reconnect=false` 也按 `RetryCount` 在同一串口上重试（与 TCP 相反）。消息文本用 " [Request] Port not open." / " [Request] Send frame failed."。
 
 ## RS-485 多从站
 
