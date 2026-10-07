@@ -18,6 +18,7 @@
 - 2026-10-05 `ReadTimeOut`/`WriteTimeOut` → `ReadTimeout`/`WriteTimeout`；`ModbusRequest.Start`/`Length` → `StartAddress`/`Quantity`；`IntervalTime` → `FrameReadInterval`；删除 `SetPort`（`Port` 改为普通可写属性）与 `CheckConnection`（用 `IsConnected`）。
 - 2026-10-05 库不再修改调用者的 `ModbusRequest`；`IModbusFrameBuilder` 协议参数显式化；`ModbusRequest` 收敛为纯数据类（移除 UI 事件）。
 - 2026-10-05 目标框架 `net472;net6.0` → `net472;net8.0`；Microsoft.Extensions.* 与 System.IO.Ports 升级至 8.0.0；生成 NuGet 文档文件、MIT 许可证表达式。
+- 2026-10-07 重试与重连解耦：Reconnect=false 时，需要重建连接的失败（超时、连接关闭、发送失败）立即返回真实错误，不再空转重试并被覆盖为 "Not connected"；未连接且 Reconnect=false 时请求立即返回，不再等待 RetryInterval。Reconnect=true 的行为不变。
 
 ### 修复（Fixed）
 

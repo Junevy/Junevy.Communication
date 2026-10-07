@@ -221,7 +221,7 @@ public sealed class ModbusTcpClient : ModbusTransportBase
         return ModbusResult<byte[]>.Fail(" [Request] Invalid request.", ModbusErrorKind.InvalidRequest);
     }
 
-    protected override bool ShouldReconnectAfterFailure(ModbusResult<byte[]> result)
+    protected override bool RequiresNewConnection(ModbusResult<byte[]> result)
         => result.ErrorKind is ModbusErrorKind.Timeout or ModbusErrorKind.ConnectionClosed;
 
     // ————————————————— 收发钩子 —————————————————

@@ -123,6 +123,10 @@ namespace Junevy.Communication.Modbus.Tests.TestSupport
         {
         }
 
+        /// <summary>建模 TCP 语义：Timeout / ConnectionClosed 需要重建连接后才能重试。</summary>
+        protected override bool RequiresNewConnection(ModbusResult<byte[]> result)
+            => result.ErrorKind == ModbusErrorKind.Timeout || result.ErrorKind == ModbusErrorKind.ConnectionClosed;
+
         private static ModbusResult<byte[]> DefaultSuccess()
             => ModbusResult<byte[]>.Success(new byte[] { 0, 0, 0, 0, 0, 0, 1, 3, 2, 0, 1 });
     }

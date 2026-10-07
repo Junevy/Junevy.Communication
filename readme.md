@@ -219,7 +219,7 @@ var rtu = new ModbusRtuClient(new ModbusRtuClientConfig
 
 Behavior:
 
-- `RetryCount` is the number of retries after the first attempt.
+- `RetryCount` is the number of retries after the first attempt. For TCP, a timeout or a closed connection can only be retried when `Reconnect = true`; with `Reconnect = false` the request returns immediately with the real error (`Timeout` / `ConnectionClosed`).
 - When `Reconnect = true`, a failed or closed TCP socket is recreated before the next retry. Note: this also applies after an explicit `Disconnect()` — the next request silently reconnects. Set `Reconnect = false` if you want `Disconnect()` to stay disconnected.
 - For RTU, a faulted or closed serial port is closed and reopened before the next retry.
 - Modbus exception responses are never retried (terminal failures).

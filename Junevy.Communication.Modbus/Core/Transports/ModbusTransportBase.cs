@@ -119,10 +119,10 @@ namespace Junevy.Communication.Modbus.Core.Transports
                 ModbusErrorKind.InvalidRequest);
 
         /// <summary>
-        /// 失败结果（非 Modbus 异常响应）是否应销毁连接后再重试。
-        /// TCP：ErrorKind 为 Timeout 或 ConnectionClosed 时重连；RTU 保持现状：从不据此重连（基类默认 false）。
+        /// 失败结果（非 Modbus 异常响应）是否必须重建连接才能重试。
+        /// TCP：ErrorKind 为 Timeout 或 ConnectionClosed 时返回 true；RTU 保持现状：从不（基类默认 false）。
         /// </summary>
-        protected virtual bool ShouldReconnectAfterFailure(ModbusResult<byte[]> result) => false;
+        protected virtual bool RequiresNewConnection(ModbusResult<byte[]> result) => false;
 
         // ————————————————— IModbus 公开 API（基类实现） —————————————————
 
@@ -251,6 +251,10 @@ namespace Junevy.Communication.Modbus.Core.Transports
 
             for (int attempt = 1; attempt <= attempts; attempt++)
             {
+                // 规则 A：未连接且不允许自动重连 → 立即返回，不等待、不再尝试。
+                if (!IsConnected && !ReconnectEnabled)
+                    return ModbusResult<byte[]>.Fail(GetNotConnectedMessage(isAsync: false), ModbusErrorKind.ConnectionClosed);
+
                 if (!EnsureConnected())
                 {
                     lastResult = ModbusResult<byte[]>.Fail(GetNotConnectedMessage(isAsync: false), ModbusErrorKind.ConnectionClosed);
@@ -269,29 +273,42 @@ namespace Junevy.Communication.Modbus.Core.Transports
                 {
                     if (!SendFrame(request))
                     {
+                        // 规则 B：发送失败销毁连接；Reconnect=false 时立即返回，不再尝试。
                         lastResult = ModbusResult<byte[]>.Fail(GetSendFailedMessage(isAsync: false), ModbusErrorKind.ConnectionClosed);
                         InvalidateConnection();
+                        if (!ReconnectEnabled)
+                            return lastResult;
                     }
                     else
                     {
                         lastResult = ReceiveFrame(request);
                         if (lastResult.IsSuccess)
-                            return lastResult;
+                            return lastResult;  // 规则 F：成功
 
-                        // Modbus exception responses are terminal answers — return immediately, no resend.
-                        if (!lastResult.IsSuccess && lastResult.ErrorKind == ModbusErrorKind.ModbusException)
+                        // 规则 E：Modbus exception responses are terminal answers — return immediately, no resend.
+                        if (lastResult.ErrorKind == ModbusErrorKind.ModbusException)
                             return lastResult;
 
                         Logger.LogWarning(" [Request] Attempt {Attempt}/{Attempts} failed: {Error}.", attempt, attempts, lastResult.ErrorMessage);
-                        if (ShouldReconnectAfterFailure(lastResult))
+
+                        // 规则 C：需要重建连接的失败（超时、连接关闭）→ 销毁连接；Reconnect=false 时立即返回真实 ErrorKind。
+                        if (RequiresNewConnection(lastResult))
+                        {
                             InvalidateConnection();
+                            if (!ReconnectEnabled)
+                                return lastResult;
+                        }
+                        // 规则 D：无需换连接的失败 → 同一连接上等待后重试，次数受 RetryCount 限制。
                     }
                 }
                 catch (Exception ex) when (IsCommunicationException(ex))
                 {
                     Logger.LogWarning(ex, " [Request] Attempt {Attempt}/{Attempts} failed.", attempt, attempts);
                     lastResult = ModbusResult<byte[]>.Fail($" [Request] {ex.Message}");
+                    // 规则 B：通信异常已破坏连接；Reconnect=false 时立即返回，不再尝试。
                     InvalidateConnection();
+                    if (!ReconnectEnabled)
+                        return lastResult;
                 }
 
                 if (attempt < attempts)
@@ -312,6 +329,10 @@ namespace Junevy.Communication.Modbus.Core.Transports
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
+                // 规则 A：未连接且不允许自动重连 → 立即返回，不等待、不再尝试。
+                if (!IsConnected && !ReconnectEnabled)
+                    return ModbusResult<byte[]>.Fail(GetNotConnectedMessage(isAsync: true), ModbusErrorKind.ConnectionClosed);
+
                 if (!await EnsureConnectedAsync(cancellationToken))
                 {
                     lastResult = ModbusResult<byte[]>.Fail(GetNotConnectedMessage(isAsync: true), ModbusErrorKind.ConnectionClosed);
@@ -330,29 +351,42 @@ namespace Junevy.Communication.Modbus.Core.Transports
                 {
                     if (!await SendFrameAsync(request, cancellationToken))
                     {
+                        // 规则 B：发送失败销毁连接；Reconnect=false 时立即返回，不再尝试。
                         lastResult = ModbusResult<byte[]>.Fail(GetSendFailedMessage(isAsync: true), ModbusErrorKind.ConnectionClosed);
                         InvalidateConnection();
+                        if (!ReconnectEnabled)
+                            return lastResult;
                     }
                     else
                     {
                         lastResult = await ReceiveFrameAsync(request, cancellationToken);
                         if (lastResult.IsSuccess)
-                            return lastResult;
+                            return lastResult;  // 规则 F：成功
 
-                        // Modbus exception responses are terminal answers — return immediately, no resend.
-                        if (!lastResult.IsSuccess && lastResult.ErrorKind == ModbusErrorKind.ModbusException)
+                        // 规则 E：Modbus exception responses are terminal answers — return immediately, no resend.
+                        if (lastResult.ErrorKind == ModbusErrorKind.ModbusException)
                             return lastResult;
 
                         Logger.LogWarning(" [RequestAsync] Attempt {Attempt}/{Attempts} failed: {Error}.", attempt, attempts, lastResult.ErrorMessage);
-                        if (ShouldReconnectAfterFailure(lastResult))
+
+                        // 规则 C：需要重建连接的失败（超时、连接关闭）→ 销毁连接；Reconnect=false 时立即返回真实 ErrorKind。
+                        if (RequiresNewConnection(lastResult))
+                        {
                             InvalidateConnection();
+                            if (!ReconnectEnabled)
+                                return lastResult;
+                        }
+                        // 规则 D：无需换连接的失败 → 同一连接上等待后重试，次数受 RetryCount 限制。
                     }
                 }
                 catch (Exception ex) when (IsCommunicationException(ex))
                 {
                     Logger.LogWarning(ex, " [RequestAsync] Attempt {Attempt}/{Attempts} failed.", attempt, attempts);
                     lastResult = ModbusResult<byte[]>.Fail($" [RequestAsync] {ex.Message}");
+                    // 规则 B：通信异常已破坏连接；Reconnect=false 时立即返回，不再尝试。
                     InvalidateConnection();
+                    if (!ReconnectEnabled)
+                        return lastResult;
                 }
 
                 if (attempt < attempts)

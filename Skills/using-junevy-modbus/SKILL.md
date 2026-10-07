@@ -106,7 +106,7 @@ Extension methods (all 15 function codes): `ReadCoils/DiscreteInputs/HoldingRegi
 - **Transaction ID (TCP)**: auto-assigned per request by the client; matched exactly on response. Never set it yourself for transport calls.
 - **Modbus exception responses** (slave returns FC|0x80) are **terminal failures**: `IsSuccess=false`, `ErrorKind=ModbusException`, code in the message (e.g. `Code=0x02`). Never retried.
 - **Reconnect is lazy/per-request**: with `Reconnect=true` a dropped connection is physically re-established at the next request attempt (fresh TCP handshake / serial re-open), after failures marked `Timeout`/`ConnectionClosed`. No background watchdog. Note: `Disconnect()` followed by a request **silently reconnects** when `Reconnect=true` — set `Reconnect=false` to stay disconnected.
-- **Retry**: `RetryCount` = retries after the first attempt; `RetryInterval` ms between attempts.
+- **Retry**: RetryCount = retries after the first attempt; RetryInterval ms between attempts. A failure that destroys the connection (TCP Timeout/ConnectionClosed, send failure) is retried only when Reconnect=true; with Reconnect=false the request returns immediately with the real ErrorKind.
 - **Thread-safety**: one request at a time per connection (`SemaphoreSlim`). Cancel `RequestAsync` via `CancellationToken` (instant on net8.0; next-I/O-boundary on net472).
 - **Timeouts**: ReadTimeout is the total deadline for receiving one complete response frame (sync and async). WriteTimeout is the deadline for sending one request frame. A timeout returns ErrorKind.Timeout.
 
