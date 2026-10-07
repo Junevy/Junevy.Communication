@@ -24,10 +24,11 @@ namespace Junevy.Communication.Modbus.Core.Interfaces
         public bool Connect();
 
         /// <summary>
-        /// 异步连接 Modbus 从站
+        /// 异步连接 Modbus 从站。取消令牌在等待请求锁与建立连接两处生效。
         /// </summary>
-        /// <returns>是否成功连接</returns>
-        public Task<bool> ConnectAsync();
+        /// <param name="cancellationToken">取消令牌；用户取消时抛出 <see cref="OperationCanceledException"/>。</param>
+        /// <returns>连接成功返回 true；连接失败或连接超时返回 false。</returns>
+        public Task<bool> ConnectAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// 断开 Modbus 从站连接。

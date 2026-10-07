@@ -10,7 +10,7 @@ description: Use when a .NET project integrates the Junevy.Communication.Modbus 
 Modbus TCP/RTU **master (client)** library for .NET (net472 + net8.0) by Junevy. Core principles:
 
 - **Result-based, not exception-based**: reads/writes return `ModbusResult<T>` (`IsSuccess`, `Data`, `ErrorMessage`, `ErrorKind`) instead of throwing. Parameter validation throws `ArgumentException`; `Request`/`RequestAsync` never throw on protocol violations.
-- **Config-object clients**: `new ModbusTcpClient(config)` / `new ModbusRtuClient(config)` — no `ConnectAsync(host, port)` overloads.
+- **Config-object clients**: `new ModbusTcpClient(config)` / `new ModbusRtuClient(config)` — no `ConnectAsync(host, port)` overloads. `ConnectAsync(CancellationToken)` throws `OperationCanceledException` when cancelled and returns false when the connection fails or times out.
 - **The library never mutates your request objects** and returns them untouched.
 
 ## When NOT to Use

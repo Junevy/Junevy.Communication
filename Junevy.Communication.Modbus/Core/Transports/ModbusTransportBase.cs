@@ -141,14 +141,15 @@ namespace Junevy.Communication.Modbus.Core.Transports
             }
         }
 
-        public async Task<bool> ConnectAsync()
+        public async Task<bool> ConnectAsync(CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
 
-            await requestLock.WaitAsync();
+            // 令牌在等待请求锁与建立连接两处生效；用户取消抛出 OperationCanceledException
+            await requestLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                return await OpenConnectionAsync(CancellationToken.None);
+                return await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {

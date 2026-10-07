@@ -185,7 +185,7 @@ namespace Junevy.Communication.Modbus.Tests
 
             public bool Connect() => throw new NotSupportedException();
 
-            public Task<bool> ConnectAsync() => throw new NotSupportedException();
+            public Task<bool> ConnectAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
             public void Disconnect() => throw new NotSupportedException();
 
