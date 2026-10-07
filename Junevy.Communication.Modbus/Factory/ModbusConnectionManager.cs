@@ -14,6 +14,10 @@ namespace Junevy.Communication.Modbus.Factory
     {
         // Maps a name to either a direct IModbus instance or an alias target name.
         private readonly ConcurrentDictionary<string, Entry> entries = new();
+
+        // 别名结构变更（TryRemove / RegisterAlias / RemoveAlias）的互斥锁：
+        // 保证"收集别名 + 删除条目 + 校验目标存在"的原子性。Add / GetOrAdd / Get / TryGet 保持无锁。
+        private readonly object registryLock = new object();
         private readonly ILogger<ModbusConnectionManager> logger;
         private bool disposed;
 
@@ -107,14 +111,30 @@ namespace Junevy.Communication.Modbus.Factory
         {
             ThrowIfDisposed();
 
-            if (!entries.TryRemove(key, out var entry))
-                return false;
-
-            if (entry.IsDirect)
+            lock (registryLock)
             {
-                // Check if any aliases still reference this instance before disposing
-                bool hasAliases = entries.Values.Any(e => e.AliasTarget == key);
-                if (!hasAliases)
+                if (!entries.TryGetValue(key, out var entry))
+                    return false;
+
+                if (!entry.IsDirect)
+                {
+                    entries.TryRemove(key, out _);
+                    logger.LogInformation(" [TryRemove] Removed alias '{Key}' -> '{Target}'.", key, entry.AliasTarget);
+                    return true;
+                }
+
+                // 直接实例：删除条目及所有直接或间接指向它的别名，然后释放实例
+                entries.TryRemove(key, out _);
+                foreach (var aliasKey in CollectAliasesResolvingTo(key))
+                {
+                    entries.TryRemove(aliasKey, out _);
+                    logger.LogInformation(" [TryRemove] Removed alias '{AliasKey}' -> '{Key}'.", aliasKey, key);
+                }
+
+                // 同一实例还被另一个直接条目引用时不释放，避免重复释放/悬挂引用
+                bool stillReferenced = entries.Values.Any(e =>
+                    e.IsDirect && ReferenceEquals(e.Instance, entry.Instance));
+                if (!stillReferenced)
                 {
                     try
                     {
@@ -126,17 +146,37 @@ namespace Junevy.Communication.Modbus.Factory
                         logger.LogWarning(ex, " [TryRemove] Error disposing instance '{Key}'.", key);
                     }
                 }
-                else
+
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// 收集所有直接或间接解析到 <paramref name="key"/> 的别名键（不含 key 本身）。
+        /// 固定算法：S = {key}；每轮把 AliasTarget ∈ S 的别名键加入 S，直到无新增。
+        /// 调用方必须持有 <see cref="registryLock"/>。
+        /// </summary>
+        private List<string> CollectAliasesResolvingTo(string key)
+        {
+            var resolved = new HashSet<string> { key };
+            bool added = true;
+            while (added)
+            {
+                added = false;
+                foreach (var kvp in entries)
                 {
-                    logger.LogInformation(" [TryRemove] Removed '{Key}' but kept instance alive (aliases exist).", key);
+                    if (!kvp.Value.IsDirect
+                        && kvp.Value.AliasTarget != null
+                        && resolved.Contains(kvp.Value.AliasTarget)
+                        && resolved.Add(kvp.Key))
+                    {
+                        added = true;
+                    }
                 }
             }
-            else
-            {
-                logger.LogInformation(" [TryRemove] Removed alias '{Key}' -> '{Target}'.", key, entry.AliasTarget);
-            }
 
-            return true;
+            resolved.Remove(key);
+            return resolved.ToList();
         }
 
         public bool RegisterAlias(string aliasKey, string existingKey)
@@ -148,11 +188,25 @@ namespace Junevy.Communication.Modbus.Factory
             if (string.IsNullOrEmpty(existingKey))
                 throw new ArgumentException("Existing key must not be null or empty.", nameof(existingKey));
 
-            var aliasEntry = new Entry(existingKey); // alias, not direct
-            if (!entries.TryAdd(aliasKey, aliasEntry))
+            lock (registryLock)
             {
-                logger.LogWarning(" [RegisterAlias] Alias key '{AliasKey}' already exists.", aliasKey);
-                return false;
+                if (string.Equals(aliasKey, existingKey, StringComparison.Ordinal))
+                {
+                    logger.LogWarning(" [RegisterAlias] Alias key '{AliasKey}' equals its target; alias not registered.", aliasKey);
+                    return false;
+                }
+
+                if (!entries.ContainsKey(existingKey))
+                {
+                    logger.LogWarning(" [RegisterAlias] Target '{ExistingKey}' is not registered; dangling alias '{AliasKey}' rejected.", existingKey, aliasKey);
+                    return false;
+                }
+
+                if (!entries.TryAdd(aliasKey, new Entry(existingKey))) // alias, not direct
+                {
+                    logger.LogWarning(" [RegisterAlias] Alias key '{AliasKey}' already exists.", aliasKey);
+                    return false;
+                }
             }
 
             logger.LogInformation(" [RegisterAlias] Alias '{AliasKey}' -> '{ExistingKey}'.", aliasKey, existingKey);
@@ -163,22 +217,21 @@ namespace Junevy.Communication.Modbus.Factory
         {
             ThrowIfDisposed();
 
-            if (!entries.TryRemove(aliasKey, out var entry))
-                return false;
-
-            if (!entry.IsDirect)
+            lock (registryLock)
             {
+                if (!entries.TryGetValue(aliasKey, out var entry))
+                    return false;
+
+                if (entry.IsDirect)
+                {
+                    logger.LogWarning(" [RemoveAlias] '{Key}' is not an alias. Use TryRemove to remove a master entry.", aliasKey);
+                    return false;
+                }
+
+                entries.TryRemove(aliasKey, out _);
                 logger.LogInformation(" [RemoveAlias] Removed alias '{AliasKey}' -> '{Target}'.", aliasKey, entry.AliasTarget);
+                return true;
             }
-            else
-            {
-                // It's a direct entry — put it back, we don't want to accidentally remove a master
-                entries.TryAdd(aliasKey, entry);
-                logger.LogWarning(" [RemoveAlias] '{Key}' is not an alias. Use TryRemove to remove a master entry.", aliasKey);
-                return false;
-            }
-
-            return true;
         }
 
         public void Dispose()

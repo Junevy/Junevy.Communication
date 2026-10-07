@@ -48,8 +48,7 @@ namespace Junevy.Communication.Modbus.Factory
         IModbus GetOrAdd(string key, Func<string, IModbus> factory);
 
         /// <summary>
-        /// Removes and disposes the Modbus instance registered under the given name.
-        /// If the instance has aliases, only the alias is removed — the instance is not disposed.
+        /// Removes the instance registered under the given name, every alias that resolves to it, and disposes the instance. Removing an alias only removes the alias.
         /// </summary>
         bool TryRemove(string key);
 
@@ -58,7 +57,9 @@ namespace Junevy.Communication.Modbus.Factory
         /// instance as <paramref name="existingKey"/>. Useful for multi-drop RS-485 where
         /// multiple slaves share one physical connection.
         /// </summary>
-        /// <returns>True if the alias was registered; false if the alias key already exists.</returns>
+        /// <returns>
+        /// True if the alias was registered. Returns false when existingKey is not registered, when aliasKey equals existingKey, or when aliasKey already exists.
+        /// </returns>
         bool RegisterAlias(string aliasKey, string existingKey);
 
         /// <summary>

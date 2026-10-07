@@ -58,8 +58,7 @@ namespace Junevy.Communication.Modbus.Factory
         bool TryAdd(string key, ModbusRtuClientConfig config, out IModbus? modbus);
 
         /// <summary>
-        /// Removes and disposes the Modbus instance registered under the given name.
-        /// If the instance is referenced by aliases, only this name is removed.
+        /// Removes the instance registered under the given name, every alias that resolves to it, and disposes the instance. Removing an alias only removes the alias.
         /// </summary>
         bool TryRemove(string key);
 
@@ -67,6 +66,7 @@ namespace Junevy.Communication.Modbus.Factory
         /// Registers an alias so that <paramref name="aliasKey"/> resolves to the same
         /// instance as <paramref name="existingKey"/>. Useful for multi-drop RS-485 where
         /// multiple slave IDs share a single physical serial port connection.
+        /// Returns false when existingKey is not registered, when aliasKey equals existingKey, or when aliasKey already exists.
         /// </summary>
         bool RegisterAlias(string aliasKey, string existingKey);
 

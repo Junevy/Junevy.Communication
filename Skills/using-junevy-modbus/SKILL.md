@@ -99,6 +99,8 @@ factory.GetOrAdd("rs485-bus", new ModbusRtuClientConfig { PortName = "COM3" });
 factory.RegisterAlias("slave-1", "rs485-bus");
 ```
 
+Removing the master key (factory.TryRemove("rs485-bus")) also removes every alias that points to it and disposes the connection. RegisterAlias returns false when the target key does not exist.
+
 Extension methods (all 15 function codes): `ReadCoils/DiscreteInputs/HoldingRegisters/InputRegisters(+Async)`, `WriteSingleCoil/Register`, `WriteMultipleCoils/Registers(+Async)`, `Diagnostics`, `GetCommEventCounter/Log`, `ReportServerId`, `MaskWriteRegister`, `ReadWriteMultipleRegisters`. Raw protocol: `modbus.Request(new ModbusRequest { SlaveId, FunctionCode, StartAddress, Quantity, Data })`.
 
 ## Behavioral Contracts
