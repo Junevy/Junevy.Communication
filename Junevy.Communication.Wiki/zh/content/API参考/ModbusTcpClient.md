@@ -53,7 +53,7 @@ new ModbusTcpClient(config, logger, responseParser, IModbusFrameBuilder)   // �
 
 ## 配置转发 / 骨架钩子取值
 
-`AssignsTransactionId=true`；`RequiresNewConnection` = `ErrorKind ∈ {Timeout, ConnectionClosed}`；消息文本钩子用 " [Request] Not connected." / " [Request] Send failed." 措辞（与 RTU 不同，测试可能依赖文案）。
+`AssignsTransactionId=true`；`RequiresNewConnection` = `ErrorKind ∈ {Timeout, ConnectionClosed, ProtocolViolation}`（2026-10-08 加入 `ProtocolViolation`）；消息文本钩子用 " [Request] Not connected." / " [Request] Send failed." 措辞（与 RTU 不同，测试可能依赖文案）。
 
 ## 使用注意
 

@@ -8,6 +8,7 @@ namespace Junevy.Communication.Modbus.Tests
     /// ConnectAsync 的取消令牌契约：令牌在"等待 requestLock"与"建立连接"两处生效；
     /// 用户取消抛出 OperationCanceledException（而非返回 false），连接失败/超时仍返回 false。
     /// </summary>
+[Collection(SocketTimingCollection.Name)]
     public class ConnectAsyncTokenTests
     {
         [Fact]

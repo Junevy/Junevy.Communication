@@ -59,22 +59,23 @@ public sealed class ModbusTcpClient : ModbusTransportBase
             return false;
 
         ResetSocket();
+        var connectSocket = socket!;   // ResetSocket 刚创建，必定非空
 
         try
         {
-            var result = socket!.BeginConnect(Config.Address, Config.Port, null, null);
+            var result = connectSocket.BeginConnect(Config.Address, Config.Port, null, null);
             try
             {
                 bool success = result.AsyncWaitHandle.WaitOne(Config.ConnectTimeout, true);
                 if (!success)
                 {
-                    socket.Dispose();
+                    connectSocket.Dispose();
                     socket = null;
                     Logger.LogWarning(" [Connect] Connection timed out: {Timeout}ms.", Config.ConnectTimeout);
                     return false;
                 }
 
-                socket.EndConnect(result);
+                connectSocket.EndConnect(result);
             }
             finally
             {
@@ -82,7 +83,7 @@ public sealed class ModbusTcpClient : ModbusTransportBase
                 result.AsyncWaitHandle.Close();
             }
 
-            stream = new NetworkStream(socket, ownsSocket: false);
+            stream = new NetworkStream(connectSocket, ownsSocket: false);
             Logger.LogDebug(" [Connect] Connected to {Address}:{Port}.", Config.Address, Config.Port);
             return true;
         }

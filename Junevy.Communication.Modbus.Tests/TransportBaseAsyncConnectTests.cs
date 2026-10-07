@@ -8,6 +8,7 @@ namespace Junevy.Communication.Modbus.Tests
     /// 基类异步连接路径验证：EnsureConnectedAsync 必须走 OpenConnectionAsync（真异步、可取消），
     /// 而非 Task.Run 包装的同步 OpenConnection（占用线程池线程且取消令牌无效）。
     /// </summary>
+[Collection(SocketTimingCollection.Name)]
     public class TransportBaseAsyncConnectTests
     {
         [Fact]
