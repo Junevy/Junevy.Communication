@@ -396,7 +396,8 @@ namespace Junevy.Communication.Modbus.Core.Transports
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                return await Task.Run(OpenConnection); // 已在请求锁内，走无锁核心，避免重入死锁
+                // 调用方已持有 requestLock；OpenConnectionAsync 是无锁核心，不会重入。
+                return await OpenConnectionAsync(cancellationToken);
             }
             catch (Exception ex) when (IsCommunicationException(ex))
             {

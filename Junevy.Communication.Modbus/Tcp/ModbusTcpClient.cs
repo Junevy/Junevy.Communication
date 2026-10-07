@@ -104,6 +104,12 @@ public sealed class ModbusTcpClient : ModbusTransportBase
             Logger.LogDebug(" [Connect] Connected to {Address}:{Port}.", Config.Address, Config.Port);
             return true;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // 用户取消区别于连接超时：向上传播，由基类请求循环归为 Cancelled
+            InvalidateConnection();
+            throw;
+        }
         catch (OperationCanceledException)
         {
             Logger.LogWarning(" [ConnectAsync] Connection timed out: {Timeout}ms.", Config.ConnectTimeout);

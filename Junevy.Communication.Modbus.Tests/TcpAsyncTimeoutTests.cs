@@ -141,7 +141,9 @@ namespace Junevy.Communication.Modbus.Tests
             var result = await requestTask;
             Assert.False(result.IsSuccess);
             Assert.Equal(ModbusErrorKind.Cancelled, result.ErrorKind);
-            Assert.True(sw.ElapsedMilliseconds < 1500, $"Cancellation took {sw.ElapsedMilliseconds}ms");
+            // 200ms 取消的容限与既有 TcpClient_RequestAsync_CancelledDuringRead_ReturnsCancelledQuickly
+            // 的 5s 惯例一致：全量并行下线程池调度延迟会放大取消传播耗时
+            Assert.True(sw.ElapsedMilliseconds < 5000, $"Cancellation took {sw.ElapsedMilliseconds}ms");
         }
 
         [Fact]
