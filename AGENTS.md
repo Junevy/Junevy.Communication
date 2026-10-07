@@ -12,6 +12,16 @@
 - 输出的代码必须遵守当前类库代码风格。
 - 验收不能以0编译错误为目标，必须对功能进行完整测试，符合预期才能验收。
 
+## 3. 知识库
+
+本库的 Obsidian 知识库位于仓库内 `Junevy.Communication.Wiki/`（随本仓库提交），本仓库会话**读写**。用普通文件工具按路径访问（Read/Grep/Glob、shell），不要依赖 filesystem MCP：`@modelcontextprotocol/server-filesystem` 在客户端支持 roots 时会把允许目录替换成当前工作目录。
+
+- **按需检索**：不在会话开始时通读首页或章节。先用 Grep 搜整个库目录（类型/方法名，如 `ModbusResult`、`ModbusErrorKind`，或主题词）定位笔记，再只读命中段落；定位不到时才看 `知识库首页.md` 的分类索引。改代码前读 `zh/content/Agent协作/开发约定与验收基线.md`（硬性约定），改重连/重试/并发/错误分类时读 `行为契约/` 下的对应笔记。
+- **改完后，同一会话内回写**：公共 API/契约、行为契约（重连重试、并发、错误分类）、协议细节或设计决策变化时，更新对应笔记（优先改已有笔记；新增笔记挂进 `知识库首页.md` 分类索引），与第 2 节"更新 CHANGELOG / Skill / README"一起完成。
+- **不自行提交**：写完运行 `git status --short -- Junevy.Communication.Wiki` 与 `git diff --stat -- Junevy.Communication.Wiki`，把结果放进汇报，由用户决定提交；代为提交时提交信息写明对应的代码改动或版本号。
+- 权威顺序：代码 > 本文件 > `CHANGELOG.md` > `docs/` 计划与审查 > 知识库笔记正文。
+- 消费方（如 AutomationSystem）的会话只读本知识库；它们发现的不一致会在汇报中指出，由本仓库会话核实后修正。
+
 ## 其他要求
 - 对于不明确的功能，必须提问。
 - 对于可扩展的功能，必须询问是否扩展。
