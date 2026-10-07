@@ -14,6 +14,7 @@ namespace Junevy.Communication.Modbus.Tests.TestSupport
         private readonly object connectionsLock = new();
         private int acceptedConnectionCount;
         private int receivedBytes;
+        private int closedByPeerCount;
         private volatile bool disposed;
 
         private SilentTcpServer(TcpListener listener, int port)
@@ -27,6 +28,9 @@ namespace Junevy.Communication.Modbus.Tests.TestSupport
         public int AcceptedConnectionCount => Volatile.Read(ref acceptedConnectionCount);
 
         public int ReceivedBytes => Volatile.Read(ref receivedBytes);
+
+        /// <summary>读到 0 字节（对端关闭连接）而结束的连接数。</summary>
+        public int ClosedByPeerCount => Volatile.Read(ref closedByPeerCount);
 
         /// <summary>连接建立后同步回调（在读取循环启动前调用），默认 null。</summary>
         public Action<NetworkStream>? OnConnected { get; set; }
@@ -88,7 +92,10 @@ namespace Junevy.Communication.Modbus.Tests.TestSupport
                     {
                         int read = await stream.ReadAsync(buffer);
                         if (read == 0)
+                        {
+                            Interlocked.Increment(ref closedByPeerCount);
                             break;
+                        }
                         Interlocked.Add(ref receivedBytes, read);
                     }
                 }

@@ -12,6 +12,7 @@ namespace Junevy.Communication.Modbus.Tests
     /// 异步路径超时验证：ReadTimeout / WriteTimeout 必须对 NetworkStream.ReadAsync/WriteAsync 生效
     /// （此前 Socket.ReceiveTimeout/SendTimeout 只约束同步 I/O，服务端不应答时异步请求永久挂起）。
     /// </summary>
+[Collection(SocketTimingCollection.Name)]
     public class TcpAsyncTimeoutTests
     {
         [Fact]

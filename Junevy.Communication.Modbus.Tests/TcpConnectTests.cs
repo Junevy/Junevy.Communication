@@ -9,6 +9,7 @@ namespace Junevy.Communication.Modbus.Tests
     /// TCP 连接行为验证：ConnectAsync 必须是真异步（不占用调用线程到 ConnectTimeout），
     /// 连接失败/超时时返回 false 且不抛异常。
     /// </summary>
+[Collection(SocketTimingCollection.Name)]
     public class TcpConnectTests
     {
         [Fact]

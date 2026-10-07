@@ -36,3 +36,4 @@
 - 2026-10-07 ModbusConnectionManager.TryRemove 移除带别名的主连接时，同时移除所有指向它的别名并释放实例（此前实例既不释放也不可达，串口/套接字泄漏）；同一实例被多个直接键引用时仅在最后一个引用移除时释放。
 - 2026-10-08 TCP 异步连接：net8.0 使用 Socket.ConnectAsync(CancellationToken)，net472 使用 FromAsync + Task.WhenAny 实现真异步（此前 net472 阻塞调用线程到 ConnectTimeout）；同步连接释放 AsyncWaitHandle。
 - 2026-10-08 TCP 收到 ProtocolViolation（非法 PDU 长度、事务 ID 不匹配、协议 ID 非零、从站号不匹配）后销毁连接，避免残帧污染下一次请求；Modbus 异常响应不受影响。
+- 2026-10-08 Dispose 与在途/排队请求互斥：在途请求返回 ConnectionClosed（不再抛 ObjectDisposedException 或 NullReferenceException），Dispose 返回时连接已关闭且无请求在途；Dispose 之后调用 Request/Connect 抛出 ObjectDisposedException，Disconnect 为空操作；不再释放内部 SemaphoreSlim。

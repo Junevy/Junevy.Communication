@@ -228,6 +228,7 @@ Behavior:
 ## Notes
 
 - One request at a time is serialized per connection with `SemaphoreSlim`.
+- Dispose() aborts in-flight I/O and waits for the in-flight request to exit. Requests that were running or queued return ErrorKind.ConnectionClosed; calling Request/Connect after Dispose throws ObjectDisposedException; Disconnect after Dispose is a no-op.
 - RTU frames use CRC16 verification.
 - TCP responses validate MBAP protocol id, transaction id, and unit id.
 - Register addresses are protocol-level zero-based addresses.

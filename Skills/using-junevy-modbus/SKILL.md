@@ -111,6 +111,7 @@ Extension methods (all 15 function codes): `ReadCoils/DiscreteInputs/HoldingRegi
 - **Retry**: RetryCount = retries after the first attempt; RetryInterval ms between attempts. A failure that destroys the connection (TCP Timeout/ConnectionClosed, send failure) is retried only when Reconnect=true; with Reconnect=false the request returns immediately with the real ErrorKind.
 - **Thread-safety**: one request at a time per connection (`SemaphoreSlim`). Cancel `RequestAsync` via `CancellationToken` (net8.0: instant; net472: reads and connects are aborted by closing the socket, so cancellation also takes effect immediately).
 - **Timeouts**: ReadTimeout is the total deadline for receiving one complete response frame (sync and async). WriteTimeout is the deadline for sending one request frame. A timeout returns ErrorKind.Timeout.
+- **Dispose**: Dispose() aborts in-flight I/O and waits for the in-flight request to exit. Requests that were running or queued return ErrorKind.ConnectionClosed; calling Request/Connect after Dispose throws ObjectDisposedException; Disconnect after Dispose is a no-op.
 
 ## Common Mistakes
 

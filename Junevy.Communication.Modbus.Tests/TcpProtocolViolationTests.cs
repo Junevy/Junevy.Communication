@@ -11,6 +11,7 @@ namespace Junevy.Communication.Modbus.Tests
     /// 流中往往还有未读字节或迟到的响应，复用同一连接会让下一次请求读到残帧。
     /// Modbus 异常响应是完整合法的应答，不应销毁连接。
     /// </summary>
+[Collection(SocketTimingCollection.Name)]
     public class TcpProtocolViolationTests
     {
         private const int RequestLength = 12;

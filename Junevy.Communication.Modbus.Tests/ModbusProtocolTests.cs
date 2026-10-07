@@ -10,6 +10,7 @@ using System.Net.Sockets;
 
 namespace Junevy.Communication.Modbus.Tests
 {
+[Collection(SocketTimingCollection.Name)]
     public class ModbusProtocolTests
     {
         [Fact]

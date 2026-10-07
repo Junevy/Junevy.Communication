@@ -120,7 +120,8 @@ public sealed class ModbusTcpClient : ModbusTransportBase
             if (finished != connectTask)
             {
                 connectSocket.Dispose();
-                connectTask.ContinueWith(t => { var ignored = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
+                // 观察被中止连接的最终异常，避免"未观察的任务异常"（刻意不等待）
+                _ = connectTask.ContinueWith(t => { var ignored = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
                 timeoutCts.Token.ThrowIfCancellationRequested();
             }
 
@@ -248,6 +249,8 @@ public sealed class ModbusTcpClient : ModbusTransportBase
 
     protected override bool SendFrame(ModbusRequest request)
     {
+        // 在途请求期间 DisposeConnection 会把字段置 null；捕获局部引用避免 NullReferenceException
+        var activeSocket = socket ?? throw new ObjectDisposedException(nameof(ModbusTcpClient));
         byte[]? frame = null;
         try
         {
@@ -258,7 +261,7 @@ public sealed class ModbusTcpClient : ModbusTransportBase
             int totalSent = 0;
             while (totalSent < bytesWritten)
             {
-                int sent = socket!.Send(frame, totalSent, bytesWritten - totalSent, SocketFlags.None);
+                int sent = activeSocket.Send(frame, totalSent, bytesWritten - totalSent, SocketFlags.None);
                 totalSent += sent;
                 Logger.LogDebug(" [Send] Total sent: {Total}, current: {Current}.", totalSent, sent);
 
@@ -336,11 +339,13 @@ public sealed class ModbusTcpClient : ModbusTransportBase
 
     protected override ModbusResult<byte[]> ReceiveFrame(ModbusRequest request)
     {
+        // 在途请求期间 DisposeConnection 会把字段置 null；捕获局部引用避免 NullReferenceException
+        var activeSocket = socket ?? throw new ObjectDisposedException(nameof(ModbusTcpClient));
         byte[]? frame = null;
         try
         {
             frame = ArrayPool<byte>.Shared.Rent(ModbusFrameBuilder.MaxTcpAduLength);
-            var headerResult = ReceiveExact(frame, 0, 6);
+            var headerResult = ReceiveExact(activeSocket, frame, 0, 6);
             if (!headerResult.IsSuccess)
                 return headerResult;
 
@@ -352,7 +357,7 @@ public sealed class ModbusTcpClient : ModbusTransportBase
             }
 
             int totalLength = 6 + pduLength;
-            var payloadResult = ReceiveExact(frame, 6, pduLength);
+            var payloadResult = ReceiveExact(activeSocket, frame, 6, pduLength);
             if (!payloadResult.IsSuccess)
                 return payloadResult;
 
@@ -452,7 +457,8 @@ public sealed class ModbusTcpClient : ModbusTransportBase
 
     private async Task<ModbusResult<byte[]>> ReceiveExactAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
-        var target = stream;
+        // 在途请求期间 DisposeConnection 会把字段置 null；显式判定避免 NullReferenceException
+        var target = stream ?? throw new ObjectDisposedException(nameof(ModbusTcpClient));
         int totalRead = 0;
         while (totalRead < count)
         {
@@ -468,12 +474,12 @@ public sealed class ModbusTcpClient : ModbusTransportBase
 
     // ————————————————— TCP 私有辅助 —————————————————
 
-    private ModbusResult<byte[]> ReceiveExact(byte[] buffer, int offset, int count)
+    private ModbusResult<byte[]> ReceiveExact(Socket activeSocket, byte[] buffer, int offset, int count)
     {
         int totalRead = 0;
         while (totalRead < count)
         {
-            int read = socket!.Receive(buffer, offset + totalRead, count - totalRead, SocketFlags.None);
+            int read = activeSocket.Receive(buffer, offset + totalRead, count - totalRead, SocketFlags.None);
             if (read == 0)
                 return ModbusResult<byte[]>.Fail(" [Read] Connection closed by remote.", ModbusErrorKind.ConnectionClosed);
 

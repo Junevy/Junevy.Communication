@@ -10,6 +10,7 @@ namespace Junevy.Communication.Modbus.Tests
     /// 立即返回真实错误，不再空转重试并被覆盖为 "Not connected"；未连接且 Reconnect=false 时
     /// 请求立即返回。Reconnect=true 的行为不变。
     /// </summary>
+[Collection(SocketTimingCollection.Name)]
     public class TransportBaseRetryTests
     {
         // ————————————————— 同步 Request —————————————————

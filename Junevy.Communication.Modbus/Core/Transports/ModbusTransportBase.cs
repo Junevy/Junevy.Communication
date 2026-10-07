@@ -20,13 +20,19 @@ namespace Junevy.Communication.Modbus.Core.Transports
     public abstract class ModbusTransportBase : IModbus
     {
         // ————— 原 TCP/RTU 各持一份的重复状态，上移到基类 —————
+        // 不 Dispose：排队中的请求仍会等待该信号量，释放后它们会抛出 ObjectDisposedException。
+        // SemaphoreSlim 未使用 AvailableWaitHandle，无非托管资源需要释放。
         private readonly SemaphoreSlim requestLock = new(1, 1);
         private readonly Stopwatch stopwatch = Stopwatch.StartNew();
         private long lastTimestamp;
         private ushort transactionId;
 
+        // 不 Dispose：本类未使用 CancelAfter/链接，无计时器资源；Dispose 之后 Token 属性仍会被访问。
+        private readonly CancellationTokenSource disposeCts = new();
+        private int disposeState;
+
         /// <summary>由基类 Dispose 模板置位；子类 <see cref="IsConnected"/> 与 Dispose 依赖它。</summary>
-        protected bool disposed;
+        protected volatile bool disposed;
         protected ILogger Logger { get; }
         protected IResponseParser ResponseParser { get; }
         protected IModbusFrameBuilder FrameBuilder { get; }
@@ -133,6 +139,7 @@ namespace Junevy.Communication.Modbus.Core.Transports
             requestLock.Wait();
             try
             {
+                ThrowIfDisposed();   // Dispose 可能发生在等待锁期间
                 return OpenConnection();
             }
             finally
@@ -149,6 +156,7 @@ namespace Junevy.Communication.Modbus.Core.Transports
             await requestLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                ThrowIfDisposed();   // Dispose 可能发生在等待锁期间
                 return await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
@@ -159,9 +167,15 @@ namespace Junevy.Communication.Modbus.Core.Transports
 
         public void Disconnect()
         {
+            if (disposed)
+                return;
+
             requestLock.Wait();
             try
             {
+                if (disposed)
+                    return;         // Dispose 可能发生在等待锁期间
+
                 CloseConnection();
             }
             finally
@@ -172,6 +186,7 @@ namespace Junevy.Communication.Modbus.Core.Transports
 
         public ModbusResult<byte[]> Request(ModbusRequest request)
         {
+            ThrowIfDisposed();
             LogRequestStarted(request, isAsync: false);
 
             if (!ModbusHelper.CheckRequest(request))
@@ -180,6 +195,9 @@ namespace Junevy.Communication.Modbus.Core.Transports
             requestLock.Wait();
             try
             {
+                if (disposed)
+                    return ModbusResult<byte[]>.Fail(" [Request] Client disposed.", ModbusErrorKind.ConnectionClosed);
+
                 if (AssignsTransactionId)
                     request.TransactionId = transactionId++;
                 return ExecuteRequestWithRetry(request);
@@ -200,23 +218,35 @@ namespace Junevy.Communication.Modbus.Core.Transports
             ModbusRequest request,
             CancellationToken cancellationToken = default)
         {
+            ThrowIfDisposed();
             LogRequestStarted(request, isAsync: true);
 
             if (!ModbusHelper.CheckRequest(request))
                 return CreateInvalidRequestResult(request, isAsync: true);
 
+            // linked：Dispose 会取消本请求，使其归为 ConnectionClosed 而不是 Cancelled
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, disposeCts.Token);
+            CancellationToken effectiveToken = linked.Token;
+
             var lockTaken = false;
             try
             {
-                await requestLock.WaitAsync(cancellationToken);
+                await requestLock.WaitAsync(effectiveToken);
                 lockTaken = true;
+
+                if (disposed)
+                    return ModbusResult<byte[]>.Fail(" [RequestAsync] Client disposed.", ModbusErrorKind.ConnectionClosed);
 
                 if (AssignsTransactionId)
                     request.TransactionId = transactionId++;
-                return await ExecuteRequestWithRetryAsync(request, cancellationToken);
+                return await ExecuteRequestWithRetryAsync(request, effectiveToken);
             }
             catch (OperationCanceledException ex)
             {
+                // Dispose 触发的是内部令牌：按"客户端已释放"归类，不与调用方取消混淆
+                if (disposed && !cancellationToken.IsCancellationRequested)
+                    return ModbusResult<byte[]>.Fail(" [RequestAsync] Client disposed.", ModbusErrorKind.ConnectionClosed);
+
                 Logger.LogWarning(ex, " [RequestAsync] Request cancelled.");
                 return ModbusResult<byte[]>.Fail(" [RequestAsync] Request cancelled.", ModbusErrorKind.Cancelled);
             }
@@ -235,11 +265,24 @@ namespace Junevy.Communication.Modbus.Core.Transports
 
         public void Dispose()
         {
-            if (disposed) return;
-            disposed = true;
+            // 幂等：并发调用时只有第一个执行释放
+            if (Interlocked.Exchange(ref disposeState, 1) == 1)
+                return;
 
-            DisposeConnection();
-            requestLock.Dispose();
+            disposed = true;
+            disposeCts.Cancel();
+            DisposeConnection();          // 立即中断在途 I/O，使在途请求尽快失败退出
+
+            requestLock.Wait();           // 等待在途请求退出
+            try
+            {
+                DisposeConnection();      // 清理在途请求在 Dispose 期间可能重建的连接
+            }
+            finally
+            {
+                requestLock.Release();
+            }
+
             Logger.LogDebug(" [Dispose] {Transport} disposed.", GetType().Name);
         }
 
@@ -252,6 +295,10 @@ namespace Junevy.Communication.Modbus.Core.Transports
 
             for (int attempt = 1; attempt <= attempts; attempt++)
             {
+                // Dispose 期间不再发起新的尝试
+                if (disposed)
+                    return ModbusResult<byte[]>.Fail(" [Request] Client disposed.", ModbusErrorKind.ConnectionClosed);
+
                 // 规则 A：未连接且不允许自动重连 → 立即返回，不等待、不再尝试。
                 if (!IsConnected && !ReconnectEnabled)
                     return ModbusResult<byte[]>.Fail(GetNotConnectedMessage(isAsync: false), ModbusErrorKind.ConnectionClosed);
@@ -329,6 +376,10 @@ namespace Junevy.Communication.Modbus.Core.Transports
             for (int attempt = 1; attempt <= attempts; attempt++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                // Dispose 期间不再发起新的尝试
+                if (disposed)
+                    return ModbusResult<byte[]>.Fail(" [RequestAsync] Client disposed.", ModbusErrorKind.ConnectionClosed);
 
                 // 规则 A：未连接且不允许自动重连 → 立即返回，不等待、不再尝试。
                 if (!IsConnected && !ReconnectEnabled)
