@@ -265,15 +265,33 @@ public sealed class ModbusTcpClient : ModbusTransportBase
         var target = stream;
         if (target is null) return false;
 
+        // Socket.SendTimeout 只约束同步 I/O；异步路径用链接取消源实现整帧写超时。
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(Config.WriteTimeout);
+#if !NET8_0_OR_GREATER
+        // net472 上 NetworkStream.WriteAsync 不响应取消令牌：取消时销毁 socket 中止挂起的写。
+        var activeSocket = socket;
+        using var abortRegistration = timeoutCts.Token.Register(() => activeSocket?.Dispose());
+#endif
         var frame = ArrayPool<byte>.Shared.Rent(ModbusFrameBuilder.MaxTcpAduLength);
         try
         {
             if (!FrameBuilder.TryWriteRequestFrame(request, ProtocolType, frame, out int bytesWritten))
                 return false;
 
-            await target.WriteAsync(frame, 0, bytesWritten, cancellationToken);
+            await target.WriteAsync(frame, 0, bytesWritten, timeoutCts.Token);
             LogTx("ModbusTcpClient", new ArraySegment<byte>(frame, 0, bytesWritten).ToArray());
             return true;
+        }
+        catch (Exception ex) when (timeoutCts.IsCancellationRequested && (ex is OperationCanceledException || ex is ObjectDisposedException || ex is IOException || ex is SocketException))
+        {
+            if (cancellationToken.IsCancellationRequested)
+                throw;  // 用户取消：由基类请求循环归为 Cancelled
+
+            // 与同步路径 SocketError.TimedOut 时 return false 的行为一致，
+            // 基类随后标记 ConnectionClosed 并销毁连接。
+            Logger.LogError(" [SendAsync] Write timed out: {Timeout}ms.", Config.WriteTimeout);
+            return false;
         }
         catch (OperationCanceledException)
         {
@@ -339,11 +357,21 @@ public sealed class ModbusTcpClient : ModbusTransportBase
 
     protected override async Task<ModbusResult<byte[]>> ReceiveFrameAsync(ModbusRequest request, CancellationToken cancellationToken)
     {
+        // Socket.ReceiveTimeout 只约束同步 I/O；异步路径用链接取消源实现整帧读超时
+        // （从进入本方法到 6 字节头加负载完整读出的总时限，而非单次 ReadAsync 的时限）。
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(Config.ReadTimeout);
+#if !NET8_0_OR_GREATER
+        // net472 上 NetworkStream.ReadAsync 不响应取消令牌：取消时销毁 socket 中止挂起的读，
+        // ReadAsync 随之抛出 ObjectDisposedException/IOException，由下方超时 catch 归类。
+        var activeSocket = socket;
+        using var abortRegistration = timeoutCts.Token.Register(() => activeSocket?.Dispose());
+#endif
         byte[]? frame = null;
         try
         {
             frame = ArrayPool<byte>.Shared.Rent(ModbusFrameBuilder.MaxTcpAduLength);
-            var headerResult = await ReceiveExactAsync(frame, 0, 6, cancellationToken);
+            var headerResult = await ReceiveExactAsync(frame, 0, 6, timeoutCts.Token);
             if (!headerResult.IsSuccess)
                 return headerResult;
 
@@ -355,7 +383,7 @@ public sealed class ModbusTcpClient : ModbusTransportBase
             }
 
             int totalLength = 6 + pduLength;
-            var payloadResult = await ReceiveExactAsync(frame, 6, pduLength, cancellationToken);
+            var payloadResult = await ReceiveExactAsync(frame, 6, pduLength, timeoutCts.Token);
             if (!payloadResult.IsSuccess)
                 return payloadResult;
 
@@ -371,6 +399,14 @@ public sealed class ModbusTcpClient : ModbusTransportBase
         {
             Logger.LogError(" [Read] Read timed out.");
             return ModbusResult<byte[]>.Fail(" [Read] Read timeout.", ModbusErrorKind.Timeout);
+        }
+        catch (Exception ex) when (timeoutCts.IsCancellationRequested && (ex is OperationCanceledException || ex is ObjectDisposedException || ex is IOException || ex is SocketException))
+        {
+            if (cancellationToken.IsCancellationRequested)
+                throw new OperationCanceledException(cancellationToken);
+
+            Logger.LogError(" [ReadAsync] Read timed out: {Timeout}ms.", Config.ReadTimeout);
+            return ModbusResult<byte[]>.Fail(" [ReadAsync] Read timeout.", ModbusErrorKind.Timeout);
         }
         catch (OperationCanceledException)
         {
@@ -394,7 +430,6 @@ public sealed class ModbusTcpClient : ModbusTransportBase
         int totalRead = 0;
         while (totalRead < count)
         {
-            // net8.0 上取消令牌即时生效；net472 上在下一个 I/O 边界生效（读超时兜底靠 socket.ReceiveTimeout）。
             int read = await target.ReadAsync(buffer, offset + totalRead, count - totalRead, cancellationToken);
             if (read == 0)
                 return ModbusResult<byte[]>.Fail(" [Read] Connection closed by remote.", ModbusErrorKind.ConnectionClosed);

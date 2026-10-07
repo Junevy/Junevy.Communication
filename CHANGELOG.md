@@ -27,3 +27,4 @@
 - 2026-10-05 `ModbusConnectionManager.GetOrAdd` 并发竞态不再泄漏输家实例（输家安全释放后进入赢家路径）。
 - 2026-10-05 DI 容器中 `IModbusConnectionManager` 与 `IModbusFactory` 共享同一注册表。
 - 2026-10-05 Connect/Disconnect 与请求经 `requestLock` 串行化，消除连接重建与在途请求的竞态。
+- 2026-10-07 TCP 异步请求的 ReadTimeout / WriteTimeout 生效（此前 Socket.ReceiveTimeout 对 NetworkStream.ReadAsync/WriteAsync 无效，服务端不应答时 RequestAsync 永久挂起）；ReadTimeout 为整帧总时限，超时返回 ErrorKind.Timeout，用户取消返回 ErrorKind.Cancelled。

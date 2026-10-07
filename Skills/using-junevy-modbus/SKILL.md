@@ -108,6 +108,7 @@ Extension methods (all 15 function codes): `ReadCoils/DiscreteInputs/HoldingRegi
 - **Reconnect is lazy/per-request**: with `Reconnect=true` a dropped connection is physically re-established at the next request attempt (fresh TCP handshake / serial re-open), after failures marked `Timeout`/`ConnectionClosed`. No background watchdog. Note: `Disconnect()` followed by a request **silently reconnects** when `Reconnect=true` — set `Reconnect=false` to stay disconnected.
 - **Retry**: `RetryCount` = retries after the first attempt; `RetryInterval` ms between attempts.
 - **Thread-safety**: one request at a time per connection (`SemaphoreSlim`). Cancel `RequestAsync` via `CancellationToken` (instant on net8.0; next-I/O-boundary on net472).
+- **Timeouts**: ReadTimeout is the total deadline for receiving one complete response frame (sync and async). WriteTimeout is the deadline for sending one request frame. A timeout returns ErrorKind.Timeout.
 
 ## Common Mistakes
 
