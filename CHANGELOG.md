@@ -30,3 +30,4 @@
 - 2026-10-05 Connect/Disconnect 与请求经 `requestLock` 串行化，消除连接重建与在途请求的竞态。
 - 2026-10-07 TCP 异步请求的 ReadTimeout / WriteTimeout 生效（此前 Socket.ReceiveTimeout 对 NetworkStream.ReadAsync/WriteAsync 无效，服务端不应答时 RequestAsync 永久挂起）；ReadTimeout 为整帧总时限，超时返回 ErrorKind.Timeout，用户取消返回 ErrorKind.Cancelled。
 - 2026-10-07 异步请求的自动重连改用 OpenConnectionAsync（此前 Task.Run 包装同步连接，占用线程池线程且不响应取消）；TCP 异步连接中用户取消不再被当作连接超时吞掉。
+- 2026-10-07 高层 API（ReadCoils / ReadHoldingRegisters / ReadWriteMultipleRegisters / GetCommEvent* / ReportServerId / ReadExceptionStatus 等）保留底层的 ErrorKind（此前一律重置为 Unspecified）；底层返回数据过短时返回 ProtocolViolation，不再抛出 ArgumentException；ModbusHelper.ParseCoils 的长度检查修正为 3 + 字节数；通信异常按类型归类为 Timeout / ConnectionClosed 而非 Unspecified；RTU 接收缓冲溢出报 ProtocolViolation。

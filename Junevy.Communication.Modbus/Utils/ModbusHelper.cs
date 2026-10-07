@@ -81,7 +81,7 @@ namespace Junevy.Communication.Modbus.Utils
                 throw new ArgumentException("Length must be greater than 0.", nameof(length));
 
             int expectedByteCount = (length + 7) / 8;
-            if (response.Length < 2 + expectedByteCount)
+            if (response.Length < 3 + expectedByteCount)
                 throw new ArgumentException("The response data is not enough for the requested length.", nameof(response));
 
             bool[] result = new bool[length];
@@ -96,6 +96,45 @@ namespace Junevy.Communication.Modbus.Utils
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// 尝试解析线圈值：数据不足或长度非法时返回 false（不抛异常），供结果式高层 API 使用。
+        /// </summary>
+        internal static bool TryParseCoils(byte[] response, int length, out bool[] values)
+        {
+            values = Array.Empty<bool>();
+            if (response == null || length <= 0)
+                return false;
+
+            int expectedByteCount = (length + 7) / 8;
+            if (response.Length < 3 + expectedByteCount)
+                return false;
+
+            values = new bool[length];
+            for (int i = 0; i < length; i++)
+                values[i] = ((response[3 + i / 8] >> (i % 8)) & 1) == 1;
+
+            return true;
+        }
+
+        /// <summary>
+        /// 尝试解析寄存器值：数据不足或长度非法时返回 false（不抛异常），供结果式高层 API 使用。
+        /// </summary>
+        internal static bool TryParseRegisters(byte[] response, int length, out ushort[] values)
+        {
+            values = Array.Empty<ushort>();
+            if (response == null || length <= 0)
+                return false;
+
+            if (response.Length < 3 + length * 2)
+                return false;
+
+            values = new ushort[length];
+            for (int i = 0; i < length * 2; i += 2)
+                values[i / 2] = (ushort)((response[3 + i] << 8) | response[3 + i + 1]);
+
+            return true;
         }
 
         /// <summary>

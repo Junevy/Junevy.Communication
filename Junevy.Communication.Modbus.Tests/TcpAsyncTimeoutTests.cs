@@ -67,8 +67,9 @@ namespace Junevy.Communication.Modbus.Tests
 
             Assert.True(completed == requestTask, "ReadHoldingRegistersAsync did not complete within 10s");
             var result = await requestTask;
-            // ErrorKind == Timeout 的断言在计划四（高层 API 保留 ErrorKind）合入后回补
             Assert.False(result.IsSuccess);
+            // Task 4 后高层 API 保留底层 ErrorKind
+            Assert.Equal(ModbusErrorKind.Timeout, result.ErrorKind);
         }
 
         [Fact]

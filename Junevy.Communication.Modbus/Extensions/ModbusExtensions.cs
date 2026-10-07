@@ -7,19 +7,28 @@ namespace Junevy.Communication.Modbus.Extensions;
 
 public static class ModbusExtensions
 {
+    /// <summary>数据不足时返回 false 而不抛异常的解析委托（供结果式高层 API 使用）。</summary>
+    private delegate bool TryParse<T>(byte[] response, int length, out T[] values);
+
+    // 方法组到泛型委托的转换无法推断 T，用显式实例化的委托字段承接
+    private static readonly TryParse<bool> TryParseCoils = ModbusHelper.TryParseCoils;
+    private static readonly TryParse<ushort> TryParseRegisters = ModbusHelper.TryParseRegisters;
+
     private static ModbusResult<T[]> ExecuteReadRequest<T>(
         IModbus modBus,
         byte slaveId,
         ushort start,
         ushort length,
         ModbusFunctionCode functionCode,
-        Func<byte[], int, T[]> parser)
+        TryParse<T> parser)
     {
         var result = ExecuteRawRequest(modBus, slaveId, functionCode, start, length, null);
         if (!result.IsSuccess || result.Data == null)
-            return ModbusResult<T[]>.Fail(result.ErrorMessage ?? "Request failed.");
+            return ModbusResult<T[]>.Fail(result.ErrorMessage ?? "Request failed.", result.ErrorKind);
 
-        var parsed = parser(result.Data, length);
+        if (!parser(result.Data, length, out var parsed))
+            return ModbusResult<T[]>.Fail("Response data is shorter than the requested quantity.", ModbusErrorKind.ProtocolViolation);
+
         return ModbusResult<T[]>.Success(parsed);
     }
 
@@ -29,14 +38,16 @@ public static class ModbusExtensions
         ushort start,
         ushort length,
         ModbusFunctionCode functionCode,
-        Func<byte[], int, T[]> parser,
+        TryParse<T> parser,
         CancellationToken cancellationToken = default)
     {
         var result = await ExecuteRawRequestAsync(modBus, slaveId, functionCode, start, length, null, cancellationToken);
         if (!result.IsSuccess || result.Data == null)
-            return ModbusResult<T[]>.Fail(result.ErrorMessage ?? "Request failed.");
+            return ModbusResult<T[]>.Fail(result.ErrorMessage ?? "Request failed.", result.ErrorKind);
 
-        var parsed = parser(result.Data, length);
+        if (!parser(result.Data, length, out var parsed))
+            return ModbusResult<T[]>.Fail("Response data is shorter than the requested quantity.", ModbusErrorKind.ProtocolViolation);
+
         return ModbusResult<T[]>.Success(parsed);
     }
 
@@ -139,7 +150,7 @@ public static class ModbusExtensions
     public static ModbusResult<bool[]> ReadCoils(this IModbus modBus, byte slaveId, ushort start, ushort length)
     {
         ValidateBitQuantity(length, 2000, nameof(ReadCoils));
-        return ExecuteReadRequest(modBus, slaveId, start, length, ModbusFunctionCode.ReadCoils, ModbusHelper.ParseCoils);
+        return ExecuteReadRequest(modBus, slaveId, start, length, ModbusFunctionCode.ReadCoils, TryParseCoils);
     }
 
     public static ValueTask<ModbusResult<bool[]>> ReadCoilsAsync(
@@ -150,13 +161,13 @@ public static class ModbusExtensions
         CancellationToken cancellationToken = default)
     {
         ValidateBitQuantity(length, 2000, nameof(ReadCoilsAsync));
-        return ExecuteReadRequestAsync(modBus, slaveId, start, length, ModbusFunctionCode.ReadCoils, ModbusHelper.ParseCoils, cancellationToken);
+        return ExecuteReadRequestAsync(modBus, slaveId, start, length, ModbusFunctionCode.ReadCoils, TryParseCoils, cancellationToken);
     }
 
     public static ModbusResult<bool[]> ReadDiscreteInputs(this IModbus modBus, byte slaveId, ushort start, ushort length)
     {
         ValidateBitQuantity(length, 2000, nameof(ReadDiscreteInputs));
-        return ExecuteReadRequest(modBus, slaveId, start, length, ModbusFunctionCode.ReadDiscreteInputs, ModbusHelper.ParseCoils);
+        return ExecuteReadRequest(modBus, slaveId, start, length, ModbusFunctionCode.ReadDiscreteInputs, TryParseCoils);
     }
 
     public static ValueTask<ModbusResult<bool[]>> ReadDiscreteInputsAsync(
@@ -167,13 +178,13 @@ public static class ModbusExtensions
         CancellationToken cancellationToken = default)
     {
         ValidateBitQuantity(length, 2000, nameof(ReadDiscreteInputsAsync));
-        return ExecuteReadRequestAsync(modBus, slaveId, start, length, ModbusFunctionCode.ReadDiscreteInputs, ModbusHelper.ParseCoils, cancellationToken);
+        return ExecuteReadRequestAsync(modBus, slaveId, start, length, ModbusFunctionCode.ReadDiscreteInputs, TryParseCoils, cancellationToken);
     }
 
     public static ModbusResult<ushort[]> ReadHoldingRegisters(this IModbus modBus, byte slaveId, ushort start, ushort length)
     {
         ValidateRegisterQuantity(length, 125, nameof(ReadHoldingRegisters));
-        return ExecuteReadRequest(modBus, slaveId, start, length, ModbusFunctionCode.ReadHoldingRegisters, ModbusHelper.ParseRegisters);
+        return ExecuteReadRequest(modBus, slaveId, start, length, ModbusFunctionCode.ReadHoldingRegisters, TryParseRegisters);
     }
 
     public static ValueTask<ModbusResult<ushort[]>> ReadHoldingRegistersAsync(
@@ -184,13 +195,13 @@ public static class ModbusExtensions
         CancellationToken cancellationToken = default)
     {
         ValidateRegisterQuantity(length, 125, nameof(ReadHoldingRegistersAsync));
-        return ExecuteReadRequestAsync(modBus, slaveId, start, length, ModbusFunctionCode.ReadHoldingRegisters, ModbusHelper.ParseRegisters, cancellationToken);
+        return ExecuteReadRequestAsync(modBus, slaveId, start, length, ModbusFunctionCode.ReadHoldingRegisters, TryParseRegisters, cancellationToken);
     }
 
     public static ModbusResult<ushort[]> ReadInputRegisters(this IModbus modBus, byte slaveId, ushort start, ushort length)
     {
         ValidateRegisterQuantity(length, 125, nameof(ReadInputRegisters));
-        return ExecuteReadRequest(modBus, slaveId, start, length, ModbusFunctionCode.ReadInputRegisters, ModbusHelper.ParseRegisters);
+        return ExecuteReadRequest(modBus, slaveId, start, length, ModbusFunctionCode.ReadInputRegisters, TryParseRegisters);
     }
 
     public static ValueTask<ModbusResult<ushort[]>> ReadInputRegistersAsync(
@@ -201,7 +212,7 @@ public static class ModbusExtensions
         CancellationToken cancellationToken = default)
     {
         ValidateRegisterQuantity(length, 125, nameof(ReadInputRegistersAsync));
-        return ExecuteReadRequestAsync(modBus, slaveId, start, length, ModbusFunctionCode.ReadInputRegisters, ModbusHelper.ParseRegisters, cancellationToken);
+        return ExecuteReadRequestAsync(modBus, slaveId, start, length, ModbusFunctionCode.ReadInputRegisters, TryParseRegisters, cancellationToken);
     }
 
     public static ModbusResult<byte[]> WriteSingleCoil(this IModbus modBus, byte slaveId, ushort start, bool value)
@@ -273,9 +284,13 @@ public static class ModbusExtensions
     public static ModbusResult<byte> ReadExceptionStatus(this IModbus modBus, byte slaveId)
     {
         var result = ExecuteRawRequest(modBus, slaveId, ModbusFunctionCode.ReadExceptionStatus);
-        return result.IsSuccess && result.Data != null && result.Data.Length >= 3
-            ? ModbusResult<byte>.Success(result.Data[2])
-            : ModbusResult<byte>.Fail(result.ErrorMessage ?? "Read exception status failed.");
+        if (!result.IsSuccess || result.Data == null)
+            return ModbusResult<byte>.Fail(result.ErrorMessage ?? "Read exception status failed.", result.ErrorKind);
+
+        if (result.Data.Length < 3)
+            return ModbusResult<byte>.Fail("Read exception status response is shorter than expected.", ModbusErrorKind.ProtocolViolation);
+
+        return ModbusResult<byte>.Success(result.Data[2]);
     }
 
     public static async ValueTask<ModbusResult<byte>> ReadExceptionStatusAsync(
@@ -284,9 +299,13 @@ public static class ModbusExtensions
         CancellationToken cancellationToken = default)
     {
         var result = await ExecuteRawRequestAsync(modBus, slaveId, ModbusFunctionCode.ReadExceptionStatus, cancellationToken: cancellationToken);
-        return result.IsSuccess && result.Data != null && result.Data.Length >= 3
-            ? ModbusResult<byte>.Success(result.Data[2])
-            : ModbusResult<byte>.Fail(result.ErrorMessage ?? "Read exception status failed.");
+        if (!result.IsSuccess || result.Data == null)
+            return ModbusResult<byte>.Fail(result.ErrorMessage ?? "Read exception status failed.", result.ErrorKind);
+
+        if (result.Data.Length < 3)
+            return ModbusResult<byte>.Fail("Read exception status response is shorter than expected.", ModbusErrorKind.ProtocolViolation);
+
+        return ModbusResult<byte>.Success(result.Data[2]);
     }
 
     public static ModbusResult<byte[]> Diagnostics(this IModbus modBus, byte slaveId, ushort subFunction, ushort data)
@@ -397,9 +416,13 @@ public static class ModbusExtensions
 
         byte[] data = BuildReadWriteMultipleRegistersData(readStart, readLength, writeStart, writeValues);
         var result = ExecuteRawRequest(modBus, slaveId, ModbusFunctionCode.ReadWriteMultipleRegisters, readStart, readLength, data);
-        return result.IsSuccess && result.Data != null
-            ? ModbusResult<ushort[]>.Success(ModbusHelper.ParseRegisters(result.Data, readLength))
-            : ModbusResult<ushort[]>.Fail(result.ErrorMessage ?? "Read/write multiple registers failed.");
+        if (!result.IsSuccess || result.Data == null)
+            return ModbusResult<ushort[]>.Fail(result.ErrorMessage ?? "Read/write multiple registers failed.", result.ErrorKind);
+
+        if (!ModbusHelper.TryParseRegisters(result.Data, readLength, out var parsed))
+            return ModbusResult<ushort[]>.Fail("Response data is shorter than the requested quantity.", ModbusErrorKind.ProtocolViolation);
+
+        return ModbusResult<ushort[]>.Success(parsed);
     }
 
     public static async ValueTask<ModbusResult<ushort[]>> ReadWriteMultipleRegistersAsync(
@@ -416,15 +439,22 @@ public static class ModbusExtensions
 
         byte[] data = BuildReadWriteMultipleRegistersData(readStart, readLength, writeStart, writeValues);
         var result = await ExecuteRawRequestAsync(modBus, slaveId, ModbusFunctionCode.ReadWriteMultipleRegisters, readStart, readLength, data, cancellationToken);
-        return result.IsSuccess && result.Data != null
-            ? ModbusResult<ushort[]>.Success(ModbusHelper.ParseRegisters(result.Data, readLength))
-            : ModbusResult<ushort[]>.Fail(result.ErrorMessage ?? "Read/write multiple registers failed.");
+        if (!result.IsSuccess || result.Data == null)
+            return ModbusResult<ushort[]>.Fail(result.ErrorMessage ?? "Read/write multiple registers failed.", result.ErrorKind);
+
+        if (!ModbusHelper.TryParseRegisters(result.Data, readLength, out var parsed))
+            return ModbusResult<ushort[]>.Fail("Response data is shorter than the requested quantity.", ModbusErrorKind.ProtocolViolation);
+
+        return ModbusResult<ushort[]>.Success(parsed);
     }
 
     private static ModbusResult<ModbusCommEventCounter> ParseCommEventCounter(ModbusResult<byte[]> result)
     {
-        if (!result.IsSuccess || result.Data == null || result.Data.Length < 6)
-            return ModbusResult<ModbusCommEventCounter>.Fail(result.ErrorMessage ?? "Get communication event counter failed.");
+        if (!result.IsSuccess || result.Data == null)
+            return ModbusResult<ModbusCommEventCounter>.Fail(result.ErrorMessage ?? "Get communication event counter failed.", result.ErrorKind);
+
+        if (result.Data.Length < 6)
+            return ModbusResult<ModbusCommEventCounter>.Fail("Communication event counter response is shorter than expected.", ModbusErrorKind.ProtocolViolation);
 
         return ModbusResult<ModbusCommEventCounter>.Success(new ModbusCommEventCounter
         {
@@ -435,8 +465,11 @@ public static class ModbusExtensions
 
     private static ModbusResult<ModbusCommEventLog> ParseCommEventLog(ModbusResult<byte[]> result)
     {
-        if (!result.IsSuccess || result.Data == null || result.Data.Length < 9)
-            return ModbusResult<ModbusCommEventLog>.Fail(result.ErrorMessage ?? "Get communication event log failed.");
+        if (!result.IsSuccess || result.Data == null)
+            return ModbusResult<ModbusCommEventLog>.Fail(result.ErrorMessage ?? "Get communication event log failed.", result.ErrorKind);
+
+        if (result.Data.Length < 9)
+            return ModbusResult<ModbusCommEventLog>.Fail("Communication event log response is shorter than expected.", ModbusErrorKind.ProtocolViolation);
 
         int eventBytes = Math.Max(0, result.Data[2] - 6);
         byte[] events = new byte[Math.Min(eventBytes, result.Data.Length - 9)];
@@ -454,8 +487,12 @@ public static class ModbusExtensions
 
     private static ModbusResult<byte[]> ExtractByteCountPayload(ModbusResult<byte[]> result, string errorMessage)
     {
-        if (!result.IsSuccess || result.Data == null || result.Data.Length < 3)
-            return ModbusResult<byte[]>.Fail(result.ErrorMessage ?? errorMessage);
+        if (!result.IsSuccess || result.Data == null)
+            return ModbusResult<byte[]>.Fail(result.ErrorMessage ?? errorMessage, result.ErrorKind);
+
+        // 帧头声明的事务字节数（Data[2]）超过实际可用数据 = 响应被截断
+        if (result.Data.Length < 3 || result.Data[2] > result.Data.Length - 3)
+            return ModbusResult<byte[]>.Fail("Response data is shorter than the declared byte count.", ModbusErrorKind.ProtocolViolation);
 
         int count = Math.Min(result.Data[2], result.Data.Length - 3);
         byte[] payload = new byte[count];

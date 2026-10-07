@@ -305,7 +305,7 @@ namespace Junevy.Communication.Modbus.Rtu
 
                     if (readCounts < 5) continue;
                     if (readCounts >= pool.Length)
-                        return ModbusResult<byte[]>.Fail(" [Read] Receive buffer is full before a valid RTU frame was parsed.");
+                        return ModbusResult<byte[]>.Fail(" [Read] Receive buffer is full before a valid RTU frame was parsed.", ModbusErrorKind.ProtocolViolation);
                     var memory = pool.AsMemory(0, readCounts);
 
                     var parseResult = ResponseParser.ParseResponse(memory, request);
@@ -368,7 +368,7 @@ namespace Junevy.Communication.Modbus.Rtu
 
                     if (readCounts < 5) continue;
                     if (readCounts >= pool.Length)
-                        return ModbusResult<byte[]>.Fail(" [ReadAsync] Receive buffer is full before a valid RTU frame was parsed.");
+                        return ModbusResult<byte[]>.Fail(" [ReadAsync] Receive buffer is full before a valid RTU frame was parsed.", ModbusErrorKind.ProtocolViolation);
                     var memory = pool.AsMemory(0, readCounts);
 
                     var parseResult = ResponseParser.ParseResponse(memory, request);

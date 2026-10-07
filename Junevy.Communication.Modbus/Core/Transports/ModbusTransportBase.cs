@@ -187,7 +187,7 @@ namespace Junevy.Communication.Modbus.Core.Transports
             {
                 Logger.LogError(ex, GetRequestFailedLogText(isAsync: false));
                 InvalidateConnection();
-                return ModbusResult<byte[]>.Fail($" [Request] Request failed: {ex.Message}");
+                return ModbusResult<byte[]>.Fail($" [Request] Request failed: {ex.Message}", ClassifyCommunicationException(ex));
             }
             finally
             {
@@ -223,7 +223,7 @@ namespace Junevy.Communication.Modbus.Core.Transports
             {
                 Logger.LogError(ex, GetRequestFailedLogText(isAsync: true));
                 InvalidateConnection();
-                return ModbusResult<byte[]>.Fail($" [RequestAsync] Request failed: {ex.Message}");
+                return ModbusResult<byte[]>.Fail($" [RequestAsync] Request failed: {ex.Message}", ClassifyCommunicationException(ex));
             }
             finally
             {
@@ -304,7 +304,7 @@ namespace Junevy.Communication.Modbus.Core.Transports
                 catch (Exception ex) when (IsCommunicationException(ex))
                 {
                     Logger.LogWarning(ex, " [Request] Attempt {Attempt}/{Attempts} failed.", attempt, attempts);
-                    lastResult = ModbusResult<byte[]>.Fail($" [Request] {ex.Message}");
+                    lastResult = ModbusResult<byte[]>.Fail($" [Request] {ex.Message}", ClassifyCommunicationException(ex));
                     // 规则 B：通信异常已破坏连接；Reconnect=false 时立即返回，不再尝试。
                     InvalidateConnection();
                     if (!ReconnectEnabled)
@@ -382,7 +382,7 @@ namespace Junevy.Communication.Modbus.Core.Transports
                 catch (Exception ex) when (IsCommunicationException(ex))
                 {
                     Logger.LogWarning(ex, " [RequestAsync] Attempt {Attempt}/{Attempts} failed.", attempt, attempts);
-                    lastResult = ModbusResult<byte[]>.Fail($" [RequestAsync] {ex.Message}");
+                    lastResult = ModbusResult<byte[]>.Fail($" [RequestAsync] {ex.Message}", ClassifyCommunicationException(ex));
                     // 规则 B：通信异常已破坏连接；Reconnect=false 时立即返回，不再尝试。
                     InvalidateConnection();
                     if (!ReconnectEnabled)
@@ -471,6 +471,12 @@ namespace Junevy.Communication.Modbus.Core.Transports
             if (disposed)
                 throw new ObjectDisposedException(GetType().Name);
         }
+
+        /// <summary>
+        /// 通信异常按类型归类：TimeoutException → Timeout，其余 → ConnectionClosed。
+        /// </summary>
+        private static ModbusErrorKind ClassifyCommunicationException(Exception ex)
+            => ex is TimeoutException ? ModbusErrorKind.Timeout : ModbusErrorKind.ConnectionClosed;
 
         /// <summary>
         /// 通信异常判定（原 TCP/RTU 两表合并为并集）：
