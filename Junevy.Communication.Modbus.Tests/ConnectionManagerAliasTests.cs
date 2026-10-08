@@ -10,6 +10,7 @@ namespace Junevy.Communication.Modbus.Tests
     /// （此前实例既不释放也不可达，串口/套接字泄漏）；RegisterAlias 拒绝悬空目标；
     /// RemoveAlias 对直接实例不再"删除后放回"。
     /// </summary>
+[Collection(SocketTimingCollection.Name)]
     public class ConnectionManagerAliasTests
     {
         [Fact]

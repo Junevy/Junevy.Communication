@@ -12,6 +12,7 @@ using Moq;
 
 namespace Junevy.Communication.Modbus.Tests
 {
+[Collection(SocketTimingCollection.Name)]
     public class ModbusFactoryTests
     {
         // ── Singleton lifecycle ──────────────────

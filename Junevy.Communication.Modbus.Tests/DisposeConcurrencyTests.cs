@@ -47,7 +47,7 @@ namespace Junevy.Communication.Modbus.Tests
                 using var server = SilentTcpServer.Start();
                 using var tcp = CreateClient(server.Port);
 
-                Assert.True(tcp.Connect());
+                Assert.True(ConnectWithRetry(tcp));
                 var requestTask = tcp.RequestAsync(CreateReadHoldingRegistersRequest());
 
                 Assert.True(await WaitForReceivedBytesAsync(server, RequestLength, 10000),
@@ -69,7 +69,7 @@ namespace Junevy.Communication.Modbus.Tests
             using var server = SilentTcpServer.Start();
             using var tcp = CreateClient(server.Port);
 
-            Assert.True(tcp.Connect());
+            Assert.True(ConnectWithRetry(tcp));
             var inFlight = tcp.RequestAsync(CreateReadHoldingRegistersRequest());
             Assert.True(await WaitForReceivedBytesAsync(server, RequestLength, 10000),
                 "in-flight request never reached the server");
@@ -132,13 +132,13 @@ namespace Junevy.Communication.Modbus.Tests
         {
             using var server = SilentTcpServer.Start();
             using var tcp = CreateClient(server.Port);
-            Assert.True(tcp.Connect());
+            Assert.True(ConnectWithRetry(tcp));
 
             tcp.Dispose();
             tcp.Dispose();   // 顺序调用两次
 
             using var tcp2 = CreateClient(server.Port);
-            Assert.True(tcp2.Connect());
+            Assert.True(ConnectWithRetry(tcp2), "second client failed to connect");
             var gate = new ManualResetEventSlim(false);
             var t1 = Task.Run(() => { gate.Wait(); tcp2.Dispose(); });
             var t2 = Task.Run(() => { gate.Wait(); tcp2.Dispose(); });
@@ -151,7 +151,7 @@ namespace Junevy.Communication.Modbus.Tests
         {
             using var server = SilentTcpServer.Start();
             using var tcp = CreateClient(server.Port);
-            Assert.True(tcp.Connect());
+            Assert.True(ConnectWithRetry(tcp));
             tcp.Dispose();
 
             tcp.Disconnect();   // 不抛异常
@@ -162,7 +162,7 @@ namespace Junevy.Communication.Modbus.Tests
         {
             using var server = SilentTcpServer.Start();
             using var tcp = CreateClient(server.Port);
-            Assert.True(tcp.Connect());
+            Assert.True(ConnectWithRetry(tcp));
 
             tcp.Dispose();
 
@@ -187,7 +187,7 @@ namespace Junevy.Communication.Modbus.Tests
                 RetryCount = 0,
                 Reconnect = false
             });
-            Assert.True(tcp.Connect());
+            Assert.True(ConnectWithRetry(tcp));
 
             using var cts = new CancellationTokenSource(200);
             var result = await tcp.RequestAsync(CreateReadHoldingRegistersRequest(), cts.Token);
