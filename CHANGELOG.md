@@ -2,7 +2,19 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
-## [Unreleased] — 分支 fix/modbus-p1-critical（v1.0.2）
+## [Unreleased] — 分支 refactor/modbus-p3-architecture（v2.0.0）
+
+### 迁移指南（1.x → 2.0）
+
+| 旧 | 新 |
+|---|---|
+| `result.IsSuccess = ...` 等对 `ModbusResult` 属性赋值 | 使用 `ModbusResult<T>.Success(...)` / `Fail(...)` |
+| `ModbusExtensions.ReadCoils(modbus, ...)` 静态调用 | `modbus.ReadCoils(...)`（扩展方法语法）或 `ModbusBitExtensions.ReadCoils(modbus, ...)` |
+| `new TcpProtocolParser(logger, verifier)` | `new TcpProtocolParser(validator, logger)` |
+| `ModbusPduVerifier` | `IModbusPduValidator` / `ModbusPduValidator` |
+| `factory.GetOrAdd(key, ModbusTcpClientConfig)`（按类型的重载） | `factory.GetOrAdd(key, config)`（`IModbusConfig` 重载，调用写法不变） |
+| `new ModbusFactory(logger, loggerFactory, tcpParser, rtuParser, frameBuilder, manager)` | `new ModbusFactory(logger, creators, manager)`；或使用 `ModbusFactoryBuilder` |
+| `ModbusFactoryBuilder.WithTcpParser(TcpProtocolParser)` | `WithTcpParser(IResponseParser)` |
 
 ### 新增（Added）
 

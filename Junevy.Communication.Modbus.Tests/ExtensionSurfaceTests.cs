@@ -13,38 +13,38 @@ namespace Junevy.Communication.Modbus.Tests
     {
         private static readonly string[] ExpectedSurface = new[]
 {
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[Junevy.Communication.Modbus.Core.Models.ModbusCommEventCounter, Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] GetCommEventCounter(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte)",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[Junevy.Communication.Modbus.Core.Models.ModbusCommEventLog, Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] GetCommEventLog(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte)",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Boolean[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] ReadCoils(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16)",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Boolean[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] ReadDiscreteInputs(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16)",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte, System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] ReadExceptionStatus(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte)",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] Diagnostics(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.Byte[])",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] Diagnostics(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16)",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] MaskWriteRegister(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.UInt16)",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] ReportServerId(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte)",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] WriteMultipleCoils(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.Boolean[])",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] WriteMultipleRegisters(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16[])",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] WriteSingleCoil(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.Boolean)",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] WriteSingleRegister(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16)",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.UInt16[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] ReadHoldingRegisters(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16)",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.UInt16[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] ReadInputRegisters(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16)",
-            "Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.UInt16[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]] ReadWriteMultipleRegisters(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.UInt16, System.UInt16[])",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[Junevy.Communication.Modbus.Core.Models.ModbusCommEventCounter, Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] GetCommEventCounterAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[Junevy.Communication.Modbus.Core.Models.ModbusCommEventLog, Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] GetCommEventLogAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Boolean[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] ReadCoilsAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Boolean[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] ReadDiscreteInputsAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte, System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] ReadExceptionStatusAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] DiagnosticsAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.Byte[], System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] DiagnosticsAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] MaskWriteRegisterAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] ReportServerIdAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] WriteMultipleCoilsAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.Boolean[], System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] WriteMultipleRegistersAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16[], System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] WriteSingleCoilAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.Boolean, System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.Byte[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] WriteSingleRegisterAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.UInt16[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] ReadHoldingRegistersAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.UInt16[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] ReadInputRegistersAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
-            "System.Threading.Tasks.ValueTask`1[[Junevy.Communication.Modbus.Core.Models.ModbusResult`1[[System.UInt16[], System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], Junevy.Communication.Modbus, Version=1.1.0.0, Culture=neutral, PublicKeyToken=null]] ReadWriteMultipleRegistersAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.UInt16, System.UInt16[], System.Threading.CancellationToken)",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<Junevy.Communication.Modbus.Core.Models.ModbusCommEventCounter> GetCommEventCounter(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte)",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<Junevy.Communication.Modbus.Core.Models.ModbusCommEventLog> GetCommEventLog(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte)",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Boolean[]> ReadCoils(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16)",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Boolean[]> ReadDiscreteInputs(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16)",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte> ReadExceptionStatus(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte)",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]> Diagnostics(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.Byte[])",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]> Diagnostics(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16)",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]> MaskWriteRegister(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.UInt16)",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]> ReportServerId(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte)",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]> WriteMultipleCoils(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.Boolean[])",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]> WriteMultipleRegisters(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16[])",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]> WriteSingleCoil(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.Boolean)",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]> WriteSingleRegister(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16)",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.UInt16[]> ReadHoldingRegisters(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16)",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.UInt16[]> ReadInputRegisters(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16)",
+            "Junevy.Communication.Modbus.Core.Models.ModbusResult<System.UInt16[]> ReadWriteMultipleRegisters(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.UInt16, System.UInt16[])",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<Junevy.Communication.Modbus.Core.Models.ModbusCommEventCounter>> GetCommEventCounterAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<Junevy.Communication.Modbus.Core.Models.ModbusCommEventLog>> GetCommEventLogAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Boolean[]>> ReadCoilsAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Boolean[]>> ReadDiscreteInputsAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte>> ReadExceptionStatusAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]>> DiagnosticsAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.Byte[], System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]>> DiagnosticsAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]>> MaskWriteRegisterAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]>> ReportServerIdAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]>> WriteMultipleCoilsAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.Boolean[], System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]>> WriteMultipleRegistersAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16[], System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]>> WriteSingleCoilAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.Boolean, System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.Byte[]>> WriteSingleRegisterAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.UInt16[]>> ReadHoldingRegistersAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.UInt16[]>> ReadInputRegistersAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.Threading.CancellationToken)",
+            "System.Threading.Tasks.ValueTask<Junevy.Communication.Modbus.Core.Models.ModbusResult<System.UInt16[]>> ReadWriteMultipleRegistersAsync(Junevy.Communication.Modbus.Core.Interfaces.IModbus, System.Byte, System.UInt16, System.UInt16, System.UInt16, System.UInt16[], System.Threading.CancellationToken)",
         };
 
         [Fact]
@@ -91,13 +91,13 @@ namespace Junevy.Communication.Modbus.Tests
                     if (parameters.Length == 0 || parameters[0].ParameterType != typeof(IModbus))
                         continue;
 
-                    var sb = new StringBuilder();
-                    sb.Append(method.ReturnType.FullName).Append(' ').Append(method.Name).Append('(');
+var sb = new StringBuilder();
+                    sb.Append(FormatType(method.ReturnType)).Append(' ').Append(method.Name).Append('(');
                     for (int i = 0; i < parameters.Length; i++)
                     {
                         if (i > 0)
                             sb.Append(", ");
-                        sb.Append(parameters[i].ParameterType.FullName);
+                        sb.Append(FormatType(parameters[i].ParameterType));
                     }
 
                     sb.Append(')');
@@ -107,6 +107,38 @@ namespace Junevy.Communication.Modbus.Tests
 
             lines.Sort(StringComparer.Ordinal);
             return lines.ToArray();
+        }
+
+        /// <summary>
+        /// 格式化类型名，**不使用程序集限定名**——程序集限定名含 Version，
+        /// 会让本快照在每次版本号变更时假失败（2.0.0 升级时踩过一次）。
+        /// </summary>
+        private static string FormatType(Type type)
+        {
+            if (type.IsGenericType)
+            {
+                var definition = new StringBuilder();
+                definition.Append(type.Namespace).Append('.').Append(type.Name);
+                int tick = definition.ToString().IndexOf('`');
+                if (tick >= 0)
+                    definition.Length = tick;
+
+                definition.Append('<');
+                Type[] args = type.GetGenericArguments();
+                for (int i = 0; i < args.Length; i++)
+                {
+                    if (i > 0)
+                        definition.Append(", ");
+                    definition.Append(FormatType(args[i]));
+                }
+
+                return definition.Append('>').ToString();
+            }
+
+            if (type.IsArray)
+                return FormatType(type.GetElementType()!) + "[]";
+
+            return type.FullName ?? type.Name;
         }
 
         private static void DumpActual(string[] actual)
