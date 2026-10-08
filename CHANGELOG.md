@@ -14,6 +14,7 @@
 
 ### 变更（Changed，破坏性）
 
+- 2026-10-08 `ModbusResult<T>` 改为 `sealed`，`IsSuccess` / `Data` / `ErrorMessage` / `ErrorKind` 只读（旧：`public set`）；`Fail(msg, ModbusErrorKind.None)` 抛出 `ArgumentException`。使用 `Success()` / `Fail()` 工厂方法的代码不受影响。
 - 2026-10-08 `IModbus.ConnectAsync` 增加参数 `CancellationToken cancellationToken = default`：调用方源码兼容；自行实现 `IModbus` 的类型需要更新签名（以及在表达式树中调用 `ConnectAsync()` 的代码，例如 Moq 的 `Setup(m => m.ConnectAsync())`）；用户取消时抛出 `OperationCanceledException`，连接失败或超时仍返回 false。
 - 2026-10-05 `ModbusTCP`/`ModbusRTU` 更名 `ModbusTcpClient`/`ModbusRtuClient`；命名空间 `TCP`/`RTU` → `Tcp`/`Rtu`；配置类更名 `ModbusTcpClientConfig`/`ModbusRtuClientConfig`。
 - 2026-10-05 `ReadTimeOut`/`WriteTimeOut` → `ReadTimeout`/`WriteTimeout`；`ModbusRequest.Start`/`Length` → `StartAddress`/`Quantity`；`IntervalTime` → `FrameReadInterval`；删除 `SetPort`（`Port` 改为普通可写属性）与 `CheckConnection`（用 `IsConnected`）。
