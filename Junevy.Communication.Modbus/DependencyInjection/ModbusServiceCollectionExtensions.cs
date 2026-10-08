@@ -31,7 +31,7 @@ public static class ModbusServiceCollectionExtensions
             sp.GetRequiredService<ILoggerFactory>().CreateLogger<ModbusFactory>());
 
         // Register shared PDU verifier
-        services.TryAddSingleton<ModbusPduVerifier>();
+        services.TryAddSingleton<IModbusPduValidator, ModbusPduValidator>();
         services.TryAddSingleton<IModbusFrameBuilder, ModbusFrameBuilder>();
 
         // Register protocol-specific parsers

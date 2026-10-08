@@ -1,47 +1,42 @@
-using System.Buffers.Binary;
 using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
-using Junevy.Communication.Modbus.Extensions;
 using Junevy.Communication.Modbus.Utils;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using System.Diagnostics;
+using System.Buffers.Binary;
 
 namespace Junevy.Communication.Modbus.Core.Parsing
 {
     /// <summary>
-    /// Parses Modbus TCP response frames. Implements <see cref="IResponseParser"/> directly
-    /// so it can be injected into <see cref="TCP.ModbusTcpClient"/> as its response parser.
+    /// Parses the MBAP framing of Modbus TCP responses and delegates PDU semantics to
+    /// <see cref="IModbusPduValidator"/>. Injected into <c>ModbusTcpClient</c> as its response parser.
+    /// RX logging is done by the client, not here.
     /// </summary>
-    public sealed class TcpProtocolParser : IResponseParser
+public sealed class TcpProtocolParser : IResponseParser
     {
-        private const int TcpMinFrameLength = 9;
-        private const int TcpPduOffset = 6;
+    private const int TcpPduOffset = 6;
 
         private readonly ILogger<TcpProtocolParser> logger;
-        private readonly ModbusPduVerifier verifier;
-        private readonly Stopwatch stopwatch = Stopwatch.StartNew();
-        private long lastTimestamp;
+        private readonly IModbusPduValidator validator;
 
         public TcpProtocolParser(
-            ILogger<TcpProtocolParser>? logger = null,
-            ModbusPduVerifier? verifier = null)
+            IModbusPduValidator? validator = null,
+            ILogger<TcpProtocolParser>? logger = null)
         {
             this.logger = logger ?? NullLogger<TcpProtocolParser>.Instance;
-            this.verifier = verifier ?? new ModbusPduVerifier();
+            this.validator = validator ?? new ModbusPduValidator();
         }
 
         public ModbusResult<ReadOnlyMemory<byte>> ParseResponse(ReadOnlyMemory<byte> response, ModbusRequest request)
         {
-            // Common validation
             if (response.Length == 0)
                 return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [TcpParser] The response is empty.", ModbusErrorKind.ProtocolViolation);
 
             if (!ModbusHelper.CheckRequest(request))
                 return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [TcpParser] The request is invalid.", ModbusErrorKind.ProtocolViolation);
 
-            // TCP-specific validation
-            if (response.Length < TcpMinFrameLength)
+            // MBAP 头 7 字节 + 最少 2 字节 PDU
+            if (response.Length < 9)
             {
                 logger.LogWarning(" [TcpParser] Response too short: {Length} bytes.", response.Length);
                 return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [TcpParser] Response too short.", ModbusErrorKind.ProtocolViolation, response);
@@ -52,7 +47,6 @@ namespace Junevy.Communication.Modbus.Core.Parsing
             ushort protocolId = BinaryPrimitives.ReadUInt16BigEndian(span.Slice(2, 2));
             ushort frameLength = BinaryPrimitives.ReadUInt16BigEndian(span.Slice(4, 2));
             byte unitId = span[6];
-            byte funcCode = span[7];
             ushort transactionId = BinaryPrimitives.ReadUInt16BigEndian(span.Slice(0, 2));
             ushort expectedTransactionId = request.TransactionId;
 
@@ -83,163 +77,28 @@ namespace Junevy.Communication.Modbus.Core.Parsing
                 return ModbusResult<ReadOnlyMemory<byte>>.Fail($"Invalid response length. Expected {totalLength}, actual {response.Length}.", ModbusErrorKind.ProtocolViolation, response);
             }
 
-            // Exception response
-            if (funcCode == (byte)((byte)request.FunctionCode | 0x80))
+            var pdu = response.Slice(TcpPduOffset + 1, totalLength - TcpPduOffset - 1);
+            if (pdu.Length < 1)
             {
-                if (totalLength < TcpPduOffset + 3)
-                {
-                    logger.LogWarning(" [TcpParser] Exception response too short: {Length} bytes.", totalLength);
-                    return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [TcpParser] Exception response too short.", ModbusErrorKind.ProtocolViolation, response);
-                }
-
-                byte exceptionCode = span[TcpPduOffset + 2];
-                logger.LogWarning(" [TcpParser] Modbus exception. Function=0x{Function:X2}, Code=0x{Code:X2}.", funcCode, exceptionCode);
-                return ModbusResult<ReadOnlyMemory<byte>>.Fail(
-                    $"Modbus exception response. Function=0x{funcCode:X2}, Code=0x{exceptionCode:X2}.",
-                    ModbusErrorKind.ModbusException,
-                    response.Slice(0, totalLength));
+                logger.LogWarning(" [TcpParser] Response too short: no PDU.");
+                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [TcpParser] Response too short.", ModbusErrorKind.ProtocolViolation, response);
             }
 
-            var data = request.Data ?? [];
-
-            // 0x16 Mask Write Register — special handling (response is an echo with 4 data bytes)
-            if (request.FunctionCode == ModbusFunctionCode.MaskWriteRegister)
-                return HandleTcpMaskWrite(response.Slice(0, totalLength), request.StartAddress, data);
-
-            var commonResult = TryHandleTcpCommonFunction(response.Slice(0, totalLength), request);
-            if (commonResult.Handled)
-                return commonResult.Result;
-
-            return verifier.CategorizeFunctionCode(request.FunctionCode) switch
+            int n = validator.GetExpectedPduLength(pdu.Span, request);
+            if (n < 0 || pdu.Length < n)
             {
-                ModbusPduVerifier.FunctionCodeCategory.Read =>
-                    HandleTcpRead(response.Slice(0, totalLength), request.FunctionCode, request.Quantity),
-
-                ModbusPduVerifier.FunctionCodeCategory.WriteSingle =>
-                    HandleTcpWriteSingle(response.Slice(0, totalLength), request.StartAddress, data),
-
-                ModbusPduVerifier.FunctionCodeCategory.WriteMulti =>
-                    HandleTcpWriteMulti(response.Slice(0, totalLength), request.StartAddress, request.Quantity),
-
-                _ => DefaultUnmatched(response)
-            };
-        }
-
-        private ModbusResult<ReadOnlyMemory<byte>> HandleTcpMaskWrite(ReadOnlyMemory<byte> response,
-            ushort startAddr, byte[] data)
-        {
-            // Data = [AndHi, AndLo, OrHi, OrLo]
-            if (data == null || data.Length != 4 || response.Length < TcpPduOffset + 8)
-            {
-                logger.LogWarning(" [HandleTcpMaskWrite] Invalid data or response length.");
-                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleTcpMaskWrite] Invalid data or response length.", ModbusErrorKind.ProtocolViolation, response);
+                logger.LogWarning(" [TcpParser] Response too short: expected PDU length {Expected}, got {Actual}.", n, pdu.Length);
+                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [TcpParser] Response too short.", ModbusErrorKind.ProtocolViolation, response);
             }
 
-            var andMask = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(0, 2));
-            var orMask = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(2, 2));
+            var v = validator.Validate(pdu, request);
+            if (v.ErrorKind == ModbusErrorKind.ModbusException)
+                return ModbusResult<ReadOnlyMemory<byte>>.Fail(v.ErrorMessage!, ModbusErrorKind.ModbusException, response.Slice(0, totalLength));
 
-            var pduSpan = response.Span.Slice(TcpPduOffset, 8); // UnitId + FuncCode + Start(2) + And(2) + Or(2)
+            if (!v.IsSuccess)
+                return ModbusResult<ReadOnlyMemory<byte>>.Fail(v.ErrorMessage!, ModbusErrorKind.ProtocolViolation, response);
 
-            if (!verifier.VerifyMaskWritePdu(pduSpan, startAddr, andMask, orMask))
-            {
-                logger.LogWarning(" [HandleTcpMaskWrite] PDU verification failed.");
-                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleTcpMaskWrite] PDU verification failed.", ModbusErrorKind.ProtocolViolation, response);
-            }
-
-            return ModbusResult<ReadOnlyMemory<byte>>.Success(response.Slice(0, TcpPduOffset + 8));
-        }
-
-        private ModbusResult<ReadOnlyMemory<byte>> HandleTcpRead(ReadOnlyMemory<byte> response,
-            ModbusFunctionCode functionCode, ushort length)
-        {
-            if (response.Length < TcpPduOffset + 3)
-            {
-                logger.LogWarning(" [HandleTcpRead] Response too short: {Actual} < {Expected}.", response.Length, TcpPduOffset + 3);
-                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleTcpRead] Response too short.", ModbusErrorKind.ProtocolViolation, response);
-            }
-
-            int byteCount = response.Span[TcpPduOffset + 2];
-            int pduDataLength = 3 + byteCount;
-            int expectedLength = TcpPduOffset + pduDataLength;
-
-            if (response.Length < expectedLength)
-            {
-                logger.LogWarning(" [HandleTcpRead] Response too short: {Actual} < {Expected}.", response.Length, expectedLength);
-                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleTcpRead] Response too short.", ModbusErrorKind.ProtocolViolation, response);
-            }
-
-            var cutFrame = response.Slice(0, expectedLength);
-            var pduSpan = cutFrame.Span.Slice(TcpPduOffset, pduDataLength);
-
-            if (!verifier.VerifyReadPdu(pduSpan, functionCode, length))
-            {
-                logger.LogWarning(" [HandleTcpRead] PDU verification failed.");
-                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleTcpRead] PDU verification failed.", ModbusErrorKind.ProtocolViolation, response);
-            }
-
-            return ModbusResult<ReadOnlyMemory<byte>>.Success(cutFrame);
-        }
-
-        private ModbusResult<ReadOnlyMemory<byte>> HandleTcpWriteSingle(ReadOnlyMemory<byte> response,
-            ushort startAddr, byte[] data)
-        {
-            if (data == null || data.Length == 0 || response.Length < TcpPduOffset + 6)
-            {
-                logger.LogWarning(" [HandleTcpWriteSingle] Invalid data or response length.");
-                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleTcpWriteSingle] Invalid data or response length.", ModbusErrorKind.ProtocolViolation, response);
-            }
-
-            var pduSpan = response.Span.Slice(TcpPduOffset, 6);
-
-            if (!verifier.VerifySingleWritePdu(pduSpan, startAddr, data))
-            {
-                logger.LogWarning(" [HandleTcpWriteSingle] PDU verification failed.");
-                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleTcpWriteSingle] PDU verification failed.", ModbusErrorKind.ProtocolViolation, response);
-            }
-
-            return ModbusResult<ReadOnlyMemory<byte>>.Success(response.Slice(0, TcpPduOffset + 6));
-        }
-
-        private ModbusResult<ReadOnlyMemory<byte>> HandleTcpWriteMulti(ReadOnlyMemory<byte> response,
-            ushort startAddr, ushort length)
-        {
-            if (response.Length < TcpPduOffset + 6)
-            {
-                logger.LogWarning(" [HandleTcpWriteMulti] Response too short: {Actual} < {Expected}.", response.Length, TcpPduOffset + 6);
-                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleTcpWriteMulti] Response too short.", ModbusErrorKind.ProtocolViolation, response);
-            }
-
-            var pduSpan = response.Span.Slice(TcpPduOffset, 6);
-
-            if (!verifier.VerifyMultiWritePdu(pduSpan, startAddr, length))
-            {
-                logger.LogWarning(" [HandleTcpWriteMulti] PDU verification failed.");
-                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [HandleTcpWriteMulti] PDU verification failed.", ModbusErrorKind.ProtocolViolation, response);
-            }
-
-            return ModbusResult<ReadOnlyMemory<byte>>.Success(response.Slice(0, TcpPduOffset + 6));
-        }
-
-        private ModbusResult<ReadOnlyMemory<byte>> DefaultUnmatched(ReadOnlyMemory<byte> response)
-        {
-            logger.Rx("TCP", response.Span, stopwatch, ref lastTimestamp);
-            return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [TcpParser] Function code cannot be matched.", ModbusErrorKind.ProtocolViolation, response);
-        }
-
-        private static (bool Handled, ModbusResult<ReadOnlyMemory<byte>> Result) TryHandleTcpCommonFunction(
-            ReadOnlyMemory<byte> response,
-            ModbusRequest request)
-        {
-            bool handled = request.FunctionCode == ModbusFunctionCode.ReadExceptionStatus
-                || request.FunctionCode == ModbusFunctionCode.Diagnostics
-                || request.FunctionCode == ModbusFunctionCode.GetCommEventCounter
-                || request.FunctionCode == ModbusFunctionCode.GetCommEventLog
-                || request.FunctionCode == ModbusFunctionCode.ReportServerId;
-
-            if (!handled)
-                return (false, ModbusResult<ReadOnlyMemory<byte>>.Fail(string.Empty));
-
-            return (true, ModbusResult<ReadOnlyMemory<byte>>.Success(response));
+            return ModbusResult<ReadOnlyMemory<byte>>.Success(response.Slice(0, TcpPduOffset + 1 + n));
         }
     }
 }

@@ -14,6 +14,7 @@
 
 ### 变更（Changed，破坏性）
 
+- 2026-10-08 `ModbusPduVerifier`（公开类，其方法均为 `internal`）删除，由 `IModbusPduValidator` / `ModbusPduValidator` 取代；`TcpProtocolParser(ILogger?, ModbusPduVerifier?)` → `TcpProtocolParser(IModbusPduValidator?, ILogger?)`，`RtuProtocolParser` 同理；解析器不再记录 RX 日志（RX 日志由客户端记录，消除 RTU 成功帧的重复 RX 日志）。
 - 2026-10-08 静态类 `ModbusExtensions` 拆分为 `ModbusBitExtensions` / `ModbusRegisterExtensions` / `ModbusDiagnosticsExtensions`（命名空间不变，扩展方法签名不变，使用扩展方法语法的调用方无需修改；直接以 `ModbusExtensions.Xxx(...)` 静态调用的代码需要改类名）。
 - 2026-10-08 `ModbusResult<T>` 改为 `sealed`，`IsSuccess` / `Data` / `ErrorMessage` / `ErrorKind` 只读（旧：`public set`）；`Fail(msg, ModbusErrorKind.None)` 抛出 `ArgumentException`。使用 `Success()` / `Fail()` 工厂方法的代码不受影响。
 - 2026-10-08 `IModbus.ConnectAsync` 增加参数 `CancellationToken cancellationToken = default`：调用方源码兼容；自行实现 `IModbus` 的类型需要更新签名（以及在表达式树中调用 `ConnectAsync()` 的代码，例如 Moq 的 `Setup(m => m.ConnectAsync())`）；用户取消时抛出 `OperationCanceledException`，连接失败或超时仍返回 false。
@@ -26,6 +27,7 @@
 
 ### 修复（Fixed）
 
+- 2026-10-08 解析器校验响应功能码必须等于请求功能码（或其 `|0x80`），不一致返回 `ProtocolViolation`（此前不校验功能码，可能把别的功能码的应答当成本次应答接受）。
 - 2026-10-05 TCP 事务 ID 由库内自增管理并按精确值匹配响应，消除旧响应错配风险（此前上线值恒为 `TransactionId+1` 且从不递增）。
 - 2026-10-05 Modbus 异常响应（FC|0x80）在解析器层即返回失败（含异常码），作为终态不重试——此前在裸 `Request` 层被误报为成功；RTU 侧不再被"等待后续帧"吞成超时。
 - 2026-10-05 结果式 API 不再逃逸异常（非法 MBAP 长度、RTU 零长解析帧改为失败返回），同步/异步行为对齐。

@@ -154,6 +154,11 @@ containerRegistry.RegisterInstance<IModbusFactory>(factory);
 
 `Build()` returns a new, independent factory per call. Dispose the factory on application shutdown (it owns the connections).
 
+## Custom response validation
+
+Implement `IModbusPduValidator` and pass it to `new TcpProtocolParser(validator)` / `new RtuProtocolParser(validator)`.
+Pass the parser to `ModbusFactoryBuilder.WithTcpParser` / `WithRtuParser`.
+
 ## Raw Request API
 
 When a device uses custom behavior, call `Request` / `RequestAsync` directly:
