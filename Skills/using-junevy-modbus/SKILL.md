@@ -12,7 +12,7 @@ Modbus TCP/RTU **master (client)** library for .NET (net472 + net8.0) by Junevy.
 - **Result-based, not exception-based**: reads/writes return `ModbusResult<T>` (`IsSuccess`, `Data`, `ErrorMessage`, `ErrorKind`) instead of throwing. Parameter validation throws `ArgumentException`; `Request`/`RequestAsync` never throw on protocol violations. `ModbusResult<T>` is immutable and sealed; create results only through `ModbusResult<T>.Success` / `Fail`.
 - **Config-object clients**: `new ModbusTcpClient(config)` / `new ModbusRtuClient(config)` — no `ConnectAsync(host, port)` overloads. `ConnectAsync(CancellationToken)` throws `OperationCanceledException` when cancelled and returns false when the connection fails or times out.
 - **Factory**: `GetOrAdd(key, IModbusConfig)` / `TryAdd(key, IModbusConfig, out modbus)` resolve a creator by config type (base-type chain). Unknown config types throw `NotSupportedException`. Custom transports implement `IModbusClientCreator`; register it AFTER `AddModbusFactory()` (later registration wins) or pass it to `ModbusFactoryBuilder.WithCreator`.
-- **The library never mutates your request objects** and returns them untouched.
+- **The library does not mutate the protocol fields of your request objects** and returns them untouched. The one exception: for TCP the client writes `request.TransactionId` in the lock (it manages transaction IDs internally, so never set it yourself for transport calls). Your config objects **are** mutated: `GetOrAdd`/`TryAdd` fill in default values, so don't share one config instance across differently-configured connections.
 
 ## When NOT to Use
 
@@ -100,6 +100,25 @@ factory.GetOrAdd("rs485-bus", new ModbusRtuClientConfig { PortName = "COM3" });
 factory.RegisterAlias("slave-1", "rs485-bus");
 ```
 
+### Prism / containers WITHOUT Microsoft DI
+
+Do NOT bridge `IServiceCollection` — build the factory with `ModbusFactoryBuilder` and register the instance. Zero Microsoft DI packages required:
+
+```csharp
+using Junevy.Communication.Modbus.Factory;
+
+// e.g. inside Prism's RegisterTypes(IContainerRegistry containerRegistry):
+var factory = ModbusFactoryBuilder.Create()
+    .WithLoggerFactory(loggerFactory)   // optional (Serilog-backed etc.); default NullLoggerFactory
+    .WithConnectionManager(manager)     // optional: expose/share the named-instance registry
+    .WithCreator(new MyClientCreator()) // optional: custom transport strategy; overrides a built-in creator
+    .Build();                           // each call → new independent factory
+
+containerRegistry.RegisterInstance<IModbusFactory>(factory);
+```
+
+Dispose the factory on app shutdown (it owns the connections). All other options (`WithTcpParser`/`WithRtuParser` take `IResponseParser`; `WithFrameBuilder`) default exactly like `AddModbusFactory`.
+
 Removing the master key (factory.TryRemove("rs485-bus")) also removes every alias that points to it and disposes the connection. RegisterAlias returns false when the target key does not exist.
 
 Extension methods live in the namespace `Junevy.Communication.Modbus.Extensions` and are grouped into `ModbusBitExtensions` (0x01 0x02 0x05 0x0F), `ModbusRegisterExtensions` (0x03 0x04 0x06 0x10 0x16 0x17) and `ModbusDiagnosticsExtensions` (0x07 0x08 0x0B 0x0C 0x11); always call them with extension-method syntax.
@@ -115,6 +134,20 @@ Extension methods (all 15 function codes): `ReadCoils/DiscreteInputs/HoldingRegi
 - **Timeouts**: ReadTimeout is the total deadline for receiving one complete response frame (sync and async). WriteTimeout is the deadline for sending one request frame. A timeout returns ErrorKind.Timeout.
 - **Response validation**: the parser checks MBAP/CRC framing, then the response PDU (function code equals the request function code, byte count, echoed address/quantity/value). Custom parsers implement `IResponseParser`; custom PDU rules implement `IModbusPduValidator`.
 - **Dispose**: Dispose() aborts in-flight I/O and waits for the in-flight request to exit. Requests that were running or queued return ErrorKind.ConnectionClosed; calling Request/Connect after Dispose throws ObjectDisposedException; Disconnect after Dispose is a no-op.
+
+## Upgrading 1.x → 2.0
+
+| Old | New |
+|---|---|
+| assigning `ModbusResult` properties / object initializer | `ModbusResult<T>.Success(...)` / `Fail(...)` (type is now `sealed`, properties read-only) |
+| `ModbusExtensions.ReadCoils(modbus, ...)` static call | `modbus.ReadCoils(...)` (extension syntax) or `ModbusBitExtensions.ReadCoils(modbus, ...)` |
+| `new TcpProtocolParser(logger, verifier)` | `new TcpProtocolParser(validator, logger)` |
+| `ModbusPduVerifier` | `IModbusPduValidator` / `ModbusPduValidator` |
+| `factory.GetOrAdd(key, ModbusTcpClientConfig)` | `factory.GetOrAdd(key, config)` (`IModbusConfig` overload — same call syntax) |
+| `new ModbusFactory(logger, loggerFactory, tcp, rtu, frameBuilder, manager)` | `new ModbusFactory(logger, creators, manager)`, or use `ModbusFactoryBuilder` |
+| `WithTcpParser(TcpProtocolParser)` | `WithTcpParser(IResponseParser)` |
+
+Also note (1.x → 2.0): `IModbus.ConnectAsync` takes an optional `CancellationToken` and throws `OperationCanceledException` on cancel; `Dispose` now waits for in-flight requests instead of throwing inside them.
 
 ## Common Mistakes
 
