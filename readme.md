@@ -154,6 +154,23 @@ containerRegistry.RegisterInstance<IModbusFactory>(factory);
 
 `Build()` returns a new, independent factory per call. Dispose the factory on application shutdown (it owns the connections).
 
+## Custom Transports
+
+`IModbusFactory` creates clients through `IModbusClientCreator` strategies resolved by configuration type, so a new transport needs no change to the factory:
+
+```csharp
+public sealed class MyClientCreator : IModbusClientCreator
+{
+    public Type ConfigType => typeof(MyConfig);          // exact config type
+    public void Normalize(IModbusConfig c) { /* fill defaults */ }
+    public IModbus Create(IModbusConfig c) => new MyClient((MyConfig)c);
+    public string Describe(IModbusConfig c) => "gateway-1";
+}
+```
+
+Register it after `AddModbusFactory()`: `services.AddSingleton<IModbusClientCreator, MyCreator>();`
+Without a DI container: `ModbusFactoryBuilder.Create().WithCreator(new MyCreator()).Build()`
+
 ## Custom response validation
 
 Implement `IModbusPduValidator` and pass it to `new TcpProtocolParser(validator)` / `new RtuProtocolParser(validator)`.

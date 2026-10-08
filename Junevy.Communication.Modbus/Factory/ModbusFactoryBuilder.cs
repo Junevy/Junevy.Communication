@@ -1,6 +1,5 @@
 using Junevy.Communication.Modbus.Core.Framing;
 using Junevy.Communication.Modbus.Core.Interfaces;
-using Junevy.Communication.Modbus.Core.Parsing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -15,10 +14,11 @@ namespace Junevy.Communication.Modbus.Factory
     public sealed class ModbusFactoryBuilder
     {
         private ILoggerFactory? loggerFactory;
-        private TcpProtocolParser? tcpParser;
-        private RtuProtocolParser? rtuParser;
+        private IResponseParser? tcpParser;
+        private IResponseParser? rtuParser;
         private IModbusFrameBuilder? frameBuilder;
         private IModbusConnectionManager? connectionManager;
+        private readonly List<IModbusClientCreator> creators = new();
 
         private ModbusFactoryBuilder()
         {
@@ -37,15 +37,15 @@ namespace Junevy.Communication.Modbus.Factory
             return this;
         }
 
-        /// <summary>Sets a custom TCP response parser. Defaults to a new <see cref="TcpProtocolParser"/>.</summary>
-        public ModbusFactoryBuilder WithTcpParser(TcpProtocolParser tcpParser)
+        /// <summary>Sets a custom TCP response parser. Defaults to a new <c>TcpProtocolParser</c>.</summary>
+        public ModbusFactoryBuilder WithTcpParser(IResponseParser tcpParser)
         {
             this.tcpParser = tcpParser ?? throw new ArgumentNullException(nameof(tcpParser));
             return this;
         }
 
-        /// <summary>Sets a custom RTU response parser. Defaults to a new <see cref="RtuProtocolParser"/>.</summary>
-        public ModbusFactoryBuilder WithRtuParser(RtuProtocolParser rtuParser)
+        /// <summary>Sets a custom RTU response parser. Defaults to a new <c>RtuProtocolParser</c>.</summary>
+        public ModbusFactoryBuilder WithRtuParser(IResponseParser rtuParser)
         {
             this.rtuParser = rtuParser ?? throw new ArgumentNullException(nameof(rtuParser));
             return this;
@@ -55,6 +55,17 @@ namespace Junevy.Communication.Modbus.Factory
         public ModbusFactoryBuilder WithFrameBuilder(IModbusFrameBuilder frameBuilder)
         {
             this.frameBuilder = frameBuilder ?? throw new ArgumentNullException(nameof(frameBuilder));
+            return this;
+        }
+
+        /// <summary>
+        /// Registers a custom client creation strategy. Creators added here are appended after the
+        /// built-in ones, so a creator with the same <see cref="IModbusClientCreator.ConfigType"/>
+        /// overrides the built-in creator (later registration wins).
+        /// </summary>
+        public ModbusFactoryBuilder WithCreator(IModbusClientCreator creator)
+        {
+            this.creators.Add(creator ?? throw new ArgumentNullException(nameof(creator)));
             return this;
         }
 
@@ -73,13 +84,14 @@ namespace Junevy.Communication.Modbus.Factory
         public ModbusFactory Build()
         {
             var loggers = loggerFactory ?? NullLoggerFactory.Instance;
+            var allCreators = new List<IModbusClientCreator>(
+                ModbusFactory.CreateDefaultCreators(loggers, tcpParser, rtuParser, frameBuilder));
+            allCreators.AddRange(creators);
+
             return new ModbusFactory(
                 loggers.CreateLogger<ModbusFactory>(),
-                loggers,
-                tcpParser,
-                rtuParser,
-                frameBuilder,
-                connectionManager);
+                allCreators,
+                connectionManager ?? new ModbusConnectionManager(NullLogger<ModbusConnectionManager>.Instance));
         }
     }
 }

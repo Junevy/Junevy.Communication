@@ -25,12 +25,12 @@ public static class ModbusServiceCollectionExtensions
         // Ensure a logger factory is available
         services.TryAddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
 
-        // Ensure a logger is available so DI can select the 6-parameter ModbusFactory
-        // constructor and inject the container-registered IModbusConnectionManager
+        // Ensure a logger is available so DI can select the ModbusFactory constructor
+        // and inject the container-registered IModbusConnectionManager and creators
         services.TryAddSingleton<ILogger<ModbusFactory>>(sp =>
             sp.GetRequiredService<ILoggerFactory>().CreateLogger<ModbusFactory>());
 
-        // Register shared PDU verifier
+        // Register the PDU validator shared by both parsers
         services.TryAddSingleton<IModbusPduValidator, ModbusPduValidator>();
         services.TryAddSingleton<IModbusFrameBuilder, ModbusFrameBuilder>();
 
@@ -41,7 +41,18 @@ public static class ModbusServiceCollectionExtensions
         // Register the connection manager for standalone use
         services.TryAddSingleton<IModbusConnectionManager, ModbusConnectionManager>();
 
-        // Register the factory (receives both parsers via DI)
+        // Built-in client creation strategies. These use AddSingleton (not TryAdd) so a creator
+        // registered by the caller AFTER AddModbusFactory() wins — last registration wins.
+        services.AddSingleton<IModbusClientCreator>(sp => new TcpClientCreator(
+            sp.GetRequiredService<ILoggerFactory>(),
+            sp.GetRequiredService<TcpProtocolParser>(),
+            sp.GetRequiredService<IModbusFrameBuilder>()));
+        services.AddSingleton<IModbusClientCreator>(sp => new RtuClientCreator(
+            sp.GetRequiredService<ILoggerFactory>(),
+            sp.GetRequiredService<RtuProtocolParser>(),
+            sp.GetRequiredService<IModbusFrameBuilder>()));
+
+        // Register the factory (receives creators and the manager via DI)
         services.TryAddSingleton<IModbusFactory, ModbusFactory>();
 
         return services;

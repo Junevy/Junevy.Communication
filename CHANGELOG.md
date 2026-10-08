@@ -6,6 +6,8 @@
 
 ### 新增（Added）
 
+- 2026-10-08 `IModbusClientCreator`（传输创建策略）、`TcpClientCreator`、`RtuClientCreator`、`ModbusFactoryBuilder.WithCreator`：新增一种传输（例如 RTU over TCP）只需实现 `IModbusClientCreator` 并注册，无需修改工厂。
+- 2026-10-08 `IModbusPduValidator` / `ModbusPduValidator`：与传输无关的 PDU 语义校验可替换实现。
 - 2026-10-05 `ModbusFactoryBuilder`：无 Microsoft DI 容器场景下的 `ModbusFactory` 流式构建器（适配 Prism 等第三方容器直接 `RegisterInstance`）。提供 `WithLoggerFactory` / `WithTcpParser` / `WithRtuParser` / `WithFrameBuilder` / `WithConnectionManager` / `Build`；未设置项与 `AddModbusFactory` 的 DI 默认值一致。
 - 2026-10-05 `ModbusErrorKind` 结构化错误分类（`ModbusResult.ErrorKind` + `Fail` 重载），重连判断不再依赖错误消息字符串匹配。
 - 2026-10-05 `ModbusExceptionCode` 线上异常码枚举（含 `Describe()` 扩展）；`ModbusException.ErrorCode` 类型同步更换，参数校验统一改抛标准异常。
@@ -14,6 +16,9 @@
 
 ### 变更（Changed，破坏性）
 
+- 2026-10-08 `IModbusFactory.GetOrAdd` / `TryAdd` 的 4 个按配置类型的重载（`ModbusTcpClientConfig`、`ModbusRtuClientConfig`）合并为 `GetOrAdd(string, IModbusConfig)` 与 `TryAdd(string, IModbusConfig, out IModbus?)`；调用方源码不需要修改，未注册的配置类型抛出 `NotSupportedException`。
+- 2026-10-08 `ModbusFactory` 的 6 个构造函数缩减为 2 个：`ModbusFactory()` 与 `ModbusFactory(ILogger<ModbusFactory>, IEnumerable<IModbusClientCreator>, IModbusConnectionManager)`。
+- 2026-10-08 `ModbusFactoryBuilder.WithTcpParser` / `WithRtuParser` 的参数类型由具体解析器类改为 `IResponseParser`。
 - 2026-10-08 `ModbusPduVerifier`（公开类，其方法均为 `internal`）删除，由 `IModbusPduValidator` / `ModbusPduValidator` 取代；`TcpProtocolParser(ILogger?, ModbusPduVerifier?)` → `TcpProtocolParser(IModbusPduValidator?, ILogger?)`，`RtuProtocolParser` 同理；解析器不再记录 RX 日志（RX 日志由客户端记录，消除 RTU 成功帧的重复 RX 日志）。
 - 2026-10-08 静态类 `ModbusExtensions` 拆分为 `ModbusBitExtensions` / `ModbusRegisterExtensions` / `ModbusDiagnosticsExtensions`（命名空间不变，扩展方法签名不变，使用扩展方法语法的调用方无需修改；直接以 `ModbusExtensions.Xxx(...)` 静态调用的代码需要改类名）。
 - 2026-10-08 `ModbusResult<T>` 改为 `sealed`，`IsSuccess` / `Data` / `ErrorMessage` / `ErrorKind` 只读（旧：`public set`）；`Fail(msg, ModbusErrorKind.None)` 抛出 `ArgumentException`。使用 `Success()` / `Fail()` 工厂方法的代码不受影响。

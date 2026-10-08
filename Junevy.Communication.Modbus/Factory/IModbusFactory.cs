@@ -1,7 +1,5 @@
 using Junevy.Communication.Modbus.Core.Interfaces;
 using Junevy.Communication.Modbus.Core.Models;
-using Junevy.Communication.Modbus.Rtu;
-using Junevy.Communication.Modbus.Tcp;
 
 namespace Junevy.Communication.Modbus.Factory
 {
@@ -38,24 +36,17 @@ namespace Junevy.Communication.Modbus.Factory
         bool TryGet(string key, out IModbus? modbus);
 
         /// <summary>
-        /// Gets an existing instance or creates a new Modbus TCP connection.
+        /// Gets an existing instance or creates a new client. The <see cref="IModbusClientCreator"/>
+        /// is resolved from the concrete type of <paramref name="config"/> (walking the base-type chain).
+        /// Throws <see cref="NotSupportedException"/> when no creator is registered for that configuration type.
         /// </summary>
-        IModbus GetOrAdd(string key, ModbusTcpClientConfig config);
+        IModbus GetOrAdd(string key, IModbusConfig config);
 
         /// <summary>
-        /// Gets an existing instance or creates a new Modbus RTU connection.
+        /// Tries to add a new client. Fails if the key already exists (the newly created instance is
+        /// disposed). The creator is resolved the same way as in <see cref="GetOrAdd(string, IModbusConfig)"/>.
         /// </summary>
-        IModbus GetOrAdd(string key, ModbusRtuClientConfig config);
-
-        /// <summary>
-        /// Tries to add a new Modbus TCP connection. Fails if the key already exists.
-        /// </summary>
-        bool TryAdd(string key, ModbusTcpClientConfig config, out IModbus? modbus);
-
-        /// <summary>
-        /// Tries to add a new Modbus RTU connection. Fails if the key already exists.
-        /// </summary>
-        bool TryAdd(string key, ModbusRtuClientConfig config, out IModbus? modbus);
+        bool TryAdd(string key, IModbusConfig config, out IModbus? modbus);
 
         /// <summary>
         /// Removes the instance registered under the given name, every alias that resolves to it, and disposes the instance. Removing an alias only removes the alias.

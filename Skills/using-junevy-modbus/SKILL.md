@@ -11,6 +11,7 @@ Modbus TCP/RTU **master (client)** library for .NET (net472 + net8.0) by Junevy.
 
 - **Result-based, not exception-based**: reads/writes return `ModbusResult<T>` (`IsSuccess`, `Data`, `ErrorMessage`, `ErrorKind`) instead of throwing. Parameter validation throws `ArgumentException`; `Request`/`RequestAsync` never throw on protocol violations. `ModbusResult<T>` is immutable and sealed; create results only through `ModbusResult<T>.Success` / `Fail`.
 - **Config-object clients**: `new ModbusTcpClient(config)` / `new ModbusRtuClient(config)` — no `ConnectAsync(host, port)` overloads. `ConnectAsync(CancellationToken)` throws `OperationCanceledException` when cancelled and returns false when the connection fails or times out.
+- **Factory**: `GetOrAdd(key, IModbusConfig)` / `TryAdd(key, IModbusConfig, out modbus)` resolve a creator by config type (base-type chain). Unknown config types throw `NotSupportedException`. Custom transports implement `IModbusClientCreator`; register it AFTER `AddModbusFactory()` (later registration wins) or pass it to `ModbusFactoryBuilder.WithCreator`.
 - **The library never mutates your request objects** and returns them untouched.
 
 ## When NOT to Use
