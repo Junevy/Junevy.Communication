@@ -91,7 +91,7 @@ namespace Junevy.Communication.Modbus.Tests
                     if (parameters.Length == 0 || parameters[0].ParameterType != typeof(IModbus))
                         continue;
 
-var sb = new StringBuilder();
+                    var sb = new StringBuilder();
                     sb.Append(FormatType(method.ReturnType)).Append(' ').Append(method.Name).Append('(');
                     for (int i = 0; i < parameters.Length; i++)
                     {

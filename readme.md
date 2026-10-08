@@ -168,8 +168,8 @@ public sealed class MyClientCreator : IModbusClientCreator
 }
 ```
 
-Register it after `AddModbusFactory()`: `services.AddSingleton<IModbusClientCreator, MyCreator>();`
-Without a DI container: `ModbusFactoryBuilder.Create().WithCreator(new MyCreator()).Build()`
+Register it after `AddModbusFactory()`: `services.AddSingleton<IModbusClientCreator, MyClientCreator>();`
+Without a DI container: `ModbusFactoryBuilder.Create().WithCreator(new MyClientCreator()).Build()`
 
 ## Custom response validation
 
@@ -252,6 +252,7 @@ Behavior:
 ## Notes
 
 - One request at a time is serialized per connection with `SemaphoreSlim`.
+- `ConnectAsync(CancellationToken)` throws `OperationCanceledException` when cancelled and returns `false` when the connection fails or times out.
 - Dispose() aborts in-flight I/O and waits for the in-flight request to exit. Requests that were running or queued return ErrorKind.ConnectionClosed; calling Request/Connect after Dispose throws ObjectDisposedException; Disconnect after Dispose is a no-op.
 - RTU frames use CRC16 verification.
 - TCP responses validate MBAP protocol id, transaction id, and unit id.

@@ -44,6 +44,8 @@
 
 ### 修复（Fixed）
 
+- 2026-10-08 `TcpProtocolParser` 在 MBAP 长度字段为 0 时不再抛 `ArgumentOutOfRangeException`（`Slice` 收到负长度），改为返回 `ProtocolViolation`——解析器"永不抛异常"的契约对公开扩展点同样成立（经 `ModbusTcpClient` 调用时已被传输层的长度检查挡住，但直接使用解析器可触发）。
+- 2026-10-08 `ReportServerId` 在帧头声明的事务字节数超过实际可用数据时返回 `ProtocolViolation`，不再返回被截断的负载。
 - 2026-10-08 解析器校验响应功能码必须等于请求功能码（或其 `|0x80`），不一致返回 `ProtocolViolation`（此前不校验功能码，可能把别的功能码的应答当成本次应答接受）。
 - 2026-10-05 TCP 事务 ID 由库内自增管理并按精确值匹配响应，消除旧响应错配风险（此前上线值恒为 `TransactionId+1` 且从不递增）。
 - 2026-10-05 Modbus 异常响应（FC|0x80）在解析器层即返回失败（含异常码），作为终态不重试——此前在裸 `Request` 层被误报为成功；RTU 侧不再被"等待后续帧"吞成超时。

@@ -12,7 +12,7 @@ namespace Junevy.Communication.Modbus.Core.Parsing
     /// <see cref="IModbusPduValidator"/>. Injected into <c>ModbusTcpClient</c> as its response parser.
     /// RX logging is done by the client, not here.
     /// </summary>
-public sealed class TcpProtocolParser : IResponseParser
+    public sealed class TcpProtocolParser : IResponseParser
     {
     private const int TcpPduOffset = 6;
 
@@ -77,12 +77,17 @@ public sealed class TcpProtocolParser : IResponseParser
                 return ModbusResult<ReadOnlyMemory<byte>>.Fail($"Invalid response length. Expected {totalLength}, actual {response.Length}.", ModbusErrorKind.ProtocolViolation, response);
             }
 
-            var pdu = response.Slice(TcpPduOffset + 1, totalLength - TcpPduOffset - 1);
-            if (pdu.Length < 1)
-            {
-                logger.LogWarning(" [TcpParser] Response too short: no PDU.");
-                return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [TcpParser] Response too short.", ModbusErrorKind.ProtocolViolation, response);
-            }
+// MBAP 长度字段必须至少覆盖 UnitId + PDU；为 0 时 totalLength 会退化成 6，
+// 下面的 Slice(7, …) 会以负长度参数抛 ArgumentOutOfRangeException。
+// 帧长 ≥ 9 的检查在前面已保证，不会漏掉长度非 0 的畸形帧。
+int pduLength = totalLength - TcpPduOffset - 1;
+if (pduLength < 1)
+{
+    logger.LogWarning(" [TcpParser] Response too short: MBAP length field {FrameLength} yields no PDU.", frameLength);
+    return ModbusResult<ReadOnlyMemory<byte>>.Fail(" [TcpParser] Response too short.", ModbusErrorKind.ProtocolViolation, response);
+}
+
+var pdu = response.Slice(TcpPduOffset + 1, pduLength);
 
             int n = validator.GetExpectedPduLength(pdu.Span, request);
             if (n < 0 || pdu.Length < n)

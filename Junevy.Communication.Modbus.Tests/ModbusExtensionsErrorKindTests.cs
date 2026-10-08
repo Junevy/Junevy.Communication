@@ -111,6 +111,116 @@ namespace Junevy.Communication.Modbus.Tests
         }
 
         [Fact]
+        public void ReadExceptionStatus_ShortData_ReturnsProtocolViolation()
+        {
+            // 补测被 ruling 从短数据用例中排除掉的那条分支：Data.Length < 3 必须返回
+            // ProtocolViolation（而不是抛 ArgumentException，也不是把 2 字节当完整应答）。
+            var modbus = new Mock<IModbus>();
+            modbus.Setup(m => m.ProtocolType).Returns(ModbusProtocolType.RTU);
+            modbus.Setup(m => m.Request(It.IsAny<ModbusRequest>()))
+                .Returns(ModbusResult<byte[]>.Success(new byte[] { 0x07, 0x6D }));   // 长度 2
+
+            var result = modbus.Object.ReadExceptionStatus(1);
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(ModbusErrorKind.ProtocolViolation, result.ErrorKind);
+        }
+
+        [Fact]
+        public async Task ReadExceptionStatus_ShortData_ReturnsProtocolViolation_Async()
+        {
+            var modbus = new Mock<IModbus>();
+            modbus.Setup(m => m.ProtocolType).Returns(ModbusProtocolType.RTU);
+            modbus.Setup(m => m.RequestAsync(It.IsAny<ModbusRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(ModbusResult<byte[]>.Success(new byte[] { 0x07, 0x6D }));
+
+            var result = await modbus.Object.ReadExceptionStatusAsync(1);
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(ModbusErrorKind.ProtocolViolation, result.ErrorKind);
+        }
+
+        [Fact]
+        public void TcpParser_ZeroMbapLength_ReturnsProtocolViolationWithoutThrowing()
+        {
+            // MBAP 长度字段为 0：totalLength 会退化成 6，Slice(7, -1) 曾抛 ArgumentOutOfRangeException。
+            // TcpProtocolParser 是公开扩展点，"解析器不抛异常"是硬契约。
+            var parser = new Junevy.Communication.Modbus.Core.Parsing.TcpProtocolParser();
+            var request = new ModbusRequest
+            {
+                SlaveId = 1,
+                FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
+                StartAddress = 0,
+                Quantity = 1,
+                TransactionId = 0x0007
+            };
+            byte[] frame = { 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x02, 0x00, 0x01 };
+
+            var result = parser.ParseResponse(frame, request);   // 不得抛异常
+
+            Assert.False(result.IsSuccess);
+            Assert.Equal(ModbusErrorKind.ProtocolViolation, result.ErrorKind);
+        }
+
+        [Fact]
+        public void RtuParser_NeverAcceptsForeignFunctionCodeFrameAsItsOwn()
+        {
+            // D1 的核心保证：前面放一个完整合法的"其它功能码"应答帧（含正确 CRC），
+            // 解析器**不得**把它当成 0x03 请求的应答返回。
+            //
+            // 后续行为有两种，都合法：(a) 跳过异种帧继续扫描，匹配到真正的帧；
+            // (b) 在某个偏移上误匹配到从站号后按字节数算出"帧还没收全"，返回 too short
+            //     ——RTU 流的"长度不足不跳字节"契约要求调用方继续读，因此不继续扫描是预期行为。
+            // 无论走哪条，都必须返回"真正的帧"或失败，绝不能返回异种帧。
+            var parser = new Junevy.Communication.Modbus.Core.Parsing.RtuProtocolParser();
+            var request = new ModbusRequest
+            {
+                SlaveId = 1,
+                FunctionCode = ModbusFunctionCode.ReadHoldingRegisters,
+                StartAddress = 0,
+                Quantity = 2
+            };
+
+            byte[] foreign = WrapRtu(new byte[] { 0x02, 0x02, 0xAA, 0x01 });   // 0x02 的应答，对 0x03 请求
+            byte[] real = WrapRtu(new byte[] { 0x03, 0x04, 0x00, 0x01, 0x00, 0x02 });
+
+            bool acceptedAsForeign = false;
+            foreach (byte prefixPad in new byte[] { 0x00 })
+            {
+                var combined = new byte[1 + foreign.Length + real.Length];
+                combined[0] = prefixPad;
+                Buffer.BlockCopy(foreign, 0, combined, 1, foreign.Length);
+                Buffer.BlockCopy(real, 0, combined, 1 + foreign.Length, real.Length);
+
+                var result = parser.ParseResponse(combined, request);   // 不得抛异常
+
+                if (result.IsSuccess && result.Data.Length == foreign.Length
+                    && foreign.AsSpan().SequenceEqual(result.Data.Span))
+                {
+                    acceptedAsForeign = true;
+                }
+
+                if (result.IsSuccess)
+                    Assert.True(real.AsSpan().SequenceEqual(result.Data.Span), "成功时必须返回真正的帧");
+                else
+                    Assert.Equal(ModbusErrorKind.ProtocolViolation, result.ErrorKind);
+            }
+
+            Assert.False(acceptedAsForeign, "异种功能码的应答帧被当成本次请求的应答接受了（D1 失效）");
+        }
+
+        private static byte[] WrapRtu(byte[] pdu)
+        {
+            var frame = new byte[1 + pdu.Length + 2];
+            frame[0] = 1;
+            Buffer.BlockCopy(pdu, 0, frame, 1, pdu.Length);
+            byte[] crc = Junevy.Communication.Modbus.Utils.Crc16Helper.CrcLittleEndian(frame.AsSpan(0, 1 + pdu.Length));
+            frame[1 + pdu.Length] = crc[0];
+            frame[2 + pdu.Length] = crc[1];
+            return frame;
+        }
+
+        [Fact]
         public void ParseCoils_ShortByOne_ThrowsArgumentException()
         {
             // 长度 3，需要 3 + 1 = 4：此前检查 2 + 1 = 3 放行了越界读取（IndexOutOfRangeException）

@@ -38,8 +38,8 @@ Slave (server) simulation, Modbus ASCII, or gateways — not covered by this lib
 | `...Modbus.Tcp` | `ModbusTcpClient`, `ModbusTcpClientConfig` |
 | `...Modbus.Rtu` | `ModbusRtuClient`, `ModbusRtuClientConfig` |
 | `...Modbus.Core.Models` | `ModbusRequest`, `ModbusResult<T>`, `ModbusErrorKind`, `ModbusFunctionCode`, `ModbusExceptionCode` |
-| `...Modbus.Extensions` | `ModbusExtensions` (all Read/Write helpers) |
-| `...Modbus.Factory` | `IModbusFactory`, `ModbusFactory` |
+| `...Modbus.Extensions` | `ModbusBitExtensions`, `ModbusRegisterExtensions`, `ModbusDiagnosticsExtensions` (three static classes, one per function-code group) |
+| `...Modbus.Factory` | `IModbusFactory`, `ModbusFactory`, `IModbusClientCreator`, `TcpClientCreator`, `RtuClientCreator` |
 | `...Modbus.DependencyInjection` | `AddModbusFactory(this IServiceCollection)` |
 | `...Modbus.Utils` | `ModbusHelper`, `Crc16Helper` |
 

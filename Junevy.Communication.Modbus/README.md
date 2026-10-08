@@ -94,8 +94,8 @@ public sealed class MyClientCreator : IModbusClientCreator
 }
 ```
 
-Register it after `AddModbusFactory()`: `services.AddSingleton<IModbusClientCreator, MyCreator>();`
-Without a DI container: `ModbusFactoryBuilder.Create().WithCreator(new MyCreator()).Build()`
+Register it after `AddModbusFactory()`: `services.AddSingleton<IModbusClientCreator, MyClientCreator>();`
+Without a DI container: `ModbusFactoryBuilder.Create().WithCreator(new MyClientCreator()).Build()`
 
 ## Custom response validation
 
@@ -136,4 +136,4 @@ Behavior:
 - Modbus exception responses are never retried (terminal failures).
 - Communication failures are returned as `ModbusResult.Fail(...)` where possible instead of escaping as unhandled exceptions; parameter-validation errors throw standard exceptions (`ArgumentException` etc.).
 - `ConnectAsync(CancellationToken)` throws `OperationCanceledException` when cancelled and returns `false` when the connection fails or times out.
-- `Dispose()` aborts in-flight I/O and waits for the in-flight request to exit. Requests that were running or queued return `ErrorKind.ConnectionClosed`; calling `Request`/`Connect` after `Dispose` throws `ObjectDisposedException`; `Disconnect` after `Dispose` is a no-op.
+- Dispose() aborts in-flight I/O and waits for the in-flight request to exit. Requests that were running or queued return ErrorKind.ConnectionClosed; calling Request/Connect after Dispose throws ObjectDisposedException; Disconnect after Dispose is a no-op.

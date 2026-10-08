@@ -109,6 +109,9 @@ namespace Junevy.Communication.Modbus.Tests
             // 并发负载下（如工厂并发冒烟测试阻塞线程池），服务器任务可能被延迟调度；
             // ReadTimeout 放宽到 10000 覆盖调度延迟（与同仓库既有 TCP 测试一致），避免误报超时。
             // 本用例的判定核心是"服务端延迟 200ms 应答 → 成功"，证明超时机制不误触发。
+            // 该类已加入 SocketTimingCollection（与其它套接字/计时敏感用例串行），因此可以恢复
+            // "耗时不超过 ReadTimeout" 的早触发回归保护——原 ruling 把这个断言整条删掉了，
+            // 会让 ReadTimeout 被改成远小于 200ms 的回归（误报超时）静默通过。
             using var tcp = CreateClient(port, readTimeout: 10000);
             Assert.True(tcp.Connect());
 
@@ -124,6 +127,9 @@ namespace Junevy.Communication.Modbus.Tests
             catch (TimeoutException) { /* 断言不依赖服务端退出 */ }
 
             Assert.True(result.IsSuccess, result.ErrorMessage);
+            // 超时机制不得早触发：ReadTimeout=10000，实际必须在它之内返回
+            Assert.True(sw.ElapsedMilliseconds < 10000,
+                $"a 200ms-delayed reply must not wait for ReadTimeout, but took {sw.ElapsedMilliseconds}ms");
         }
 
         [Fact]
