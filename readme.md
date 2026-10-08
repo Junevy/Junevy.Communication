@@ -189,6 +189,8 @@ Every failed `ModbusResult` carries a machine-readable `ErrorKind` (`ModbusError
 | `ModbusException` | The slave answered with a Modbus exception response (the exception code is in the message, e.g. `Code=0x02`) |
 | `Cancelled` | The `CancellationToken` fired before completion |
 
+Extension methods live in the namespace `Junevy.Communication.Modbus.Extensions` and are grouped into `ModbusBitExtensions` (0x01 0x02 0x05 0x0F), `ModbusRegisterExtensions` (0x03 0x04 0x06 0x10 0x16 0x17) and `ModbusDiagnosticsExtensions` (0x07 0x08 0x0B 0x0C 0x11); always call them with extension-method syntax.
+
 Modbus exception responses are terminal: they are returned immediately as failed results and are never retried.
 
 ## Reconnect and Retry

@@ -101,6 +101,7 @@ factory.RegisterAlias("slave-1", "rs485-bus");
 
 Removing the master key (factory.TryRemove("rs485-bus")) also removes every alias that points to it and disposes the connection. RegisterAlias returns false when the target key does not exist.
 
+Extension methods live in the namespace `Junevy.Communication.Modbus.Extensions` and are grouped into `ModbusBitExtensions` (0x01 0x02 0x05 0x0F), `ModbusRegisterExtensions` (0x03 0x04 0x06 0x10 0x16 0x17) and `ModbusDiagnosticsExtensions` (0x07 0x08 0x0B 0x0C 0x11); always call them with extension-method syntax.
 Extension methods (all 15 function codes): `ReadCoils/DiscreteInputs/HoldingRegisters/InputRegisters(+Async)`, `WriteSingleCoil/Register`, `WriteMultipleCoils/Registers(+Async)`, `Diagnostics`, `GetCommEventCounter/Log`, `ReportServerId`, `MaskWriteRegister`, `ReadWriteMultipleRegisters`. Raw protocol: `modbus.Request(new ModbusRequest { SlaveId, FunctionCode, StartAddress, Quantity, Data })`.
 
 ## Behavioral Contracts
