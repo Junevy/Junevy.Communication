@@ -32,6 +32,8 @@ public sealed class TcpClientChannelLifecycleTests
         await using var channel = new TcpClientChannel(config);
         var log = new StateLog(channel);
         Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
+        // ConnectAsync 在客户端握手完成时返回，服务端的接受循环可能还没登记这条连接。
+        await WaitUntilAsync(() => server.AcceptedConnectionCount == 1, 5000);
 
         server.CloseConnection(0);
 
@@ -71,7 +73,7 @@ public sealed class TcpClientChannelLifecycleTests
         };
         await using var channel = new TcpClientChannel(config, null, components);
         Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => Volatile.Read(ref probes) >= 1, 5000);
+        await WaitUntilAsync(() => Volatile.Read(ref probes) >= 1 && server.AcceptedConnectionCount == 1, 5000);
 
         server.CloseConnection(0);
         await WaitUntilAsync(() => server.AcceptedConnectionCount == 2 && channel.IsConnected, 10000);
