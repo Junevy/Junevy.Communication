@@ -12,7 +12,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Junevy.Communication.Core\Junevy.Communication.Core.csproj" />
+    <!-- System.IO.Pipelines is not part of Microsoft.NETCore.App for net8.0, so both targets reference it. -->
     <PackageReference Include="System.IO.Pipelines" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- System.Threading.Channels is part of the .NET 8 shared framework; only net472 needs the package. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
     <PackageReference Include="System.Threading.Channels" Version="8.0.0" />
   </ItemGroup>
 
