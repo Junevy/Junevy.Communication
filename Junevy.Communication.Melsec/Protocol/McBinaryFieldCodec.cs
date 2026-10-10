@@ -6,8 +6,10 @@ namespace Junevy.Communication.Melsec.Protocol;
 /// </summary>
 internal sealed class McBinaryFieldCodec : McFieldCodec
 {
-    private const int HighNibble = 0x10;  // 位数据的首点在高半字节（手册 p.72）
-    private const int LowNibble = 0x01;   // 位数据的第二个点在低半字节（手册 p.72）
+    private const int HighNibble = 0x10;       // 位数据的首点在高半字节（手册 p.72）
+    private const int LowNibble = 0x01;        // 位数据的第二个点在低半字节（手册 p.72）
+    private const int NibbleMask = 0x0F;       // 取出低半字节（手册 p.72）
+    private const int HighNibbleShift = 4;     // 取出高半字节（手册 p.72）
 
     /// <inheritdoc />
     public override int UInt8Size => 1;
@@ -60,7 +62,7 @@ internal sealed class McBinaryFieldCodec : McFieldCodec
     }
 
     /// <inheritdoc />
-    public override int WordFieldSize(int words) => words * 2;
+    public override int WordFieldSize(int words) => words * UInt16Size;
 
     /// <inheritdoc />
     public override int BitFieldSize(int points) => (points + 1) / 2;
@@ -94,15 +96,15 @@ internal sealed class McBinaryFieldCodec : McFieldCodec
     }
 
     /// <inheritdoc />
-    public override bool TryReadBits(ReadOnlySpan<byte> field, Span<byte> points)
+    public override bool TryReadBits(ReadOnlySpan<byte> field, Span<bool> points)
     {
         for (int i = 0; i < points.Length; i++)
         {
-            int nibble = i % 2 == 0 ? field[i / 2] >> 4 : field[i / 2] & 0x0F;
+            int nibble = i % 2 == 0 ? field[i / 2] >> HighNibbleShift : field[i / 2] & NibbleMask;
             if (nibble > 1)
                 return false;
 
-            points[i] = (byte)nibble;
+            points[i] = nibble == 1;
         }
 
         return true;

@@ -29,7 +29,7 @@ internal static class McResponseData
         if (data.Length != codec.WordFieldSize(count))
             return McResponse.Violation("The MC response word data length does not match the requested word count.");
 
-        var words = new byte[count * 2];
+        var words = new byte[count * McFieldCodec.NormalizedWordBytes];
         return codec.TryReadWords(data, words)
             ? McResponse.Decoded(0, words)
             : McResponse.Violation("The MC response word data is malformed.");
@@ -40,9 +40,9 @@ internal static class McResponseData
         if (data.Length != codec.BitFieldSize(count))
             return McResponse.Violation("The MC response bit data length does not match the requested point count.");
 
-        var points = new byte[count];
+        var points = new bool[count];
         return codec.TryReadBits(data, points)
-            ? McResponse.Decoded(0, points)
+            ? McResponse.DecodedBits(points)
             : McResponse.Violation("The MC response bit data is malformed.");
     }
 

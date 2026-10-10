@@ -22,9 +22,6 @@ internal readonly struct Mc4CAccessRoute
         SelfStationNumber = selfStationNumber;
     }
 
-    /// <summary>默认访问路径（计划 §18，手册 L2322）：站号 00、网络号 00、PC 号 FF、I/O 号 03FF、模块站号 00、本站号 00。</summary>
-    public static Mc4CAccessRoute Default { get; } = new(0x00, 0x00, 0xFF, 0x03FF, 0x00, 0x00);
-
     /// <summary>站号。</summary>
     public byte StationNumber { get; }
 

@@ -6,6 +6,9 @@ namespace Junevy.Communication.Melsec.Protocol;
 /// </summary>
 internal abstract class McFieldCodec
 {
+    /// <summary>规范化布局中每个字的字节数（P2-D5：每字 2 字节小端，与编码无关）。</summary>
+    public const int NormalizedWordBytes = 2;
+
     private static readonly McFieldCodec BinaryCodec = new McBinaryFieldCodec();
     private static readonly McFieldCodec AsciiCodec = new McAsciiFieldCodec();
 
@@ -66,8 +69,8 @@ internal abstract class McFieldCodec
     /// <summary>读取字数据到规范化布局（每字 2 字节小端）；字段宽度为 <see cref="WordFieldSize"/>。</summary>
     public abstract bool TryReadWords(ReadOnlySpan<byte> field, Span<byte> littleEndianWords);
 
-    /// <summary>读取位数据，每点 1 个字节（0 或 1）；字段宽度为 <see cref="BitFieldSize"/>。</summary>
-    public abstract bool TryReadBits(ReadOnlySpan<byte> field, Span<byte> points);
+    /// <summary>读取位数据到 <paramref name="points"/>（每点一个值）；字段宽度为 <see cref="BitFieldSize"/>，出现非法的位值时返回 false。</summary>
+    public abstract bool TryReadBits(ReadOnlySpan<byte> field, Span<bool> points);
 
     /// <summary>从 <paramref name="rest"/> 的开头切出 <paramref name="size"/> 个字节的字段；成功时 <paramref name="rest"/> 前移。</summary>
     public static bool TryTake(ref ReadOnlySpan<byte> rest, int size, out ReadOnlySpan<byte> field)

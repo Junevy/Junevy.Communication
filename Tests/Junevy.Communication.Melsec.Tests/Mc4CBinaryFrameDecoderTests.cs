@@ -21,11 +21,11 @@ public sealed class Mc4CBinaryFrameDecoderTests
     public void HalfFrame_IsNotDelivered_UntilTheRestArrives()
     {
         var decoder = new Mc4CBinaryFrameDecoder(true, 256);
-        ReadOnlySequence<byte> buffer = Segments(Part(Response, 0, 6));
+        ReadOnlySequence<byte> buffer = SequenceFactory.FromSegments(Part(Response, 0, 6));
         Assert.False(decoder.TryDecode(ref buffer, out _));
         Assert.Equal(6, buffer.Length);
 
-        buffer = Segments(Part(Response, 0, 6), Part(Response, 6, Response.Length - 6));
+        buffer = SequenceFactory.FromSegments(Part(Response, 0, 6), Part(Response, 6, Response.Length - 6));
         Assert.True(decoder.TryDecode(ref buffer, out ReadOnlySequence<byte> frame));
         Assert.Equal(Response, frame.ToArray());
         Assert.Equal(0, buffer.Length);
@@ -36,10 +36,10 @@ public sealed class Mc4CBinaryFrameDecoderTests
     {
         // 第一次到达以 10H 结束，第二次以 10H 开始：两个 10H 是同一个附加码，不能当作 DLE ETX。
         var decoder = new Mc4CBinaryFrameDecoder(true, 256);
-        ReadOnlySequence<byte> first = Segments(Part(Response, 0, 18));
+        ReadOnlySequence<byte> first = SequenceFactory.FromSegments(Part(Response, 0, 18));
         Assert.False(decoder.TryDecode(ref first, out _));
 
-        ReadOnlySequence<byte> buffer = Segments(Part(Response, 0, 18), Part(Response, 18, Response.Length - 18));
+        ReadOnlySequence<byte> buffer = SequenceFactory.FromSegments(Part(Response, 0, 18), Part(Response, 18, Response.Length - 18));
         Assert.True(decoder.TryDecode(ref buffer, out ReadOnlySequence<byte> frame));
         Assert.Equal(Response, frame.ToArray());
     }
@@ -48,7 +48,7 @@ public sealed class Mc4CBinaryFrameDecoderTests
     public void GarbageBeforeDleStx_ThrowsFrameDecodeException()
     {
         var decoder = new Mc4CBinaryFrameDecoder(true, 256);
-        ReadOnlySequence<byte> buffer = Segments(Hex("AA 10 02 10 03"));
+        ReadOnlySequence<byte> buffer = SequenceFactory.FromSegments(Hex("AA 10 02 10 03"));
 
         Assert.Throws<FrameDecodeException>(() => { decoder.TryDecode(ref buffer, out _); });
     }
@@ -57,7 +57,7 @@ public sealed class Mc4CBinaryFrameDecoderTests
     public void InvalidDleSequence_ThrowsFrameDecodeException()
     {
         var decoder = new Mc4CBinaryFrameDecoder(false, 256);
-        ReadOnlySequence<byte> buffer = Segments(Hex("10 02 10 05 00"));
+        ReadOnlySequence<byte> buffer = SequenceFactory.FromSegments(Hex("10 02 10 05 00"));
 
         Assert.Throws<FrameDecodeException>(() => { decoder.TryDecode(ref buffer, out _); });
     }
@@ -66,7 +66,7 @@ public sealed class Mc4CBinaryFrameDecoderTests
     public void ChecksumOff_FrameEndsAtDleEtx_AndLeavesTheRestInTheBuffer()
     {
         var decoder = new Mc4CBinaryFrameDecoder(false, 256);
-        ReadOnlySequence<byte> buffer = Segments(Response);
+        ReadOnlySequence<byte> buffer = SequenceFactory.FromSegments(Response);
 
         Assert.True(decoder.TryDecode(ref buffer, out ReadOnlySequence<byte> frame));
         Assert.Equal(Part(Response, 0, BodyLength), frame.ToArray());
@@ -77,10 +77,10 @@ public sealed class Mc4CBinaryFrameDecoderTests
     public void ChecksumOn_FrameIncludesTheTwoChecksumBytes()
     {
         var decoder = new Mc4CBinaryFrameDecoder(true, 256);
-        ReadOnlySequence<byte> incomplete = Segments(Part(Response, 0, Response.Length - 1));
+        ReadOnlySequence<byte> incomplete = SequenceFactory.FromSegments(Part(Response, 0, Response.Length - 1));
         Assert.False(decoder.TryDecode(ref incomplete, out _));
 
-        ReadOnlySequence<byte> buffer = Segments(Response);
+        ReadOnlySequence<byte> buffer = SequenceFactory.FromSegments(Response);
         Assert.True(decoder.TryDecode(ref buffer, out ReadOnlySequence<byte> frame));
         Assert.Equal(Response, frame.ToArray());
         Assert.Equal(0, buffer.Length);
@@ -91,7 +91,7 @@ public sealed class Mc4CBinaryFrameDecoderTests
     {
         var decoder = new Mc4CBinaryFrameDecoder(false, 256);
         byte[] second = Hex("10 02 0C 00 F8 00 00 FF FF 03 00 00 FF FF 51 C0 10 03");
-        ReadOnlySequence<byte> buffer = Segments(Join(Part(Response, 0, BodyLength), second));
+        ReadOnlySequence<byte> buffer = SequenceFactory.FromSegments(Join(Part(Response, 0, BodyLength), second));
 
         Assert.True(decoder.TryDecode(ref buffer, out ReadOnlySequence<byte> first));
         Assert.Equal(Part(Response, 0, BodyLength), first.ToArray());
@@ -103,7 +103,7 @@ public sealed class Mc4CBinaryFrameDecoderTests
     public void FrameLongerThanMaxFrameLength_ThrowsFrameDecodeException()
     {
         var decoder = new Mc4CBinaryFrameDecoder(false, 20);
-        ReadOnlySequence<byte> buffer = Segments(Response);
+        ReadOnlySequence<byte> buffer = SequenceFactory.FromSegments(Response);
 
         Assert.Throws<FrameDecodeException>(() => { decoder.TryDecode(ref buffer, out _); });
     }

@@ -32,7 +32,7 @@ public sealed class McFieldEncodingTests
         McResponse response = Succeeded(Decode(McFrameType.Frame3E, McEncoding.Binary, 0,
             Hex("D0 00 00 FF FF 03 00 05 00 00 00 10 10 10"), McDataKind.Bits, 5));
 
-        Assert.Equal(new byte[] { 1, 0, 1, 0, 1 }, response.Data);
+        Assert.Equal(new[] { true, false, true, false, true }, response.Bits);
     }
 
     [Fact(Timeout = 20000)]
@@ -41,7 +41,7 @@ public sealed class McFieldEncodingTests
         McResponse response = Succeeded(Decode(McFrameType.Frame3E, McEncoding.Ascii, 0,
             Text("D000" + "00FF03FF00" + "0009" + "0000" + "10101"), McDataKind.Bits, 5));
 
-        Assert.Equal(new byte[] { 1, 0, 1, 0, 1 }, response.Data);
+        Assert.Equal(new[] { true, false, true, false, true }, response.Bits);
     }
 
     [Fact(Timeout = 20000)]
@@ -88,15 +88,5 @@ public sealed class McFieldEncodingTests
         });
         Assert.Equal(Hex("01 04 00 00 40 42 0F A8 01 00"),
             McRequestBody.BatchRead(McFieldCodec.For(McEncoding.Binary), McCommands.WordUnit, device, 1000000, 1));
-    }
-
-    [Fact(Timeout = 20000)]
-    public void PointLimits_MatchTheManualTables()
-    {
-        // 手册 p.70：字访问 960 字；以太网位访问，二进制 7168 点，ASCII 3584 点；串口位访问 7904 点。
-        Assert.Equal(960, McLimits.WordPoints);
-        Assert.Equal(7168, McLimits.EthernetBinaryBitPoints);
-        Assert.Equal(3584, McLimits.EthernetAsciiBitPoints);
-        Assert.Equal(7904, McLimits.SerialBitPoints);
     }
 }

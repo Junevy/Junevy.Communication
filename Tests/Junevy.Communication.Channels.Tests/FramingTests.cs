@@ -2,6 +2,7 @@ using System.Buffers;
 using System.IO.Pipelines;
 using System.Text;
 using Junevy.Communication.Channels.Framing;
+using Junevy.Communication.Testing;
 
 namespace Junevy.Communication.Channels.Tests;
 

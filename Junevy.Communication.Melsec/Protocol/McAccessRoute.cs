@@ -14,9 +14,6 @@ internal readonly struct McAccessRoute
         ModuleStationNumber = moduleStationNumber;
     }
 
-    /// <summary>默认访问路径（计划 §18）：网络 00、PC FF、I/O 03FF、模块站 00。</summary>
-    public static McAccessRoute DefaultEthernet { get; } = new(0x00, 0xFF, 0x03FF, 0x00);
-
     /// <summary>网络号。</summary>
     public byte NetworkNumber { get; }
 

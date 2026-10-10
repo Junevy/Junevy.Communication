@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Text;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Melsec.Protocol;
@@ -7,13 +6,19 @@ using Junevy.Communication.Testing;
 namespace Junevy.Communication.Melsec.Tests;
 
 /// <summary>
-/// MELSEC 协议测试的共用辅助：手册字节表示的转换、按软元件表解析的请求数据，以及帧的编码与解码入口。
+/// MELSEC 协议测试的共用辅助：手册字节表示的转换、按软元件表解析的请求数据、访问路径，以及帧的编码与解码入口。
 /// 请求数据与帧都经由生产代码的内部入口编码，测试中不另写编码逻辑。
 /// </summary>
 internal static class McTestSupport
 {
     /// <summary>手册示例的监视定时器 0x0010（250 ms 为单位，即 4 s；手册 p.43）。</summary>
     public const ushort MonitoringTimer = 0x0010;
+
+    /// <summary>3E / 4E 的默认访问路径（计划 §18）：网络 00、PC FF、I/O 03FF、模块站 00。</summary>
+    public static McAccessRoute DefaultEthernetRoute => new McAccessRoute(0x00, 0xFF, 0x03FF, 0x00);
+
+    /// <summary>4C 的默认访问路径（计划 §18）：站号 00、网络号 00、PC FF、I/O 03FF、模块站 00、本站号 00。</summary>
+    public static Mc4CAccessRoute DefaultSerialRoute => new Mc4CAccessRoute(0x00, 0x00, 0xFF, 0x03FF, 0x00, 0x00);
 
     /// <summary>把手册的二进制表示（空格分隔的十六进制，如 "50 00"）转换为字节。</summary>
     /// <param name="text">空格分隔的十六进制字节。</param>
@@ -69,15 +74,15 @@ internal static class McTestSupport
     public static byte[] Loopback(McEncoding encoding, byte[] data)
         => McRequestBody.Loopback(McFieldCodec.For(encoding), data);
 
-    /// <summary>用默认访问路径与 <see cref="MonitoringTimer"/> 编码请求帧。</summary>
+    /// <summary>用默认的 3E / 4E 访问路径与 <see cref="MonitoringTimer"/> 编码请求帧。</summary>
     public static byte[] Encode(McFrameType frameType, McEncoding encoding, ushort serial, byte[] body)
     {
         var output = new ByteArrayBufferWriter();
-        new McEthernetFrame(frameType, encoding).WriteRequest(output, serial, MonitoringTimer, McAccessRoute.DefaultEthernet, body);
+        new McEthernetFrame(frameType, encoding).WriteRequest(output, serial, MonitoringTimer, DefaultEthernetRoute, body);
         return output.ToArray();
     }
 
-    /// <summary>解码应答帧。</summary>
+    /// <summary>解码 3E / 4E 应答帧。</summary>
     public static CommResult<McResponse> Decode(McFrameType frameType, McEncoding encoding, ushort serial, byte[] frame,
         McDataKind kind = McDataKind.None, int count = 0)
         => new McEthernetFrame(frameType, encoding).ReadResponse(frame, serial, kind, count);
@@ -112,36 +117,9 @@ internal static class McTestSupport
     /// <summary>按顺序连接字节片段（用于拼装含控制字节与 ASCII 字符的期望帧）。</summary>
     public static byte[] Join(params byte[][] parts) => parts.SelectMany(part => part).ToArray();
 
-    /// <summary>把若干片段组成多段的 <see cref="ReadOnlySequence{T}"/>，模拟通道分多次到达的缓冲。</summary>
-    public static ReadOnlySequence<byte> Segments(params byte[][] parts)
-    {
-        var first = new Segment(parts[0]);
-        Segment last = first;
-        for (int i = 1; i < parts.Length; i++)
-            last = last.Append(parts[i]);
-
-        return new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length);
-    }
-
     private static byte[] ReadBody(McEncoding encoding, ushort subcommand, string head, int points)
     {
         var (device, number) = Head(head);
         return McRequestBody.BatchRead(McFieldCodec.For(encoding), subcommand, device, number, points);
-    }
-
-    /// <summary>测试用的 <see cref="ReadOnlySequenceSegment{T}"/>。</summary>
-    private sealed class Segment : ReadOnlySequenceSegment<byte>
-    {
-        public Segment(byte[] bytes)
-        {
-            Memory = bytes;
-        }
-
-        public Segment Append(byte[] bytes)
-        {
-            var next = new Segment(bytes) { RunningIndex = RunningIndex + Memory.Length };
-            Next = next;
-            return next;
-        }
     }
 }

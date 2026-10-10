@@ -25,7 +25,7 @@ public sealed class Mc4CFrameTests
     public void V8_Binary4C_Format5_WordRead_EscapesTheNumberAndDecodesTheResponse()
     {
         // 编号 0010H 触发附加码；应答的数据 0010H、1010H 也含 10H。
-        byte[] request = Encode4C(McEncoding.Binary, true, Mc4CAccessRoute.Default, WordRead(McEncoding.Binary, "M16", 2));
+        byte[] request = Encode4C(McEncoding.Binary, true, DefaultSerialRoute, WordRead(McEncoding.Binary, "M16", 2));
         Assert.Equal(Hex("10 02 12 00 F8 00 00 FF FF 03 00 00 01 04 00 00 10 10 00 00 90 02 00 10 03 42 32"), request);
 
         McResponse response = Succeeded(Decode4C(McEncoding.Binary, true,
@@ -38,7 +38,7 @@ public sealed class Mc4CFrameTests
     public void V9_Ascii4C_Format4_WordRead_EncodesTheRequestAndDecodesTheResponse()
     {
         // CR LF 由通道分隔符处理，不在帧内。
-        byte[] request = Encode4C(McEncoding.Ascii, true, Mc4CAccessRoute.Default, WordRead(McEncoding.Ascii, "TN100", 3));
+        byte[] request = Encode4C(McEncoding.Ascii, true, DefaultSerialRoute, WordRead(McEncoding.Ascii, "TN100", 3));
         Assert.Equal(Join(Hex("05"), Text("F80000FF03FF0000" + "04010000TN0001000003"), Text("84")), request);
 
         McResponse response = Succeeded(Decode4C(McEncoding.Ascii, true,
@@ -59,18 +59,18 @@ public sealed class Mc4CFrameTests
     public void Request_Format5_EscapesTheDleInThePointCountAndTheData_OncePerField()
     {
         // 点数 16（0010H）含一个 10H；和校验关闭，便于逐字节核对附加码的位置。
-        byte[] points = Encode4C(McEncoding.Binary, false, Mc4CAccessRoute.Default, BitRead(McEncoding.Binary, "X0", 16));
+        byte[] points = Encode4C(McEncoding.Binary, false, DefaultSerialRoute, BitRead(McEncoding.Binary, "X0", 16));
         Assert.Equal(Hex("10 02 12 00 F8 00 00 FF FF 03 00 00 01 04 01 00 00 00 00 9C 10 10 00 10 03"), points);
 
         // 写入的字 0010H 含一个 10H。
-        byte[] data = Encode4C(McEncoding.Binary, false, Mc4CAccessRoute.Default, WordWrite(McEncoding.Binary, "D100", Hex("10 00")));
+        byte[] data = Encode4C(McEncoding.Binary, false, DefaultSerialRoute, WordWrite(McEncoding.Binary, "D100", Hex("10 00")));
         Assert.Equal(Hex("10 02 14 00 F8 00 00 FF FF 03 00 00 01 14 00 00 64 00 00 A8 01 00 10 10 00 10 03"), data);
     }
 
     [Fact(Timeout = 20000)]
     public void Request_Format4_WithChecksumOff_HasNoChecksum()
     {
-        byte[] request = Encode4C(McEncoding.Ascii, false, Mc4CAccessRoute.Default, WordRead(McEncoding.Ascii, "TN100", 3));
+        byte[] request = Encode4C(McEncoding.Ascii, false, DefaultSerialRoute, WordRead(McEncoding.Ascii, "TN100", 3));
 
         Assert.Equal(Join(Hex("05"), Text("F80000FF03FF0000" + "04010000TN0001000003")), request);
     }

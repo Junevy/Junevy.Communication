@@ -382,6 +382,7 @@ public sealed class McAddress : PlcAddress
 - 不收录：iQ-R 专用的长计时器 / 长计数器 / LZ / RD，以及需要扩展指定（子命令 008x）的 `U\G`、链接直接软元件（P2-D2）。
 - 位号进制为 16（`D100.F`），即 `new PlcAddressParser<McDevice, McAddress>(…, bitIndexRadix: 16)`。
 - 表以**一份声明式列表**实现（每行一个 `McDevice`），不要写成 switch。
+- ASCII 编码下十进制软元件编号上限为 999999（6 位，手册 p.67），由字段编码层提供（`McFieldCodec.MaxDeviceNumber`）；`McDevice.MaxNumber` 保持 0xFFFFFF（二进制与十六进制的上限）。
 
 测试（`Melsec.Tests`，类 `McAddressTests`）：表中每个符号各解析一次（核对单位、进制、代码）；`ZR1F` 为 31；`DX10` 解析为 DX 而不是 D；`S10` 与 `SM10` 区分；`x1a` 大小写；`D100.F` 位号 15；`M10.1` 失败；`D-1`、`X1G`、`Q10` 失败。
 
@@ -598,10 +599,9 @@ public static class McProtocolProfile
   - 现象：`IFrameCodecFactory` 的自定义实现拿不到 `FramingOptions.MaxFrameLength`，格式 5 的分帧器必须自己保存帧长上限；透传编码器 `PassthroughFrameEncoder` 是 Channels 的 internal 类型，只能借用 `FrameCodecFactory.Create(new FramingOptions())` 的 Raw 模式取得。
   - 变通或缺口：`Mc4CBinaryFrameCodecFactory` 单独接收 `maxFrameLength`（与通道配置分开，Task 11 需保持一致）；编码器借用 Raw 模式工厂。
   - 建议：Channels 公开透传编码器，并让自定义工厂与 `FramingOptions` 共用同一个上限。属于 Channels 的通用能力，P2 后评估。
-- **分段缓冲的测试辅助（Task 10）**
+- **分段缓冲的测试辅助（Task 10）— resolved in milestone 2 review**
   - 现象：`Channels.Tests` 的 `SequenceFactory`（把字节切成多段 `ReadOnlySequence<byte>`）是测试项目内部类型；Melsec 的分帧器测试需要同样的分段构造，只能在 `McTestSupport` 再写一份（约 20 行）。
-  - 变通或缺口：`McTestSupport.Segments` 与私有的 `Segment` 重复了 `SequenceFactory` 的职责。
-  - 建议：把分段序列工厂移入 `Junevy.Communication.Testing`（与 Task 7 移入的 `DuplexClientChannel` 同类），P2 后统一。
+  - 变通或缺口：（已解决）`SequenceFactory` 由 `git mv` 移入 `Junevy.Communication.Testing` 并公开，增加 `FromSegments`；Channels.Tests 与 Melsec.Tests 共用同一实现，`McTestSupport` 中的副本已删除。Channels.Tests 数量仍为 239。
 - **分帧器的逐字节扫描（Task 10）**
   - 现象：`IFrameDecoder.TryDecode` 接收 `ReadOnlySequence<byte>`。Channels 只提供分隔符与起止标记的扫描；格式 5 需要"跳过成对的 10H 后找未转义的 DLE ETX"，仓库里没有可复用的逐字节前进式读取器，`SequenceReader<T>` 在 Channels 中也未使用。
   - 变通或缺口：`Mc4CBinaryFrameDecoder` 把不超过 MaxFrameLength 的窗口复制为数组，再交给协议层的 `McDleFrame.Scan`；每次到达都会重新扫描已缓存的字节。

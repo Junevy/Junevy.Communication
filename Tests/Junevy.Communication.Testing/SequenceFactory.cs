@@ -1,12 +1,30 @@
 using System.Buffers;
 
-namespace Junevy.Communication.Channels.Tests;
+namespace Junevy.Communication.Testing;
 
 /// <summary>
-/// 测试辅助：把字节数组切成多段 <see cref="ReadOnlySequence{T}"/>，用于验证分帧器对多段缓冲的处理。
+/// 测试辅助：把字节切成多段 <see cref="ReadOnlySequence{T}"/>，用于验证分帧器对多段缓冲（分次到达）的处理。
 /// </summary>
-internal static class SequenceFactory
+public static class SequenceFactory
 {
+    /// <summary>
+    /// 按给定的片段组成多段序列（每个片段是一段，片段之间不做拷贝）。
+    /// </summary>
+    /// <param name="parts">片段，依次连接；至少一个。</param>
+    /// <returns>多段序列。</returns>
+    public static ReadOnlySequence<byte> FromSegments(params byte[][] parts)
+    {
+        if (parts.Length == 0)
+            throw new ArgumentException("At least one segment is required.", nameof(parts));
+
+        var first = new Segment(parts[0]);
+        Segment last = first;
+        for (int i = 1; i < parts.Length; i++)
+            last = last.Append(parts[i]);
+
+        return new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length);
+    }
+
     /// <summary>
     /// 按固定段大小切分；最后一段可能较短。
     /// </summary>

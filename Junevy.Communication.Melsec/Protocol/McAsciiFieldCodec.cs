@@ -11,6 +11,7 @@ internal sealed class McAsciiFieldCodec : McFieldCodec
     private const int DeviceNumberDigits = 6;           // 软元件编号的位数（手册 p.67）
     private const int MaxDecimalDeviceNumber = 999999;  // 6 位十进制数字的上限（手册 p.67）
     private const int DecimalRadix = 10;                // 十进制软元件（手册 p.67 的进制列）
+    private const int ByteBits = 8;                     // 一个字节的位数，用于拆分字的高低字节
 
     /// <inheritdoc />
     public override int UInt8Size => 2;
@@ -23,13 +24,13 @@ internal sealed class McAsciiFieldCodec : McFieldCodec
         => device.Radix == DecimalRadix ? MaxDecimalDeviceNumber : device.MaxNumber;
 
     /// <inheritdoc />
-    public override void WriteUInt8(Stream output, byte value) => WriteHex(output, value, 2);
+    public override void WriteUInt8(Stream output, byte value) => WriteHex(output, value, UInt8Size);
 
     /// <inheritdoc />
-    public override void WriteUInt16(Stream output, ushort value) => WriteHex(output, value, 4);
+    public override void WriteUInt16(Stream output, ushort value) => WriteHex(output, value, UInt16Size);
 
     /// <inheritdoc />
-    public override void WriteSubheader(Stream output, ushort value) => WriteHex(output, value, 4);
+    public override void WriteSubheader(Stream output, ushort value) => WriteHex(output, value, UInt16Size);
 
     /// <inheritdoc />
     public override void WriteDevice(Stream output, McDevice device, int number)
@@ -45,8 +46,8 @@ internal sealed class McAsciiFieldCodec : McFieldCodec
     /// <inheritdoc />
     public override void WriteWords(Stream output, ReadOnlySpan<byte> littleEndianWords)
     {
-        for (int i = 0; i < littleEndianWords.Length; i += 2)
-            WriteHex(output, (ushort)(littleEndianWords[i] | (littleEndianWords[i + 1] << 8)), 4);
+        for (int i = 0; i < littleEndianWords.Length; i += NormalizedWordBytes)
+            WriteHex(output, (ushort)(littleEndianWords[i] | (littleEndianWords[i + 1] << ByteBits)), UInt16Size);
     }
 
     /// <inheritdoc />
@@ -57,7 +58,7 @@ internal sealed class McAsciiFieldCodec : McFieldCodec
     }
 
     /// <inheritdoc />
-    public override int WordFieldSize(int words) => words * 4;
+    public override int WordFieldSize(int words) => words * UInt16Size;
 
     /// <inheritdoc />
     public override int BitFieldSize(int points) => points;
@@ -79,27 +80,28 @@ internal sealed class McAsciiFieldCodec : McFieldCodec
     /// <inheritdoc />
     public override bool TryReadWords(ReadOnlySpan<byte> field, Span<byte> littleEndianWords)
     {
-        for (int i = 0; i < littleEndianWords.Length; i += 2)
+        for (int i = 0; i < littleEndianWords.Length; i += NormalizedWordBytes)
         {
-            if (!TryParseHex(field.Slice(i * 2, 4), out ushort word))
+            int wordOffset = i / NormalizedWordBytes * UInt16Size;
+            if (!TryParseHex(field.Slice(wordOffset, UInt16Size), out ushort word))
                 return false;
 
             littleEndianWords[i] = (byte)word;
-            littleEndianWords[i + 1] = (byte)(word >> 8);
+            littleEndianWords[i + 1] = (byte)(word >> ByteBits);
         }
 
         return true;
     }
 
     /// <inheritdoc />
-    public override bool TryReadBits(ReadOnlySpan<byte> field, Span<byte> points)
+    public override bool TryReadBits(ReadOnlySpan<byte> field, Span<bool> points)
     {
         for (int i = 0; i < points.Length; i++)
         {
             if (field[i] != '0' && field[i] != '1')
                 return false;
 
-            points[i] = (byte)(field[i] - '0');
+            points[i] = field[i] == '1';
         }
 
         return true;

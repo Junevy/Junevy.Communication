@@ -41,7 +41,7 @@ public sealed class McEthernetFrameTests
 
         McResponse response = Succeeded(Decode(McFrameType.Frame4E, McEncoding.Binary, 0x1234,
             Hex("D4 00 34 12 00 00 00 FF FF 03 00 06 00 00 00 00 01 00 11"), McDataKind.Bits, 8));
-        Assert.Equal(new byte[] { 0, 0, 0, 1, 0, 0, 1, 1 }, response.Data);
+        Assert.Equal(new[] { false, false, false, true, false, false, true, true }, response.Bits);
     }
 
     [Fact(Timeout = 20000)]
