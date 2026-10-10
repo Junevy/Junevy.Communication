@@ -224,7 +224,6 @@ public sealed class SerialChannel : StreamClientChannel, ISerialChannel
             IdleTimeout = config.IdleTimeout,
             PartialFrameTimeout = config.PartialFrameTimeout,
             DisconnectTimeout = 0,
-            ReceiveBufferSize = config.ReadBufferSize,
             Framing = config.Framing,
             Correlation = config.Correlation,
             ResetOnRequestTimeout = false,

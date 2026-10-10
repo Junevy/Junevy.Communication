@@ -34,8 +34,8 @@ public class SerialChannelConfig : IChannelConfig
     public bool RtsEnable { get; set; }
 
     /// <summary>
-    /// 驱动接收缓冲区的大小（字节），必须为正且为偶数（<see cref="SerialPort"/> 拒绝奇数），默认 4096。
-    /// 同时作为每次从端口读取时申请的缓冲大小。
+    /// 驱动接收缓冲区的大小（字节），对应 <c>SerialPort.ReadBufferSize</c>；必须为正且为偶数（<see cref="SerialPort"/> 拒绝奇数），默认 4096。
+    /// 与 TCP 的套接字接收缓冲一样只影响驱动层，不改变通道每次读取的块大小。
     /// </summary>
     public int ReadBufferSize { get; set; } = 4096;
 
