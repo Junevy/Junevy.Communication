@@ -570,6 +570,7 @@ public static class McProtocolProfile
 - （P2 里程碑 1 记录）完整解决方案的既有构建警告（31 个，均来自既有代码，本计划不处理）：Modbus/ModbusRtuClient.cs(397) CS0168；Modbus/Factory/ModbusFactoryBuilder.cs(32) CS1574（cref "LoggerFactory"）；Junevy.Communication.Test（WPF）的 MainWindowViewModel.cs(44) 与 App.xaml.cs(15) CS8618；Modbus.Tests 的 ModbusFactoryTests.cs、ExtensionRequestTests.cs、DisposeConcurrencyTests.cs 中的 xUnit1031、CS8600 与 CS8625。
 - （P2 后处理）`PlcClientFactory` 与 P1 的 `ChannelFactory` 的外壳（创建器字典、释放检查、名称校验，约 83 行重复）：在 P2 之后的重构中统一到 Core。注册表本身已共用 `NamedRegistry`。
 - （P2 后处理）`PlcRequestBuffer` 是代码库中第三个 `IBufferWriter<byte>` 实现（另两个：Channels 的内部 `PooledBufferWriter`、Testing 的 `ByteArrayBufferWriter`）：在 P2 之后的重构中合并为 Core 的公开缓冲写入器。
+- （P2 Task 14 记录，P1 测试）`Tests/Junevy.Communication.Tcp.Tests` 的 `TcpClientChannelLifecycleTests.ServerClosesConnection_Reconnects` 偶发失败：`ScriptedTcpServer.CloseConnection(0)` 在服务端登记第 0 个连接之前执行（`ConnectAsync` 返回时服务端的 `AcceptAsync` 尚未完成），抛出 `ArgumentOutOfRangeException`。在 7 次全解决方案运行中出现 1 次（当次两个目标同时失败）；不含 Melsec 测试的对照运行通过，单独运行 Tcp.Tests 3 次通过，之后的完整运行也通过。未修改该测试与 `ScriptedTcpServer`（P1 代码）。建议：测试在关闭连接前等待 `AcceptedConnectionCount == 1`，或让 `CloseConnection` 等待登记。属于 P1 测试，P2 后处理。
 
 ---
 
@@ -615,4 +616,104 @@ public static class McProtocolProfile
   - 变通或缺口：构造函数的文档要求调用方使用 `McProtocolProfile`；三个工厂方法始终完成配置。
   - 建议：通道提供已配置的分帧与关联的只读视图，协议客户端构造时核对。属于 Channels 与 Plc 的通用能力，P2 后评估。
 
+- **MELSEC 依赖注入（Task 13）**
+  - 现象：`TcpClientChannelConfig` 的默认端口为 0；通道在构造时校验配置，因此 `PlcClientFactory.GetOrAdd` 抛出 `ArgumentOutOfRangeException`（不是 `ArgumentException`），创建器无法在调用通道前预检传输配置。
+  - 变通或缺口：创建器照常让通道抛出，错误类型与 `ArgumentException` 约定不一致；测试与示例使用合法端口。
+  - 建议：Channels 为配置提供公开的校验方法（例如 `Validate()`），创建器预检后抛出一致的 `ArgumentException`。属于 Channels 的通用能力，P2 后评估。
+
 ### 20.3 最终度量（Task 14）
+
+以下数值在 Task 13 提交 `9346a1e` 上测得（Task 14 没有修改生产代码与测试）。"有效行"指去掉空行与注释行。
+
+**验收（Task 14）**
+
+- 连续三次全量 `dotnet test Junevy.Communication.slnx -c Debug --no-build`：三次结果一致，每次 2093 通过、6 跳过、0 失败（两个目标的全部测试程序集；Modbus 仅 net8.0）。
+- Debug 与 Release 构建（`--no-incremental`）：0 错误；既有 31 条警告（Modbus 与 WPF 测试应用）不变；新库项目（Plc、Melsec、Plc.Tests、Melsec.Tests）0 警告。
+- `dotnet pack -c Release`（Plc、Melsec）的 nuspec：Plc 依赖 Channels（net472 与 net8.0）；Melsec 依赖 Plc、Serial、Tcp、Udp（net472 与 net8.0）。
+- 文档示例：README 的 6 个 C# 示例（Plc 2 个、Melsec 4 个）与根 `readme.md` 的 1 个示例，逐字抽取到临时控制台项目，net8.0 与 net472 均 0 错误、0 警告。
+
+**Melsec 生产代码有效行数**：合计 **1304** 行（38 个文件）。协议层 `Protocol/`（19 个文件）784 行；分帧 `Framing/`（4 个文件）110 行；客户端 253 行（`McClient.cs`、`McClient.Hooks.cs`、`McProtocolProfile.cs`、`McLoopbackProbe.cs`、`McProtocolSettings.cs`）；配置与地址 101 行；DI `DependencyInjection/`（4 个文件）56 行。逐文件如下：
+
+| 文件（相对 Junevy.Communication.Melsec/） | 有效行 | 分组 |
+|---|---:|---|
+| `DependencyInjection/McClientConfig.cs` | 13 | DI |
+| `DependencyInjection/McClientCreator.cs` | 21 | DI |
+| `DependencyInjection/McTransport.cs` | 7 | DI |
+| `DependencyInjection/MelsecServiceCollectionExtensions.cs` | 15 | DI |
+| `Framing/Mc4CBinaryFrameCodecFactory.cs` | 17 | 分帧 |
+| `Framing/Mc4CBinaryFrameDecoder.cs` | 33 | 分帧 |
+| `Framing/McSerialKeyExtractor.cs` | 22 | 分帧 |
+| `Framing/McStreamFraming.cs` | 38 | 分帧 |
+| `McAddress.cs` | 10 | 配置与地址 |
+| `McClient.Hooks.cs` | 43 | 客户端 |
+| `McClient.cs` | 90 | 客户端 |
+| `McClientOptions.cs` | 16 | 配置与地址 |
+| `McDevice.cs` | 20 | 配置与地址 |
+| `McDeviceTable.cs` | 42 | 配置与地址 |
+| `McEncoding.cs` | 6 | 配置与地址 |
+| `McFrameType.cs` | 7 | 配置与地址 |
+| `McLoopbackProbe.cs` | 23 | 客户端 |
+| `McProtocolProfile.cs` | 55 | 客户端 |
+| `McProtocolSettings.cs` | 42 | 客户端 |
+| `Protocol/Mc4CAccessRoute.cs` | 29 | 协议层 |
+| `Protocol/Mc4CFrame.cs` | 127 | 协议层 |
+| `Protocol/McAccessRoute.cs` | 16 | 协议层 |
+| `Protocol/McAsciiFieldCodec.cs` | 97 | 协议层 |
+| `Protocol/McBinaryFieldCodec.cs` | 73 | 协议层 |
+| `Protocol/McChecksum.cs` | 23 | 协议层 |
+| `Protocol/McCommands.cs` | 14 | 协议层 |
+| `Protocol/McDataKind.cs` | 8 | 协议层 |
+| `Protocol/McDleFrame.cs` | 51 | 协议层 |
+| `Protocol/McEthernetFrame.cs` | 74 | 协议层 |
+| `Protocol/McFieldCodec.cs` | 56 | 协议层 |
+| `Protocol/McFrameExchange.cs` | 74 | 协议层 |
+| `Protocol/McFrameOutput.cs` | 10 | 协议层 |
+| `Protocol/McLimits.cs` | 9 | 协议层 |
+| `Protocol/McRequestBody.cs` | 40 | 协议层 |
+| `Protocol/McResponse.cs` | 26 | 协议层 |
+| `Protocol/McResponseData.cs` | 39 | 协议层 |
+| `Protocol/McSerialCodes.cs` | 12 | 协议层 |
+| `Protocol/McSerialNumbers.cs` | 6 | 协议层 |
+| **合计** | **1304** | |
+
+**Core / Channels / Plc 的修改（Task 8 之后，`d43e9f5..HEAD`）**：生产代码无修改。`git diff --stat d43e9f5 HEAD -- Junevy.Communication.Core Junevy.Communication.Channels Junevy.Communication.Plc` 只列出 `Junevy.Communication.Plc/README.md`（Task 13 新增的文档）。因此无需对应第 20.2 节的条目。
+
+**McClient 的钩子**：11 个覆写，即 10 个抽象钩子加虚拟的 `ValidateRange`（`McClient.Hooks.cs`）。
+
+| 钩子 | 有效行 |
+|---|---:|
+| `TryParseAddress` | 2 |
+| `GetMaxReadPoints` | 1 |
+| `GetMaxWritePoints` | 1 |
+| `BuildReadWordsRequest` | 2 |
+| `ParseReadWordsResponse` | 2 |
+| `BuildWriteWordsRequest` | 2 |
+| `BuildReadBitsRequest` | 2 |
+| `ParseReadBitsResponse` | 2 |
+| `BuildWriteBitsRequest` | 2 |
+| `ParseWriteResponse` | 1 |
+| `ValidateRange`（虚拟，覆写） | 12 |
+| **合计** | **27** |
+
+钩子之外，`McClient.Hooks.cs` 还有 16 行有效代码的辅助方法（`MaxPoints`、字访问的软元件头部等），因此该文件合计 43 行。
+
+**新协议作者的"必须写"与"不用写"（设计 12.8）**
+
+| 必须写（MELSEC 对应的文件） | 不用写（套件与通道族提供） |
+|---|---|
+| 设备表与地址类型（`McDeviceTable.cs`、`McAddress.cs`、`McDevice.cs`） | 连接、断线检测、重连、心跳调度、超时（Channels） |
+| 十个钩子与 `ValidateRange`（`McClient.Hooks.cs`） | 请求串行化、重试、拆包、类型化读写、字节序转换（Plc） |
+| 帧编解码、请求体、应答解码（`Protocol/`，784 行） | 日志、注册表、工厂的基础设施（Plc、Core） |
+| 分帧与关联声明（`McProtocolProfile.cs`、`Framing/`，165 行） | TCP、UDP、串口的传输适配（Tcp、Udp、Serial） |
+| 客户端工厂与守卫（`McClient.cs`） | 流分帧的字节级实现，如长度字段与分隔符（Channels） |
+| 客户端选项（`McClientOptions.cs`） | 模拟服务器（Testing 的 `DeviceSimulator`、`ScriptedTcpServer`） |
+| 创建器与 DI（`DependencyInjection/`，56 行） | 操作锁与按单包的重试规则（Plc） |
+| 设备替身与端到端测试（`Junevy.Communication.Melsec.Tests`） | |
+
+**偏差与待决事项**
+
+- `McDeviceAdapter.cs` 为 269 行（有效行 216），超出计划 Task 12 的 200 行目标（设计 12.8 写的是约 100 行）。该文件保留回环、两种 4C 格式与 3E/4E 的应答，未拆分。待审阅者裁定。
+- P2-D16 的两项（格式 4 的和校验范围、格式 5 的错误码字节序）仍需真机验证。
+- 真实串口测试 `McSerialPairTests` 未运行（需设置 `JUNEVY_SERIAL_PAIR`，由审阅者运行）。
+- 全解决方案运行中，`Tcp.Tests` 的 `ServerClosesConnection_Reconnects` 在 7 次运行中偶发失败 1 次，记录在第 19 节。
+- 过程偏差：Task 10、Task 11 为生产先于测试（已在提交说明中披露，审阅者接受 Task 10 并要求不再重复）；Task 13 的 DI 生产代码也先于测试编写，随后移出生产文件复现了编译失败（红灯），再恢复并通过（绿灯）。Task 12 起按测试先行执行。
