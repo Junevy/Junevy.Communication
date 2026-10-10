@@ -586,5 +586,13 @@ public static class McProtocolProfile
   - 现象：`PlcAddress.Device` 的类型是 `IPlcDeviceDefinition`，MELSEC 需要具体的 `McDevice`（`AsciiCode`、`BinaryCode`）。计划规定的 `McAddress.Device` 因此用 `new` 隐藏基类成员。
   - 变通或缺口：通过基类引用访问 `Device` 得到的是接口类型，取代码需要向下转换。`McAddress` 另存了一份 `McDevice` 字段，只为让新属性返回具体类型。
   - 建议：Plc 提供泛型的地址基类（例如 `PlcAddress<TDevice>`，`Device` 返回 `TDevice`），或让解析器的结果保留具体的设备类型。属于 Plc 的通用能力，P2 后评估。
+- **MELSEC 帧编码（Task 9）**
+  - 现象：`PlcClientBase` 的四个 `Build*Request` 钩子返回 `void`，编码阶段无法报告"协议不可表示"的参数：ASCII 十进制软元件编号超过 6 位（上限 999999，手册 p.67），以太网 ASCII 位访问超过 3584 点（手册 p.70）。计划的 `McDevice.MaxNumber`（0xFFFFFF）只对二进制与十六进制软元件成立。
+  - 变通或缺口：编码器的 `RequireDeviceNumber` 抛出 `ArgumentOutOfRangeException`，作为内部守卫；运行期的拒绝由 Task 11 的 `ValidateRange` 返回 `InvalidRequest`，同一条件出现在两层。
+  - 建议：协议的可表示性限制（编号位数、点数上限）由协议对象统一提供，`ValidateRange` 与编码器共用；或构建钩子改为返回 `CommResult`。属于 Plc 的通用能力，P2 后评估。
+- **IBufferWriter 写入样板（Task 9）**
+  - 现象：协议帧需要把整帧复制到调用方的 `IBufferWriter<byte>`，仓库没有公共的写入扩展（如 `Write(ReadOnlySpan<byte>)`）。Channels 的分帧编码器已有同样的 `GetSpan` / `Advance` 复制代码。
+  - 变通或缺口：`McEthernetFrame` 内部写一份 `CopyTo`。Task 10 的 4C 帧也需要它，届时移到 Protocol 的共享位置，不写第二份。
+  - 建议：Core 提供 `IBufferWriter<byte>` 的写入扩展，与第 19 节"第三个 IBufferWriter"条目一并在 P2 后处理。
 
 ### 20.3 最终度量（Task 14）
