@@ -53,6 +53,7 @@ internal sealed class StreamChannel : IAsyncDisposable
     private int stopRequested;
     private int faultReported;
     private int sendFailureHandled;
+    private volatile InboundEnd? inboundEnd;
     private Task? fillLoop;
     private Task? parseLoop;
 
@@ -429,7 +430,8 @@ internal sealed class StreamChannel : IAsyncDisposable
         await stream.FlushAsync(token).ConfigureAwait(false);
     }
 
-    // 填充循环（计划 8.2 填充循环）：流 → 内部管道。读到 0 字节或出错即报告并结束；停止时静默结束。
+    // 填充循环（计划 8.2 填充循环）：流 → 内部管道。读到 0 字节或出错时只记录结束原因并完成管道写端；
+    // 故障报告推迟到解析循环处理完已收到的数据之后（见 ParseLoopAsync）。
     private async Task FillLoopAsync()
     {
         PipeWriter writer = pipe.Writer;
@@ -441,6 +443,7 @@ internal sealed class StreamChannel : IAsyncDisposable
 #if NET8_0_OR_GREATER
                 int read = await stream.ReadAsync(memory, stopSource.Token).ConfigureAwait(false);
 #else
+                // net472：流的 Memory 重载不存在，使用数组重载（D7）。管道的缓冲由数组支持。
                 if (!MemoryMarshal.TryGetArray(memory, out ArraySegment<byte> segment))
                     throw new InvalidOperationException("The pipe buffer is not backed by an array.");
 
@@ -448,7 +451,7 @@ internal sealed class StreamChannel : IAsyncDisposable
 #endif
                 if (read == 0)
                 {
-                    Fault(DisconnectReason.RemoteClosed, null);
+                    RecordInboundEnd(DisconnectReason.RemoteClosed, null);
                     return;
                 }
 
@@ -462,16 +465,24 @@ internal sealed class StreamChannel : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            if (!IsStopping)
-                Fault(ex is IOException ? DisconnectReason.RemoteClosed : DisconnectReason.Error, ex);
+            RecordInboundEnd(ex is IOException ? DisconnectReason.RemoteClosed : DisconnectReason.Error, ex);
         }
         finally
         {
+            // 完成写端：解析循环处理完缓冲中的数据后观察到结束。
             writer.Complete();
         }
     }
 
+    // 记录入站端结束的原因（由填充循环调用）。停止过程中的结束由停止流程发起，不记录。
+    private void RecordInboundEnd(DisconnectReason reason, Exception? exception)
+    {
+        if (!IsStopping)
+            inboundEnd = new InboundEnd(reason, exception);
+    }
+
     // 解析循环（计划 8.2 解析循环）：内部管道 → 分帧 → 路由。半帧 / 静默计时见 IdleTimer。
+    // 对端结束（result.IsCompleted）时先处理完缓冲中的全部数据，再报告记录的原因。
     private async Task ParseLoopAsync()
     {
         PipeReader reader = pipe.Reader;
@@ -488,7 +499,8 @@ internal sealed class StreamChannel : IAsyncDisposable
                 long seenLength = buffer.Length;
                 bool flushDue = false;
 
-                if (idle.IsArmed && seenLength == idle.ArmedLength)
+                // 对端已结束时不再等待计时器：残留数据直接按结束处理。
+                if (!result.IsCompleted && idle.IsArmed && seenLength == idle.ArmedLength)
                 {
                     // 自计时开始没有新数据：要么计时器尚未到期（提前唤醒或残留取消，按剩余时间继续等待），要么已到期。
                     long now = Stopwatch.GetTimestamp();
@@ -496,9 +508,6 @@ internal sealed class StreamChannel : IAsyncDisposable
                     {
                         idle.Resume(now);
                         reader.AdvanceTo(buffer.Start, buffer.End);
-                        if (result.IsCompleted)
-                            return;
-
                         continue;
                     }
 
@@ -522,55 +531,36 @@ internal sealed class StreamChannel : IAsyncDisposable
                     }
                 }
 
-                while (!buffer.IsEmpty)
+                DecodeResult decoded = await DecodeAndRouteAsync(buffer, flushDue).ConfigureAwait(false);
+                if (decoded.Disconnected)
+                    return;
+
+                buffer = decoded.Remaining;
+                if (result.IsCompleted)
                 {
-                    byte[] frame;
-                    try
+                    // 对端已结束：残留数据不能丢失。可刷新分帧器整段交出；其余分帧器的残留半帧丢弃并记录。
+                    if (!buffer.IsEmpty && flushable != null)
                     {
-                        ReadOnlySequence<byte> sequence;
-                        bool produced;
-                        if (flushDue)
-                            produced = flushable!.TryFlush(ref buffer, out sequence);
-                        else
-                            produced = decoder.TryDecode(ref buffer, out sequence);
-
-                        if (!produced)
-                            break;
-
-                        frame = sequence.ToArray();
-                    }
-                    catch (FrameDecodeException ex)
-                    {
-                        if (HandleProtocolError(ex))
+                        decoded = await DecodeAndRouteAsync(buffer, flush: true).ConfigureAwait(false);
+                        if (decoded.Disconnected)
                             return;
 
-                        buffer = buffer.Slice(buffer.End);
-                        break;
+                        buffer = decoded.Remaining;
                     }
 
-                    statistics.RecordFrameReceived(frame.Length, DateTimeOffset.UtcNow);
-                    if (logger.IsEnabled(LogLevel.Debug))
-                        logger.LogDebug("RX {Length} bytes: {Hex}", frame.Length, HexFormatter.ToHex(frame));
-
-                    try
+                    if (!buffer.IsEmpty)
                     {
-                        await router.RouteAsync(frame, null, CancellationToken.None).ConfigureAwait(false);
+                        statistics.IncrementProtocolErrors();
+                        logger.LogWarning("The remote endpoint closed with {Length} byte(s) of an incomplete frame; the bytes were discarded.",
+                            buffer.Length);
                     }
-                    catch (FrameDecodeException ex)
-                    {
-                        // 握手积压溢出（D8）。
-                        if (HandleProtocolError(ex))
-                            return;
 
-                        buffer = buffer.Slice(buffer.End);
-                        break;
-                    }
+                    reader.AdvanceTo(buffer.End);
+                    ReportInboundEnd();
+                    return;
                 }
 
                 reader.AdvanceTo(buffer.Start, buffer.End);
-                if (result.IsCompleted)
-                    return;
-
                 if (buffer.IsEmpty)
                     idle.Disarm();
                 else if (idle.IsEnabled)
@@ -590,6 +580,98 @@ internal sealed class StreamChannel : IAsyncDisposable
         {
             idle.Dispose();
         }
+    }
+
+    // 对端结束时报告记录的原因。未记录原因表示结束由停止导致，不报告。
+    private void ReportInboundEnd()
+    {
+        InboundEnd? end = inboundEnd;
+        if (end != null)
+            Fault(end.Reason, end.Exception);
+    }
+
+    // 解码并派发 buffer 中的全部完整帧；flush 为 true 时整段刷新为一帧（仅可刷新分帧器）。
+    // 返回剩余缓冲；协议错误导致断开时 Disconnected 为 true（故障已报告）。
+    private async Task<DecodeResult> DecodeAndRouteAsync(ReadOnlySequence<byte> buffer, bool flush)
+    {
+        while (!buffer.IsEmpty)
+        {
+            byte[] frame;
+            try
+            {
+                if (!TryProduceFrame(ref buffer, flush, out frame))
+                    break;
+            }
+            catch (FrameDecodeException ex)
+            {
+                return ProtocolFailure(ex, buffer);
+            }
+
+            statistics.RecordFrameReceived(frame.Length, DateTimeOffset.UtcNow);
+            if (logger.IsEnabled(LogLevel.Debug))
+                logger.LogDebug("RX {Length} bytes: {Hex}", frame.Length, HexFormatter.ToHex(frame));
+
+            try
+            {
+                await router.RouteAsync(frame, null, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (FrameDecodeException ex)
+            {
+                // 握手积压溢出（D8）。
+                return ProtocolFailure(ex, buffer);
+            }
+        }
+
+        return new DecodeResult(buffer, disconnected: false);
+    }
+
+    // 协议错误（计划 8.2 解析第 6 条）：Disconnect 报告并断开；Discard 丢弃剩余缓冲。
+    private DecodeResult ProtocolFailure(FrameDecodeException exception, ReadOnlySequence<byte> buffer)
+    {
+        if (HandleProtocolError(exception))
+            return new DecodeResult(buffer, disconnected: true);
+
+        return new DecodeResult(buffer.Slice(buffer.End), disconnected: false);
+    }
+
+    // 同步地取出下一帧：flush 为 true 时整段刷新（仅可刷新分帧器调用）。协议错误以异常报告。
+    private bool TryProduceFrame(ref ReadOnlySequence<byte> buffer, bool flush, out byte[] frame)
+    {
+        ReadOnlySequence<byte> sequence;
+        bool produced = flush
+            ? flushable!.TryFlush(ref buffer, out sequence)
+            : decoder.TryDecode(ref buffer, out sequence);
+
+        frame = produced ? sequence.ToArray() : Array.Empty<byte>();
+        return produced;
+    }
+
+    // 入站端结束的原因（填充循环记录，解析循环在处理完数据后报告）。
+    private sealed class InboundEnd
+    {
+        public InboundEnd(DisconnectReason reason, Exception? exception)
+        {
+            Reason = reason;
+            Exception = exception;
+        }
+
+        public DisconnectReason Reason { get; }
+
+        public Exception? Exception { get; }
+    }
+
+    // DecodeAndRouteAsync 的结果：剩余缓冲，以及是否已因协议错误断开。
+    private readonly struct DecodeResult
+    {
+        public DecodeResult(ReadOnlySequence<byte> remaining, bool disconnected)
+        {
+            Remaining = remaining;
+            Disconnected = disconnected;
+        }
+
+        public ReadOnlySequence<byte> Remaining { get; }
+
+        public bool Disconnected { get; }
     }
 
     // 协议错误（计划 8.2 解析第 6 条）：Disconnect 报告 ProtocolViolation 并返回 true；Discard 返回 false，调用方丢弃缓冲。

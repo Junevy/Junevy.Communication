@@ -585,6 +585,168 @@ public sealed class StreamChannelTests
         Assert.Equal(0, rig.Statistics.FramesDropped);
     }
 
+    [Fact]
+    public async Task RemoteSendsReplyThenCloses_RequestGetsReply()
+    {
+        using DuplexStreamPair pair = DuplexStreamPair.Create();
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sink = new RecordingSink();
+
+        // 队列容量为 1：第一个事件阻塞派发，第三个事件使解析循环挂起在满队列上。
+        // 应答与对端的结束都位于解析循环尚未读到的数据中。
+        await using var rig = new StreamRig(pair, Settings(correlation: CorrelationMode.Matcher), Delimiter(),
+                                            BlockingRaise(entered, release, sink), queueCapacity: 1, fullMode: QueueFullMode.Wait);
+        rig.Start();
+
+        var peer = new StreamPeer(pair.B, Delimiter());
+        Task script = Task.Run(async () =>
+        {
+            await peer.ReceiveFrameAsync();
+            await peer.SendFrameAsync(Ascii("EVT-A"));
+            await peer.SendFrameAsync(Ascii("EVT-B"));
+            await peer.SendFrameAsync(Ascii("EVT-C"));
+            await peer.SendFrameAsync(Ascii("RSP-1"));
+            pair.B.Dispose();   // 对端回完应答后立即结束其写端
+        });
+
+        var options = new RequestOptions { Matcher = new LeadingByteMatcher() };
+        Task<CommResult<byte[]>> request = rig.Channel.RequestAsync(Ascii("REQ"), options, null, CancellationToken.None);
+
+        await WithinAsync(entered.Task, 2000);
+        await WithinAsync(script, 5000);
+        await WaitUntilAsync(() => rig.Statistics.FramesReceived >= 3, 3000);
+        await Task.Delay(200);   // 填充循环有充足时间读到对端的结束
+
+        // 解析循环尚未处理完已收到的数据：此时不得报告故障。
+        Assert.Empty(rig.Faults);
+
+        release.TrySetResult(true);
+        CommResult<byte[]> reply = await WithinAsync(request, 2000);
+        Assert.True(reply.IsSuccess, reply.ToString());
+        Assert.Equal(Ascii("RSP-1"), reply.Data);
+
+        await WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
+        Assert.Equal(new[] { DisconnectReason.RemoteClosed }, rig.Faults);
+    }
+
+    [Fact]
+    public async Task RemoteSendsIdleGapDataThenCloses_FrameDelivered()
+    {
+        using DuplexStreamPair pair = DuplexStreamPair.Create();
+
+        // 静默阈值取 5 s：若数据只能靠静默交出，本测试会失败。
+        await using var rig = new StreamRig(pair, Settings(), IdleGap(gapMs: 5000));
+        rig.Start();
+
+        var peer = new StreamPeer(pair.B, IdleGap(gapMs: 5000));
+        var stopwatch = Stopwatch.StartNew();
+        await WithinAsync(peer.SendRawAsync(Ascii("ABCDE")), 2000);
+        pair.B.Dispose();   // 不等待静默，立即结束
+
+        await WaitForCountAsync(rig.Sink, 1);
+        stopwatch.Stop();
+
+        Assert.Equal(Ascii("ABCDE"), rig.Sink.Frames[0]);
+        Assert.InRange(stopwatch.Elapsed.TotalMilliseconds, 0d, 2500d);
+
+        await WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
+        Assert.Equal(new[] { DisconnectReason.RemoteClosed }, rig.Faults);
+    }
+
+    [Fact]
+    public async Task RemoteClosesWithPartialFrame_DropsAndReports()
+    {
+        using DuplexStreamPair pair = DuplexStreamPair.Create();
+        await using var rig = new StreamRig(pair, Settings(), LengthField());
+        rig.Start();
+
+        // 长度字段声明 10 字节负载（帧总长 12），只写 5 字节后结束。
+        var peer = new StreamPeer(pair.B, LengthField());
+        await WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3 }), 2000);
+        pair.B.Dispose();
+
+        await WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
+        Assert.Equal(new[] { DisconnectReason.RemoteClosed }, rig.Faults);
+        Assert.Empty(rig.Sink.Frames);
+        Assert.Equal(1, rig.Statistics.ProtocolErrors);
+    }
+
+    [Fact]
+    public async Task IgnoresCancellation_IdleGapFlushStillFires()
+    {
+        using DuplexStreamPair pair = DuplexStreamPair.Create();
+        await using var rig = new StreamRig(pair, Settings(), IdleGap(gapMs: 100), ignoreCancellation: true);
+        rig.Start();
+
+        var peer = new StreamPeer(pair.B, IdleGap(gapMs: 100));
+        var stopwatch = Stopwatch.StartNew();
+        await WithinAsync(peer.SendRawAsync(Ascii("ABCDE")), 2000);
+        await WaitForCountAsync(rig.Sink, 1);
+        stopwatch.Stop();
+
+        Assert.Equal(Ascii("ABCDE"), rig.Sink.Frames[0]);
+        Assert.InRange(stopwatch.Elapsed.TotalMilliseconds, 80d, 1500d);
+    }
+
+    [Fact]
+    public async Task IgnoresCancellation_PartialFrameTimeoutStillFires()
+    {
+        using DuplexStreamPair pair = DuplexStreamPair.Create();
+        StreamChannelSettings settings = Settings();
+        settings.PartialFrameTimeout = 200;
+        settings.PartialFrameAction = PartialFrameAction.Disconnect;
+        await using var rig = new StreamRig(pair, settings, LengthField(), ignoreCancellation: true);
+        rig.Start();
+
+        var peer = new StreamPeer(pair.B, LengthField());
+        var stopwatch = Stopwatch.StartNew();
+        await WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3, 4, 5 }), 2000);
+        await WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
+        stopwatch.Stop();
+
+        Assert.Equal(new[] { DisconnectReason.PartialFrameTimeout }, rig.Faults);
+        Assert.InRange(stopwatch.Elapsed.TotalMilliseconds, 150d, 2500d);
+    }
+
+    [Fact]
+    public async Task IgnoresCancellation_SendTimeoutAbortsTransport()
+    {
+        using DuplexStreamPair pair = DuplexStreamPair.Create(pauseWriterThreshold: 4096);
+        StreamChannelSettings settings = Settings();
+        settings.SendTimeout = 300;
+        await using var rig = new StreamRig(pair, settings, Raw(), ignoreCancellation: true);
+        rig.Start();
+
+        // 对端不读取：写出挂起，流忽略取消，只能靠 abortTransport 打断。
+        var stopwatch = Stopwatch.StartNew();
+        CommResult sent = await WithinAsync(rig.Channel.SendAsync(new byte[64 * 1024], CancellationToken.None), 5000);
+        stopwatch.Stop();
+
+        Assert.Equal(CommErrorKind.Timeout, sent.ErrorKind);
+        Assert.InRange(stopwatch.Elapsed.TotalMilliseconds, 240d, 2300d);
+        Assert.Equal(1, rig.AbortCount);
+        Assert.Equal(new[] { DisconnectReason.SendFailed }, rig.Faults);
+    }
+
+    [Fact]
+    public async Task IgnoresCancellation_StopCompletesWithinDrainTimeout()
+    {
+        using DuplexStreamPair pair = DuplexStreamPair.Create();
+        await using var rig = new StreamRig(pair, Settings(), Delimiter(), ignoreCancellation: true);
+        rig.Start();
+
+        // 填充循环挂起在读取上（对端没有数据）。停止必须经 abortTransport 打断读取，而不是等待 2 s 的排空超时。
+        await Task.Delay(50);
+        var stopwatch = Stopwatch.StartNew();
+        await WithinAsync(rig.Channel.StopAsync(2000), 3000);
+        stopwatch.Stop();
+
+        Assert.InRange(stopwatch.Elapsed.TotalMilliseconds, 0d, 1000d);
+        Assert.Equal(1, rig.AbortCount);
+        Assert.Empty(rig.Faults);
+    }
+
     // ————— 测试辅助 —————
 
     private static StreamChannelSettings Settings(int requestTimeout = 2000, CorrelationMode correlation = CorrelationMode.Sequential)
@@ -660,8 +822,10 @@ internal sealed class StreamRig : IAsyncDisposable
     /// <param name="raise">派发回调；为 null 时使用 <see cref="Sink"/>。</param>
     /// <param name="queueCapacity">派发队列容量。</param>
     /// <param name="fullMode">队列满时的处理方式。</param>
+    /// <param name="ignoreCancellation">为 true 时通道使用忽略取消令牌的流包装（模拟 net472 的 NetworkStream）。</param>
     public StreamRig(DuplexStreamPair pair, StreamChannelSettings settings, IFrameCodecFactory codec,
-                     Func<FrameReceivedEventArgs, Task>? raise = null, int queueCapacity = 1024, QueueFullMode fullMode = QueueFullMode.Wait)
+                     Func<FrameReceivedEventArgs, Task>? raise = null, int queueCapacity = 1024, QueueFullMode fullMode = QueueFullMode.Wait,
+                     bool ignoreCancellation = false)
     {
         Pair = pair;
         Logger = new TestLogger();
@@ -669,7 +833,8 @@ internal sealed class StreamRig : IAsyncDisposable
         Sink = new RecordingSink();
         Table = new PendingRequestTable(settings.Correlation, null, settings.LateReplyWindow, Logger);
         Router = new FrameRouter(Table, queueCapacity, fullMode, raise ?? Sink.Raise, Statistics, Logger);
-        Channel = new StreamChannel(pair.A, settings, codec.CreateDecoder(), codec.CreateEncoder(), Table, Router,
+        Stream endpoint = ignoreCancellation ? new NonCancellableStream(pair.A) : pair.A;
+        Channel = new StreamChannel(endpoint, settings, codec.CreateDecoder(), codec.CreateEncoder(), Table, Router,
                                     Statistics, Logger, OnFault, OnAbort);
     }
 
