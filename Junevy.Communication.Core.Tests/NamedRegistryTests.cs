@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Junevy.Communication.Core.Registry;
 
 namespace Junevy.Communication.Core.Tests;
@@ -326,6 +327,59 @@ public sealed class NamedRegistryTests
         Assert.Equal(1, instance.DisposeCount);
     }
 
+    [Fact]
+    public async Task TryRemove_SlowDispose_DoesNotBlockOtherStructuralOperations()
+    {
+        using var registry = new NamedRegistry<SlowDisposeProbe>();
+        var slow = new SlowDisposeProbe(TimeSpan.FromMilliseconds(1000));
+        var other = new SlowDisposeProbe(TimeSpan.Zero);
+        Assert.True(registry.TryAdd("a", slow));
+        Assert.True(registry.TryAdd("b", other));
+
+        // 后台线程移除 a：a 的 DisposeAsync 阻塞约 1000 ms。
+        var removal = Task.Run(() => registry.TryRemove("a"));
+        var started = await Task.WhenAny(slow.DisposeStarted, Task.Delay(5000));
+        Assert.Same(slow.DisposeStarted, started);
+
+        // 主线程对另一个实例 b 执行别名注册与移除：两者合计应远小于 a 的释放时长（上限 300 ms）。
+        var stopwatch = Stopwatch.StartNew();
+        Assert.True(registry.RegisterAlias("b-alias", "b"));
+        Assert.True(registry.TryRemove("b-alias"));
+        stopwatch.Stop();
+
+        Assert.True(
+            stopwatch.ElapsedMilliseconds < 300,
+            $"RegisterAlias + TryRemove on an unrelated key took {stopwatch.ElapsedMilliseconds} ms (limit 300 ms): they were blocked by the slow dispose of 'a'.");
+
+        var completed = await Task.WhenAny(removal, Task.Delay(5000));
+        Assert.Same(removal, completed);
+        Assert.True(await removal);
+        Assert.Equal(1, slow.DisposeAsyncCount);
+    }
+
+    [Fact]
+    public async Task TryRemove_InstanceDisposeCallsBackIntoRegistry_NoDeadlock()
+    {
+        using var registry = new NamedRegistry<CallbackProbe>();
+        bool readBack = false;
+        bool aliasAdded = false;
+        var callbackProbe = new CallbackProbe(() =>
+        {
+            readBack = registry.TryGet("other", out _);
+            aliasAdded = registry.RegisterAlias("other-alias", "other");
+        });
+        Assert.True(registry.TryAdd("x", callbackProbe));
+        Assert.True(registry.TryAdd("other", new CallbackProbe(() => { })));
+
+        var removal = Task.Run(() => registry.TryRemove("x"));
+        var completed = await Task.WhenAny(removal, Task.Delay(2000));
+
+        Assert.Same(removal, completed); // 2 s 内未返回即判定为死锁。
+        Assert.True(await removal);
+        Assert.True(readBack);
+        Assert.True(aliasAdded);
+    }
+
     /// <summary>仅记录 Dispose 次数的测试替身。</summary>
     private sealed class DisposableProbe : IDisposable
     {
@@ -334,6 +388,48 @@ public sealed class NamedRegistryTests
         public int DisposeCount => Volatile.Read(ref disposeCount);
 
         public void Dispose() => Interlocked.Increment(ref disposeCount);
+    }
+
+    /// <summary>
+    /// DisposeAsync 可控阻塞的测试替身：开始释放时发出信号，然后等待指定时长。
+    /// </summary>
+    private sealed class SlowDisposeProbe : IAsyncDisposable
+    {
+        private readonly TimeSpan delay;
+        private readonly TaskCompletionSource<bool> disposeStarted =
+            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int disposeAsyncCount;
+
+        public SlowDisposeProbe(TimeSpan delay)
+        {
+            this.delay = delay;
+        }
+
+        /// <summary>DisposeAsync 开始执行时完成。</summary>
+        public Task<bool> DisposeStarted => disposeStarted.Task;
+
+        public int DisposeAsyncCount => Volatile.Read(ref disposeAsyncCount);
+
+        public async ValueTask DisposeAsync()
+        {
+            Interlocked.Increment(ref disposeAsyncCount);
+            disposeStarted.TrySetResult(true);
+            if (delay > TimeSpan.Zero)
+                await Task.Delay(delay);
+        }
+    }
+
+    /// <summary>释放时同步执行指定回调的测试替身。</summary>
+    private sealed class CallbackProbe : IDisposable
+    {
+        private readonly Action onDispose;
+
+        public CallbackProbe(Action onDispose)
+        {
+            this.onDispose = onDispose;
+        }
+
+        public void Dispose() => onDispose();
     }
 
     /// <summary>同时实现两种释放接口的测试替身，用于验证优先调用 DisposeAsync。</summary>

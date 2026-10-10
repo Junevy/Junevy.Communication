@@ -7,13 +7,15 @@ namespace Junevy.Communication.Core.Registry;
 
 /// <summary>
 /// 命名实例注册表：支持别名（多个逻辑名共享同一实例，例如 RS-485 多从站共用一条串口）、并发安全与移除时释放。
-/// 规则由 <c>ModbusConnectionManager</c> 泛化而来，逐条保留其已修复的行为。
+/// 规则由 <c>ModbusConnectionManager</c> 泛化而来；与其不同之处是所有实例释放都在注册表锁之外进行。
 /// </summary>
 /// <typeparam name="T">注册的实例类型。释放规则：实现 <see cref="IAsyncDisposable"/> 时优先调用 <c>DisposeAsync</c>，
 /// 否则调用 <see cref="IDisposable.Dispose"/>；都不实现则不释放。</typeparam>
 /// <remarks>
-/// 同步释放路径（<see cref="TryRemove"/>、<see cref="GetOrAdd"/> 的竞态输家、<see cref="Dispose"/>）会同步等待实例的 <c>DisposeAsync</c> 完成，
-/// 因此实例的异步释放应使用 <c>ConfigureAwait(false)</c>，不依赖调用线程的同步上下文。
+/// 实例释放（<see cref="TryRemove"/>、<see cref="GetOrAdd"/> 的竞态输家、<see cref="Dispose"/>、<see cref="DisposeAsync"/>）一律在注册表锁之外进行，
+/// 因此耗时的释放（例如通道的优雅关闭）不会阻塞其他结构操作，释放回调也可以访问注册表。
+/// 同步路径（<see cref="TryRemove"/>、<see cref="GetOrAdd"/>、<see cref="Dispose"/>）会同步等待实例的 <c>DisposeAsync</c> 完成；
+/// 实例的异步释放应使用 <c>ConfigureAwait(false)</c>，不依赖调用线程的同步上下文。
 /// </remarks>
 public sealed class NamedRegistry<T> : IDisposable, IAsyncDisposable where T : class
 {
@@ -143,8 +145,8 @@ public sealed class NamedRegistry<T> : IDisposable, IAsyncDisposable where T : c
 
     /// <summary>
     /// 移除条目。
-    /// 移除直接名称时，级联删除所有直接或间接指向它的别名，并释放实例；若同一实例仍被其他直接名称引用，则只在最后一个引用移除时释放。
-    /// 移除别名时只删除该别名。
+    /// 移除直接名称时，级联删除所有直接或间接指向它的别名；若实例不再被任何直接名称引用，则在出锁之后同步释放它。
+    /// 同一实例仍被其他直接名称引用时不释放（只在最后一个引用移除时释放）。移除别名时只删除该别名。
     /// </summary>
     /// <param name="key">要移除的名称或别名。</param>
     /// <returns>条目存在并已移除返回 true；否则返回 false。</returns>
@@ -155,6 +157,7 @@ public sealed class NamedRegistry<T> : IDisposable, IAsyncDisposable where T : c
         if (string.IsNullOrEmpty(key))
             return false;
 
+        T? released = null;
         lock (registryLock)
         {
             if (!entries.TryGetValue(key, out var entry))
@@ -167,7 +170,7 @@ public sealed class NamedRegistry<T> : IDisposable, IAsyncDisposable where T : c
                 return true;
             }
 
-            // 直接实例：删除条目及所有直接或间接指向它的别名，然后释放实例。
+            // 直接实例：删除条目及所有直接或间接指向它的别名。
             entries.TryRemove(key, out _);
             foreach (var aliasKey in CollectAliasesResolvingTo(key))
             {
@@ -176,12 +179,16 @@ public sealed class NamedRegistry<T> : IDisposable, IAsyncDisposable where T : c
             }
 
             // 同一实例仍被另一个直接名称引用时不释放，避免重复释放与悬挂引用。
+            // 释放推迟到出锁之后：DisposeAsync 可能耗时（例如优雅关闭），不能让它阻塞其他注册表操作。
             T instance = entry.Instance!;
             if (!IsReferencedByDirectEntry(instance))
-                ReleaseInstanceAsync(instance, key, "TryRemove").GetAwaiter().GetResult();
-
-            return true;
+                released = instance;
         }
+
+        if (released != null)
+            ReleaseInstanceAsync(released, key, "TryRemove").GetAwaiter().GetResult();
+
+        return true;
     }
 
     /// <summary>
