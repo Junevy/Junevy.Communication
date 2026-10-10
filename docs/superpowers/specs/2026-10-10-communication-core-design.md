@@ -371,7 +371,7 @@ public sealed class HeartbeatOptions
 
 UDP 发送与串口写入几乎总是成功，"发送成功即健康"检测不到对端沉默，因此 UDP 与串口启用内置心跳时必须配置 `ExpectedReply`（或提供自定义 `IHealthProbe`），否则构造时抛 `ArgumentException`。
 
-内置探测的其他约束（20.1）：未提供 `IHealthProbe` 时必须有 `Heartbeat.Payload`，否则构造时抛出 `ArgumentException`；UDP 非定向模式启用内置心跳必须提供 `IHealthProbe`（内置探测发往远端）。心跳检测时间：探测按 `Interval` 起始到起始调度，第 `MaxFailures` 次失败约在 `(MaxFailures − 1) × Interval + Timeout` 之后判定；`OnlyWhenIdle` 为真时，两次判定之间有收发流量则跳过本次探测；探测因通道忙未写出任何帧时不计失败，`NotConnected` 的探测结果也不计。
+内置探测的其他约束（20.1）：未提供 `IHealthProbe` 时必须有 `Heartbeat.Payload`，否则构造时抛出 `ArgumentException`；UDP 非定向模式启用内置心跳必须提供 `IHealthProbe`（内置探测发往远端）。心跳检测时间：首次探测在心跳启动后一个 `Interval` 才发出，之后按 `Interval` 起始到起始调度，对端开始沉默后第 `MaxFailures` 次失败约在 `(MaxFailures − 1) × Interval + Timeout` 之后判定（`Timeout` 大于 `Interval` 时探测间隔随之拉长，公式不再成立）；`OnlyWhenIdle` 为真时，两次判定之间有收发流量则跳过本次探测；探测因通道忙未写出任何帧时不计失败，`NotConnected` 的探测结果也不计。
 
 ### 5.5 重连
 
@@ -753,7 +753,7 @@ public class UdpChannelConfig : IChannelConfig
 | 对端关闭 / 读异常 / 端口被拔出 | 在途请求立即以 `ConnectionClosed` 结束；启用重连 → Reconnecting，否则 → Disconnected |
 | 发送超时、发送异常或取消正在写出的帧 | 本次返回失败；连接断开，后续同上。取消写出同样断开（可能已写出半帧，D10）；取消发生在等待发送锁期间只返回 `Cancelled`（20.1） |
 | 请求超时 | 返回 `Timeout`；TCP `Sequential` + `ResetOnRequestTimeout` 时断开重建；串口/UDP 进入迟到应答丢弃窗口。Sequential 模式下用户取消等待应答与超时同样处理（D10） |
-| 帧超长或分帧异常 | `ProtocolViolation`：TCP 断开并重连；串口丢弃缓冲继续。握手积压超过 64 帧同样按 `ProtocolViolation` 处理（20.1） |
+| 帧超长或分帧异常 | `ProtocolViolation`：TCP 断开并重连；串口丢弃缓冲继续。握手积压超过 64 帧同样按 `ProtocolViolation` 处理（20.1）；UDP 例外：丢弃该数据报并计 `ProtocolErrors`，不断开 |
 | 心跳连续失败 N 次 | `HeartbeatFailed`：断开并重连。探测返回 `NotConnected`，或因通道忙未写出任何帧时，不计为失败（20.1） |
 | 断开期间 `SendAsync` / `RequestAsync` | 立即返回 `NotConnected`，不排队、不隐式连接 |
 | 用户 `DisconnectAsync` | 停止重连；在途请求以 `ConnectionClosed` 结束；在 `DisconnectTimeout` 内排空已收到但未派发的帧；**之后不会被任何发送悄悄连回**；Reconnecting 状态下直接转为 Disconnected（`UserRequested`）（20.1） |
@@ -769,7 +769,8 @@ Modbus 选择了**懒重连、不要看门狗**（工业轮询的请求天然周
 
 | 场景 | 处理 |
 |---|---|
-| `StartAsync` 端口被占用或地址无效 | 返回 Fail，State = Stopped |
+| `ListenAddress` 不是有效 IP | 构造 `TcpServer` 时抛 `ArgumentException`（D5） |
+| `StartAsync` 端口被占用 / 其他绑定错误 | 返回 Fail（`ResourceExhausted` / `ConnectionClosed`），State = Stopped |
 | 监听器运行中故障 | Faulted；`RestartOnFault.Enabled` 时按策略重新监听 |
 | 超过 `MaxSessions` / 不在白名单 / 握手失败或超时 | 关闭连接，记告警日志，不触发 `SessionConnected` |
 | 会话对端关闭、读异常、空闲超时、心跳失败 | 移除会话，触发 `SessionClosed`（带原因） |
@@ -951,7 +952,7 @@ Junevy.Communication.Melsec.Tests/
 |---|---|---|
 | `ScriptedTcpServer` / `SilentTcpServer` | 按连接序号执行脚本、只收不回（沿用 Modbus 测试的成熟做法） | P1 |
 | `ScriptedUdpPeer` | 按数据报脚本应答 | P1 |
-| `InMemoryChannelPair` | 两端互通的内存双工通道，测协议逻辑不需要 socket 或串口 | P1 |
+| `DuplexStreamPair`（设计时名为 InMemoryChannelPair） | 两端互通的内存双工流，测协议逻辑不需要 socket 或串口；`NonCancellableStream` 模拟 net472 不响应取消的流 | P1 |
 | `DeviceSimulator` | 按请求帧匹配处理器并应答；可挂在 TCP / UDP / 内存通道上 | P1 |
 | `MemoryDeviceSimulator` | 带字 / 位存储区的设备模拟器；PLC 协议只需写"帧 ↔ 存储区操作"的翻译 | P2 |
 | 耗时断言工具 | 断言耗时落在区间内（重连间隔、超时） | P1 |
@@ -1202,7 +1203,7 @@ public sealed class OutboxItem
 
 **Core**：退避序列与抖动范围；`NamedRegistry` 的并发、别名、释放；`TimeoutScope` 的超时/取消判别；`ByteTransform` 四种字序的往返转换。
 
-**Channels**：每种分帧器（单帧、粘包、逐字节半包、超长、重新同步、`IdleGap` 静默判定、`LengthField` 四种长度编码）；Supervisor（全部状态转换、连接代次防护、Connect/Disconnect/Dispose 并发混合）；FrameRouter（三种关联、超时、迟到应答、队列满三种策略）；StreamChannel 用 `InMemoryChannelPair` 测试。
+**Channels**：每种分帧器（单帧、粘包、逐字节半包、超长、重新同步、`IdleGap` 静默判定、`LengthField` 四种长度编码）；Supervisor（全部状态转换、连接代次防护、Connect/Disconnect/Dispose 并发混合）；FrameRouter（三种关联、超时、迟到应答、队列满三种策略）；StreamChannel 用 `DuplexStreamPair` 测试。
 
 **TCP**：连接成功 / 拒绝 / 超时；各分帧方式与逐字节分片；请求与主动上报交错；`Sequential` 超时重建；`Keyed` 并发在途；服务端踢连接 → 重连并校验间隔；静默服务端 → 心跳失败 → 重连；空闲超时；半帧超时；发送超时；慢事件处理器不阻塞应答；背压；服务端 `MaxSessions` / 白名单 / 握手超时 / 广播 / 会话空闲 / `StopAsync` / 端口占用；在途请求期间 Dispose（循环 20 次）。
 
@@ -1294,6 +1295,11 @@ P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份
 | 31 | 10 | 超时表给出的是传输配置的默认值；基类 `ClientChannelSettings` 的超时默认值为 0（不限时） | 基类超时默认值与 TCP 客户端配置对齐：握手 5000、写出 2000、请求 2000、断开排空 1000、迟到窗口 -1；0 仍表示不限时。测试 `ClientChannelSettings_DefaultsMatchTcpClient` 锁定该对齐。**默认值已对齐** | 审阅者决定（计划 Task 14 审阅结论，修改 2） |
 | 32 | 11.1 | 5.3 写明连接停止时在 `DisconnectTimeout` 内派发已入队的帧；未说明 `Dispose` 是否排空 | `DisconnectAsync` 在 `DisconnectTimeout` 内排空已收到但未派发的帧；`Dispose` 立即释放，不排空；同步 `Dispose` 等待上限见 D16 | 计划第 20 节 Task 12（语义确定）；第 0 节 D16 |
 | 33 | 11.3 | 未说明 `SessionConnected` 处理器阻塞的影响 | 推迟该会话的积压帧派发与心跳启动，并推迟其他服务端事件的派发 | 计划第 20 节 Task 9 |
+| 34 | 5.4 | 检测时间公式未说明基准 | 首次探测在心跳启动后一个 `Interval` 才发出；`Timeout` 大于 `Interval` 时探测间隔随之拉长，公式不再成立 | Task 15 知识库回写时核对代码发现 |
+| 35 | 11.1 | 握手积压超过 64 帧对所有客户端通道按 ProtocolViolation 处理 | UDP 丢弃该数据报并计 `ProtocolErrors`，不断开（数据报没有失同步问题） | Task 15 核对代码发现 |
+| 36 | 11.3 | `StartAsync` 地址无效返回 Fail | `ListenAddress` 不是有效 IP 时构造 `TcpServer` 即抛 `ArgumentException`（D5）；`StartAsync` 只对端口占用（`ResourceExhausted`）与其他绑定错误（`ConnectionClosed`）返回失败 | Task 15 核对代码发现 |
+| 37 | 13 | 测试套件内存通道名为 `InMemoryChannelPair` | 实现为 `DuplexStreamPair`（双工流），另有 `NonCancellableStream` 模拟 net472 不响应取消的流 | 计划第 20 节 Task 4、Task 6 |
+| 38 | 21.1 | Q2 只写结论 | 补回理由：SDK 只有异步接口；新模块依赖常驻后台循环，同步版只能阻塞等待 | 第二轮重写时遗漏，Task 15 验收补回 |
 
 ---
 
@@ -1304,7 +1310,7 @@ P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份
 | # | 问题 | 结论 |
 |---|---|---|
 | Q1 | 程序集拆分 | 通用部分与传输分包，每种传输一个包（R1 进一步细化通用部分） |
-| Q2 | 同步 / 异步 | 新模块只提供异步；"同步 + 异步双轨"的约定只适用于 Modbus |
+| Q2 | 同步 / 异步 | 新模块只提供异步；"同步 + 异步双轨"的约定只适用于 Modbus。理由：OPC UA、MQTT 等 SDK 本身只有异步接口；新模块依赖常驻的后台循环（接收、派发、心跳、重连），同步版只能阻塞等待异步实现，没有实际价值 |
 | Q3 | 依赖 | 允许微软一方的 BCL 扩展包（Pipelines、Channels、System.Text.Json）；第三方包只允许出现在 SDK 适配包中 |
 | Q4 | Modbus | 本期不动；以后作为 Plc 套件的使用者单独评估 v3 迁移 |
 | E1 | 串口、UDP | 纳入 P1 |
