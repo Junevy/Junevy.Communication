@@ -351,6 +351,7 @@ public interface IFrameKeyExtractor
 
 ```csharp
 /// 原始通道 = 发心跳包（可选等应答）；协议可替换为自己的探测：MC = 回环测试 0619，S7 = 读 SZL，HSMS = Linktest。
+/// 探测期间发出的请求超时不会触发 ResetOnRequestTimeout，失败按 MaxFailures 计数（否则第一次探测超时就会断开连接）。
 public interface IHealthProbe { Task<CommResult> ProbeAsync(CancellationToken cancellationToken); }
 
 public sealed class HeartbeatOptions
