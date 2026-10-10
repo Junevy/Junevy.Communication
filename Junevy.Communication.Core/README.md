@@ -42,6 +42,20 @@ Console.WriteLine(typed.ErrorKind);
 
 `Fail` rejects `CommErrorKind.None` with `ArgumentException`. `As<T>()` on a successful result throws `InvalidOperationException`.
 
+`CommResult<T>.ToResult()` is the reverse for the data: it drops the data and keeps the kind, message, protocol code and exception. A successful result becomes `CommResult.Success()`.
+
+```csharp
+using Junevy.Communication.Core.Results;
+
+CommResult<byte[]> reply = CommResult<byte[]>.Fail("No reply.", CommErrorKind.Timeout);
+CommResult status = reply.ToResult();                                  // kind, message and exception kept; data dropped
+Console.WriteLine(status.ErrorKind);                                   // Timeout
+
+CommResult<byte[]> ok = CommResult<byte[]>.Success(new byte[] { 1 });
+CommResult okStatus = ok.ToResult();                                   // becomes CommResult.Success()
+Console.WriteLine(okStatus.IsSuccess);
+```
+
 | `CommErrorKind` | Meaning |
 |---|---|
 | `Unspecified` | Uncategorized failure (default for legacy paths) |

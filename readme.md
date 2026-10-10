@@ -384,5 +384,6 @@ await serial.ConnectAsync();
 - Sending or requesting while not connected returns `NotConnected` immediately; nothing is queued.
 - Events (`StateChanged`, `FrameReceived`) are raised on thread-pool threads. Marshal to the UI thread yourself (for example WPF's `Dispatcher`).
 - TLS is available for TCP. DTLS is not supported.
+- Channels log through an `ILogger<T>` passed at construction. Without one they log nothing; frames are logged in hex at `Debug`.
 
 The skill `Skills/using-junevy-channels/SKILL.md` describes the full contract, including late replies, heartbeat timing and the serial hot-plug checklist.

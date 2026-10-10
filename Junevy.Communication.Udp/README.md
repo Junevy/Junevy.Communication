@@ -91,6 +91,8 @@ Console.WriteLine(sent.IsSuccess ? "discovery sent" : sent.ErrorMessage);
 
 `ReceiveAsync` waits for the next datagram from any source, and `FrameReceived` delivers every unclaimed datagram.
 
+An undirected channel cannot use the built-in heartbeat, because that probe is sent to a remote endpoint. Enable `Heartbeat` only with `ChannelComponents.HealthProbe` or `ChannelComponents.HealthProbeFactory`. The factory receives the channel when the socket first opens. See the Channels README, Custom Heartbeat Probe.
+
 ## Undirected Request to One Address
 
 `RequestToAsync` sends to the address you give and accepts a reply only from that same address. A reply from anywhere else is not delivered.

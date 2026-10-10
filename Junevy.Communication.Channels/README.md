@@ -48,7 +48,7 @@ Pick the framing from the device's wire format:
 | `StartEnd` | `StartMarker`, `EndMarker`, `KeepMarkers` | STX…ETX frames; garbage bytes are skipped |
 | `IdleGap` | `GapTimeout` (default 20 ms) | Serial devices with no delimiter or length field |
 
-The total length of a `LengthField` frame is `offset + size + value + adjustment`.
+The total length of a `LengthField` frame is `offset + size + value + adjustment`. The delivered frame starts after `InitialBytesToStrip` bytes. The defaults are `LengthFieldOffset` 0, `LengthFieldSize` 2, `LengthFieldEncoding` `BinaryBigEndian`, `LengthAdjustment` 0 and `InitialBytesToStrip` 0; `MaxFrameLength` defaults to 65536 in every mode.
 
 ```csharp
 using Junevy.Communication.Channels;
@@ -68,6 +68,8 @@ IFrameEncoder encoder = codec.CreateEncoder();
 ```
 
 `FrameCodecFactory.Create` validates the options and copies them; changing the object afterwards has no effect.
+
+Only `Delimiter` changes the bytes on send: it appends `Delimiters[0]` unless `AppendDelimiterOnSend` is false. Every other mode sends the payload exactly as given. A length header, a start or end marker, or padding must therefore already be part of the payload that the protocol passes to `SendAsync` or `RequestAsync`.
 
 ## Using the Factory Without DI
 
@@ -174,7 +176,88 @@ sealed class SequenceKeyExtractor : IFrameKeyExtractor
 }
 ```
 
+`TryGetRequestKey` receives the bytes passed to `RequestAsync`, without any delimiter the encoder appends. `TryGetResponseKey` receives the decoded frame: its first `InitialBytesToStrip` bytes are already removed, and it has no delimiter unless `KeepDelimiter` is true. Offsets in an extractor are relative to those bytes.
+
 `Keyed` mode requires a `KeyExtractor`. Without one, the channel constructor throws `ArgumentException`.
+
+## Custom Heartbeat Probe
+
+The built-in probe sends `Heartbeat.Payload`. A protocol probe often needs the channel itself, for example to send a protocol request. A `ChannelComponents` value is built before the channel exists, so pass a factory instead: `HealthProbeFactory` receives the channel.
+
+- Client channels (TCP, UDP and serial) call the factory once, at the first successful open, before the heartbeat starts. The result is reused across reconnects.
+- A factory that throws, or returns null, makes that open fail with `Unspecified`. The reconnect policy decides what happens next.
+- `HealthProbe` and `HealthProbeFactory` are mutually exclusive. Setting both throws `ArgumentException` when the channel is constructed.
+- The factory is called only when `Heartbeat.Enabled` is true. A factory replaces the `Payload` and `ExpectedReply` requirements.
+
+```csharp
+using Junevy.Communication.Channels;
+using Junevy.Communication.Core.Results;
+using Junevy.Communication.Tcp;
+
+var components = new TcpChannelComponents
+{
+    HealthProbeFactory = channel => new PingProbe(channel),
+};
+
+var config = new TcpClientChannelConfig
+{
+    Host = "192.168.1.100",
+    Port = 5000,
+    Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 5000, Timeout = 2000, MaxFailures = 3 },   // no Payload needed
+    Reconnect = new ReconnectOptions { Enabled = true },
+};
+
+await using var device = new TcpClientChannel(config, components: components);
+await device.ConnectAsync();
+
+// The protocol's own ping. The factory passes the channel itself, so the probe can send requests.
+sealed class PingProbe : IHealthProbe
+{
+    private readonly IByteChannel channel;
+
+    public PingProbe(IByteChannel channel) => this.channel = channel;
+
+    public async Task<CommResult> ProbeAsync(CancellationToken cancellationToken)
+    {
+        CommResult<byte[]> reply = await channel.RequestAsync(new byte[] { 0x7F }, new RequestOptions { Timeout = 1000 }, cancellationToken);
+        return reply.IsSuccess ? CommResult.Success() : reply.ToResult();
+    }
+}
+```
+
+## Logging
+
+A channel logs only when it is given a logger; by default it logs nothing. Connection events are logged at Information and above. Every frame is logged in hex at `Debug`, as `TX` and `RX` lines. Category names follow the channel type, for example `Junevy.Communication.Tcp.TcpClientChannel`. To see the frames, set `Junevy.Communication` to `Debug` in the host's logging configuration:
+
+```json
+{
+  "Logging": { "LogLevel": { "Junevy.Communication": "Debug" } }
+}
+```
+
+```csharp
+using Junevy.Communication.Channels;
+using Junevy.Communication.Tcp;
+using Microsoft.Extensions.Logging;
+
+// Requires the Microsoft.Extensions.Logging.Console package.
+using ILoggerFactory loggerFactory = LoggerFactory.Create(builder => builder
+    .SetMinimumLevel(LogLevel.Debug)
+    .AddConsole());
+
+// Direct construction: pass an ILogger<T> as the second argument.
+await using var device = new TcpClientChannel(
+    new TcpClientChannelConfig { Host = "192.168.1.100", Port = 5000 },
+    loggerFactory.CreateLogger<TcpClientChannel>());
+
+// Factory: the factory creates an ILogger<T> for each channel it builds.
+using ChannelFactory factory = ChannelFactoryBuilder.Create()
+    .WithCreator(new TcpClientChannelCreator())
+    .WithLoggerFactory(loggerFactory)
+    .Build();
+```
+
+With dependency injection, register logging (`AddLogging()` or the host's own setup) before `AddChannels()`. The registered `ChannelFactory` takes the container's `ILoggerFactory`.
 
 ## Text Protocols
 

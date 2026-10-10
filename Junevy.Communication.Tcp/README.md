@@ -57,6 +57,8 @@ await client.DisconnectAsync();   // graceful: drains frames already received, s
 
 `ConnectAsync` returns a failed `CommResult` when the connection cannot be established. It throws `OperationCanceledException` only when the caller's token is cancelled.
 
+Pass an `ILogger<TcpClientChannel>` as the second constructor argument to receive the channel's logs. See the Channels README, Logging.
+
 ## Reconnect and Heartbeat
 
 Reconnect is off by default. When it is enabled, a lost connection is re-established in the background, and no request is needed to trigger it.
@@ -150,9 +152,64 @@ server.Dispose();
 
 Server events are raised on thread-pool threads. A session's `FrameReceived` is raised before the server-level `FrameReceived`. A slow `SessionConnected` handler delays that session's buffered frames and heartbeat, and other server events.
 
+### Sessions and handshake
+
+`ChannelComponents.Initializer` (set through `TcpChannelComponents`) runs once for each accepted session. It runs before the session is listed in `Sessions` and before `SessionConnected`. When TLS is enabled, it shares the `SessionHandshakeTimeout` budget with the TLS handshake. Its `IByteChannel` supports `SendAsync`, `RequestAsync` and `ReceiveAsync`; it does not raise `FrameReceived`.
+
+- Frames the peer sends during the handshake go into a backlog of up to 64 frames. `ReceiveAsync` inside the initializer can take them. Once `SessionConnected` has been delivered, the rest are dispatched in order. More than 64 is a protocol violation: the session is closed with `ProtocolViolation`.
+- If the initializer returns a failure, or the handshake times out, only that session is closed, and no session event is raised for it.
+- A client runs its initializer inside `ConnectAsync` and again after every reconnect, and a failure is an open failure that the reconnect policy handles. A server does not retry: the peer has to connect again.
+
+`SessionCount` and `Sessions` describe the sessions that have completed their handshake. `TryGetSession` finds one by `Id`. `ITcpSession.CloseAsync()` closes that session only, with reason `UserRequested`; called inside a server event handler, it returns without waiting. `StopAsync` closes every session.
+
+A stopped server can be started again: after `StopAsync` completes, `StartAsync` binds the same address and port.
+
+```csharp
+using Junevy.Communication.Channels;
+using Junevy.Communication.Core.Results;
+using Junevy.Communication.Tcp;
+
+var components = new TcpChannelComponents
+{
+    Initializer = new ServerHello(),    // runs for every accepted session before SessionConnected
+};
+
+var server = new TcpServer(new TcpServerConfig
+{
+    Port = 5000,
+    SessionHandshakeTimeout = 10000,    // covers TLS (when enabled) and the initializer together
+    Framing = new FramingOptions { Mode = FramingMode.Delimiter, Delimiters = new[] { "\r\n" } },
+}, components: components);
+
+await server.StartAsync();
+
+// Sessions appear here only after their handshake has completed.
+Console.WriteLine($"{server.SessionCount} session(s)");
+foreach (ITcpSession session in server.Sessions)
+    Console.WriteLine($"session {session.Id} from {session.RemoteEndPoint}");
+
+if (server.TryGetSession(1, out ITcpSession? first) && first is not null)
+    await first.CloseAsync();           // closes that session only; the server keeps running
+
+await server.StopAsync();
+await server.StartAsync();              // a stopped server can be started again
+await server.StopAsync();
+server.Dispose();
+
+// Waits for the client's login line. Frames the client sends in the meantime are held back until SessionConnected has been delivered.
+sealed class ServerHello : IConnectionInitializer
+{
+    public async Task<CommResult> InitializeAsync(IByteChannel channel, CancellationToken cancellationToken)
+    {
+        CommResult<byte[]> login = await channel.ReceiveAsync(new RequestOptions { Timeout = 5000 }, cancellationToken);
+        return login.IsSuccess ? CommResult.Success() : login.ToResult();
+    }
+}
+```
+
 ## Custom Session Health Probe
 
-For a protocol-level probe, create one probe per session with `ChannelComponents.HealthProbeFactory`. The factory receives the session (an `ITcpSession`, passed as `IByteChannel`) when the session starts its heartbeat. A shared `ChannelComponents.HealthProbe` is rejected by the server, because it would be bound to a single session.
+For a protocol-level probe, create one probe per session with `ChannelComponents.HealthProbeFactory`. Client channels use the same property; see the Channels README, Custom Heartbeat Probe. The factory receives the session (an `ITcpSession`, passed as `IByteChannel`) when the session starts its heartbeat. A shared `ChannelComponents.HealthProbe` is rejected by the server, because it would be bound to a single session.
 
 ```csharp
 using Junevy.Communication.Channels;

@@ -115,6 +115,34 @@ await device.DisconnectAsync();                    // graceful: no automatic rec
 - Replies to `RequestAsync` do not wait behind `FrameReceived`. They are matched before frames enter the event queue, so a slow handler delays only unsolicited frames.
 - Dispatch queue (`ReceiveQueueCapacity`, default 1024). TCP uses `QueueFullMode.Wait`, which applies backpressure to the peer. Serial and UDP default to `DropOldest`, which counts drops in `FramesDropped` and logs a warning every 100 drops. A `TcpServer` session always uses `Wait`.
 
+## Logging
+
+A channel logs only when it is given a logger; by default it logs nothing. Connection events are logged at Information and above. Every frame is logged in hex at `Debug`, as `TX` and `RX` lines, with category names such as `Junevy.Communication.Tcp.TcpClientChannel`. To see the frames, set `Junevy.Communication` to `Debug` in the host's configuration (`"Logging": { "LogLevel": { "Junevy.Communication": "Debug" } }`), or pass a logger that is enabled at `Debug`:
+
+```csharp
+using Junevy.Communication.Channels;
+using Junevy.Communication.Tcp;
+using Microsoft.Extensions.Logging;
+
+// Requires the Microsoft.Extensions.Logging.Console package.
+using ILoggerFactory loggerFactory = LoggerFactory.Create(builder => builder
+    .SetMinimumLevel(LogLevel.Debug)
+    .AddConsole());
+
+// Direct construction: pass an ILogger<T> as the second argument.
+await using var device = new TcpClientChannel(
+    new TcpClientChannelConfig { Host = "192.168.1.100", Port = 5000 },
+    loggerFactory.CreateLogger<TcpClientChannel>());
+
+// Factory: the factory creates an ILogger<T> for each channel it builds.
+using ChannelFactory factory = ChannelFactoryBuilder.Create()
+    .WithCreator(new TcpClientChannelCreator())
+    .WithLoggerFactory(loggerFactory)
+    .Build();
+```
+
+With dependency injection, register logging (`AddLogging()` or the host's own setup) before `AddChannels()`; the registered `ChannelFactory` takes the container's `ILoggerFactory`.
+
 ## Framing
 
 | `FramingMode` | Key parameters | Use |
@@ -128,7 +156,8 @@ await device.DisconnectAsync();                    // graceful: no automatic rec
 
 - `MaxFrameLength` (default 65536). For `Delimiter` it measures the bytes before the delimiter, so with `KeepDelimiter` a delivered frame can be `MaxFrameLength` plus the delimiter length. Other modes measure the whole frame on the wire. Exceeding it throws `FrameDecodeException` internally, which becomes `ProtocolViolation`: TCP disconnects, serial discards the buffer.
 - `Delimiter`: consecutive delimiters produce no empty frame. `Delimiters[0]` is appended to every sent payload, so do not add it yourself. Delimiters are text (escapes `\r \n \t \0 \\ \xHH`, otherwise UTF-8) or `hex:` followed by hex digits, optionally spaced or dash-separated (for example `hex:0D0A`).
-- `LengthField`: total frame length = `LengthFieldOffset + LengthFieldSize + length value + LengthAdjustment`. Encodings: `BinaryBigEndian`, `BinaryLittleEndian`, `AsciiHex`, `AsciiDecimal`. Sizes are 1, 2 or 4 for binary and 1–8 for ASCII.
+- `LengthField`: total frame length = `LengthFieldOffset + LengthFieldSize + length value + LengthAdjustment`. Encodings: `BinaryBigEndian`, `BinaryLittleEndian`, `AsciiHex`, `AsciiDecimal`. Sizes are 1, 2 or 4 for binary and 1–8 for ASCII. Defaults: `LengthFieldOffset` 0, `LengthFieldSize` 2, `LengthFieldEncoding` `BinaryBigEndian`, `LengthAdjustment` 0, `InitialBytesToStrip` 0. The delivered frame starts after `InitialBytesToStrip` bytes.
+- Sending: only `Delimiter` changes the bytes (`Delimiters[0]` is appended unless `AppendDelimiterOnSend` is false). Every other mode sends the payload exactly as given, so a length header, a start or end marker, or padding must already be in the payload.
 - `IdleGap`: the USB-serial adapter's latency timer delays bytes. FTDI devices default to 16 ms, so the 20 ms default leaves only 4 ms of margin. Raise `GapTimeout` (30–50 ms is typical) or lower the adapter's latency timer. A gap that is too large merges consecutive frames.
 - Partial frames: `PartialFrameTimeout` disconnects TCP and discards residual bytes on serial (`PartialFrameAction.Discard`). It is 0 (off) by default.
 - Keep `Raw` out of serial configurations. One read can return half a frame.
@@ -203,7 +232,7 @@ CommResult<string> line = await scanner.ReceiveTextAsync(new RequestOptions { Ti
 
 - `Sequential` (default): one request at a time. The next inbound frame after the write is the reply. Queueing for the request lock does not count toward `RequestTimeout`, but the caller's token still applies.
 - `Matcher`: several requests can be in flight. Each inbound frame is offered FIFO to the in-flight `IResponseMatcher` (`RequestOptions.Matcher`). Use it for devices that mix unsolicited reports with replies.
-- `Keyed`: `ChannelComponents.KeyExtractor` (an `IFrameKeyExtractor`) is required. The constructor throws `ArgumentException` without it. `RequestAsync` ignores `RequestOptions.Matcher` and matches by key. `ReceiveAsync` uses the matcher in every mode. If a request key cannot be extracted, or the same key is already in flight, the request fails at once with `InvalidRequest`.
+- `Keyed`: `ChannelComponents.KeyExtractor` (an `IFrameKeyExtractor`) is required. The constructor throws `ArgumentException` without it. `RequestAsync` ignores `RequestOptions.Matcher` and matches by key. `ReceiveAsync` uses the matcher in every mode. If a request key cannot be extracted, or the same key is already in flight, the request fails at once with `InvalidRequest`. `TryGetRequestKey` gets the bytes passed to `RequestAsync` (no appended delimiter). `TryGetResponseKey` gets the decoded frame, with `InitialBytesToStrip` bytes removed and no delimiter unless `KeepDelimiter` is true; offsets are relative to those bytes.
 - Unclaimed frames go to `ReceiveAsync` waiters (FIFO), then to `FrameReceived`.
 - A matcher's `IsMatch` receives an **empty request span** when the frame is for `ReceiveAsync`. Check the request length before indexing it. A matcher that throws is logged at Error and treated as not matching.
 
@@ -258,6 +287,7 @@ Timeouts and late replies:
 - `OnlyWhenIdle` (default true) skips a probe when frames were exchanged since the last one.
 - A probe's own request timeout does not drop the TCP connection. The probe counts that as a failure instead, and the normal `ResetOnRequestTimeout` rule does not apply.
 - A probe that could not be sent because the channel was busy with another request is not counted as a failure. A probe that returns `NotConnected` is not counted either.
+- A probe that needs the channel itself (for example, one that calls `RequestAsync`) comes from `ChannelComponents.HealthProbeFactory`. Client channels call it once, at the first successful open, and reuse the result across reconnects. Server sessions call it once per session. It replaces the `Payload` requirement. See Extension Points.
 - `IdleTimeout` (milliseconds, 0 = off) disconnects when no **inbound** frame arrives for that long. Outbound traffic does not count.
 
 ```csharp
@@ -336,6 +366,58 @@ server.Dispose();
 - `StopAsync` stops listening and closes all sessions (`UserRequested`) within `StopTimeout` (3000 ms).
 - `RestartOnFault` (a `ReconnectOptions`) re-binds the listener after a fault. Without it, a listener fault leaves the state `Faulted`.
 - Do not register `TcpServer` in `ChannelFactory`. It is created and disposed by the host.
+
+### Sessions and handshake
+
+`ChannelComponents.Initializer` (set through `TcpChannelComponents`) runs once for each accepted session, before the session is listed in `Sessions` and before `SessionConnected`. With TLS enabled it shares the `SessionHandshakeTimeout` budget (default 10 s) with the TLS handshake. Its `IByteChannel` supports `SendAsync`, `RequestAsync` and `ReceiveAsync`; it does not raise `FrameReceived`.
+
+- Frames the peer sends during the handshake go into a backlog of up to 64 frames. `ReceiveAsync` inside the initializer can take them; the rest are dispatched in order once `SessionConnected` has been delivered. More than 64 is a protocol violation, and the session is closed with `ProtocolViolation`.
+- A failed or timed-out initializer closes only that session, and no session event is raised for it. Unlike a client, a server never retries: the peer has to connect again.
+- `SessionCount` and `Sessions` list the sessions that have completed their handshake. `TryGetSession(id, out session)` finds one. `ITcpSession.CloseAsync()` closes that session only, with reason `UserRequested`; inside a server event handler it returns without waiting.
+- A stopped server can be started again: after `StopAsync` completes, `StartAsync` binds the same address and port.
+
+```csharp
+using Junevy.Communication.Channels;
+using Junevy.Communication.Core.Results;
+using Junevy.Communication.Tcp;
+
+var components = new TcpChannelComponents
+{
+    Initializer = new ServerHello(),    // runs for every accepted session before SessionConnected
+};
+
+var server = new TcpServer(new TcpServerConfig
+{
+    Port = 5000,
+    SessionHandshakeTimeout = 10000,    // covers TLS (when enabled) and the initializer together
+    Framing = new FramingOptions { Mode = FramingMode.Delimiter, Delimiters = new[] { "\r\n" } },
+}, components: components);
+
+await server.StartAsync();
+
+// Sessions appear here only after their handshake has completed.
+Console.WriteLine($"{server.SessionCount} session(s)");
+foreach (ITcpSession session in server.Sessions)
+    Console.WriteLine($"session {session.Id} from {session.RemoteEndPoint}");
+
+if (server.TryGetSession(1, out ITcpSession? first) && first is not null)
+    await first.CloseAsync();           // closes that session only; the server keeps running
+
+await server.StopAsync();
+await server.StartAsync();              // a stopped server can be started again
+await server.StopAsync();
+server.Dispose();
+
+// Waits for the client's login line. Frames the client sends in the meantime are held back until SessionConnected has been delivered.
+sealed class ServerHello : IConnectionInitializer
+{
+    public async Task<CommResult> InitializeAsync(IByteChannel channel, CancellationToken cancellationToken)
+    {
+        CommResult<byte[]> login = await channel.ReceiveAsync(new RequestOptions { Timeout = 5000 }, cancellationToken);
+        return login.IsSuccess ? CommResult.Success() : login.ToResult();
+    }
+}
+```
 
 ### Per-session health probe
 
@@ -611,6 +693,46 @@ sealed class SequenceKeyExtractor : IFrameKeyExtractor
 }
 ```
 
+### Custom heartbeat probe: `HealthProbeFactory`
+
+A probe that needs the channel is created by `ChannelComponents.HealthProbeFactory`, because the channel does not exist when the components are built. Client channels (TCP, UDP, serial) call the factory once, at the first successful open, before the heartbeat starts, and reuse the probe across reconnects. A factory that throws, or returns null, makes that open fail with `Unspecified`. The factory runs only when `Heartbeat.Enabled` is true. `HealthProbe` and `HealthProbeFactory` are mutually exclusive: setting both throws `ArgumentException` when the channel is constructed.
+
+```csharp
+using Junevy.Communication.Channels;
+using Junevy.Communication.Core.Results;
+using Junevy.Communication.Tcp;
+
+var components = new TcpChannelComponents
+{
+    HealthProbeFactory = channel => new PingProbe(channel),
+};
+
+var config = new TcpClientChannelConfig
+{
+    Host = "192.168.1.100",
+    Port = 5000,
+    Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 5000, Timeout = 2000, MaxFailures = 3 },   // no Payload needed
+    Reconnect = new ReconnectOptions { Enabled = true },
+};
+
+await using var device = new TcpClientChannel(config, components: components);
+await device.ConnectAsync();
+
+// The protocol's own ping. The factory passes the channel itself, so the probe can send requests.
+sealed class PingProbe : IHealthProbe
+{
+    private readonly IByteChannel channel;
+
+    public PingProbe(IByteChannel channel) => this.channel = channel;
+
+    public async Task<CommResult> ProbeAsync(CancellationToken cancellationToken)
+    {
+        CommResult<byte[]> reply = await channel.RequestAsync(new byte[] { 0x7F }, new RequestOptions { Timeout = 1000 }, cancellationToken);
+        return reply.IsSuccess ? CommResult.Success() : reply.ToResult();
+    }
+}
+```
+
 ### Custom byte-stream transport: `StreamClientChannel`
 
 `StreamClientChannel` is the public base class for any transport exposed as a `Stream`. The base provides the lifecycle, framing, correlation, heartbeat, handshake and reconnect. A subclass implements:
@@ -658,17 +780,19 @@ public sealed class SkeletonChannel : StreamClientChannel
 | `ConnectAsync` → `InvalidRequest` with TLS | Certificate could not be loaded (thumbprint not found, variable missing, no private key) | `CertificateSource`, the variable name, the private key |
 | `SendAsync` / `RequestAsync` → `NotConnected` | Not connected, or reconnecting | `State` and `StateChanged`; `ConnectAsync` or `WaitForConnectedAsync` |
 | `RequestAsync` → `Timeout` and the TCP connection drops | `ResetOnRequestTimeout = true` (default) | A slow device: raise `RequestTimeout`, or set `ResetOnRequestTimeout = false` with a `LateReplyWindow` |
-| `RequestAsync` → `ProtocolViolation` | Frame does not match the framing (delimiter, offset, byte order), or it exceeds `MaxFrameLength` | `Framing`; enable Debug logging to see the RX hex |
+| `RequestAsync` → `ProtocolViolation` | Frame does not match the framing (delimiter, offset, byte order), or it exceeds `MaxFrameLength` | `Framing`; a logger enabled at `Debug` (see Logging) shows each RX frame in hex |
 | Serial replies arrive in pieces | `GapTimeout` too small for the adapter's latency timer | Raise `GapTimeout` to 30–50 ms |
 | ASCII replies are never delivered (TCP) | No `Delimiter` framing (Raw is the TCP default) | `Framing`, `Delimiters` |
-| `HeartbeatFailed` repeats | `ExpectedReply` differs from the delivered frame (delimiter stripped, or a different byte) | The logged RX hex against `ExpectedReply` |
+| `HeartbeatFailed` repeats | `ExpectedReply` differs from the delivered frame (delimiter stripped, or a different byte) | The RX hex logged at `Debug` (see Logging), against `ExpectedReply` |
 | Unexpected disconnect with `IdleTimeout` | No inbound frame for `IdleTimeout` ms (outbound does not count) | The device's polling interval versus `IdleTimeout` |
 | `TcpServer.StartAsync` → `ResourceExhausted` | Port already in use | Another process; choose another port |
 | `Statistics.FramesDropped` keeps rising (serial, UDP) | `FrameReceived` is slower than arrival; `DropOldest` | Make the handler faster; raise `ReceiveQueueCapacity` |
 | UDP `SendAsync` / `RequestAsync` → `InvalidRequest` | Undirected channel | Use `SendToAsync` / `RequestToAsync`, or set both `RemoteHost` and `RemotePort` |
 | `NotSupportedException` from `GetOrAdd` | No creator registered for the exact configuration type | `AddTcpChannels()` and friends, or `WithCreator` |
 | `ArgumentException` mentioning `ExpectedReply` | Built-in heartbeat on UDP or serial without `ExpectedReply` | Set `Heartbeat.ExpectedReply`, or supply `ChannelComponents.HealthProbe` or `HealthProbeFactory` |
-| `ArgumentException` mentioning `Heartbeat.Payload` | Built-in heartbeat without `Payload` | Set `Heartbeat.Payload`, or supply a probe |
+| `ArgumentException` mentioning `Heartbeat.Payload` | Built-in heartbeat without `Payload` | Set `Heartbeat.Payload`, or supply `HealthProbe` or `HealthProbeFactory` |
+| No log output at all | The channel was constructed without a logger, or the category is not enabled at `Debug` | Pass an `ILogger<T>` (see Logging) and set `Junevy.Communication` to `Debug` |
+| A server session is missing from `Sessions` after the peer connected | Its initializer has not finished or failed (the session closes silently), or `SessionHandshakeTimeout` expired | The initializer's return value and `SessionHandshakeTimeout`; a failed handshake raises no session event |
 | `ArgumentException` on a server with `HealthProbe` | The server rejects a shared probe | `ChannelComponents.HealthProbeFactory` |
 | Reconnect never happens | `Reconnect.Enabled` is false, or `DisconnectAsync` was called | Enable it; call `ConnectAsync` after an intentional disconnect |
 | `ObjectDisposedException` | The channel was used after `Dispose` | Create a new channel |
