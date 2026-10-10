@@ -19,4 +19,9 @@
   <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
     <Compile Include="$(MSBuildThisFileDirectory)Polyfills\*.cs" LinkBase="Polyfills" />
   </ItemGroup>
+  <!-- Channels 经 InternalsVisibleTo 向 Tcp、Udp 开放内部成员，它们会同时看到自己与 Channels 的内部补丁特性（CS0436）。
+       编译器使用本程序集的定义，可空性分析按特性全名识别，行为不受影响，因此仅在 net472 上抑制。 -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net472'">
+    <NoWarn>$(NoWarn);CS0436</NoWarn>
+  </PropertyGroup>
 </Project>

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -201,7 +202,7 @@ public sealed class TcpServer : ITcpServer
     }
 
     /// <inheritdoc />
-    public bool TryGetSession(long sessionId, out ITcpSession? session)
+    public bool TryGetSession(long sessionId, [NotNullWhen(true)] out ITcpSession? session)
     {
         lock (sync)
         {

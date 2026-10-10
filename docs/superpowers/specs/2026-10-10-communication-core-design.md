@@ -531,7 +531,7 @@ public interface ITcpServer : IDisposable, IAsyncDisposable
 
     Task<CommResult> StartAsync(CancellationToken cancellationToken = default);
     Task StopAsync(CancellationToken cancellationToken = default);
-    bool TryGetSession(long sessionId, out ITcpSession? session);
+    bool TryGetSession(long sessionId, [NotNullWhen(true)] out ITcpSession? session);
     Task<CommResult> SendAsync(long sessionId, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default);
     Task<int> BroadcastAsync(ReadOnlyMemory<byte> payload, Func<ITcpSession, bool>? filter = null, CancellationToken cancellationToken = default);
 }
@@ -1306,6 +1306,7 @@ P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份
 | 39 | 5.6、5.4、9、7.2 | 没有统一的探测工厂：客户端自定义探测在通道构造前拿不到通道引用（扩展性预演发现，计划第 20 节 Task 16 验收记录；预演中的变通写法是构造后 `Bind`） | 新增 `ChannelComponents.HealthProbeFactory`（`Func<IByteChannel, IHealthProbe>`）：客户端在第一次成功打开、启动心跳之前以通道自身调用一次，结果跨重连复用；工厂抛出或返回 null 使本次打开失败（`Unspecified`）；与 `HealthProbe` 互斥，同时设置构造即抛 `ArgumentException`；内置负载与 `ExpectedReply` 要求只在两者都未设置时生效 | 计划第 20 节（Task 16 扩展性预演发现；本补丁任务 A）；第 0 节 D5（构造期校验） |
 | 40 | 7.2、11.3 | 服务端心跳探测由 `TcpChannelComponents.SessionHealthProbeFactory`（`Func<ITcpSession, IHealthProbe>`）提供，与客户端的探测概念重复 | 删除该属性，服务端改用基类的 `ChannelComponents.HealthProbeFactory`（参数类型为 `IByteChannel`，传入的仍是该会话）；服务端仍拒绝 `HealthProbe`。P1 为 preview（1.0.0-preview.1），不保留过渡别名 | 计划第 20 节（本补丁任务 A，preview 期内的调整；第 0 节 D1） |
 | 41 | 3.1 | 依赖列表把 `System.Memory`、`Microsoft.Bcl.AsyncInterfaces`、`System.Threading.Channels` 列为所有目标的依赖，net8.0 下重复 | 三者改为只在 net472 引用（条件化）；`System.IO.Pipelines` 两个目标都保留（不在 `Microsoft.NETCore.App` 中）。打包结果：Core 的 net8.0 依赖组只剩两个 `Microsoft.Extensions.*.Abstractions`，Channels 的 net8.0 依赖组为 Core + `System.IO.Pipelines`，net472 组不变 | 计划第 20 节（本补丁任务 C；审阅者核对 .NET 8 共享框架） |
+| 42 | 7.2 | `TryGetSession` 的 `out ITcpSession? session` 没有可空性特性，返回 true 后调用方仍须判空 | 增加 `[NotNullWhen(true)]`（只改注解，源码与二进制兼容）。net472 上 Tcp、Udp 经 `InternalsVisibleTo` 同时看到自己与 Channels 的内部补丁特性（CS0436），`Common.props` 仅在 net472 上抑制该警告 | 计划第 20 节（收尾补丁审阅者验收） |
 
 ---
 

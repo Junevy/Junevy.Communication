@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Core.Results;
@@ -65,7 +66,7 @@ public interface ITcpServer : IDisposable, IAsyncDisposable
     /// <param name="sessionId">会话 ID。</param>
     /// <param name="session">找到时返回会话，否则为 null。</param>
     /// <returns>找到返回 true。</returns>
-    bool TryGetSession(long sessionId, out ITcpSession? session);
+    bool TryGetSession(long sessionId, [NotNullWhen(true)] out ITcpSession? session);
 
     /// <summary>向指定会话发送一帧。会话不存在或未连接时返回 <c>NotConnected</c>。</summary>
     /// <param name="sessionId">会话 ID。</param>

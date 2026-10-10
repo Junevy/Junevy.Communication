@@ -400,7 +400,7 @@ Console.WriteLine($"{server.SessionCount} session(s)");
 foreach (ITcpSession session in server.Sessions)
     Console.WriteLine($"session {session.Id} from {session.RemoteEndPoint}");
 
-if (server.TryGetSession(1, out ITcpSession? first) && first is not null)
+if (server.TryGetSession(1, out ITcpSession? first))
     await first.CloseAsync();           // closes that session only; the server keeps running
 
 await server.StopAsync();

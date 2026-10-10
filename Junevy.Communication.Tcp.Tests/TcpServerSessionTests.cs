@@ -192,6 +192,31 @@ public sealed class TcpServerSessionTests
     }
 
     [Fact(Timeout = 30000)]
+    public async Task TryGetSession_FindsConnectedSession_AndForgetsClosedOne()
+    {
+        int port = FreePort();
+        await using var server = new TcpServer(CreateServerConfig(port));
+        var recorder = new ServerRecorder(server);
+        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+
+        await using TcpClientChannel client = CreateClient(port);
+        Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
+        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+        long id = server.Sessions.Single().Id;
+
+        // 返回 true 时 session 非 null（[NotNullWhen(true)]），无需再判空。
+        Assert.True(server.TryGetSession(id, out ITcpSession? found));
+        Assert.Equal(id, found.Id);
+        Assert.False(server.TryGetSession(id + 1000, out ITcpSession? missing));
+        Assert.Null(missing);
+
+        await WithinAsync(client.DisconnectAsync(), 5000);
+        await WaitUntilAsync(() => recorder.ClosedCount == 1, 5000);
+        Assert.False(server.TryGetSession(id, out ITcpSession? closed));
+        Assert.Null(closed);
+    }
+
+    [Fact(Timeout = 30000)]
     public async Task SessionIdleTimeout_Closes()
     {
         int port = FreePort();
