@@ -134,6 +134,36 @@ public sealed class UdpConfigTests
         Assert.Equal("udp://0.0.0.0:0->127.0.0.1:9", channel.Name);
     }
 
+    [Fact(Timeout = 30000)]
+    public void Unconnected_HealthProbeFactory_SatisfiesHeartbeatRequirement()
+    {
+        // 非定向模式的内置探测发往远端，因此必须由协议包提供探测；HealthProbeFactory 满足该要求，且不需要 ExpectedReply 与 Payload。
+        var config = new UdpChannelConfig
+        {
+            Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 100, Timeout = 100 },
+        };
+        var components = new ChannelComponents { HealthProbeFactory = _ => new NoopProbe() };
+
+        using var channel = new UdpChannel(config, null, components);
+
+        Assert.Equal("udp://0.0.0.0:0", channel.Name);
+    }
+
+    [Fact(Timeout = 30000)]
+    public void HealthProbe_AndHealthProbeFactory_Throws()
+    {
+        var probe = new NoopProbe();
+        var config = new UdpChannelConfig
+        {
+            RemoteHost = "127.0.0.1",
+            RemotePort = 9,
+            Heartbeat = new HeartbeatOptions { Enabled = true, Payload = "PING", ExpectedReply = "PONG", Interval = 100, Timeout = 100 },
+        };
+        var components = new ChannelComponents { HealthProbe = probe, HealthProbeFactory = _ => probe };
+
+        Assert.Throws<ArgumentException>(() => new UdpChannel(config, null, components));
+    }
+
     private static IEnumerable<(string Name, Action<UdpChannelConfig> Mutate, ChannelComponents? Components)> InvalidCases()
     {
         yield return ("LocalAddress is not an IP address", c => c.LocalAddress = "not-an-address", null);

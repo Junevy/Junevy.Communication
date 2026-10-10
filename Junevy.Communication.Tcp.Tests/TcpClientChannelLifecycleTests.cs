@@ -44,6 +44,47 @@ public sealed class TcpClientChannelLifecycleTests
         Assert.True(channel.IsConnected);
     }
 
+    // 客户端探测工厂以通道自身调用一次（第一次成功打开时）；服务端关闭连接后重连，工厂不再调用，同一个探测继续驱动心跳。
+    [Fact(Timeout = 30000)]
+    public async Task HealthProbeFactory_ReceivesClientAndIsReusedAcrossReconnect()
+    {
+        using var server = ScriptedTcpServer.Start((index, stream, token) => DrainAsync(stream, token));
+        var config = CreateConfig(server.Port);
+        config.Reconnect = new ReconnectOptions { Enabled = true, Mode = ReconnectMode.FixedInterval, Interval = 100 };
+        config.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 100, Timeout = 500, MaxFailures = 3 };
+        var received = new List<IByteChannel>();
+        int probes = 0;
+        var probe = new DelegateProbe(_ =>
+        {
+            Interlocked.Increment(ref probes);
+            return Task.FromResult(CommResult.Success());
+        });
+        var components = new TcpChannelComponents
+        {
+            HealthProbeFactory = channel =>
+            {
+                lock (received)
+                    received.Add(channel);
+
+                return probe;
+            },
+        };
+        await using var channel = new TcpClientChannel(config, null, components);
+        Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
+        await WaitUntilAsync(() => Volatile.Read(ref probes) >= 1, 5000);
+
+        server.CloseConnection(0);
+        await WaitUntilAsync(() => server.AcceptedConnectionCount == 2 && channel.IsConnected, 10000);
+        int before = Volatile.Read(ref probes);
+        await WaitUntilAsync(() => Volatile.Read(ref probes) > before, 5000);
+
+        lock (received)
+        {
+            Assert.Single(received);
+            Assert.Same(channel, received[0]);
+        }
+    }
+
     [Fact(Timeout = 30000)]
     public async Task SilentServer_HeartbeatFails_Reconnecting()
     {

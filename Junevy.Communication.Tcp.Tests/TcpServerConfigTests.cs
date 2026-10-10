@@ -144,13 +144,41 @@ public sealed class TcpServerConfigTests
     [Fact(Timeout = 30000)]
     public void SharedHealthProbeOnServer_Throws()
     {
-        // 所有会话共用的探测无法绑定到单个会话：服务端只接受 SessionHealthProbeFactory。
+        // 所有会话共用的探测无法绑定到单个会话：服务端只接受 HealthProbeFactory。
         var components = new TcpChannelComponents
         {
             HealthProbe = new DelegateProbe(_ => Task.FromResult(CommResult.Success())),
         };
 
         Assert.ThrowsAny<ArgumentException>(() => new TcpServer(new TcpServerConfig { ListenAddress = "127.0.0.1", Port = 5000 }, null, components));
+    }
+
+    [Fact(Timeout = 30000)]
+    public void HealthProbe_AndHealthProbeFactory_ThrowOnServer()
+    {
+        // 两者互斥：同时设置时构造即抛出 ArgumentException（服务端不接受 HealthProbe，因此这里同时覆盖互斥校验）。
+        var probe = new DelegateProbe(_ => Task.FromResult(CommResult.Success()));
+        var components = new TcpChannelComponents
+        {
+            HealthProbe = probe,
+            HealthProbeFactory = _ => probe,
+        };
+
+        Assert.ThrowsAny<ArgumentException>(() => new TcpServer(new TcpServerConfig { ListenAddress = "127.0.0.1", Port = 5000 }, null, components));
+    }
+
+    [Fact(Timeout = 30000)]
+    public void HealthProbeFactory_Alone_IsAccepted()
+    {
+        // 只设置工厂时服务端接受配置（心跳未启用，因此不需要负载，也不调用工厂）。
+        var components = new TcpChannelComponents
+        {
+            HealthProbeFactory = _ => new DelegateProbe(_ => Task.FromResult(CommResult.Success())),
+        };
+
+        using var server = new TcpServer(new TcpServerConfig { ListenAddress = "127.0.0.1", Port = 5000 }, null, components);
+
+        Assert.Equal(ServerState.Stopped, server.State);
     }
 
     // 每个非法配置都必须在构造时抛出 ArgumentException 族，并且不改写调用方的对象。

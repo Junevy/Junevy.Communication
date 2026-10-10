@@ -41,7 +41,7 @@ public abstract class StreamClientChannel : IClientChannel
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         resolved = new StreamClientOptions(settings, components, this);
-        driver = new StreamConnectionDriver(resolved, OpenStreamAsync, SecureStreamAsync, AbortTransport, OnClosingAsync, () => PartialFrameAction,
+        driver = new StreamConnectionDriver(resolved, this, OpenStreamAsync, SecureStreamAsync, AbortTransport, OnClosingAsync, () => PartialFrameAction,
                                             RaiseFrameReceived, () => DescribeEndpoint(), statistics, logger);
         supervisor = new ConnectionSupervisor(name, driver, resolved.ReconnectPolicy, resolved.ReconnectOnInitialFailure, statistics, logger);
         driver.Attach(supervisor);

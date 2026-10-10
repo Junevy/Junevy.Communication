@@ -305,9 +305,11 @@ public sealed class SerialChannel : StreamClientChannel, ISerialChannel
         RequireNonNegative(config.DisconnectTimeout, nameof(SerialChannelConfig.DisconnectTimeout));
 
         // 串口写入几乎总是成功：内置探测只判断写入，无法发现设备沉默，因此必须指定期望的应答（设计 5.4、D14）。
-        if (config.Heartbeat is { Enabled: true } heartbeat && components?.HealthProbe == null && string.IsNullOrEmpty(heartbeat.ExpectedReply))
+        // 代码级探测（HealthProbe 或 HealthProbeFactory）替代内置探测时不需要 ExpectedReply。
+        bool suppliedProbe = components?.HealthProbe != null || components?.HealthProbeFactory != null;
+        if (config.Heartbeat is { Enabled: true } heartbeat && !suppliedProbe && string.IsNullOrEmpty(heartbeat.ExpectedReply))
             throw new ArgumentException("The built-in heartbeat of a serial channel must set Heartbeat.ExpectedReply: a serial write almost always succeeds, "
-                                        + "so the probe could not detect a silent device. Set ExpectedReply or supply ChannelComponents.HealthProbe.");
+                                        + "so the probe could not detect a silent device. Set ExpectedReply or supply ChannelComponents.HealthProbe or ChannelComponents.HealthProbeFactory.");
     }
 
     // 复制端口相关的参数（构造时的快照，D5）：之后修改调用方的对象不影响已创建的通道，每次打开都使用这份副本。

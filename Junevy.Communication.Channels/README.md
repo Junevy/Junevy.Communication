@@ -325,7 +325,7 @@ Override `SecureStreamAsync` to wrap the stream (for example in TLS). Override `
 | `Enabled` | false |
 | `Interval`, `Timeout`, `MaxFailures` | 5000 ms, 2000 ms, 3 |
 | `OnlyWhenIdle` | true (no probe while frames are flowing) |
-| `Payload` | none; required by the built-in probe unless `ChannelComponents.HealthProbe` is supplied |
+| `Payload` | none; required by the built-in probe unless `ChannelComponents.HealthProbe` or `ChannelComponents.HealthProbeFactory` is supplied |
 | `ExpectedReply` | none (a successful send counts as healthy); compared byte for byte |
 
 | `ReconnectOptions` | Default |

@@ -827,16 +827,16 @@ public sealed class TcpServer : ITcpServer
         }
     }
 
-    // 会话自己的心跳探测：SessionHealthProbeFactory 返回的专用探测；未设置工厂时使用绑定该会话通道的内置负载探测。
+    // 会话自己的心跳探测：HealthProbeFactory 以该会话为参数创建的专用探测；未设置工厂时使用绑定该会话通道的内置负载探测。
     private IHealthProbe CreateSessionProbe(TcpSession session)
     {
-        Func<ITcpSession, IHealthProbe>? factory = options.SessionHealthProbeFactory;
+        Func<IByteChannel, IHealthProbe>? factory = options.HealthProbeFactory;
         if (factory == null)
             return new PayloadHeartbeatProbe(session.View!, options.HeartbeatPayload!, options.HeartbeatExpectedReply, options.Heartbeat.Timeout);
 
         IHealthProbe? probe = factory(session);
         if (probe == null)
-            throw new InvalidOperationException("SessionHealthProbeFactory returned null.");
+            throw new InvalidOperationException("HealthProbeFactory returned null.");
 
         return probe;
     }

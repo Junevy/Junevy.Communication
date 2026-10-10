@@ -79,7 +79,7 @@ Console.WriteLine(reply.IsSuccess ? BitConverter.ToString(reply.Data!) : $"{repl
 
 ## Heartbeat
 
-A serial write almost always succeeds, even when the device is silent. The built-in heartbeat therefore requires `ExpectedReply`, or a `ChannelComponents.HealthProbe`, and the constructor throws `ArgumentException` otherwise.
+A serial write almost always succeeds, even when the device is silent. The built-in heartbeat therefore requires `ExpectedReply`, or a `ChannelComponents.HealthProbe` or `ChannelComponents.HealthProbeFactory`, and the constructor throws `ArgumentException` otherwise.
 
 ```csharp
 using Junevy.Communication.Channels;

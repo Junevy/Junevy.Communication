@@ -13,6 +13,7 @@ namespace Junevy.Communication.Channels.Lifecycle;
 internal sealed class DatagramConnectionDriver : IConnectionDriver
 {
     private readonly DatagramClientOptions options;
+    private readonly IByteChannel owner;
     private readonly Func<CancellationToken, Task<CommResult<IDatagramTransport>>> openTransport;
     private readonly Func<FrameReceivedEventArgs, Task> raise;
     private readonly Func<string> describeEndpoint;
@@ -21,21 +22,27 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
     private ConnectionSupervisor? supervisor;
     private volatile LiveConnection? current;
 
+    // 工厂探测：在第一次成功打开、启动心跳之前由 owner 调用工厂得到，之后的重连复用它（仅由 OpenAsync 访问，OpenAsync 由生命周期锁串行化）。
+    private IHealthProbe? factoryProbe;
+
     /// <summary>
     /// 创建驱动（未绑定监督器，需随后调用 <see cref="Attach"/>）。
     /// </summary>
     /// <param name="options">已校验的运行参数。</param>
+    /// <param name="owner">公开的通道实例；<see cref="ChannelComponents.HealthProbeFactory"/> 以它为参数调用。</param>
     /// <param name="openTransport">绑定传输（每次打开都调用，包括每次重连）；失败返回失败结果，用户取消抛出 <see cref="OperationCanceledException"/>。</param>
     /// <param name="raise">派发一帧 FrameReceived 的回调。</param>
     /// <param name="describeEndpoint">日志用的端点描述。</param>
     /// <param name="statistics">连接统计（跨代次累计）。</param>
     /// <param name="logger">日志记录器。</param>
     /// <exception cref="ArgumentNullException">参数为 null。</exception>
-    public DatagramConnectionDriver(DatagramClientOptions options, Func<CancellationToken, Task<CommResult<IDatagramTransport>>> openTransport,
+    public DatagramConnectionDriver(DatagramClientOptions options, IByteChannel owner,
+                                    Func<CancellationToken, Task<CommResult<IDatagramTransport>>> openTransport,
                                     Func<FrameReceivedEventArgs, Task> raise, Func<string> describeEndpoint, ConnectionStatistics statistics,
                                     ILogger logger)
     {
         this.options = options ?? throw new ArgumentNullException(nameof(options));
+        this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
         this.openTransport = openTransport ?? throw new ArgumentNullException(nameof(openTransport));
         this.raise = raise ?? throw new ArgumentNullException(nameof(raise));
         this.describeEndpoint = describeEndpoint ?? throw new ArgumentNullException(nameof(describeEndpoint));
@@ -89,6 +96,15 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
             }
 
             window.Dispose();
+
+            // 工厂探测在启动心跳之前解析；失败使本次打开失败，连接随即关闭（与握手失败一致）。
+            CommResult probing = ResolveFactoryProbe();
+            if (!probing.IsSuccess)
+            {
+                await StopConnectionAsync(live, 0).ConfigureAwait(false);
+                return probing;
+            }
+
             StartHeartbeat(live);
             current = live;
             logger.LogInformation("Datagram connection opened to {Endpoint}.", describeEndpoint());
@@ -214,14 +230,42 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
         work.ContinueWith(task => { _ = task.Exception; }, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
     }
 
-    // 心跳与空闲监视只在握手完成后启动；使用同一个尝试对象报告死亡。
+    // 解析工厂探测（仅启用心跳且配置了工厂时）：工厂以通道自身为参数调用一次，结果保留到通道释放，之后的重连复用它。
+    // 工厂抛出异常或返回 null 时返回失败（Unspecified）；此时尚未取得探测，下一次打开会再次调用工厂。
+    private CommResult ResolveFactoryProbe()
+    {
+        if (!options.Heartbeat.Enabled || options.HealthProbeFactory == null || factoryProbe != null)
+            return CommResult.Success();
+
+        IHealthProbe? created;
+        try
+        {
+            created = options.HealthProbeFactory(owner);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "HealthProbeFactory threw an exception; the connection to {Endpoint} was not opened.", describeEndpoint());
+            return CommResult.Fail("HealthProbeFactory threw an exception; the connection was not opened.", CommErrorKind.Unspecified, null, ex);
+        }
+
+        if (created == null)
+        {
+            logger.LogWarning("HealthProbeFactory returned null; the connection to {Endpoint} was not opened.", describeEndpoint());
+            return CommResult.Fail("HealthProbeFactory returned null; the connection was not opened.", CommErrorKind.Unspecified);
+        }
+
+        factoryProbe = created;
+        return CommResult.Success();
+    }
+
+    // 心跳与空闲监视只在握手完成后启动；使用同一个尝试对象报告死亡。探测来源：代码级探测、工厂探测（已解析）；启用心跳时必有其一。
     private void StartHeartbeat(LiveConnection live)
     {
         if (!options.Heartbeat.Enabled && options.IdleTimeout <= 0)
             return;
 
         ConnectionAttempt attempt = live.Attempt;
-        var monitor = new HeartbeatMonitor(options.HealthProbe, options.Heartbeat, options.IdleTimeout, statistics,
+        var monitor = new HeartbeatMonitor(options.HealthProbe ?? factoryProbe, options.Heartbeat, options.IdleTimeout, statistics,
                                            reason => attempt.Report(reason, null), logger);
         live.Heartbeat = monitor;
         monitor.Start();

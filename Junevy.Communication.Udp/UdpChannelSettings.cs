@@ -97,15 +97,18 @@ internal sealed class UdpChannelSettings
             throw new ArgumentOutOfRangeException(nameof(UdpChannelConfig.LateReplyWindow), config.LateReplyWindow,
                 "The late reply window must be -1 or a non-negative value.");
 
-        // 内置心跳探测发往远端，因此非定向模式必须由协议包提供探测（ChannelComponents.HealthProbe）。
-        if (config.Heartbeat.Enabled && components?.HealthProbe == null && !hasRemoteHost)
+        // 代码级探测（HealthProbe 或 HealthProbeFactory）替代内置探测，此时下面两条要求都不适用。
+        bool suppliedProbe = components?.HealthProbe != null || components?.HealthProbeFactory != null;
+
+        // 内置心跳探测发往远端，因此非定向模式必须由协议包提供探测（HealthProbe 或 HealthProbeFactory）。
+        if (config.Heartbeat.Enabled && !suppliedProbe && !hasRemoteHost)
             throw new ArgumentException("The built-in heartbeat probe is sent to the remote endpoint, so it requires a directed channel (RemoteHost); "
-                                        + "supply ChannelComponents.HealthProbe for an undirected channel.");
+                                        + "supply ChannelComponents.HealthProbe or ChannelComponents.HealthProbeFactory for an undirected channel.");
 
         // UDP 发送几乎总是成功：内置探测只判断发送，无法发现对端沉默，因此必须指定期望的应答（设计 5.4、D14）。
-        if (config.Heartbeat.Enabled && components?.HealthProbe == null && string.IsNullOrEmpty(config.Heartbeat.ExpectedReply))
+        if (config.Heartbeat.Enabled && !suppliedProbe && string.IsNullOrEmpty(config.Heartbeat.ExpectedReply))
             throw new ArgumentException("The built-in heartbeat of a UDP channel must set Heartbeat.ExpectedReply: a UDP send almost always succeeds, "
-                                        + "so the probe could not detect a silent peer. Set ExpectedReply or supply ChannelComponents.HealthProbe.");
+                                        + "so the probe could not detect a silent peer. Set ExpectedReply or supply ChannelComponents.HealthProbe or ChannelComponents.HealthProbeFactory.");
 
         return new UdpChannelSettings
         {

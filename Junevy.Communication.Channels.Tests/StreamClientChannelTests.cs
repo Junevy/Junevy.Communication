@@ -200,7 +200,7 @@ public sealed class StreamClientChannelTests
         };
 
         ArgumentException ex = Assert.Throws<ArgumentException>(() => new DuplexClientChannel(settings));
-        Assert.Contains("Heartbeat.Payload is required when no IHealthProbe is supplied.", ex.Message);
+        Assert.Contains("Heartbeat.Payload is required when neither IHealthProbe nor HealthProbeFactory is supplied.", ex.Message);
     }
 
     [Fact(Timeout = 20000)]

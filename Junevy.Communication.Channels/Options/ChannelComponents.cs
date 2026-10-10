@@ -20,8 +20,18 @@ public class ChannelComponents
     /// <summary>握手钩子：连通后、进入 Connected 之前执行，每次重连都会重新执行。</summary>
     public IConnectionInitializer? Initializer { get; set; }
 
-    /// <summary>心跳探测；非 null 时替代内置的心跳包探测。</summary>
+    /// <summary>
+    /// 心跳探测；非 null 时替代内置的心跳包探测。与 <see cref="HealthProbeFactory"/> 互斥：同时设置时构造即抛出 <see cref="ArgumentException"/>。
+    /// </summary>
     public IHealthProbe? HealthProbe { get; set; }
+
+    /// <summary>
+    /// 心跳探测工厂，适合需要引用通道本身的探测（例如经 <c>RequestAsync</c> 发送协议报文的探测）。与 <see cref="HealthProbe"/> 互斥。
+    /// 客户端通道（TCP、UDP、串口）：仅在启用心跳时，于第一次成功打开、启动心跳之前以通道自身（公开实例）调用一次；
+    /// 结果在通道生命周期内复用，之后的重连不再调用。工厂抛出异常或返回 null 使本次打开失败（<c>Unspecified</c>），由重连策略处理。
+    /// TCP 服务端：启用心跳时，每个会话在启动心跳之前调用一次，参数即该会话（可转换为 <c>ITcpSession</c>）；抛出异常或返回 null 时该会话以 <c>Error</c> 关闭。
+    /// </summary>
+    public Func<IByteChannel, IHealthProbe>? HealthProbeFactory { get; set; }
 
     /// <summary>
     /// 重连退避策略；非 null 时覆盖由 <see cref="ReconnectOptions"/> 推导的策略（仍受 Reconnect.Enabled 控制）。

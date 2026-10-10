@@ -22,6 +22,19 @@ internal static class LifecycleSupport
     }
 
     /// <summary>
+    /// 校验心跳探测的来源互斥（第 0 节、设计 5.6）：<see cref="ChannelComponents.HealthProbe"/> 与 <see cref="ChannelComponents.HealthProbeFactory"/> 只能设置其一。
+    /// 与心跳是否启用无关，同时设置即为配置错误。
+    /// </summary>
+    /// <param name="components">代码级覆盖；可为 null。</param>
+    /// <exception cref="ArgumentException">两者同时设置。</exception>
+    public static void RequireSingleHealthProbe(ChannelComponents? components)
+    {
+        if (components?.HealthProbe != null && components.HealthProbeFactory != null)
+            throw new ArgumentException("ChannelComponents.HealthProbe and ChannelComponents.HealthProbeFactory are mutually exclusive; set only one of them.",
+                                        nameof(components));
+    }
+
+    /// <summary>
     /// 逐个调用事件的订阅者：单个订阅者抛出的异常只记录 Error 日志，其余订阅者照常收到事件（计划 9.2 的"每个订阅者单独 try/catch"）。
     /// </summary>
     /// <typeparam name="TArgs">事件参数类型。</typeparam>

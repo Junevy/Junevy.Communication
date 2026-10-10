@@ -53,6 +53,7 @@ public sealed class TcpClientChannelCreator : IChannelCreator
             KeyExtractor = components.KeyExtractor,
             Initializer = components.Initializer,
             HealthProbe = components.HealthProbe,
+            HealthProbeFactory = components.HealthProbeFactory,
             ReconnectPolicy = components.ReconnectPolicy,
         };
     }

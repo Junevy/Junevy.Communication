@@ -309,7 +309,7 @@ public sealed class TcpServerSessionTests
     }
 
     [Fact(Timeout = 30000)]
-    public async Task SessionHealthProbeFactory_CalledPerSessionWithThatSession()
+    public async Task HealthProbeFactory_CalledPerSessionWithThatSession()
     {
         int port = FreePort();
         var config = CreateServerConfig(port);
@@ -317,8 +317,10 @@ public sealed class TcpServerSessionTests
         var created = new List<ITcpSession>();
         var components = new TcpChannelComponents
         {
-            SessionHealthProbeFactory = session =>
+            HealthProbeFactory = channel =>
             {
+                // 服务端的工厂参数就是该会话（ITcpSession）。
+                ITcpSession session = Assert.IsAssignableFrom<ITcpSession>(channel);
                 lock (created)
                     created.Add(session);
 
@@ -355,7 +357,7 @@ public sealed class TcpServerSessionTests
     }
 
     [Fact(Timeout = 30000)]
-    public async Task SessionHealthProbeFactory_ProbeFails_ClosesThatSessionOnly()
+    public async Task HealthProbeFactory_ProbeFails_ClosesThatSessionOnly()
     {
         int port = FreePort();
         var config = CreateServerConfig(port);
@@ -364,12 +366,12 @@ public sealed class TcpServerSessionTests
         int calls = 0;
         var components = new TcpChannelComponents
         {
-            SessionHealthProbeFactory = session =>
+            HealthProbeFactory = channel =>
             {
                 // 只有第一个调用工厂的会话得到失败的探测，其余会话的探测健康。
                 if (Interlocked.Increment(ref calls) == 1)
                 {
-                    firstSession.TrySetResult(session);
+                    firstSession.TrySetResult(Assert.IsAssignableFrom<ITcpSession>(channel));
                     return new DelegateProbe(_ => Task.FromResult(CommResult.Fail("The probe reports the session as unhealthy.", CommErrorKind.ProtocolViolation)));
                 }
 

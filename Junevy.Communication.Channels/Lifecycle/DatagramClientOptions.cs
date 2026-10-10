@@ -28,6 +28,7 @@ internal sealed class DatagramClientOptions
             throw new ArgumentException("Heartbeat must not be null.", nameof(settings));
         if (settings.Reconnect == null)
             throw new ArgumentException("Reconnect must not be null.", nameof(settings));
+        LifecycleSupport.RequireSingleHealthProbe(components);
 
         HandshakeTimeout = NonNegative(settings.HandshakeTimeout, nameof(DatagramClientSettings.HandshakeTimeout));
         SendTimeout = NonNegative(settings.SendTimeout, nameof(DatagramClientSettings.SendTimeout));
@@ -59,9 +60,19 @@ internal sealed class DatagramClientOptions
         Initializer = components?.Initializer;
 
         Heartbeat = CopyHeartbeat(settings.Heartbeat);
-        HealthProbe = Heartbeat.Enabled
-            ? components?.HealthProbe ?? CreatePayloadProbe(Heartbeat, probeChannel)
-            : null;
+        if (Heartbeat.Enabled)
+        {
+            // 探测的来源：代码级探测、代码级工厂（由驱动在第一次打开时调用）或内置负载探测。前两者存在时不需要心跳负载。
+            HealthProbe = components?.HealthProbe;
+            HealthProbeFactory = components?.HealthProbeFactory;
+            if (HealthProbe == null && HealthProbeFactory == null)
+                HealthProbe = CreatePayloadProbe(Heartbeat, probeChannel);
+        }
+        else
+        {
+            HealthProbe = null;
+            HealthProbeFactory = null;
+        }
 
         ReconnectPolicy = settings.Reconnect.Enabled
             ? components?.ReconnectPolicy ?? BackoffPolicyFactory.Create(settings.Reconnect)
@@ -111,8 +122,11 @@ internal sealed class DatagramClientOptions
     /// <summary>心跳配置的副本。</summary>
     public HeartbeatOptions Heartbeat { get; }
 
-    /// <summary>心跳探测；心跳未启用时为 null。</summary>
+    /// <summary>心跳探测；心跳未启用，或探测由 <see cref="HealthProbeFactory"/> 提供时为 null。</summary>
     public IHealthProbe? HealthProbe { get; }
+
+    /// <summary>代码级探测工厂；心跳未启用时为 null。由驱动在第一次成功打开、启动心跳之前调用一次（以通道自身为参数）。</summary>
+    public Func<IByteChannel, IHealthProbe>? HealthProbeFactory { get; }
 
     /// <summary>重连退避策略；重连未启用时为 null。</summary>
     public IBackoffPolicy? ReconnectPolicy { get; }
@@ -163,7 +177,7 @@ internal sealed class DatagramClientOptions
     private static IHealthProbe CreatePayloadProbe(HeartbeatOptions heartbeat, IByteChannel channel)
     {
         if (string.IsNullOrEmpty(heartbeat.Payload))
-            throw new ArgumentException("Heartbeat.Payload is required when no IHealthProbe is supplied.");
+            throw new ArgumentException("Heartbeat.Payload is required when neither IHealthProbe nor HealthProbeFactory is supplied.");
 
         byte[] payload = ParseBytes(heartbeat.Payload!, "Heartbeat.Payload");
         byte[]? expectedReply = string.IsNullOrEmpty(heartbeat.ExpectedReply)

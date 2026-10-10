@@ -145,6 +145,29 @@ public sealed class SerialChannelConfigTests
         Assert.Equal("COM3", channel.Name);
     }
 
+    [Fact(Timeout = 30000)]
+    public void HealthProbeFactory_ReplacesExpectedReplyRequirement()
+    {
+        // 探测工厂替代内置探测：没有 ExpectedReply 与 Payload 时构造仍然成功（工厂在打开端口之后才调用，构造不打开端口）。
+        SerialChannelConfig config = CreateValidConfig();
+        config.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 100, Timeout = 100 };
+        var components = new ChannelComponents { HealthProbeFactory = _ => new NoopProbe() };
+
+        using var channel = new SerialChannel(config, null, components);
+
+        Assert.Equal("COM3", channel.Name);
+    }
+
+    [Fact(Timeout = 30000)]
+    public void HealthProbe_AndHealthProbeFactory_Throws()
+    {
+        SerialChannelConfig config = CreateValidConfig();
+        var probe = new NoopProbe();
+        var components = new ChannelComponents { HealthProbe = probe, HealthProbeFactory = _ => probe };
+
+        Assert.Throws<ArgumentException>(() => new SerialChannel(config, null, components));
+    }
+
     private sealed class NoopProbe : IHealthProbe
     {
         public Task<CommResult> ProbeAsync(CancellationToken cancellationToken) => Task.FromResult(CommResult.Success());

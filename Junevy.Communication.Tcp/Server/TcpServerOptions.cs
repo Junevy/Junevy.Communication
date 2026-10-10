@@ -36,8 +36,9 @@ internal sealed class TcpServerOptions
             throw new ArgumentException("RestartOnFault must not be null.", nameof(config));
         if (config.Tls == null)
             throw new ArgumentException("Tls must not be null.", nameof(config));
+        // 服务端不接受 HealthProbe（同时设置 HealthProbeFactory 时也由此拒绝，因此无需单独的互斥校验）。
         if (components?.HealthProbe != null)
-            throw new ArgumentException("ChannelComponents.HealthProbe is one instance shared by every session and cannot be bound to a single session; use TcpChannelComponents.SessionHealthProbeFactory instead.", nameof(components));
+            throw new ArgumentException("ChannelComponents.HealthProbe is one instance shared by every session and cannot be bound to a single session; use ChannelComponents.HealthProbeFactory instead.", nameof(components));
 
         ListenAddress = ParseListenAddress(config.ListenAddress);
         Port = RequireRange(config.Port, 1, MaxPort, nameof(TcpServerConfig.Port));
@@ -66,10 +67,10 @@ internal sealed class TcpServerOptions
         Codec = components?.FrameCodec ?? FrameCodecFactory.Create(config.Framing);
         Initializer = components?.Initializer;
         ConnectionFilter = components?.ConnectionFilter;
-        SessionHealthProbeFactory = components?.SessionHealthProbeFactory;
+        HealthProbeFactory = components?.HealthProbeFactory;
 
         Heartbeat = CopyHeartbeat(config.Heartbeat);
-        if (Heartbeat.Enabled && SessionHealthProbeFactory == null)
+        if (Heartbeat.Enabled && HealthProbeFactory == null)
         {
             HeartbeatPayload = ParseBytes(RequirePayload(Heartbeat.Payload), "Heartbeat.Payload");
             HeartbeatExpectedReply = string.IsNullOrEmpty(Heartbeat.ExpectedReply)
@@ -166,8 +167,8 @@ internal sealed class TcpServerOptions
     /// <summary>连接过滤器；为 null 表示不过滤。</summary>
     public IConnectionFilter? ConnectionFilter { get; }
 
-    /// <summary>按会话创建心跳探测的工厂；为 null 时每个会话使用绑定该会话通道的内置负载探测。</summary>
-    public Func<ITcpSession, IHealthProbe>? SessionHealthProbeFactory { get; }
+    /// <summary>心跳探测工厂（<see cref="ChannelComponents.HealthProbeFactory"/>）：每个会话启动心跳时以该会话为参数调用一次；为 null 时使用绑定该会话通道的内置负载探测。</summary>
+    public Func<IByteChannel, IHealthProbe>? HealthProbeFactory { get; }
 
     /// <summary>心跳配置的副本。</summary>
     public HeartbeatOptions Heartbeat { get; }
@@ -260,7 +261,7 @@ internal sealed class TcpServerOptions
     private static string RequirePayload(string? payload)
     {
         if (string.IsNullOrEmpty(payload))
-            throw new ArgumentException("Heartbeat.Payload is required when no SessionHealthProbeFactory is supplied.", nameof(TcpServerConfig.Heartbeat));
+            throw new ArgumentException("Heartbeat.Payload is required when no HealthProbeFactory is supplied.", nameof(TcpServerConfig.Heartbeat));
 
         return payload!;
     }

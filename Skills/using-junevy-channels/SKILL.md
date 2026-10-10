@@ -251,9 +251,9 @@ Timeouts and late replies:
 ## Heartbeat and Idle Timeout
 
 - The built-in probe sends `Heartbeat.Payload` every `Interval`. With `ExpectedReply` set, the reply must equal the delivered frame byte for byte (no delimiter unless `KeepDelimiter`). Without it, a successful send counts as healthy. That is only meaningful for TCP.
-- `Enabled` without `ChannelComponents.HealthProbe` requires `Payload`, otherwise the constructor throws `ArgumentException`.
-- UDP and serial require `ExpectedReply`, or a `HealthProbe`. A send alone cannot show that the peer is alive. The constructor throws otherwise.
-- UDP in undirected mode requires `HealthProbe`, because the built-in probe needs a remote endpoint.
+- `Enabled` without `ChannelComponents.HealthProbe` or `HealthProbeFactory` requires `Payload`, otherwise the constructor throws `ArgumentException`.
+- UDP and serial require `ExpectedReply`, or a `HealthProbe` or `HealthProbeFactory`. A send alone cannot show that the peer is alive. The constructor throws otherwise.
+- UDP in undirected mode requires `HealthProbe` or `HealthProbeFactory`, because the built-in probe needs a remote endpoint.
 - `Interval` is measured from the start of one probe to the start of the next. `MaxFailures` consecutive failures raise `HeartbeatFailed`. A silent peer is therefore detected after about `(MaxFailures − 1) × Interval + Timeout`. With the defaults (5000 ms, 2000 ms, 3) that is about 12 s.
 - `OnlyWhenIdle` (default true) skips a probe when frames were exchanged since the last one.
 - A probe's own request timeout does not drop the TCP connection. The probe counts that as a failure instead, and the normal `ResetOnRequestTimeout` rule does not apply.
@@ -339,7 +339,7 @@ server.Dispose();
 
 ### Per-session health probe
 
-A shared `ChannelComponents.HealthProbe` is rejected by the server, because one instance cannot serve every session. Create one probe per session with `TcpChannelComponents.SessionHealthProbeFactory`. A factory that throws, or returns null, closes that session with `Error`. `Heartbeat.Payload` is not required when a factory is supplied.
+A shared `ChannelComponents.HealthProbe` is rejected by the server, because one instance cannot serve every session. Create one probe per session with `ChannelComponents.HealthProbeFactory`. The factory receives the session as `IByteChannel` (cast it to `ITcpSession`). It runs once per session, when the session starts its heartbeat. A factory that throws, or returns null, closes that session with `Error`. `Heartbeat.Payload` is not required when a factory is supplied.
 
 ```csharp
 using Junevy.Communication.Channels;
@@ -348,7 +348,7 @@ using Junevy.Communication.Tcp;
 
 var components = new TcpChannelComponents
 {
-    SessionHealthProbeFactory = session => new SessionPing(session),
+    HealthProbeFactory = channel => new SessionPing((ITcpSession)channel),
 };
 
 var server = new TcpServer(new TcpServerConfig
@@ -446,7 +446,7 @@ server.Dispose();
 - UDP has no framing: a `ChannelComponents.FrameCodec` is rejected with `ArgumentException`.
 - Broadcast needs `EnableBroadcast`. Multicast uses `MulticastGroups` (each must be a multicast address), `MulticastTimeToLive` (1) and `MulticastLoopback` (false). With loopback off, this host does not receive its own multicast.
 - Windows reports error 10054 on the next receive after a datagram hits a closed port. The channel disables that behaviour with `SIO_UDP_CONNRESET`: always on net472, and on net8.0 when running on Windows.
-- Heartbeat: directed mode uses the built-in probe, which needs `Payload` and `ExpectedReply`. Undirected mode requires `HealthProbe`.
+- Heartbeat: directed mode uses the built-in probe, which needs `Payload` and `ExpectedReply`. Undirected mode requires `HealthProbe` or `HealthProbeFactory`.
 - "Connected" means the socket is bound. Nothing is sent on connect.
 
 ```csharp
@@ -489,7 +489,7 @@ CommResult<byte[]> answer = await discovery.RequestToAsync(new IPEndPoint(IPAddr
 - **Buffers**: `ReadBufferSize` and `WriteBufferSize` must be positive and even (`SerialPort` rejects odd sizes). They set the driver's buffers only. They do not change how many bytes the channel reads at once.
 - **`ResetOnRequestTimeout` is fixed to false**. A request timeout never re-opens the port. Replies that arrive in the late-reply window are dropped.
 - **`PartialFrameAction` is `Discard`**. Residual bytes of a stalled frame are discarded after `PartialFrameTimeout` and the port stays open.
-- **Heartbeat**: `ExpectedReply` (or `HealthProbe`) is mandatory. A serial write almost always succeeds, so a send alone proves nothing.
+- **Heartbeat**: `ExpectedReply` (or `HealthProbe` or `HealthProbeFactory`) is mandatory. A serial write almost always succeeds, so a send alone proves nothing.
 - **Reconnect** closes and re-opens the port with the **configured** name. A re-plugged USB adapter that gets a new COM number is not found; the channel stays in Reconnecting.
 - **Net472**: `SerialPort.BaseStream` ignores cancellation tokens. A write that exceeds `SendTimeout` or is cancelled is handled by closing the port.
 
@@ -561,7 +561,7 @@ A protocol package declares how its frames are split, how replies are matched, w
 - `FrameCodec` (`IFrameCodecFactory`): replaces `Framing`. Not accepted by UDP.
 - `Correlation` and `KeyExtractor` (`IFrameKeyExtractor`): `Keyed` needs the extractor.
 - `Initializer` (`IConnectionInitializer`): runs on every connection, including every reconnect. Its frames go through the handshake backlog.
-- `HealthProbe` (`IHealthProbe`): replaces the built-in probe. Server channels take `SessionHealthProbeFactory` instead.
+- `HealthProbe` (`IHealthProbe`): replaces the built-in probe. A probe that needs the channel itself uses `HealthProbeFactory` instead (client: called once at the first successful open; server: once per session). The two are mutually exclusive.
 - `ReconnectPolicy` (`IBackoffPolicy`): replaces the backoff derived from `ReconnectOptions`.
 
 ```csharp
@@ -667,9 +667,9 @@ public sealed class SkeletonChannel : StreamClientChannel
 | `Statistics.FramesDropped` keeps rising (serial, UDP) | `FrameReceived` is slower than arrival; `DropOldest` | Make the handler faster; raise `ReceiveQueueCapacity` |
 | UDP `SendAsync` / `RequestAsync` → `InvalidRequest` | Undirected channel | Use `SendToAsync` / `RequestToAsync`, or set both `RemoteHost` and `RemotePort` |
 | `NotSupportedException` from `GetOrAdd` | No creator registered for the exact configuration type | `AddTcpChannels()` and friends, or `WithCreator` |
-| `ArgumentException` mentioning `ExpectedReply` | Built-in heartbeat on UDP or serial without `ExpectedReply` | Set `Heartbeat.ExpectedReply`, or supply `ChannelComponents.HealthProbe` |
+| `ArgumentException` mentioning `ExpectedReply` | Built-in heartbeat on UDP or serial without `ExpectedReply` | Set `Heartbeat.ExpectedReply`, or supply `ChannelComponents.HealthProbe` or `HealthProbeFactory` |
 | `ArgumentException` mentioning `Heartbeat.Payload` | Built-in heartbeat without `Payload` | Set `Heartbeat.Payload`, or supply a probe |
-| `ArgumentException` on a server with `HealthProbe` | The server rejects a shared probe | `TcpChannelComponents.SessionHealthProbeFactory` |
+| `ArgumentException` on a server with `HealthProbe` | The server rejects a shared probe | `ChannelComponents.HealthProbeFactory` |
 | Reconnect never happens | `Reconnect.Enabled` is false, or `DisconnectAsync` was called | Enable it; call `ConnectAsync` after an intentional disconnect |
 | `ObjectDisposedException` | The channel was used after `Dispose` | Create a new channel |
 | Cross-thread exception in WPF | A handler touched UI objects | Marshal to the `Dispatcher` |

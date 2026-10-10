@@ -152,7 +152,7 @@ Server events are raised on thread-pool threads. A session's `FrameReceived` is 
 
 ## Custom Session Health Probe
 
-For a protocol-level probe, create one probe per session with `TcpChannelComponents.SessionHealthProbeFactory`. A shared `ChannelComponents.HealthProbe` is rejected by the server, because it would be bound to a single session.
+For a protocol-level probe, create one probe per session with `ChannelComponents.HealthProbeFactory`. The factory receives the session (an `ITcpSession`, passed as `IByteChannel`) when the session starts its heartbeat. A shared `ChannelComponents.HealthProbe` is rejected by the server, because it would be bound to a single session.
 
 ```csharp
 using Junevy.Communication.Channels;
@@ -161,7 +161,7 @@ using Junevy.Communication.Tcp;
 
 var components = new TcpChannelComponents
 {
-    SessionHealthProbeFactory = session => new SessionPing(session),
+    HealthProbeFactory = channel => new SessionPing((ITcpSession)channel),
 };
 
 var server = new TcpServer(new TcpServerConfig

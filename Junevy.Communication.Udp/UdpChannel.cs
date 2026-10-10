@@ -60,7 +60,7 @@ public sealed class UdpChannel : IUdpChannel
 
         settings = UdpChannelSettings.From(config, components);
         resolved = new DatagramClientOptions(settings.Client, components, this);
-        driver = new DatagramConnectionDriver(resolved, token => UdpDatagramTransport.OpenAsync(settings, token), RaiseFrameReceived,
+        driver = new DatagramConnectionDriver(resolved, this, token => UdpDatagramTransport.OpenAsync(settings, token), RaiseFrameReceived,
                                               () => name, statistics, this.logger);
         supervisor = new ConnectionSupervisor(name, driver, resolved.ReconnectPolicy, resolved.ReconnectOnInitialFailure, statistics, this.logger);
         driver.Attach(supervisor);
