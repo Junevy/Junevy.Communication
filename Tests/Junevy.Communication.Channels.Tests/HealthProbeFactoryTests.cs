@@ -1,5 +1,6 @@
 using Junevy.Communication.Channels.Framing;
 using Junevy.Communication.Core.Results;
+using Junevy.Communication.Testing;
 using static Junevy.Communication.Channels.Tests.RouterTestHelpers;
 
 namespace Junevy.Communication.Channels.Tests;

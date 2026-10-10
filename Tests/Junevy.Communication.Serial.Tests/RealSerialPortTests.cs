@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Junevy.Communication.Channels;
+using Junevy.Communication.Testing;
 using Junevy.Communication.Core.Results;
 using static Junevy.Communication.Serial.Tests.SerialTestHelpers;
 

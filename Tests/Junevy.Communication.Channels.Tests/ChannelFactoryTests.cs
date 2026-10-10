@@ -1,3 +1,4 @@
+using Junevy.Communication.Testing;
 using Microsoft.Extensions.Logging;
 
 namespace Junevy.Communication.Channels.Tests;

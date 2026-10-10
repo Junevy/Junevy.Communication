@@ -86,6 +86,14 @@ public sealed class DeviceSimulator
     public DeviceSimulatorTcpHost HostTcp() => new DeviceSimulatorTcpHost(this);
 
     /// <summary>
+    /// 以 UDP 承载本模拟设备：在回环地址的随机端口上开始接收数据报，立即返回。数据报不分帧，处理器的非 null 结果原样回复给发送方。
+    /// 构造参数中的分帧规则只用于流，UDP 宿主不使用它。
+    /// </summary>
+    /// <param name="replyDelay">可选的回复延迟钩子：按请求返回回复前等待的毫秒数；0 或负数表示立即回复。用于测试迟到应答。</param>
+    /// <returns>监听宿主；调用方负责释放。</returns>
+    public DeviceSimulatorUdpHost HostUdp(Func<byte[], int>? replyDelay = null) => new DeviceSimulatorUdpHost(handler, replyDelay);
+
+    /// <summary>
     /// 把流的内容读入管道；流结束或出错时完成写入端（错误视为流结束，由解析循环处理）。
     /// </summary>
     private static async Task FillAsync(Stream stream, PipeWriter writer, CancellationToken cancellationToken)

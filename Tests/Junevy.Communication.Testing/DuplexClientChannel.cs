@@ -1,14 +1,14 @@
+using Junevy.Communication.Channels;
 using Junevy.Communication.Core.Results;
-using Junevy.Communication.Testing;
 using Microsoft.Extensions.Logging;
 
-namespace Junevy.Communication.Channels.Tests;
+namespace Junevy.Communication.Testing;
 
 /// <summary>
 /// 测试用的字节流客户端通道：每次打开都新建一个内存双工流对（<see cref="DuplexStreamPair"/>），返回 A 端，B 端交给测试脚本。
 /// <see cref="AbortTransport"/> 中止当前连接所用的双工流，因此可以在不使用套接字的情况下测试重连与释放。
 /// </summary>
-internal sealed class DuplexClientChannel : StreamClientChannel
+public sealed class DuplexClientChannel : StreamClientChannel
 {
     private readonly object sync = new object();
     private readonly List<DuplexStreamPair> pairs = new List<DuplexStreamPair>();

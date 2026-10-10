@@ -1,4 +1,6 @@
-namespace Junevy.Communication.Serial.Tests;
+using Xunit;
+
+namespace Junevy.Communication.Testing;
 
 /// <summary>
 /// 需要真实串口对的测试。只有设置了环境变量 <c>JUNEVY_SERIAL_PAIR</c>（形如 <c>COM5,COM6</c>）时才执行；未设置时在构造期间设置 <see cref="FactAttribute.Skip"/>，测试显示为 Skipped。

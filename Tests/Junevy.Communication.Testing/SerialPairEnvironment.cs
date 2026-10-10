@@ -1,10 +1,10 @@
-namespace Junevy.Communication.Serial.Tests;
+namespace Junevy.Communication.Testing;
 
 /// <summary>
 /// 真实串口对的环境变量约定：<c>JUNEVY_SERIAL_PAIR=COM5,COM6</c>（两个端口需以 null-modem 线缆直连，或由 com0com 等虚拟串口对互连）。
 /// 未设置时真实端口测试被跳过；本机存在的 COM 端口可能连接着实际设备，因此默认测试从不打开真实端口。
 /// </summary>
-internal static class SerialPairEnvironment
+public static class SerialPairEnvironment
 {
     /// <summary>环境变量名。</summary>
     public const string VariableName = "JUNEVY_SERIAL_PAIR";
