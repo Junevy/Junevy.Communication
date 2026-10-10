@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <Import Project="..\build\Junevy.Communication.Tests.props" />
+  <Import Project="..\..\build\Junevy.Communication.Tests.props" />
 
   <ItemGroup>
-    <ProjectReference Include="..\Junevy.Communication.Udp\Junevy.Communication.Udp.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Core\Junevy.Communication.Core.csproj" />
     <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
   </ItemGroup>
 

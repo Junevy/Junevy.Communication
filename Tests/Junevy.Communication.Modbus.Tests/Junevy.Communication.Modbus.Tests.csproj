@@ -24,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Junevy.Communication.Modbus\Junevy.Communication.Modbus.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Modbus\Junevy.Communication.Modbus.csproj" />
   </ItemGroup>
 
 </Project>

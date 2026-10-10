@@ -1,16 +1,18 @@
 <Solution>
+  <Folder Name="/Tests/">
+    <Project Path="Tests/Junevy.Communication.Modbus.Tests/Junevy.Communication.Modbus.Tests.csproj" />
+    <Project Path="Tests/Junevy.Communication.Testing/Junevy.Communication.Testing.csproj" />
+    <Project Path="Tests/Junevy.Communication.Core.Tests/Junevy.Communication.Core.Tests.csproj" />
+    <Project Path="Tests/Junevy.Communication.Channels.Tests/Junevy.Communication.Channels.Tests.csproj" />
+    <Project Path="Tests/Junevy.Communication.Tcp.Tests/Junevy.Communication.Tcp.Tests.csproj" />
+    <Project Path="Tests/Junevy.Communication.Udp.Tests/Junevy.Communication.Udp.Tests.csproj" />
+    <Project Path="Tests/Junevy.Communication.Serial.Tests/Junevy.Communication.Serial.Tests.csproj" />
+  </Folder>
   <Project Path="Junevy.Communication.Modbus/Junevy.Communication.Modbus.csproj" DisplayName="Junevy.Communication.Modbus" />
   <Project Path="Junevy.Communication.Test/Junevy.Communication.Test.csproj" Id="e4b6be97-5abb-48ea-a11e-9081dd885fa5" />
-  <Project Path="Junevy.Communication.Modbus.Tests/Junevy.Communication.Modbus.Tests.csproj" />
   <Project Path="Junevy.Communication.Core/Junevy.Communication.Core.csproj" />
   <Project Path="Junevy.Communication.Channels/Junevy.Communication.Channels.csproj" />
   <Project Path="Junevy.Communication.Tcp/Junevy.Communication.Tcp.csproj" />
   <Project Path="Junevy.Communication.Udp/Junevy.Communication.Udp.csproj" />
   <Project Path="Junevy.Communication.Serial/Junevy.Communication.Serial.csproj" />
-  <Project Path="Junevy.Communication.Testing/Junevy.Communication.Testing.csproj" />
-  <Project Path="Junevy.Communication.Core.Tests/Junevy.Communication.Core.Tests.csproj" />
-  <Project Path="Junevy.Communication.Channels.Tests/Junevy.Communication.Channels.Tests.csproj" />
-  <Project Path="Junevy.Communication.Tcp.Tests/Junevy.Communication.Tcp.Tests.csproj" />
-  <Project Path="Junevy.Communication.Udp.Tests/Junevy.Communication.Udp.Tests.csproj" />
-  <Project Path="Junevy.Communication.Serial.Tests/Junevy.Communication.Serial.Tests.csproj" />
 </Solution>

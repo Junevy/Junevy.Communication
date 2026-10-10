@@ -5,10 +5,10 @@
 /.vs
 /Junevy.Communication.Modbus/obj/Debug
 /Junevy.Communication.Modbus/obj
-/Junevy.Communication.Modbus.Tests/bin/Debug/net6.0
-/Junevy.Communication.Modbus.Tests/obj/Debug/net6.0
-/Junevy.Communication.Modbus.Tests/obj/Release/net6.0
-/Junevy.Communication.Modbus.Tests/obj
+/Tests/Junevy.Communication.Modbus.Tests/bin/Debug/net6.0
+/Tests/Junevy.Communication.Modbus.Tests/obj/Debug/net6.0
+/Tests/Junevy.Communication.Modbus.Tests/obj/Release/net6.0
+/Tests/Junevy.Communication.Modbus.Tests/obj
 /Junevy.Communication.Test/obj
 
 # ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====

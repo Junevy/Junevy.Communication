@@ -138,8 +138,10 @@ Junevy.Communication.Channels/
 Junevy.Communication.Tcp/       Client/  Server/  Tls/  Options/  DependencyInjection/
 Junevy.Communication.Udp/
 Junevy.Communication.Serial/
-Junevy.Communication.Testing/   （测试套件，见第 13 节）
-Junevy.Communication.Core.Tests/  .Channels.Tests/  .Tcp.Tests/  .Udp.Tests/  .Serial.Tests/
+Tests/                          （测试项目统一放在物理目录 Tests/ 下，解决方案中归入同名解决方案文件夹，2026-10-11 起）
+  Junevy.Communication.Testing/   （测试套件，见第 13 节）
+  Junevy.Communication.Core.Tests/  .Channels.Tests/  .Tcp.Tests/  .Udp.Tests/  .Serial.Tests/
+  Junevy.Communication.Modbus.Tests/
 ```
 
 ---
