@@ -26,11 +26,13 @@ internal sealed class FrameRouter : IAsyncDisposable
     private readonly Channel<QueueItem> queue;
     private readonly SemaphoreSlim routeGate = new SemaphoreSlim(1, 1);
     private readonly CancellationTokenSource stopSource = new CancellationTokenSource();
+    private readonly object stopGate = new object();
 
     private long droppedFromQueue;
     private int started;
     private int stopped;
     private Task? dispatchTask;
+    private Task? stopTask;
 
     /// <summary>
     /// 创建帧路由。
@@ -156,14 +158,33 @@ internal sealed class FrameRouter : IAsyncDisposable
     /// 停止路由。<paramref name="drainTimeout"/> 毫秒内继续派发队列中剩余的帧：完成写端后派发循环处理完队列即退出，StopAsync 随之返回。
     /// 排空超时仍未派发完时，取消派发循环，剩余帧计入 <c>FramesDropped</c> 并记 Warning；此时不再等待可能仍被阻塞的处理器返回。
     /// <paramref name="drainTimeout"/> ≤ 0 表示不排空：立即取消派发循环，等待正在执行的 <c>raise</c> 完成后返回，队列中剩余的帧同样计入丢弃。
-    /// 停止之后 <see cref="RouteAsync"/> 抛出 <see cref="ObjectDisposedException"/>；重复调用无效果。
+    /// 停止之后 <see cref="RouteAsync"/> 抛出 <see cref="ObjectDisposedException"/>。
+    /// 只有第一次调用决定排空窗口；之后的调用（无论 <paramref name="drainTimeout"/> 为何值）都等待同一次停止完成，因此 Dispose 不会早于停止返回（D16）。
     /// </summary>
-    /// <param name="drainTimeout">排空的最长毫秒数；≤ 0 表示不排空。</param>
-    public async ValueTask StopAsync(int drainTimeout)
+    /// <param name="drainTimeout">排空的最长毫秒数；≤ 0 表示不排空。只有第一次调用的值生效。</param>
+    public ValueTask StopAsync(int drainTimeout)
     {
-        if (Interlocked.Exchange(ref stopped, 1) != 0)
-            return;
+        Task stop;
+        lock (stopGate)
+        {
+            if (stopTask == null)
+            {
+                Interlocked.Exchange(ref stopped, 1);
+                stopTask = PerformStopAsync(drainTimeout);
+            }
 
+            stop = stopTask;
+        }
+
+        return new ValueTask(stop);
+    }
+
+    /// <summary>等同于 <c>StopAsync(0)</c>，即不排空直接停止。</summary>
+    public ValueTask DisposeAsync() => StopAsync(0);
+
+    // 由 StopAsync 在 stopGate 下只调用一次；之后的调用等待这里返回的同一个任务。
+    private async Task PerformStopAsync(int drainTimeout)
+    {
         queue.Writer.TryComplete();
         Task? loop = dispatchTask;
         if (loop == null)
@@ -192,9 +213,6 @@ internal sealed class FrameRouter : IAsyncDisposable
         await loop.ConfigureAwait(false);
         DropUndispatched();
     }
-
-    /// <summary>等同于 <c>StopAsync(0)</c>，即不排空直接停止。</summary>
-    public ValueTask DisposeAsync() => StopAsync(0);
 
     /// <summary>
     /// 把一个事件派发给每个订阅者：单个订阅者抛出的异常只记 Error 日志，其余订阅者照常收到。

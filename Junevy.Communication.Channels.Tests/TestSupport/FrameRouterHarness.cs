@@ -141,6 +141,26 @@ internal sealed class LeadingByteMatcher : IResponseMatcher
 }
 
 /// <summary>
+/// 测试用接收判定器：只认领首字节等于 <see cref="Tag"/> 的帧，与请求无关（接收等待者没有请求）。
+/// </summary>
+internal sealed class TagMatcher : IResponseMatcher
+{
+    /// <summary>创建判定器。</summary>
+    /// <param name="tag">要认领的首字节。</param>
+    public TagMatcher(byte tag)
+    {
+        Tag = tag;
+    }
+
+    /// <summary>要认领的首字节。</summary>
+    public byte Tag { get; }
+
+    /// <inheritdoc />
+    public bool IsMatch(ReadOnlySpan<byte> request, ReadOnlySpan<byte> frame)
+        => frame.Length > 0 && frame[0] == Tag;
+}
+
+/// <summary>
 /// 路由测试的通用辅助方法。
 /// </summary>
 internal static class RouterTestHelpers

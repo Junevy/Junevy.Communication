@@ -1,7 +1,7 @@
 namespace Junevy.Communication.Channels;
 
 /// <summary>
-/// 判断入站帧是否为某个请求的应答（用于 <see cref="CorrelationMode.Matcher"/>）。
+/// 判断入站帧是否为某个请求的应答（用于 <see cref="CorrelationMode.Matcher"/>），或是否为某个 ReceiveAsync 等待者要接收的帧（所有模式）。
 /// </summary>
 public interface IResponseMatcher
 {

@@ -76,7 +76,7 @@ internal sealed class PendingRequestTable
     /// Sequential 模式下同一时刻只允许一个请求型等待者，违反时抛出 <see cref="InvalidOperationException"/>。
     /// </summary>
     /// <param name="payload">请求负载；为空表示接收等待者。</param>
-    /// <param name="matcher">应答判定器；为 null 时认领任意帧。</param>
+    /// <param name="matcher">应答判定器；为 null 时认领任意帧。Keyed 模式的请求忽略此项（按关联键匹配）。</param>
     /// <param name="timeout">超时毫秒数；≤ 0 表示不限时。</param>
     /// <param name="expectedRemote">UDP 非定向模式的期望来源；为 null 时不校验。</param>
     /// <param name="cancellationToken">用户取消令牌。</param>
@@ -85,8 +85,9 @@ internal sealed class PendingRequestTable
                                    EndPoint? expectedRemote, CancellationToken cancellationToken)
     {
         bool isReceive = payload.IsEmpty;
-        // Keyed 模式按关联键匹配，忽略 Matcher（RequestOptions.Matcher 的约定），对请求与接收等待者一律如此。
-        var waiter = new PendingRequest(this, payload, mode == CorrelationMode.Keyed ? null : matcher, timeout,
+        // Keyed 请求按关联键匹配，忽略 Matcher（RequestOptions.Matcher 的约定）；接收等待者没有键，在所有模式下都使用 Matcher。
+        IResponseMatcher? effectiveMatcher = mode == CorrelationMode.Keyed && !isReceive ? null : matcher;
+        var waiter = new PendingRequest(this, payload, effectiveMatcher, timeout,
                                         ResolveLateWindow(timeout), expectedRemote, isReceive);
 
         if (cancellationToken.IsCancellationRequested)

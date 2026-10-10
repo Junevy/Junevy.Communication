@@ -845,6 +845,46 @@ public sealed class FrameRouterTests
     }
 
     [Fact]
+    public async Task Stop_SecondCallWaitsForFirst()
+    {
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sink = new RecordingSink();
+
+        await using var rig = new RouterRig(CorrelationMode.Sequential, raise: BlockingRaise(entered, release, sink));
+        rig.Start();
+
+        try
+        {
+            // 第一帧使处理器阻塞；之后 3 帧在队列中等待派发。
+            await rig.Router.RouteAsync(Ascii("blocker"), null, CancellationToken.None);
+            await WithinAsync(entered.Task, 2000);
+            for (int i = 1; i <= 3; i++)
+                await rig.Router.RouteAsync(Ascii($"frame-{i}"), null, CancellationToken.None);
+
+            // 第一次停止：排空窗口 5000 ms。处理器仍阻塞，因此它正在排空。
+            Task first = rig.Router.StopAsync(5000).AsTask();
+
+            // 第二次停止：drainTimeout 为 0，但必须等待第一次完成，不能提前返回（D16）。
+            Task second = rig.Router.StopAsync(0).AsTask();
+            await Task.Delay(200);
+            Assert.False(first.IsCompleted, "The first stop must still be draining while the handler is blocked.");
+            Assert.False(second.IsCompleted, "A second stop must wait for the first stop to finish.");
+
+            // 放行处理器：排空完成，两次停止都返回；队列中的帧全部派发，没有丢弃。
+            release.TrySetResult(true);
+            await WithinAsync(first, 3000);
+            await WithinAsync(second, 3000);
+            Assert.Equal(4, sink.Count);
+            Assert.Equal(0, rig.Statistics.FramesDropped);
+        }
+        finally
+        {
+            release.TrySetResult(true);
+        }
+    }
+
+    [Fact]
     public async Task RouteAfterStop_Throws()
     {
         await using var rig = new RouterRig(CorrelationMode.Sequential);
@@ -909,6 +949,32 @@ public sealed class FrameRouterTests
         Assert.True(result.IsSuccess);
         Assert.Equal(PrefixKeyExtractor.Frame(9, "after-window"), result.Data);
         Assert.Equal(1, rig.Statistics.FramesDropped);
+    }
+
+    [Fact]
+    public async Task Keyed_ReceiveWaiter_UsesMatcher()
+    {
+        await using var rig = new RouterRig(CorrelationMode.Keyed, keys: new PrefixKeyExtractor());
+        rig.Start();
+
+        // 接收等待者没有请求也没有键，只能靠 Matcher 筛选（例如 HSMS 被动端等待 Select.req）：Keyed 模式下同样生效。
+        using PendingRequest receive = rig.Table.Register(ReadOnlyMemory<byte>.Empty, new TagMatcher(0x09), 5000, null, CancellationToken.None);
+
+        // 先到的不匹配帧：不被认领，进入事件。
+        await rig.Router.RouteAsync(Ascii("other-frame"), null, CancellationToken.None);
+        Assert.False(receive.Completion.IsCompleted, "A keyed receive waiter must not claim a frame its matcher rejects.");
+        await WaitForCountAsync(rig.Sink, 1);
+        Assert.Equal(Ascii("other-frame"), rig.Sink.Frames[0]);
+
+        // 随后到达的匹配帧：被等待者认领，不进入事件。
+        await rig.Router.RouteAsync(Tagged(0x09, "select-req"), null, CancellationToken.None);
+        CommResult<byte[]> result = await WithinAsync(receive.Completion, 2000);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(Tagged(0x09, "select-req"), result.Data);
+
+        await Task.Delay(100);
+        Assert.Equal(1, rig.Sink.Count);
+        Assert.Equal(0, rig.Statistics.FramesDropped);
     }
 
     [Fact]

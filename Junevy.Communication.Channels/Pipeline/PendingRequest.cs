@@ -54,7 +54,7 @@ internal sealed class PendingRequest : IDisposable
     /// <summary>请求负载（接收等待者为空）。</summary>
     internal ReadOnlyMemory<byte> Payload { get; }
 
-    /// <summary>应答判定器；为 null 时认领任意帧（Keyed 模式不使用）。</summary>
+    /// <summary>应答判定器；为 null 时认领任意帧。Keyed 模式的请求不使用（按关联键匹配）；接收等待者在所有模式下使用。</summary>
     internal IResponseMatcher? Matcher { get; }
 
     /// <summary>UDP 非定向模式的期望来源；为 null 时不校验。</summary>
