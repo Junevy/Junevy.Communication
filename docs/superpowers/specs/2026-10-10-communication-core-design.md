@@ -93,8 +93,8 @@ graph TB
 
 | 程序集 | 内容 | 依赖 | 阶段 |
 |---|---|---|---|
-| `Junevy.Communication.Core` | 通用工具：`CommResult` / `CommErrorKind`、退避与重试循环、`NamedRegistry<T>`、超时工具、日志工具、字节序转换 | `Microsoft.Extensions.*.Abstractions`、BCL 兼容包 | P1 |
-| `Junevy.Communication.Channels` | 字节通道族：接口、状态机、Supervisor、StreamChannel、DatagramChannel、分帧器、关联、心跳、重连、`ChannelFactory` | Core + `System.IO.Pipelines` + `System.Threading.Channels` | P1 |
+| `Junevy.Communication.Core` | 通用工具：`CommResult` / `CommErrorKind`、退避与重试循环、`NamedRegistry<T>`、超时工具、日志工具、字节序转换 | `Microsoft.Extensions.*.Abstractions`；net472 另加 `System.Memory`、`Microsoft.Bcl.AsyncInterfaces`（net8.0 已内置） | P1 |
+| `Junevy.Communication.Channels` | 字节通道族：接口、状态机、Supervisor、StreamChannel、DatagramChannel、分帧器、关联、心跳、重连、`ChannelFactory` | Core + `System.IO.Pipelines`（net472 另加 `System.Threading.Channels`） | P1 |
 | `Junevy.Communication.Tcp` | `TcpClientChannel`、`TcpServer`、`TcpSession`、可选 TLS | Channels | P1 |
 | `Junevy.Communication.Udp` | `UdpChannel`（定向 / 非定向、广播、组播） | Channels | P1 |
 | `Junevy.Communication.Serial` | `SerialChannel` | Channels + System.IO.Ports | P1 |
@@ -369,9 +369,9 @@ public sealed class HeartbeatOptions
 }
 ```
 
-UDP 发送与串口写入几乎总是成功，"发送成功即健康"检测不到对端沉默，因此 UDP 与串口启用内置心跳时必须配置 `ExpectedReply`（或提供自定义 `IHealthProbe`），否则构造时抛 `ArgumentException`。
+UDP 发送与串口写入几乎总是成功，"发送成功即健康"检测不到对端沉默，因此 UDP 与串口启用内置心跳时必须配置 `ExpectedReply`（或提供自定义 `IHealthProbe` / `HealthProbeFactory`），否则构造时抛 `ArgumentException`。
 
-内置探测的其他约束（20.1）：未提供 `IHealthProbe` 时必须有 `Heartbeat.Payload`，否则构造时抛出 `ArgumentException`；UDP 非定向模式启用内置心跳必须提供 `IHealthProbe`（内置探测发往远端）。心跳检测时间：首次探测在心跳启动后一个 `Interval` 才发出，之后按 `Interval` 起始到起始调度，对端开始沉默后第 `MaxFailures` 次失败约在 `(MaxFailures − 1) × Interval + Timeout` 之后判定（`Timeout` 大于 `Interval` 时探测间隔随之拉长，公式不再成立）；`OnlyWhenIdle` 为真时，两次判定之间有收发流量则跳过本次探测；探测因通道忙未写出任何帧时不计失败，`NotConnected` 的探测结果也不计。
+内置探测的其他约束（20.1）：未提供 `IHealthProbe` 也未提供 `HealthProbeFactory` 时必须有 `Heartbeat.Payload`，否则构造时抛出 `ArgumentException`；UDP 非定向模式启用内置心跳必须提供 `IHealthProbe` 或 `HealthProbeFactory`（内置探测发往远端）。心跳检测时间：首次探测在心跳启动后一个 `Interval` 才发出，之后按 `Interval` 起始到起始调度，对端开始沉默后第 `MaxFailures` 次失败约在 `(MaxFailures − 1) × Interval + Timeout` 之后判定（`Timeout` 大于 `Interval` 时探测间隔随之拉长，公式不再成立）；`OnlyWhenIdle` 为真时，两次判定之间有收发流量则跳过本次探测；探测因通道忙未写出任何帧时不计失败，`NotConnected` 的探测结果也不计。
 
 ### 5.5 重连
 
@@ -406,12 +406,15 @@ public class ChannelComponents
     public CorrelationMode? Correlation { get; set; }
     public IFrameKeyExtractor? KeyExtractor { get; set; }
     public IConnectionInitializer? Initializer { get; set; }
-    public IHealthProbe? HealthProbe { get; set; }
+    public IHealthProbe? HealthProbe { get; set; }                       // 与 HealthProbeFactory 互斥
+    public Func<IByteChannel, IHealthProbe>? HealthProbeFactory { get; set; }   // 见下文
     public IBackoffPolicy? ReconnectPolicy { get; set; }
 }
 ```
 
 `ChannelComponents` 是协议族接入通道层的唯一入口：协议声明"我这样分帧、这样匹配应答、连上后这样握手、这样探活"，通道照做。
+
+`HealthProbe` 与 `HealthProbeFactory` 互斥：同时设置时，任何通道或服务端的构造都抛出 `ArgumentException`（20.1）。工厂只在启用心跳时调用。客户端（TCP、UDP、串口）在第一次成功打开、启动心跳之前以通道自身为参数调用一次，结果在通道生命周期内复用（跨重连）；工厂抛出异常或返回 null 使本次打开失败（`Unspecified`），由重连策略处理。服务端在每个会话启动心跳时调用一次，参数为该会话（可转换为 `ITcpSession`）。工厂解决的问题是：探测需要引用通道，而通道在 `ChannelComponents` 构造之后才存在。
 
 握手期间（`IConnectionInitializer` 执行中，以及服务端会话的握手）未被认领的入站帧进入积压缓冲（上限 64 帧，D8）：之后注册的 `ReceiveAsync` 先扫描积压，握手结束后积压按顺序转入派发队列；握手期间不派发 `FrameReceived`。积压溢出按 ProtocolViolation 处理（20.1）。
 
@@ -564,7 +567,7 @@ public class TcpServerConfig : IChannelConfig
     public int StopTimeout { get; set; } = 3000;
     public FramingOptions Framing { get; set; } = new();
     public CorrelationMode Correlation { get; set; } = CorrelationMode.Sequential;
-    public HeartbeatOptions Heartbeat { get; set; } = new(); // 自定义探测用 TcpChannelComponents.SessionHealthProbeFactory 按会话创建
+    public HeartbeatOptions Heartbeat { get; set; } = new(); // 自定义探测用 ChannelComponents.HealthProbeFactory 按会话创建
     public ReconnectOptions RestartOnFault { get; set; } = new();   // 监听器故障后重新监听
     public TcpSocketOptions Socket { get; set; } = new();
     public TcpServerTlsOptions Tls { get; set; } = new();
@@ -574,7 +577,7 @@ public class TcpServerConfig : IChannelConfig
 
 每个会话内部就是一个 StreamChannel，与客户端共用分帧、关联、派发、发送代码。会话断开即移除；服务端的"重连"是监听器故障后的重新监听。会话 ID 用自增 `long`。
 
-会话接入顺序（20.1）：关联表与路由 → `BeginHandshake` → 启动字节通道 → 初始化器（`SessionHandshakeTimeout` 内）→ 入会话表并派发 `SessionConnected`，等待其派发完成 → `EndHandshake` 放出积压 → 启动心跳。接入检查顺序：`MaxSessions`（0 = 不限）→ `AllowedRemoteAddresses`（IP 字面量）→ `TcpChannelComponents.ConnectionFilter`；不通过的连接立即关闭并记 Warning，不触发会话事件。服务端会话的派发队列固定为 `Wait`（`TcpServerConfig` 不提供 `QueueFullMode`）。服务端不接受 `ChannelComponents.HealthProbe`（构造时抛出 `ArgumentException`），心跳探测改用 `TcpChannelComponents.SessionHealthProbeFactory` 按会话创建。
+会话接入顺序（20.1）：关联表与路由 → `BeginHandshake` → 启动字节通道 → 初始化器（`SessionHandshakeTimeout` 内）→ 入会话表并派发 `SessionConnected`，等待其派发完成 → `EndHandshake` 放出积压 → 启动心跳。接入检查顺序：`MaxSessions`（0 = 不限）→ `AllowedRemoteAddresses`（IP 字面量）→ `TcpChannelComponents.ConnectionFilter`；不通过的连接立即关闭并记 Warning，不触发会话事件。服务端会话的派发队列固定为 `Wait`（`TcpServerConfig` 不提供 `QueueFullMode`）。服务端不接受 `ChannelComponents.HealthProbe`（构造时抛出 `ArgumentException`），心跳探测改用 `ChannelComponents.HealthProbeFactory` 按会话创建（参数为该会话，每个会话启动心跳时调用一次）。
 
 ### 7.3 TLS（可选，默认关闭）
 
@@ -707,7 +710,7 @@ public class UdpChannelConfig : IChannelConfig
 
 - **定向模式**（配置了 RemoteHost，相当于点对点）与**非定向模式**（只绑定本地端口，用 `SendToAsync` / `RequestToAsync` 与任意地址通讯，即 UDP"服务端"）。非定向模式的默认应答匹配额外要求"来源地址 == 请求目标地址"。
 - 广播与组播用于设备发现。
-- 配置约束（20.1）：`RemoteHost` 与 `RemotePort` 必须同时设置或同时不设置；`MaxDatagramSize` ∈ [1, 65507]；`ChannelComponents.FrameCodec` 非法（数据报本身就是一帧）；非定向模式启用内置心跳必须提供 `HealthProbe`（内置探测发往远端）。
+- 配置约束（20.1）：`RemoteHost` 与 `RemotePort` 必须同时设置或同时不设置；`MaxDatagramSize` ∈ [1, 65507]；`ChannelComponents.FrameCodec` 非法（数据报本身就是一帧）；非定向模式启用内置心跳必须提供 `HealthProbe` 或 `HealthProbeFactory`（内置探测发往远端）。
 - 定向模式只派发来自远端的数据报，其他来源计入 `FramesDropped`；过滤在代码中完成，不调用 `Socket.Connect`（D13）。定向模式的 `RequestToAsync` 只能请求远端，发往其他地址的请求在发送前以 `InvalidRequest` 拒绝；`SendToAsync` 可单向发往其他地址。
 - 空负载：`SendAsync` 发送零长度数据报；`RequestAsync` / `RequestToAsync` 返回 `InvalidRequest`。超过 `MaxDatagramSize` 的数据报计入 `ProtocolErrors` 并丢弃。
 - `RequestRetryCount` 的每次尝试单独计时，任一尝试的应答都完成请求；全部尝试超时后以 `Timeout` 结束并登记迟到窗口。
@@ -777,7 +780,7 @@ Modbus 选择了**懒重连、不要看门狗**（工业轮询的请求天然周
 | `BroadcastAsync` 部分失败 | 返回成功发送的会话数；失败的会话按发送失败规则关闭 |
 | `StopAsync` | 停止接收新连接 → 关闭全部会话（`StopTimeout`）→ Stopped |
 | `SessionConnected` 处理器阻塞 | 推迟该会话积压帧的派发与心跳的启动，并推迟其他服务端事件的派发（20.1） |
-| 配置了 `ChannelComponents.HealthProbe` | 构造时抛出 `ArgumentException`；改用 `TcpChannelComponents.SessionHealthProbeFactory`，工厂抛出或返回 null 时该会话以 `Error` 关闭（20.1） |
+| 配置了 `ChannelComponents.HealthProbe` | 构造时抛出 `ArgumentException`；改用 `ChannelComponents.HealthProbeFactory`，工厂抛出或返回 null 时该会话以 `Error` 关闭（20.1） |
 
 ---
 
@@ -1300,6 +1303,9 @@ P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份
 | 36 | 11.3 | `StartAsync` 地址无效返回 Fail | `ListenAddress` 不是有效 IP 时构造 `TcpServer` 即抛 `ArgumentException`（D5）；`StartAsync` 只对端口占用（`ResourceExhausted`）与其他绑定错误（`ConnectionClosed`）返回失败 | Task 15 核对代码发现 |
 | 37 | 13 | 测试套件内存通道名为 `InMemoryChannelPair` | 实现为 `DuplexStreamPair`（双工流），另有 `NonCancellableStream` 模拟 net472 不响应取消的流 | 计划第 20 节 Task 4、Task 6 |
 | 38 | 21.1 | Q2 只写结论 | 补回理由：SDK 只有异步接口；新模块依赖常驻后台循环，同步版只能阻塞等待 | 第二轮重写时遗漏，Task 15 验收补回 |
+| 39 | 5.6、5.4、9、7.2 | 没有统一的探测工厂：客户端自定义探测在通道构造前拿不到通道引用（扩展性预演发现，计划第 20 节 Task 16 验收记录；预演中的变通写法是构造后 `Bind`） | 新增 `ChannelComponents.HealthProbeFactory`（`Func<IByteChannel, IHealthProbe>`）：客户端在第一次成功打开、启动心跳之前以通道自身调用一次，结果跨重连复用；工厂抛出或返回 null 使本次打开失败（`Unspecified`）；与 `HealthProbe` 互斥，同时设置构造即抛 `ArgumentException`；内置负载与 `ExpectedReply` 要求只在两者都未设置时生效 | 计划第 20 节（Task 16 扩展性预演发现；本补丁任务 A）；第 0 节 D5（构造期校验） |
+| 40 | 7.2、11.3 | 服务端心跳探测由 `TcpChannelComponents.SessionHealthProbeFactory`（`Func<ITcpSession, IHealthProbe>`）提供，与客户端的探测概念重复 | 删除该属性，服务端改用基类的 `ChannelComponents.HealthProbeFactory`（参数类型为 `IByteChannel`，传入的仍是该会话）；服务端仍拒绝 `HealthProbe`。P1 为 preview（1.0.0-preview.1），不保留过渡别名 | 计划第 20 节（本补丁任务 A，preview 期内的调整；第 0 节 D1） |
+| 41 | 3.1 | 依赖列表把 `System.Memory`、`Microsoft.Bcl.AsyncInterfaces`、`System.Threading.Channels` 列为所有目标的依赖，net8.0 下重复 | 三者改为只在 net472 引用（条件化）；`System.IO.Pipelines` 两个目标都保留（不在 `Microsoft.NETCore.App` 中）。打包结果：Core 的 net8.0 依赖组只剩两个 `Microsoft.Extensions.*.Abstractions`，Channels 的 net8.0 依赖组为 Core + `System.IO.Pipelines`，net472 组不变 | 计划第 20 节（本补丁任务 C；审阅者核对 .NET 8 共享框架） |
 
 ---
 
