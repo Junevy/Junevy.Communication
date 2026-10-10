@@ -1127,3 +1127,9 @@ git diff --stat -- Junevy.Communication.Wiki
 - UDP 上的 DTLS。
 - WPF 调试页（设计文档 E3：暂不做）。
 - `ByteTransform` / `WordOrder`（P2）、`RetryLoop`（按需）、敏感信息脱敏（P3）。
+- `NamedRegistry<T>` 继承自 `ModbusConnectionManager` 的两处既有行为（Task 2 验收记录）：`TryAdd` / `GetOrAdd` 不加锁，与 `Dispose` 并发时，清空之后插入的实例不会被释放；`RemoveAlias` 删除别名链的中间一环时，其下游别名会悬空（`TryGet` 返回 false 并记 Error）。
+
+## 20. 验收记录（执行过程中追加）
+
+- Task 2：net472 测试需要 `build/Junevy.Communication.Tests.app.config` 中的 System.Memory 绑定重定向。原因是 SDK 10 自带的 .NET Framework 测试宿主（`sdk/10.0.401/TestHostNetFramework`）使用 System.Memory 4.0.5.0，而库依赖解析为 4.5.5（程序集 4.0.1.2）。重定向只作用于测试宿主，使测试运行在用户实际得到的 4.0.1.2 上。Task 15 写入知识库《测试工程与验收方式》。
+- Task 2：`NamedRegistry.TryRemove` 改为出锁后释放实例（提交 718261d、93ff6e1）。慢释放与跨线程回调两个回归测试均已确认在旧实现上失败。
