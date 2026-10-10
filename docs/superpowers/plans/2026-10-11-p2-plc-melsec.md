@@ -566,6 +566,9 @@ public static class McProtocolProfile
 - 结束码说明表（P2-D12）。
 - `PlcAddressUnit.Byte`（P4 随 S7）、按调用覆盖数据格式（P2-D9）、公开的复合操作锁 `ExclusiveAsync`（P2-D6）。
 - P2-D16 的两项真机验证。
+- （P2 里程碑 1 记录）完整解决方案的既有构建警告（31 个，均来自既有代码，本计划不处理）：Modbus/ModbusRtuClient.cs(397) CS0168；Modbus/Factory/ModbusFactoryBuilder.cs(32) CS1574（cref "LoggerFactory"）；Junevy.Communication.Test（WPF）的 MainWindowViewModel.cs(44) 与 App.xaml.cs(15) CS8618；Modbus.Tests 的 ModbusFactoryTests.cs、ExtensionRequestTests.cs、DisposeConcurrencyTests.cs 中的 xUnit1031、CS8600 与 CS8625。
+- （P2 后处理）`PlcClientFactory` 与 P1 的 `ChannelFactory` 的外壳（创建器字典、释放检查、名称校验，约 83 行重复）：在 P2 之后的重构中统一到 Core。注册表本身已共用 `NamedRegistry`。
+- （P2 后处理）`PlcRequestBuffer` 是代码库中第三个 `IBufferWriter<byte>` 实现（另两个：Channels 的内部 `PooledBufferWriter`、Testing 的 `ByteArrayBufferWriter`）：在 P2 之后的重构中合并为 Core 的公开缓冲写入器。
 
 ---
 
@@ -574,5 +577,10 @@ public static class McProtocolProfile
 ### 20.1 各 Task 验收（审阅者填写）
 
 ### 20.2 扩展性摩擦记录（执行者从 Task 8 起填写；格式：现象 / 变通或缺口 / 建议）
+
+- **Plc 套件测试（P2 里程碑 1 复核时补记）**
+  - 现象：`ConnectionStatistics` 与 `ConnectionStateChangedEventArgs` 的构造函数是 internal，Channels 之外无法实现 `IClientChannel`（自定义通道或测试替身）而不用反射。
+  - 变通或缺口：`ScriptedClientChannel` 用反射创建统计对象（见其 `CreateStatistics` 上的注释）；无法触发 `StateChanged`，因此只测试订阅转发。
+  - 建议：评估公开构造函数（或统计记录方法）。属于 Channels 的公开 API 设计，P2 后处理。
 
 ### 20.3 最终度量（Task 14）

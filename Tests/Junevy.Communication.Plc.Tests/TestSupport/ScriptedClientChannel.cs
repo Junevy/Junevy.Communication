@@ -214,6 +214,7 @@ internal sealed class ScriptedClientChannel : IClientChannel
     private static ConnectionStatistics CreateStatistics()
     {
         // ConnectionStatistics 的构造函数是 internal，测试替身通过反射创建一个全零的统计对象。
+        // 见计划 §20.2（Plc 套件测试）：Channels 提供公开构造函数后移除此反射。
         return (ConnectionStatistics)Activator.CreateInstance(typeof(ConnectionStatistics), nonPublic: true)!;
     }
 
