@@ -1023,6 +1023,155 @@ public sealed class FrameRouterTests
         Assert.False(ranInline, "The completion continuation must not run inline on the routing thread.");
     }
 
+    [Fact]
+    public async Task StopFromHandler_Awaited_DoesNotDeadlock()
+    {
+        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handlerDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        FrameRouter? router = null;
+        Func<FrameReceivedEventArgs, Task> raise = async args =>
+        {
+            // 等测试把两帧排入队列后再停止：派发上下文中的停止视为不排空，这两帧计入 FramesDropped。
+            await gate.Task;
+            await router!.StopAsync(0);
+            handlerDone.TrySetResult(true);
+        };
+
+        var rig = new RouterRig(CorrelationMode.Sequential, raise: raise);
+        router = rig.Router;
+        rig.Start();
+
+        try
+        {
+            await rig.Router.RouteAsync(Ascii("trigger"), null, CancellationToken.None);
+            await rig.Router.RouteAsync(Ascii("queued-1"), null, CancellationToken.None);
+            await rig.Router.RouteAsync(Ascii("queued-2"), null, CancellationToken.None);
+            gate.TrySetResult(true);
+
+            // 处理器在 1 s 内返回，没有死锁。
+            await WithinAsync(handlerDone.Task, 1000);
+
+            // 之后的外部停止在 1 s 内完成。
+            await WithinAsync(rig.Router.StopAsync(0).AsTask(), 1000);
+            Assert.Equal(2, rig.Statistics.FramesDropped);
+        }
+        finally
+        {
+            gate.TrySetResult(true);
+            await Task.WhenAny(rig.Router.StopAsync(0).AsTask(), Task.Delay(1000));
+        }
+    }
+
+    [Fact]
+    public async Task StopFromHandler_SyncWait_DoesNotDeadlock()
+    {
+        var handlerDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        FrameRouter? router = null;
+        Func<FrameReceivedEventArgs, Task> raise = args =>
+        {
+            // 同步等待停止：派发上下文中的停止立即返回；否则派发循环等待此处理器，而此处理器等待派发循环。
+            StopSynchronously(router!);
+            handlerDone.TrySetResult(true);
+            return Task.CompletedTask;
+        };
+
+        var rig = new RouterRig(CorrelationMode.Sequential, raise: raise);
+        router = rig.Router;
+        rig.Start();
+
+        try
+        {
+            await rig.Router.RouteAsync(Ascii("trigger"), null, CancellationToken.None);
+
+            // 处理器在 1 s 内返回，没有死锁；之后的外部停止在 1 s 内完成。
+            await WithinAsync(handlerDone.Task, 1000);
+            await WithinAsync(rig.Router.StopAsync(0).AsTask(), 1000);
+        }
+        finally
+        {
+            await Task.WhenAny(rig.Router.StopAsync(0).AsTask(), Task.Delay(1000));
+        }
+    }
+
+    [Fact]
+    public async Task StopFromHandler_ThenExternalStop_WaitsForLoopExit()
+    {
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var returned = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        FrameRouter? router = null;
+        Func<FrameReceivedEventArgs, Task> raise = async args =>
+        {
+            await router!.StopAsync(0);
+            entered.TrySetResult(true);
+
+            // 订阅者在停止之后继续阻塞 300 ms 才返回。
+            await Task.Delay(300);
+            returned.TrySetResult(true);
+        };
+
+        var rig = new RouterRig(CorrelationMode.Sequential, raise: raise);
+        router = rig.Router;
+        rig.Start();
+
+        try
+        {
+            await rig.Router.RouteAsync(Ascii("trigger"), null, CancellationToken.None);
+            await WithinAsync(entered.Task, 2000);
+
+            // 处理器仍在阻塞时发起外部停止：它必须等派发循环结束，即处理器返回之后才完成。
+            Task external = rig.Router.StopAsync(2000).AsTask();
+            bool returnedWhenExternalCompleted = false;
+            Task observer = external.ContinueWith(
+                _ => { returnedWhenExternalCompleted = returned.Task.IsCompleted; },
+                TaskContinuationOptions.ExecuteSynchronously);
+
+            await WithinAsync(external, 3000);
+            await WithinAsync(observer, 1000);
+            Assert.True(returnedWhenExternalCompleted, "The external stop completed before the handler returned.");
+        }
+        finally
+        {
+            await Task.WhenAny(rig.Router.StopAsync(0).AsTask(), Task.Delay(1000));
+        }
+    }
+
+    [Fact]
+    public async Task Stop_ZeroDrain_WithQueuedFrames_Completes()
+    {
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sink = new RecordingSink();
+
+        var rig = new RouterRig(CorrelationMode.Sequential, raise: BlockingRaise(entered, release, sink));
+        rig.Start();
+
+        try
+        {
+            // 第一帧使处理器阻塞；之后两帧在队列中。
+            await rig.Router.RouteAsync(Ascii("blocker"), null, CancellationToken.None);
+            await WithinAsync(entered.Task, 2000);
+            await rig.Router.RouteAsync(Ascii("frame-1"), null, CancellationToken.None);
+            await rig.Router.RouteAsync(Ascii("frame-2"), null, CancellationToken.None);
+
+            // 不排空停止：先发出信号，再放行处理器。处理器返回后派发循环必须退出，停止随之完成。
+            Task stop = rig.Router.StopAsync(0).AsTask();
+            release.TrySetResult(true);
+            await WithinAsync(stop, 2000);
+
+            Assert.Equal(1, sink.Count);
+            Assert.Equal(2, rig.Statistics.FramesDropped);
+        }
+        finally
+        {
+            release.TrySetResult(true);
+            await Task.WhenAny(rig.Router.StopAsync(0).AsTask(), Task.Delay(1000));
+        }
+    }
+
+    // 同步等待停止：模拟阻塞式订阅者。放在测试方法之外，避免被 xUnit1031 视为测试方法内的阻塞调用。
+    private static void StopSynchronously(FrameRouter router)
+        => router.StopAsync(0).AsTask().GetAwaiter().GetResult();
+
     private static Func<FrameReceivedEventArgs, Task> BlockingRaise(
         TaskCompletionSource<bool> entered, TaskCompletionSource<bool> release, RecordingSink sink)
     {

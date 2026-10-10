@@ -27,6 +27,7 @@ internal sealed class FrameRouter : IAsyncDisposable
     private readonly SemaphoreSlim routeGate = new SemaphoreSlim(1, 1);
     private readonly CancellationTokenSource stopSource = new CancellationTokenSource();
     private readonly object stopGate = new object();
+    private readonly AsyncLocal<DispatchScope?> dispatchScope = new AsyncLocal<DispatchScope?>();
 
     private long droppedFromQueue;
     private int started;
@@ -159,11 +160,19 @@ internal sealed class FrameRouter : IAsyncDisposable
     /// 排空超时仍未派发完时，取消派发循环，剩余帧计入 <c>FramesDropped</c> 并记 Warning；此时不再等待可能仍被阻塞的处理器返回。
     /// <paramref name="drainTimeout"/> ≤ 0 表示不排空：立即取消派发循环，等待正在执行的 <c>raise</c> 完成后返回，队列中剩余的帧同样计入丢弃。
     /// 停止之后 <see cref="RouteAsync"/> 抛出 <see cref="ObjectDisposedException"/>。
-    /// 只有第一次调用决定排空窗口；之后的调用（无论 <paramref name="drainTimeout"/> 为何值）都等待同一次停止完成，因此 Dispose 不会早于停止返回（D16）。
+    /// 只有第一次调用决定排空窗口；之后的调用（无论 <paramref name="drainTimeout"/> 为何值）都等待同一次停止完成，因此 Dispose 不会早于派发循环结束返回（D16）。
+    /// 在派发上下文中调用（即 <c>raise</c> 尚未返回期间执行的代码，包括它等待的异步续延）时不等待：派发循环正等待该处理器返回，等待会死锁。
+    /// 此时只发出停止信号：剩余帧视为不排空并计入 <c>FramesDropped</c>，返回的任务立即完成；派发循环在处理器返回后自行退出。
     /// </summary>
-    /// <param name="drainTimeout">排空的最长毫秒数；≤ 0 表示不排空。只有第一次调用的值生效。</param>
+    /// <param name="drainTimeout">排空的最长毫秒数；≤ 0 表示不排空。只有第一次调用的值生效；派发上下文中的调用忽略此值。</param>
     public ValueTask StopAsync(int drainTimeout)
     {
+        if (IsInDispatchContext())
+        {
+            SignalStopFromDispatch();
+            return new ValueTask(Task.CompletedTask);
+        }
+
         Task stop;
         lock (stopGate)
         {
@@ -177,6 +186,23 @@ internal sealed class FrameRouter : IAsyncDisposable
         }
 
         return new ValueTask(stop);
+    }
+
+    // 派发上下文中的停止信号：完成写端、取消派发循环，并把仍在队列中的帧计为丢弃。
+    // 调用方位于派发循环正在执行的处理器之内，派发循环必须等处理器返回才能继续，因此这里不等待循环结束。
+    private void SignalStopFromDispatch()
+    {
+        Interlocked.Exchange(ref stopped, 1);
+        queue.Writer.TryComplete();
+        stopSource.Cancel();
+        DropUndispatched();
+    }
+
+    // 当前执行流是否位于本路由某次 raise 的执行期间（标记随 AsyncLocal 流入处理器派生的续延，raise 返回后失效）。
+    private bool IsInDispatchContext()
+    {
+        DispatchScope? scope = dispatchScope.Value;
+        return scope != null && scope.IsActive;
     }
 
     /// <summary>等同于 <c>StopAsync(0)</c>，即不排空直接停止。</summary>
@@ -261,6 +287,8 @@ internal sealed class FrameRouter : IAsyncDisposable
     private async Task DispatchAsync(QueueItem item)
     {
         var args = new FrameReceivedEventArgs(item.Data, item.ReceivedAt, item.Remote);
+        var scope = new DispatchScope();
+        dispatchScope.Value = scope;
         try
         {
             await raise(args).ConfigureAwait(false);
@@ -268,6 +296,10 @@ internal sealed class FrameRouter : IAsyncDisposable
         catch (Exception ex)
         {
             logger.LogError(ex, "Dispatching a received frame failed; the router continues with the next frame.");
+        }
+        finally
+        {
+            scope.Exit();
         }
     }
 
@@ -332,6 +364,16 @@ internal sealed class FrameRouter : IAsyncDisposable
             default:
                 throw new ArgumentOutOfRangeException(nameof(fullMode), fullMode, "Unknown queue full mode.");
         }
+    }
+
+    // 一次 raise 的派发上下文标记。随 AsyncLocal 流入处理器派生的续延；raise 返回后失效，之后才调用停止的续延按外部调用处理。
+    private sealed class DispatchScope
+    {
+        private int active = 1;
+
+        public bool IsActive => Volatile.Read(ref active) != 0;
+
+        public void Exit() => Volatile.Write(ref active, 0);
     }
 
     private readonly struct QueueItem
