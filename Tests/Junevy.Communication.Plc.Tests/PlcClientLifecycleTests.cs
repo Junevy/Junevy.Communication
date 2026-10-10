@@ -188,7 +188,7 @@ public sealed class PlcClientLifecycleTests
         {
         }
 
-        protected override int GetMaxReadPoints(TestAddress address, PlcAccess access)
+        protected internal override int GetMaxReadPoints(TestAddress address, PlcAccess access)
             => throw new InvalidOperationException("The test protocol failed.");
     }
 
@@ -200,6 +200,6 @@ public sealed class PlcClientLifecycleTests
         {
         }
 
-        protected override int GetMaxReadPoints(TestAddress address, PlcAccess access) => 0;
+        protected internal override int GetMaxReadPoints(TestAddress address, PlcAccess access) => 0;
     }
 }

@@ -61,36 +61,36 @@ internal class FakePlcClient : PlcClientBase<TestAddress>
     protected static char SymbolOf(TestAddress address) => address.Device.Symbol[0];
 
     /// <inheritdoc />
-    protected override bool TryParseAddress(string address, [NotNullWhen(true)] out TestAddress? parsed, [NotNullWhen(false)] out string? error)
+    protected internal override bool TryParseAddress(string address, [NotNullWhen(true)] out TestAddress? parsed, [NotNullWhen(false)] out string? error)
         => Parser.TryParse(address, out parsed, out error);
 
     /// <inheritdoc />
-    protected override int GetMaxReadPoints(TestAddress address, PlcAccess access) => access == PlcAccess.Words ? maxWords : maxBits;
+    protected internal override int GetMaxReadPoints(TestAddress address, PlcAccess access) => access == PlcAccess.Words ? maxWords : maxBits;
 
     /// <inheritdoc />
-    protected override int GetMaxWritePoints(TestAddress address, PlcAccess access) => access == PlcAccess.Words ? maxWords : maxBits;
+    protected internal override int GetMaxWritePoints(TestAddress address, PlcAccess access) => access == PlcAccess.Words ? maxWords : maxBits;
 
     /// <inheritdoc />
-    protected override void BuildReadWordsRequest(TestAddress address, int offset, int count, IBufferWriter<byte> output)
+    protected internal override void BuildReadWordsRequest(TestAddress address, int offset, int count, IBufferWriter<byte> output)
         => FakeFrame.WriteHeader(output, FakeFrame.ReadWordsOp, SymbolOf(address), address.Number + offset, count);
 
     /// <inheritdoc />
-    protected override CommResult<byte[]> ParseReadWordsResponse(int count, ReadOnlySpan<byte> frame)
+    protected internal override CommResult<byte[]> ParseReadWordsResponse(int count, ReadOnlySpan<byte> frame)
         => FakeFrame.ParseData(frame, count * FakeFrame.WordBytes);
 
     /// <inheritdoc />
-    protected override void BuildWriteWordsRequest(TestAddress address, int offset, ReadOnlySpan<byte> words, IBufferWriter<byte> output)
+    protected internal override void BuildWriteWordsRequest(TestAddress address, int offset, ReadOnlySpan<byte> words, IBufferWriter<byte> output)
     {
         FakeFrame.WriteHeader(output, FakeFrame.WriteWordsOp, SymbolOf(address), address.Number + offset, words.Length / FakeFrame.WordBytes);
         FakeFrame.WriteBytes(output, words);
     }
 
     /// <inheritdoc />
-    protected override void BuildReadBitsRequest(TestAddress address, int offset, int count, IBufferWriter<byte> output)
+    protected internal override void BuildReadBitsRequest(TestAddress address, int offset, int count, IBufferWriter<byte> output)
         => FakeFrame.WriteHeader(output, FakeFrame.ReadBitsOp, SymbolOf(address), address.Number + offset, count);
 
     /// <inheritdoc />
-    protected override CommResult<bool[]> ParseReadBitsResponse(int count, ReadOnlySpan<byte> frame)
+    protected internal override CommResult<bool[]> ParseReadBitsResponse(int count, ReadOnlySpan<byte> frame)
     {
         CommResult<byte[]> data = FakeFrame.ParseData(frame, count);
         if (!data.IsSuccess)
@@ -100,7 +100,7 @@ internal class FakePlcClient : PlcClientBase<TestAddress>
     }
 
     /// <inheritdoc />
-    protected override void BuildWriteBitsRequest(TestAddress address, int offset, ReadOnlySpan<bool> values, IBufferWriter<byte> output)
+    protected internal override void BuildWriteBitsRequest(TestAddress address, int offset, ReadOnlySpan<bool> values, IBufferWriter<byte> output)
     {
         FakeFrame.WriteHeader(output, FakeFrame.WriteBitsOp, SymbolOf(address), address.Number + offset, values.Length);
         byte[] payload = new byte[values.Length];
@@ -111,5 +111,5 @@ internal class FakePlcClient : PlcClientBase<TestAddress>
     }
 
     /// <inheritdoc />
-    protected override CommResult ParseWriteResponse(ReadOnlySpan<byte> frame) => FakeFrame.ParseAck(frame);
+    protected internal override CommResult ParseWriteResponse(ReadOnlySpan<byte> frame) => FakeFrame.ParseAck(frame);
 }

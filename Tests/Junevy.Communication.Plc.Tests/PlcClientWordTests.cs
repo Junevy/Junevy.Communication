@@ -187,7 +187,7 @@ public sealed class PlcClientWordTests
         {
         }
 
-        protected override CommResult ValidateRange(TestAddress address, PlcAccess access, int count)
+        protected internal override CommResult ValidateRange(TestAddress address, PlcAccess access, int count)
             => CommResult.Fail("Range exceeded.", CommErrorKind.InvalidRequest);
     }
 }

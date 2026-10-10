@@ -8,17 +8,17 @@ namespace Junevy.Communication.Plc.Pipeline;
 /// </summary>
 internal sealed class PlcTransfer<TAddress> where TAddress : PlcAddress
 {
-    private readonly IPlcProtocol<TAddress> protocol;
+    private readonly PlcClientBase<TAddress> client;
     private readonly PlcPacketExchange exchange;
 
     /// <summary>
     /// 初始化设备级传输。
     /// </summary>
-    /// <param name="protocol">协议钩子。</param>
+    /// <param name="client">协议客户端（协议钩子的所有者）。</param>
     /// <param name="exchange">包交换。</param>
-    public PlcTransfer(IPlcProtocol<TAddress> protocol, PlcPacketExchange exchange)
+    public PlcTransfer(PlcClientBase<TAddress> client, PlcPacketExchange exchange)
     {
-        this.protocol = protocol;
+        this.client = client;
         this.exchange = exchange;
     }
 
@@ -32,12 +32,12 @@ internal sealed class PlcTransfer<TAddress> where TAddress : PlcAddress
     /// <returns>规范化布局的字节（每字 2 字节）。</returns>
     public async Task<CommResult<byte[]>> ReadWordsAsync(string operation, TAddress target, int count, CancellationToken cancellationToken)
     {
-        int maxPoints = PlcLayout.RequirePositive(protocol.GetMaxReadPoints(target, PlcAccess.Words), "GetMaxReadPoints");
+        int maxPoints = PlcLayout.RequirePositive(client.GetMaxReadPoints(target, PlcAccess.Words), "GetMaxReadPoints");
         byte[] words = new byte[count * PlcLayout.WordBytes];
         CommResult result = await exchange.RunPacketsAsync(operation, target.Text, count, maxPoints,
             (offset, chunk, token) => exchange.ExchangeAsync(
-                request => protocol.BuildReadWordsRequest(target, offset, chunk, request),
-                frame => CollectWords(protocol.ParseReadWordsResponse(chunk, frame), words, offset, chunk),
+                request => client.BuildReadWordsRequest(target, offset, chunk, request),
+                frame => CollectWords(client.ParseReadWordsResponse(chunk, frame), words, offset, chunk),
                 token),
             cancellationToken).ConfigureAwait(false);
 
@@ -54,11 +54,11 @@ internal sealed class PlcTransfer<TAddress> where TAddress : PlcAddress
     /// <returns>写入结果。</returns>
     public Task<CommResult> WriteWordsAsync(string operation, TAddress target, ReadOnlyMemory<byte> words, CancellationToken cancellationToken)
     {
-        int maxPoints = PlcLayout.RequirePositive(protocol.GetMaxWritePoints(target, PlcAccess.Words), "GetMaxWritePoints");
+        int maxPoints = PlcLayout.RequirePositive(client.GetMaxWritePoints(target, PlcAccess.Words), "GetMaxWritePoints");
         return exchange.RunPacketsAsync(operation, target.Text, words.Length / PlcLayout.WordBytes, maxPoints,
             (offset, chunk, token) => exchange.ExchangeAsync(
-                request => protocol.BuildWriteWordsRequest(target, offset, words.Slice(offset * PlcLayout.WordBytes, chunk * PlcLayout.WordBytes), request),
-                frame => protocol.ParseWriteResponse(frame),
+                request => client.BuildWriteWordsRequest(target, offset, words.Span.Slice(offset * PlcLayout.WordBytes, chunk * PlcLayout.WordBytes), request),
+                frame => client.ParseWriteResponse(frame),
                 token),
             cancellationToken);
     }
@@ -73,12 +73,12 @@ internal sealed class PlcTransfer<TAddress> where TAddress : PlcAddress
     /// <returns>每点的值。</returns>
     public async Task<CommResult<bool[]>> ReadBitsAsync(string operation, TAddress target, int count, CancellationToken cancellationToken)
     {
-        int maxPoints = PlcLayout.RequirePositive(protocol.GetMaxReadPoints(target, PlcAccess.Bits), "GetMaxReadPoints");
+        int maxPoints = PlcLayout.RequirePositive(client.GetMaxReadPoints(target, PlcAccess.Bits), "GetMaxReadPoints");
         bool[] bits = new bool[count];
         CommResult result = await exchange.RunPacketsAsync(operation, target.Text, count, maxPoints,
             (offset, chunk, token) => exchange.ExchangeAsync(
-                request => protocol.BuildReadBitsRequest(target, offset, chunk, request),
-                frame => CollectBits(protocol.ParseReadBitsResponse(chunk, frame), bits, offset, chunk),
+                request => client.BuildReadBitsRequest(target, offset, chunk, request),
+                frame => CollectBits(client.ParseReadBitsResponse(chunk, frame), bits, offset, chunk),
                 token),
             cancellationToken).ConfigureAwait(false);
 
@@ -95,11 +95,11 @@ internal sealed class PlcTransfer<TAddress> where TAddress : PlcAddress
     /// <returns>写入结果。</returns>
     public Task<CommResult> WriteBitsAsync(string operation, TAddress target, ReadOnlyMemory<bool> values, CancellationToken cancellationToken)
     {
-        int maxPoints = PlcLayout.RequirePositive(protocol.GetMaxWritePoints(target, PlcAccess.Bits), "GetMaxWritePoints");
+        int maxPoints = PlcLayout.RequirePositive(client.GetMaxWritePoints(target, PlcAccess.Bits), "GetMaxWritePoints");
         return exchange.RunPacketsAsync(operation, target.Text, values.Length, maxPoints,
             (offset, chunk, token) => exchange.ExchangeAsync(
-                request => protocol.BuildWriteBitsRequest(target, offset, values.Slice(offset, chunk), request),
-                frame => protocol.ParseWriteResponse(frame),
+                request => client.BuildWriteBitsRequest(target, offset, values.Span.Slice(offset, chunk), request),
+                frame => client.ParseWriteResponse(frame),
                 token),
             cancellationToken);
     }

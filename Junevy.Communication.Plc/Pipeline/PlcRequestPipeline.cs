@@ -20,7 +20,7 @@ internal sealed class PlcRequestPipeline<TAddress> where TAddress : PlcAddress
     private const string DisposedMessage = "The PLC client has been disposed.";
     private const string NotConnectedMessage = "The channel is not connected.";
 
-    private readonly IPlcProtocol<TAddress> protocol;
+    private readonly PlcClientBase<TAddress> client;
     private readonly IClientChannel channel;
     private readonly PlcPipelineSettings settings;
     private readonly WordOrder wordOrder;
@@ -35,20 +35,20 @@ internal sealed class PlcRequestPipeline<TAddress> where TAddress : PlcAddress
     /// <summary>
     /// 初始化流水线。
     /// </summary>
-    /// <param name="protocol">协议钩子。</param>
+    /// <param name="client">协议客户端（协议钩子的所有者）。</param>
     /// <param name="channel">底层通道（客户端拥有它，流水线只使用它的连接状态与请求）。</param>
     /// <param name="settings">校验过的选项快照。</param>
     /// <param name="dataFormat">数据格式（字序用于位访问）。</param>
     /// <param name="logger">日志记录器。</param>
-    public PlcRequestPipeline(IPlcProtocol<TAddress> protocol, IClientChannel channel, PlcPipelineSettings settings,
+    public PlcRequestPipeline(PlcClientBase<TAddress> client, IClientChannel channel, PlcPipelineSettings settings,
                               PlcDataFormat dataFormat, ILogger logger)
     {
-        this.protocol = protocol;
+        this.client = client;
         this.channel = channel;
         this.settings = settings;
         wordOrder = dataFormat.WordOrder;
         this.logger = logger;
-        transfer = new PlcTransfer<TAddress>(protocol, new PlcPacketExchange(channel, settings, logger));
+        transfer = new PlcTransfer<TAddress>(client, new PlcPacketExchange(channel, settings, logger));
     }
 
     /// <summary>
@@ -235,7 +235,7 @@ internal sealed class PlcRequestPipeline<TAddress> where TAddress : PlcAddress
 
     private bool TryResolve(string address, [NotNullWhen(true)] out TAddress? target, [NotNullWhen(false)] out CommResult? failure)
     {
-        if (protocol.TryParseAddress(address ?? string.Empty, out target, out string? error))
+        if (client.TryParseAddress(address ?? string.Empty, out target, out string? error))
         {
             failure = null;
             return true;
@@ -246,7 +246,7 @@ internal sealed class PlcRequestPipeline<TAddress> where TAddress : PlcAddress
     }
 
     // 位访问的入口检查：点数是否允许由协议的 ValidateRange 决定。
-    private CommResult? CheckBitAccess(TAddress target, int points) => Rejection(protocol.ValidateRange(target, PlcAccess.Bits, points));
+    private CommResult? CheckBitAccess(TAddress target, int points) => Rejection(client.ValidateRange(target, PlcAccess.Bits, points));
 
     // 字访问的入口检查：字数必须在范围内，再由协议的 ValidateRange 决定是否允许。
     private CommResult? CheckWordAccess(TAddress target, int words)
@@ -256,7 +256,7 @@ internal sealed class PlcRequestPipeline<TAddress> where TAddress : PlcAddress
         if (words > PlcLayout.MaxWordCount)
             return CommResult.Fail("The count is too large.", CommErrorKind.InvalidRequest);
 
-        return Rejection(protocol.ValidateRange(target, PlcAccess.Words, words));
+        return Rejection(client.ValidateRange(target, PlcAccess.Words, words));
     }
 
     private static CommResult? Rejection(CommResult range) => range.IsSuccess ? null : range;
