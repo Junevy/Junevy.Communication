@@ -27,7 +27,7 @@ namespace Junevy.Communication.Tcp;
 /// 服务端事件（<c>StateChanged</c>、<c>SessionConnected</c>、<c>SessionClosed</c>）经单个派发循环按顺序、在锁外触发；
 /// 会话的 <c>FrameReceived</c> 在路由的派发循环中触发，先触发会话级，再触发服务端级。
 /// 在事件处理器内调用停止或关闭只发出信号、不等待，因此不会死锁（计划 D16）。
-/// 配置在构造时校验并复制（D5）。启用 TLS 时服务端证书在构造时加载（找不到或没有私钥则抛出 <see cref="ArgumentException"/>），并在 <see cref="DisposeAsync"/> 中释放（组件提供的证书除外）。
+/// 配置在构造时校验（D5），运行行为只依赖构造时的快照；<see cref="Config"/> 返回的是构造时传入的对象本身。启用 TLS 时服务端证书在构造时加载（找不到或没有私钥则抛出 <see cref="ArgumentException"/>），并在 <see cref="DisposeAsync"/> 中释放（组件提供的证书除外）。
 /// </remarks>
 public sealed class TcpServer : ITcpServer
 {
@@ -62,7 +62,7 @@ public sealed class TcpServer : ITcpServer
     private int disposed;
 
     /// <summary>
-    /// 创建 TCP 服务端（尚未监听）。构造时校验并复制配置（D5）：非法值抛出 <see cref="ArgumentException"/> 族，调用方的配置对象不会被修改。
+    /// 创建 TCP 服务端（尚未监听）。构造时校验配置（D5）：非法值抛出 <see cref="ArgumentException"/> 族，调用方的配置对象不会被修改。
     /// 名称默认为 <c>ListenAddress:Port</c>。
     /// </summary>
     /// <param name="config">服务端配置。</param>

@@ -13,7 +13,7 @@ namespace Junevy.Communication.Serial;
 /// 打开端口受 <see cref="SerialChannelConfig.OpenTimeout"/> 约束（驱动可能阻塞）；读取出错后由监督器按重连策略重新打开端口。
 /// </summary>
 /// <remarks>
-/// 构造时校验并复制配置（D5）：非法值抛出 <see cref="ArgumentException"/> 族，调用方的配置对象不会被修改；运行行为只依赖构造时的快照。
+/// 构造时校验配置（D5）：非法值抛出 <see cref="ArgumentException"/> 族，调用方的配置对象不会被修改。运行行为只依赖构造时的快照；<see cref="Config"/> 返回的是构造时传入的对象本身，之后修改它不影响已创建的通道。
 /// 握手受 <see cref="SerialChannelConfig.HandshakeTimeout"/> 约束（超时关闭端口并返回 <c>Timeout</c>）；断开时在 <see cref="SerialChannelConfig.DisconnectTimeout"/> 内
 /// 排空已收到的帧。请求超时不重新打开端口（<c>ResetOnRequestTimeout</c> 为 false），迟到应答由 <c>LateReplyWindow</c> 处理。
 /// </remarks>
@@ -32,7 +32,7 @@ public sealed class SerialChannel : StreamClientChannel, ISerialChannel
     /// <summary>
     /// 创建串口通道，名称默认为 <see cref="SerialChannelConfig.PortName"/>。
     /// </summary>
-    /// <param name="config">串口配置；构造时校验并复制。</param>
+    /// <param name="config">串口配置；构造时校验，之后的修改不影响通道。</param>
     /// <param name="logger">日志记录器；为 null 时不记录日志。</param>
     /// <param name="components">代码级覆盖（分帧、关联、握手、心跳、重连）；为 null 时只使用配置。</param>
     /// <exception cref="ArgumentNullException">配置为 null。</exception>
@@ -46,7 +46,7 @@ public sealed class SerialChannel : StreamClientChannel, ISerialChannel
     /// 创建具有指定名称的串口通道（供通道工厂使用）。
     /// </summary>
     /// <param name="name">通道名称（与注册表中的名称一致）。</param>
-    /// <param name="config">串口配置；构造时校验并复制。</param>
+    /// <param name="config">串口配置；构造时校验，之后的修改不影响通道。</param>
     /// <param name="logger">日志记录器；为 null 时不记录日志。</param>
     /// <param name="components">代码级覆盖（分帧、关联、握手、心跳、重连）；为 null 时只使用配置。</param>
     /// <exception cref="ArgumentNullException">名称或配置为 null。</exception>

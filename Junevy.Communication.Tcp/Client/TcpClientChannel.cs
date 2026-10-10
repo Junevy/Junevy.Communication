@@ -16,7 +16,7 @@ namespace Junevy.Communication.Tcp;
 /// 可选 TLS（在握手时限内于 <see cref="SecureStreamAsync"/> 中完成）、优雅关闭（Shutdown Send）与强制中止（销毁套接字）。
 /// </summary>
 /// <remarks>
-/// 构造时校验并复制配置（D5）：非法值抛出 <see cref="ArgumentException"/> 族，运行行为只依赖构造时的快照。
+/// 构造时校验配置（D5）：非法值抛出 <see cref="ArgumentException"/> 族，调用方的配置对象不会被修改。运行行为只依赖构造时的快照；<see cref="Config"/> 返回的是构造时传入的对象本身，之后修改它不影响已创建的通道。
 /// 名称默认为 <c>Host:Port</c>。TLS 握手与 <c>IConnectionInitializer</c> 共享 <c>HandshakeTimeout</c>。
 /// 客户端证书由配置加载时，每次连接按需加载并在连接结束时释放；由 <see cref="TcpChannelComponents.ClientCertificate"/> 提供的证书由调用方持有。
 /// </remarks>
@@ -45,7 +45,7 @@ public sealed class TcpClientChannel : StreamClientChannel, ITcpClientChannel
     /// <summary>
     /// 创建 TCP 客户端通道，名称默认为 <c>Host:Port</c>。
     /// </summary>
-    /// <param name="config">TCP 客户端配置；构造时校验并复制。</param>
+    /// <param name="config">TCP 客户端配置；构造时校验，之后的修改不影响通道。</param>
     /// <param name="logger">日志记录器；为 null 时不记录日志。</param>
     /// <param name="components">代码级覆盖（分帧、关联、握手、心跳、重连、TLS 证书与校验回调）；为 null 时只使用配置。</param>
     /// <exception cref="ArgumentNullException">配置为 null。</exception>
@@ -59,7 +59,7 @@ public sealed class TcpClientChannel : StreamClientChannel, ITcpClientChannel
     /// 创建具有指定名称的 TCP 客户端通道。
     /// </summary>
     /// <param name="name">通道名称（与注册表中的名称一致）。</param>
-    /// <param name="config">TCP 客户端配置；构造时校验并复制。</param>
+    /// <param name="config">TCP 客户端配置；构造时校验，之后的修改不影响通道。</param>
     /// <param name="logger">日志记录器；为 null 时不记录日志。</param>
     /// <param name="components">代码级覆盖（分帧、关联、握手、心跳、重连、TLS 证书与校验回调）；为 null 时只使用配置。</param>
     /// <exception cref="ArgumentNullException">名称或配置为 null。</exception>
@@ -73,7 +73,7 @@ public sealed class TcpClientChannel : StreamClientChannel, ITcpClientChannel
         connector = new TcpConnector(config.Host, config.Port, ParseLocalAddress(config.LocalAddress), config.LocalPort,
                                      config.ConnectTimeout, config.Socket, logger ?? NullLogger<TcpClientChannel>.Instance);
 
-        // TLS 配置在构造时复制（快照语义，D5）。
+        // TLS 配置在构造时读取为字段（快照语义，D5）。
         TcpClientTlsOptions tls = config.Tls;
         ValidateTls(tls, components);
         tlsEnabled = tls.Enabled;

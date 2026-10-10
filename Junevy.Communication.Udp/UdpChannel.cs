@@ -15,7 +15,7 @@ namespace Junevy.Communication.Udp;
 /// <remarks>
 /// "已连接"表示套接字已绑定（设计文档 5.1 节）。UDP 无法感知对端是否在线，需配合心跳或空闲超时才能发现对端掉线。
 /// 定向模式（配置了 RemoteHost）下发送与请求发往远端，只派发来自远端的数据报；非定向模式使用 <see cref="SendToAsync"/> 与 <see cref="RequestToAsync"/>。
-/// 构造时校验并复制配置（D5）：非法值抛出 <see cref="ArgumentException"/> 族，调用方的配置对象不会被修改。
+/// 构造时校验配置（D5）：非法值抛出 <see cref="ArgumentException"/> 族，调用方的配置对象不会被修改。运行行为只依赖构造时的快照；<see cref="Config"/> 返回的是构造时传入的对象本身。
 /// 事件在线程池线程上触发。同步 <see cref="Dispose"/> 最长等待 <c>DisconnectTimeout + 1000</c> 毫秒（D16）。
 /// </remarks>
 public sealed class UdpChannel : IUdpChannel
@@ -33,7 +33,7 @@ public sealed class UdpChannel : IUdpChannel
     /// <summary>
     /// 创建 UDP 客户端通道，名称默认为 <c>udp://本地地址:端口</c>；定向模式追加 <c>-&gt;远端:端口</c>。
     /// </summary>
-    /// <param name="config">UDP 配置；构造时校验并复制。</param>
+    /// <param name="config">UDP 配置；构造时校验，之后的修改不影响通道。</param>
     /// <param name="logger">日志记录器；为 null 时不记录日志。</param>
     /// <param name="components">代码级覆盖（关联、握手、心跳、重连）；为 null 时只使用配置。</param>
     /// <exception cref="ArgumentNullException">配置为 null。</exception>
@@ -47,7 +47,7 @@ public sealed class UdpChannel : IUdpChannel
     /// 创建具有指定名称的 UDP 客户端通道。
     /// </summary>
     /// <param name="name">通道名称（与通道工厂中的名称一致）。</param>
-    /// <param name="config">UDP 配置；构造时校验并复制。</param>
+    /// <param name="config">UDP 配置；构造时校验，之后的修改不影响通道。</param>
     /// <param name="logger">日志记录器；为 null 时不记录日志。</param>
     /// <param name="components">代码级覆盖（关联、握手、心跳、重连）；为 null 时只使用配置。</param>
     /// <exception cref="ArgumentNullException">名称或配置为 null。</exception>
@@ -230,7 +230,7 @@ public sealed class UdpChannel : IUdpChannel
         return supervisor.DisposeAsync();
     }
 
-    // 是否为定向模式：以构造时复制的配置为准。
+    // 是否为定向模式：以构造时的快照为准。
     private bool IsDirected => settings.RemoteHost != null;
 
     private bool IsDisposed => Volatile.Read(ref disposed) != 0;
