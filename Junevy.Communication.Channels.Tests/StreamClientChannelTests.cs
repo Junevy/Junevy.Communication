@@ -382,6 +382,78 @@ public sealed class StreamClientChannelTests
         await WithinAsync(disconnect, 1000);
     }
 
+    // 心跳探测的请求超时：探测期间发出的请求超时不触发 ResetOnRequestTimeout，第 MaxFailures 次失败才以 HeartbeatFailed 断开。
+    [Fact(Timeout = 30000)]
+    public async Task HeartbeatProbeTimeout_DoesNotResetConnection_UntilMaxFailures()
+    {
+        ClientChannelSettings settings = Settings();
+        settings.ResetOnRequestTimeout = true;
+        settings.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 200, Timeout = 200, MaxFailures = 3, Payload = "PING", ExpectedReply = "PONG" };
+        await using var channel = new DuplexClientChannel(settings);   // 对端不回复心跳。
+        TaskCompletionSource<ConnectionStateChangedEventArgs> lost = ObserveLoss(channel);
+        Assert.True((await WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
+
+        await WaitUntilAsync(() => channel.Statistics.ConsecutiveHeartbeatFailures >= 2 || lost.Task.IsCompleted, 5000);
+        Assert.False(lost.Task.IsCompleted, "The connection was lost before the second heartbeat failure.");
+        Assert.Equal(ConnectionState.Connected, channel.State);
+
+        ConnectionStateChangedEventArgs lostEvent = await WithinAsync(lost.Task, 10000);
+        Assert.Equal(DisconnectReason.HeartbeatFailed, lostEvent.Reason);
+        Assert.True(channel.Statistics.ConsecutiveHeartbeatFailures >= 3);
+    }
+
+    // 自定义探测经 RequestAsync 发出的请求与内置探测一样属于探测期间，超时不重建连接。
+    [Fact(Timeout = 30000)]
+    public async Task CustomProbeTimeout_DoesNotResetConnection()
+    {
+        DuplexClientChannel? channel = null;
+        var probe = new DelegateProbe(async token =>
+        {
+            CommResult<byte[]> reply = await channel!.RequestAsync(Ascii("PING"), new RequestOptions { Timeout = 200 }, token);
+            return reply.IsSuccess ? CommResult.Success() : reply.ToResult();
+        });
+        ClientChannelSettings settings = Settings();
+        settings.ResetOnRequestTimeout = true;
+        settings.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 200, Timeout = 200, MaxFailures = 3 };
+        channel = new DuplexClientChannel(settings, new ChannelComponents { HealthProbe = probe });
+        await using var owned = channel;
+        TaskCompletionSource<ConnectionStateChangedEventArgs> lost = ObserveLoss(channel);
+        Assert.True((await WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
+
+        await WaitUntilAsync(() => channel.Statistics.ConsecutiveHeartbeatFailures >= 2 || lost.Task.IsCompleted, 5000);
+        Assert.False(lost.Task.IsCompleted, "The connection was lost before the second probe failure.");
+        Assert.Equal(ConnectionState.Connected, channel.State);
+
+        ConnectionStateChangedEventArgs lostEvent = await WithinAsync(lost.Task, 10000);
+        Assert.Equal(DisconnectReason.HeartbeatFailed, lostEvent.Reason);
+        Assert.True(probe.Calls >= 3);
+    }
+
+    // 探测上下文只属于探测自己的执行流：探测尚未返回时，用户请求的超时照常重建连接（修复不得外溢）。
+    [Fact(Timeout = 30000)]
+    public async Task UserRequestTimeout_WhileProbeIsOpen_StillResetsConnection()
+    {
+        var probe = new DelegateProbe(async token =>
+        {
+            // 探测一直未返回，直到通道释放（取消）为止。
+            await Task.Delay(Timeout.Infinite, token);
+            return CommResult.Fail("The probe was cancelled.", CommErrorKind.Cancelled);
+        });
+        ClientChannelSettings settings = Settings(requestTimeout: 300);
+        settings.ResetOnRequestTimeout = true;
+        settings.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 50, Timeout = 10000, MaxFailures = 3 };
+        await using var channel = new DuplexClientChannel(settings, new ChannelComponents { HealthProbe = probe });
+        TaskCompletionSource<ConnectionStateChangedEventArgs> lost = ObserveLoss(channel);
+        Assert.True((await WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
+        await WaitUntilAsync(() => probe.Calls >= 1, 5000);   // 探测已经开始，且远未返回（超时 10 秒）。
+
+        CommResult<byte[]> reply = await WithinAsync(channel.RequestAsync(Ascii("REQ")), 5000);
+
+        Assert.Equal(CommErrorKind.Timeout, reply.ErrorKind);
+        ConnectionStateChangedEventArgs lostEvent = await WithinAsync(lost.Task, 5000);
+        Assert.Equal(DisconnectReason.RequestTimeout, lostEvent.Reason);
+    }
+
     // ————— 测试辅助 —————
 
     private static ClientChannelSettings Settings(bool delimiter = false, int handshakeTimeout = 0, bool reconnect = false, int requestTimeout = 2000)
@@ -411,4 +483,37 @@ public sealed class StreamClientChannelTests
     // 在 FrameReceived 处理器的派发线程上同步等待断开：这正是要验证的重入场景，因此放在测试方法之外。
     private static void DisconnectOnDispatchThread(DuplexClientChannel channel)
         => channel.DisconnectAsync().GetAwaiter().GetResult();
+
+    // 记录第一次离开 Connected 的状态变化（即连接丢失的事件）。
+    private static TaskCompletionSource<ConnectionStateChangedEventArgs> ObserveLoss(DuplexClientChannel channel)
+    {
+        var lost = new TaskCompletionSource<ConnectionStateChangedEventArgs>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.StateChanged += (sender, e) =>
+        {
+            if (e.PreviousState == ConnectionState.Connected)
+                lost.TrySetResult(e);
+        };
+
+        return lost;
+    }
+
+    // 委托实现的心跳探测（测试用），并统计调用次数。
+    private sealed class DelegateProbe : IHealthProbe
+    {
+        private readonly Func<CancellationToken, Task<CommResult>> probe;
+        private int calls;
+
+        public DelegateProbe(Func<CancellationToken, Task<CommResult>> probe)
+        {
+            this.probe = probe;
+        }
+
+        public int Calls => Volatile.Read(ref calls);
+
+        public Task<CommResult> ProbeAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref calls);
+            return probe(cancellationToken);
+        }
+    }
 }

@@ -5,6 +5,7 @@ using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using Junevy.Communication.Channels.Framing;
+using Junevy.Communication.Channels.Lifecycle;
 using Junevy.Communication.Core.Diagnostics;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Core.Utils;
@@ -288,9 +289,10 @@ internal sealed class StreamChannel : IAsyncDisposable
     }
 
     // 计划 8.2 请求第 4 条：Sequential 超时或取消等待后，重建连接，或在迟到窗口期内继续持有请求锁。
+    // 心跳探测期间发出的请求不重建连接：探测失败由监视器按 MaxFailures 计数（见 HeartbeatProbeScope）。
     private async Task HoldRequestLockAfterExpiryAsync(int timeout)
     {
-        if (settings.ResetOnRequestTimeout)
+        if (settings.ResetOnRequestTimeout && !HeartbeatProbeScope.IsActive)
         {
             Fault(DisconnectReason.RequestTimeout, null);
             return;

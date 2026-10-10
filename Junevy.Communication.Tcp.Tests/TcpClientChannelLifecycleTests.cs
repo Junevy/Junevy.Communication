@@ -49,9 +49,6 @@ public sealed class TcpClientChannelLifecycleTests
     {
         using var server = SilentTcpServer.Start();
         var config = CreateConfig(server.Port);
-        // 默认的 ResetOnRequestTimeout 会在第一次探测超时时以 RequestTimeout 断开（心跳探测经由 RequestAsync）。
-        // 本测试关闭它，使断开由心跳自身的连续失败计数触发（HeartbeatFailed）。
-        config.ResetOnRequestTimeout = false;
         config.Heartbeat = new HeartbeatOptions
         {
             Enabled = true,

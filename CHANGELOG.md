@@ -19,6 +19,7 @@
 ### 修复（Fixed）
 - 2026-10-10 [Channels] 对端关闭时先处理完已收到的数据，再报告故障：填充循环读到 0 字节或出错时只记录原因（0 字节与 IOException 为 RemoteClosed，其他为 Error）并完成管道写端；解析循环先分帧并派发全部完整帧，可刷新分帧器整段交出残留数据，其余残留半帧丢弃并记 Warning、递增 ProtocolErrors，然后报告记录的原因（停止过程中不记录）。此前对端回完应答即断开时，在途请求会以 ConnectionClosed 失败，而不是拿到已收到的应答。
 - 2026-10-10 [Channels] 写出失败（超时、取消或 I/O 错误）时每次写出至多报告一次 SendFailed 并中止传输，且先报告再中止；取消写出时中止不再依赖 TimeoutScope 回调（回调可能随 scope 释放被注销，导致传输未被中止）。
+- 2026-10-10 [Channels] 修复心跳探测超时与 `ResetOnRequestTimeout` 的冲突：心跳探测（内置探测与 `IHealthProbe` 自定义探测）期间发出的请求超时或取消等待时，不再以 `RequestTimeout` 重建连接，改按迟到应答窗口处理（Sequential 模式在窗口期内继续持有请求锁）；失败由 `HeartbeatMonitor` 按 `MaxFailures` 计数，达到上限以 `HeartbeatFailed` 断开。`HeartbeatMonitor` 在每次探测期间建立内部探测上下文（`HeartbeatProbeScope`，`AsyncLocal`，探测返回后失效），只有该上下文内的请求享有豁免，用户请求的超时行为不变。修复前，TCP 默认配置下第一次心跳超时即以 `RequestTimeout` 断开，`MaxFailures` 失效。`IHealthProbe` 的文档已注明此约定。
 
 ## [Unreleased] — 分支 refactor/modbus-p3-architecture（v2.0.0）
 

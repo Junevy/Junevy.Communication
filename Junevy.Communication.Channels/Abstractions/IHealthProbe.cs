@@ -5,6 +5,7 @@ namespace Junevy.Communication.Channels;
 /// <summary>
 /// 应用层心跳探测。内置实现发送心跳包（可选等待应答）；协议可以替换为自己的探测
 /// （例如 MC 回环测试 0619、S7 读 SZL、HSMS Linktest）。
+/// 探测期间发出的请求超时不会触发 ResetOnRequestTimeout，失败按 MaxFailures 计数。
 /// </summary>
 public interface IHealthProbe
 {

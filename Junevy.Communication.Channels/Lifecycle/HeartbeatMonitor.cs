@@ -194,7 +194,7 @@ internal sealed class HeartbeatMonitor : IAsyncDisposable
     {
         using (CancellationTokenSource probeSource = CancellationTokenSource.CreateLinkedTokenSource(stopToken))
         {
-            Task<CommResult> probeTask = ProbeSafelyAsync(probeSource.Token);
+            Task<CommResult> probeTask = StartProbe(probeSource.Token);
             Task timeout = Task.Delay(probeTimeout, stopToken);
             Task finished = await Task.WhenAny(probeTask, timeout).ConfigureAwait(false);
             if (ReferenceEquals(finished, probeTask))
@@ -205,7 +205,17 @@ internal sealed class HeartbeatMonitor : IAsyncDisposable
         }
     }
 
-    private async Task<CommResult> ProbeSafelyAsync(CancellationToken probeToken)
+    // 在心跳探测上下文中启动探测（见 HeartbeatProbeScope）：上下文只在探测启动的同步部分内挂到监视循环的执行流上，
+    // 返回后恢复原有上下文；探测自身的续延已捕获该上下文，直到探测返回为止都享有豁免。
+    private Task<CommResult> StartProbe(CancellationToken probeToken)
+    {
+        using (HeartbeatProbeScope scope = HeartbeatProbeScope.Enter())
+        {
+            return ProbeSafelyAsync(probeToken, scope);
+        }
+    }
+
+    private async Task<CommResult> ProbeSafelyAsync(CancellationToken probeToken, HeartbeatProbeScope scope)
     {
         try
         {
@@ -219,6 +229,10 @@ internal sealed class HeartbeatMonitor : IAsyncDisposable
         {
             logger.LogWarning(ex, "The heartbeat probe threw an exception.");
             return CommResult.Fail("The heartbeat probe threw an exception.", CommErrorKind.Unspecified, null, ex);
+        }
+        finally
+        {
+            scope.Close();
         }
     }
 
