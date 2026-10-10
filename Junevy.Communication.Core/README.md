@@ -1,6 +1,6 @@
 # Junevy.Communication.Core
 
-Transport-independent building blocks shared by the communication libraries: result types with a machine-readable error classification, backoff policies, a timeout scope that separates timeouts from user cancellation, a hex formatter for diagnostics, and a named registry with aliases.
+Transport-independent building blocks shared by the communication libraries: result types with a machine-readable error classification, backoff policies, a timeout scope that separates timeouts from user cancellation, a hex formatter for diagnostics, a named registry with aliases, and byte order transforms for PLC word layouts.
 
 Core does not depend on `System.IO.Pipelines` or `System.Threading.Channels`. Protocol packages that do not use byte channels can reference it on its own.
 
@@ -155,6 +155,24 @@ Console.WriteLine(HexFormatter.ToHex(frame, maxBytes: 4));    // long data is tr
 ```
 
 `ToHex` is intended for log messages. The channel libraries only call it when debug logging is enabled.
+
+## Byte Order Transform
+
+`ByteTransform` converts between numbers and device bytes for 16-, 32- and 64-bit integers and for single and double precision floats. `WordOrder` selects how the 16-bit words are arranged: `ABCD` and `CDAB` are big-endian for 16-bit values, `ABCD` is big-endian and `DCBA` is little-endian for 32- and 64-bit values.
+
+```csharp
+using Junevy.Communication.Core.Buffers;
+
+byte[] device = { 0x56, 0x78, 0x12, 0x34 };
+uint value = ByteTransform.ToUInt32(device, WordOrder.CDAB);   // 0x12345678
+
+byte[] destination = new byte[4];
+ByteTransform.WriteSingle(destination, 0.75f, WordOrder.DCBA); // 00-00-40-3F
+```
+
+- Reading and writing use the same reordering, so a round trip always restores the value.
+- Only the leading bytes are used. A buffer that is too short throws `ArgumentException`; writing changes only the first bytes of the destination.
+- An undefined `WordOrder` throws `ArgumentOutOfRangeException`.
 
 ## Timeouts
 
