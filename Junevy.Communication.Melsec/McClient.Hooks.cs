@@ -57,9 +57,10 @@ public sealed partial class McClient
     protected override CommResult ValidateRange(McAddress address, PlcAccess access, int count)
     {
         // 位访问只会以位软元件调用（字软元件的位读取由 Plc 层改为读字，P2-D10）。
+        // 用 long 计算：字访问位软元件时 16 × count 可能超出 int，回绕成负数会让越界的范围通过检查。
         bool bitDevice = address.Device.Unit == PlcAddressUnit.Bit;
-        int points = access == PlcAccess.Words && bitDevice ? McLimits.BitsPerWord * count : count;
-        int last = address.Number + points - 1;
+        long points = access == PlcAccess.Words && bitDevice ? (long)McLimits.BitsPerWord * count : count;
+        long last = address.Number + points - 1;
         int maximum = exchange.MaxDeviceNumber(address.Device);
         return last > maximum
             ? CommResult.Fail(

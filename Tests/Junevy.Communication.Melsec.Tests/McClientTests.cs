@@ -147,6 +147,15 @@ public sealed class McClientTests
     }
 
     [Fact(Timeout = 20000)]
+    public async Task WordAccess_OnABitDevice_WithAHugeCount_DoesNotOverflowTheRangeCheck()
+    {
+        // 2 亿个字 × 16 点超出 int 范围；范围检查必须按 long 计算，不能回绕成负数而放行。
+        using McClient client = UnconnectedClient(McEncoding.Binary);
+
+        Assert.Equal(CommErrorKind.InvalidRequest, (await client.ReadAsync("M0", 200_000_000)).ErrorKind);
+    }
+
+    [Fact(Timeout = 20000)]
     public async Task UnknownDevice_IsInvalidRequest()
     {
         using McClient client = UnconnectedClient(McEncoding.Binary);
