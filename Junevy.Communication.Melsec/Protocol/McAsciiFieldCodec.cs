@@ -69,6 +69,14 @@ internal sealed class McAsciiFieldCodec : McFieldCodec
     public override bool TryReadUInt16(ReadOnlySpan<byte> field, out ushort value) => TryParseHex(field, out value);
 
     /// <inheritdoc />
+    public override bool TryReadUInt8(ReadOnlySpan<byte> field, out byte value)
+    {
+        bool valid = TryParseHex(field, out ushort word);
+        value = (byte)word;
+        return valid;
+    }
+
+    /// <inheritdoc />
     public override bool TryReadWords(ReadOnlySpan<byte> field, Span<byte> littleEndianWords)
     {
         for (int i = 0; i < littleEndianWords.Length; i += 2)

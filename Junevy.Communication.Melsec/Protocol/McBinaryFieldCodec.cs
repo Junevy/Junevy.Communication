@@ -80,6 +80,13 @@ internal sealed class McBinaryFieldCodec : McFieldCodec
     }
 
     /// <inheritdoc />
+    public override bool TryReadUInt8(ReadOnlySpan<byte> field, out byte value)
+    {
+        value = field[0];
+        return true;
+    }
+
+    /// <inheritdoc />
     public override bool TryReadWords(ReadOnlySpan<byte> field, Span<byte> littleEndianWords)
     {
         field.CopyTo(littleEndianWords);

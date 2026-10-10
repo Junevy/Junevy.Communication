@@ -93,9 +93,10 @@ public sealed class McFieldEncodingTests
     [Fact(Timeout = 20000)]
     public void PointLimits_MatchTheManualTables()
     {
-        // 手册 p.70：字访问 960 字；以太网位访问，二进制 7168 点，ASCII 3584 点。
+        // 手册 p.70：字访问 960 字；以太网位访问，二进制 7168 点，ASCII 3584 点；串口位访问 7904 点。
         Assert.Equal(960, McLimits.WordPoints);
         Assert.Equal(7168, McLimits.EthernetBinaryBitPoints);
         Assert.Equal(3584, McLimits.EthernetAsciiBitPoints);
+        Assert.Equal(7904, McLimits.SerialBitPoints);
     }
 }

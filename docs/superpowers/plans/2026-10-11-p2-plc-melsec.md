@@ -594,5 +594,17 @@ public static class McProtocolProfile
   - 现象：协议帧需要把整帧复制到调用方的 `IBufferWriter<byte>`，仓库没有公共的写入扩展（如 `Write(ReadOnlySpan<byte>)`）。Channels 的分帧编码器已有同样的 `GetSpan` / `Advance` 复制代码。
   - 变通或缺口：`McEthernetFrame` 内部写一份 `CopyTo`。Task 10 的 4C 帧也需要它，届时移到 Protocol 的共享位置，不写第二份。
   - 建议：Core 提供 `IBufferWriter<byte>` 的写入扩展，与第 19 节"第三个 IBufferWriter"条目一并在 P2 后处理。
+- **4C 格式 5 的分帧上限与透传编码器（Task 10）**
+  - 现象：`IFrameCodecFactory` 的自定义实现拿不到 `FramingOptions.MaxFrameLength`，格式 5 的分帧器必须自己保存帧长上限；透传编码器 `PassthroughFrameEncoder` 是 Channels 的 internal 类型，只能借用 `FrameCodecFactory.Create(new FramingOptions())` 的 Raw 模式取得。
+  - 变通或缺口：`Mc4CBinaryFrameCodecFactory` 单独接收 `maxFrameLength`（与通道配置分开，Task 11 需保持一致）；编码器借用 Raw 模式工厂。
+  - 建议：Channels 公开透传编码器，并让自定义工厂与 `FramingOptions` 共用同一个上限。属于 Channels 的通用能力，P2 后评估。
+- **分段缓冲的测试辅助（Task 10）**
+  - 现象：`Channels.Tests` 的 `SequenceFactory`（把字节切成多段 `ReadOnlySequence<byte>`）是测试项目内部类型；Melsec 的分帧器测试需要同样的分段构造，只能在 `McTestSupport` 再写一份（约 20 行）。
+  - 变通或缺口：`McTestSupport.Segments` 与私有的 `Segment` 重复了 `SequenceFactory` 的职责。
+  - 建议：把分段序列工厂移入 `Junevy.Communication.Testing`（与 Task 7 移入的 `DuplexClientChannel` 同类），P2 后统一。
+- **分帧器的逐字节扫描（Task 10）**
+  - 现象：`IFrameDecoder.TryDecode` 接收 `ReadOnlySequence<byte>`。Channels 只提供分隔符与起止标记的扫描；格式 5 需要"跳过成对的 10H 后找未转义的 DLE ETX"，仓库里没有可复用的逐字节前进式读取器，`SequenceReader<T>` 在 Channels 中也未使用。
+  - 变通或缺口：`Mc4CBinaryFrameDecoder` 把不超过 MaxFrameLength 的窗口复制为数组，再交给协议层的 `McDleFrame.Scan`；每次到达都会重新扫描已缓存的字节。
+  - 建议：Channels 提供前进式的字节读取器（或基于 `SequenceReader<T>` 的扩展），分帧器不必复制窗口。属于 Channels 的通用能力，P2 后评估。
 
 ### 20.3 最终度量（Task 14）

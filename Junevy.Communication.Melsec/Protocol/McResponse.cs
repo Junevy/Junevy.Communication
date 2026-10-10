@@ -19,6 +19,19 @@ internal sealed class McResponse
     /// <summary>规范化数据；结束码非 0 或没有数据时为空数组。</summary>
     public byte[] Data { get; }
 
+    /// <summary>解码成功：结束码与规范化数据。</summary>
+    /// <param name="endCode">结束码（0 为正常）。</param>
+    /// <param name="data">规范化数据。</param>
+    /// <returns>成功的解码结果。</returns>
+    public static CommResult<McResponse> Decoded(ushort endCode, byte[] data)
+        => CommResult<McResponse>.Success(new McResponse(endCode, data));
+
+    /// <summary>帧结构错误（ProtocolViolation）。</summary>
+    /// <param name="message">英文错误描述。</param>
+    /// <returns>失败的解码结果。</returns>
+    public static CommResult<McResponse> Violation(string message)
+        => CommResult<McResponse>.Fail(message, CommErrorKind.ProtocolViolation);
+
     /// <summary>把结束码转换为结果：0 成功；否则为 RemoteError，<see cref="CommResult.ProtocolErrorCode"/> 携带原始码（P2-D12）。</summary>
     /// <returns>检查结果。</returns>
     public CommResult CheckEndCode()

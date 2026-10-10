@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Melsec.Protocol;
@@ -95,9 +96,52 @@ internal static class McTestSupport
         Assert.Equal(CommErrorKind.ProtocolViolation, response.ErrorKind);
     }
 
+    /// <summary>用 4C 帧编码请求（格式 4 为 ASCII，格式 5 为二进制）。</summary>
+    public static byte[] Encode4C(McEncoding encoding, bool sumCheck, Mc4CAccessRoute route, byte[] body)
+    {
+        var output = new ByteArrayBufferWriter();
+        new Mc4CFrame(encoding, sumCheck).WriteRequest(output, route, body);
+        return output.ToArray();
+    }
+
+    /// <summary>解码 4C 应答帧。</summary>
+    public static CommResult<McResponse> Decode4C(McEncoding encoding, bool sumCheck, byte[] frame,
+        McDataKind kind = McDataKind.None, int count = 0)
+        => new Mc4CFrame(encoding, sumCheck).ReadResponse(frame, kind, count);
+
+    /// <summary>按顺序连接字节片段（用于拼装含控制字节与 ASCII 字符的期望帧）。</summary>
+    public static byte[] Join(params byte[][] parts) => parts.SelectMany(part => part).ToArray();
+
+    /// <summary>把若干片段组成多段的 <see cref="ReadOnlySequence{T}"/>，模拟通道分多次到达的缓冲。</summary>
+    public static ReadOnlySequence<byte> Segments(params byte[][] parts)
+    {
+        var first = new Segment(parts[0]);
+        Segment last = first;
+        for (int i = 1; i < parts.Length; i++)
+            last = last.Append(parts[i]);
+
+        return new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length);
+    }
+
     private static byte[] ReadBody(McEncoding encoding, ushort subcommand, string head, int points)
     {
         var (device, number) = Head(head);
         return McRequestBody.BatchRead(McFieldCodec.For(encoding), subcommand, device, number, points);
+    }
+
+    /// <summary>测试用的 <see cref="ReadOnlySequenceSegment{T}"/>。</summary>
+    private sealed class Segment : ReadOnlySequenceSegment<byte>
+    {
+        public Segment(byte[] bytes)
+        {
+            Memory = bytes;
+        }
+
+        public Segment Append(byte[] bytes)
+        {
+            var next = new Segment(bytes) { RunningIndex = RunningIndex + Memory.Length };
+            Next = next;
+            return next;
+        }
     }
 }

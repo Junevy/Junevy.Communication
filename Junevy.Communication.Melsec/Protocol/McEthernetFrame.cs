@@ -51,7 +51,7 @@ internal sealed class McEthernetFrame
         codec.WriteUInt16(frame, checked((ushort)(codec.UInt16Size + body.Length)));
         codec.WriteUInt16(frame, monitoringTimer);
         codec.WriteRaw(frame, body);
-        CopyTo(frame, output);
+        McFrameOutput.CopyTo(frame, output);
     }
 
     /// <summary>解码应答帧。结束码非 0 时仍返回成功，携带结束码且数据为空；由 <see cref="McResponse.CheckEndCode"/> 转换为 RemoteError。</summary>
@@ -65,15 +65,17 @@ internal sealed class McEthernetFrame
         ReadOnlySpan<byte> rest = frame;
         string? headerError = ReadHeader(ref rest, serial);
         if (headerError is not null)
-            return Violation(headerError);
+            return McResponse.Violation(headerError);
 
-        if (!TryTakeUInt16(ref rest, out ushort length) || rest.Length != length)
-            return Violation("The MC response length field does not match the frame length.");
+        if (!codec.TryTakeUInt16(ref rest, out ushort length) || rest.Length != length)
+            return McResponse.Violation("The MC response length field does not match the frame length.");
 
-        if (!TryTakeUInt16(ref rest, out ushort endCode))
-            return Violation("The MC response is too short to contain an end code.");
+        if (!codec.TryTakeUInt16(ref rest, out ushort endCode))
+            return McResponse.Violation("The MC response is too short to contain an end code.");
 
-        return endCode != 0 ? Decoded(endCode, Array.Empty<byte>()) : ReadData(rest, kind, count);
+        return endCode != 0
+            ? McResponse.Decoded(endCode, Array.Empty<byte>())
+            : McResponseData.Read(codec, rest, kind, count);
     }
 
     /// <summary>读取副头部、（4E 的）序列号与固定字段、访问路径；返回错误描述，无错误时为 null。</summary>
@@ -84,74 +86,20 @@ internal sealed class McEthernetFrame
 
         if (Is4E)
         {
-            if (!TryTakeUInt16(ref rest, out ushort responseSerial) || responseSerial != serial)
+            if (!codec.TryTakeUInt16(ref rest, out ushort responseSerial) || responseSerial != serial)
                 return "The MC response serial number does not match the request.";
 
-            if (!TryTake(ref rest, codec.UInt16Size, out _))
+            if (!McFieldCodec.TryTake(ref rest, codec.UInt16Size, out _))
                 return "The MC response is too short for the 4E fixed field.";
         }
 
-        return TryTake(ref rest, RouteSize, out _) ? null : "The MC response is too short for the access route.";
-    }
-
-    private CommResult<McResponse> ReadData(ReadOnlySpan<byte> data, McDataKind kind, int count) => kind switch
-    {
-        McDataKind.None => data.Length == 0 ? Decoded(0, Array.Empty<byte>()) : Violation("The MC write response must not contain data."),
-        McDataKind.Words => ReadWords(data, count),
-        McDataKind.Bits => ReadBits(data, count),
-        McDataKind.Loopback => ReadLoopback(data, count),
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "The MC data kind is not defined."),
-    };
-
-    private CommResult<McResponse> ReadWords(ReadOnlySpan<byte> data, int count)
-    {
-        if (data.Length != codec.WordFieldSize(count))
-            return Violation("The MC response word data length does not match the requested word count.");
-
-        var words = new byte[count * 2];
-        return codec.TryReadWords(data, words) ? Decoded(0, words) : Violation("The MC response word data is malformed.");
-    }
-
-    private CommResult<McResponse> ReadBits(ReadOnlySpan<byte> data, int count)
-    {
-        if (data.Length != codec.BitFieldSize(count))
-            return Violation("The MC response bit data length does not match the requested point count.");
-
-        var points = new byte[count];
-        return codec.TryReadBits(data, points) ? Decoded(0, points) : Violation("The MC response bit data is malformed.");
-    }
-
-    private CommResult<McResponse> ReadLoopback(ReadOnlySpan<byte> data, int count)
-    {
-        if (!TryTakeUInt16(ref data, out ushort echoedCount) || echoedCount != count || data.Length != count)
-            return Violation("The MC loopback response does not echo the request.");
-
-        return Decoded(0, data.ToArray());
+        return McFieldCodec.TryTake(ref rest, RouteSize, out _) ? null : "The MC response is too short for the access route.";
     }
 
     private bool TryTakeSubheader(ref ReadOnlySpan<byte> rest, out ushort value)
     {
         value = 0;
-        return TryTake(ref rest, codec.UInt16Size, out ReadOnlySpan<byte> field) && codec.TryReadSubheader(field, out value);
-    }
-
-    private bool TryTakeUInt16(ref ReadOnlySpan<byte> rest, out ushort value)
-    {
-        value = 0;
-        return TryTake(ref rest, codec.UInt16Size, out ReadOnlySpan<byte> field) && codec.TryReadUInt16(field, out value);
-    }
-
-    private static bool TryTake(ref ReadOnlySpan<byte> rest, int size, out ReadOnlySpan<byte> field)
-    {
-        if (rest.Length < size)
-        {
-            field = default;
-            return false;
-        }
-
-        field = rest.Slice(0, size);
-        rest = rest.Slice(size);
-        return true;
+        return McFieldCodec.TryTake(ref rest, codec.UInt16Size, out ReadOnlySpan<byte> field) && codec.TryReadSubheader(field, out value);
     }
 
     private void WriteRoute(Stream frame, McAccessRoute route)
@@ -161,17 +109,4 @@ internal sealed class McEthernetFrame
         codec.WriteUInt16(frame, route.ModuleIoNumber);
         codec.WriteUInt8(frame, route.ModuleStationNumber);
     }
-
-    private static void CopyTo(MemoryStream frame, IBufferWriter<byte> output)
-    {
-        int length = (int)frame.Length;
-        new ReadOnlySpan<byte>(frame.GetBuffer(), 0, length).CopyTo(output.GetSpan(length));
-        output.Advance(length);
-    }
-
-    private static CommResult<McResponse> Decoded(ushort endCode, byte[] data)
-        => CommResult<McResponse>.Success(new McResponse(endCode, data));
-
-    private static CommResult<McResponse> Violation(string message)
-        => CommResult<McResponse>.Fail(message, CommErrorKind.ProtocolViolation);
 }

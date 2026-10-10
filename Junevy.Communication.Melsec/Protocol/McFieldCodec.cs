@@ -60,11 +60,35 @@ internal abstract class McFieldCodec
     /// <summary>读取 2 字节值。</summary>
     public abstract bool TryReadUInt16(ReadOnlySpan<byte> field, out ushort value);
 
+    /// <summary>读取 1 字节值（二进制 1 字节；ASCII 2 个十六进制字符）。</summary>
+    public abstract bool TryReadUInt8(ReadOnlySpan<byte> field, out byte value);
+
     /// <summary>读取字数据到规范化布局（每字 2 字节小端）；字段宽度为 <see cref="WordFieldSize"/>。</summary>
     public abstract bool TryReadWords(ReadOnlySpan<byte> field, Span<byte> littleEndianWords);
 
     /// <summary>读取位数据，每点 1 个字节（0 或 1）；字段宽度为 <see cref="BitFieldSize"/>。</summary>
     public abstract bool TryReadBits(ReadOnlySpan<byte> field, Span<byte> points);
+
+    /// <summary>从 <paramref name="rest"/> 的开头切出 <paramref name="size"/> 个字节的字段；成功时 <paramref name="rest"/> 前移。</summary>
+    public static bool TryTake(ref ReadOnlySpan<byte> rest, int size, out ReadOnlySpan<byte> field)
+    {
+        if (rest.Length < size)
+        {
+            field = default;
+            return false;
+        }
+
+        field = rest.Slice(0, size);
+        rest = rest.Slice(size);
+        return true;
+    }
+
+    /// <summary>切出并读取一个 2 字节值字段（宽度见 <see cref="UInt16Size"/>）。</summary>
+    public bool TryTakeUInt16(ref ReadOnlySpan<byte> rest, out ushort value)
+    {
+        value = 0;
+        return TryTake(ref rest, UInt16Size, out ReadOnlySpan<byte> field) && TryReadUInt16(field, out value);
+    }
 
     /// <summary>写入原始字节（回环数据）。两种编码都按字符原样传输（手册 p.185）。</summary>
     public void WriteRaw(Stream output, ReadOnlySpan<byte> bytes)

@@ -11,4 +11,7 @@ internal static class McLimits
 
     /// <summary>以太网 ASCII 的位访问最大点数（E71 ASCII）。</summary>
     public const int EthernetAsciiBitPoints = 3584;
+
+    /// <summary>串口（C24）的位访问最大点数，二进制与 ASCII 相同（手册 p.70）。</summary>
+    public const int SerialBitPoints = 7904;
 }
