@@ -621,6 +621,8 @@ public class SerialChannelConfig : IChannelConfig
     public int WriteBufferSize { get; set; } = 2048;
 
     public int OpenTimeout { get; set; } = 2000;              // SerialPort.Open 可能被驱动阻塞
+    public int HandshakeTimeout { get; set; } = 5000;         // IConnectionInitializer 的时限（SECS-I、MC 串口格式等）
+    public int DisconnectTimeout { get; set; } = 1000;        // 断开时排空派发队列的时限
     public int SendTimeout { get; set; } = 2000;
     public int RequestTimeout { get; set; } = 2000;
     public int IdleTimeout { get; set; }
@@ -669,6 +671,8 @@ public class UdpChannelConfig : IChannelConfig
     public int ReceiveBufferSize { get; set; } = 65536;
     public int MaxDatagramSize { get; set; } = 65507;
 
+    public int HandshakeTimeout { get; set; } = 5000;         // IConnectionInitializer 的时限
+    public int DisconnectTimeout { get; set; } = 1000;        // 断开时排空派发队列的时限
     public int SendTimeout { get; set; } = 2000;
     public int RequestTimeout { get; set; } = 2000;
     public int RequestRetryCount { get; set; }       // 请求超时后原样重发的次数（UDP 不保证送达）
@@ -694,7 +698,7 @@ public class UdpChannelConfig : IChannelConfig
 |---|---|---|---|---|---|
 | `ConnectTimeout` | 2000 | TCP | 单次 TCP 握手（包括每次重连尝试） | 本次连接失败；后台重连按策略继续 | `Timeout` |
 | `OpenTimeout` | 2000 | 串口 | 单次打开端口（包括每次重连尝试） | 本次打开失败；后台重连按策略继续 | `Timeout` |
-| `HandshakeTimeout` | 5000 | TCP 客户端 | TLS 握手 + `IConnectionInitializer` | 关闭连接，视为连接失败 | `Timeout` |
+| `HandshakeTimeout` | 5000 | TCP 客户端、串口、UDP | TLS 握手（仅 TCP）+ `IConnectionInitializer` | 关闭连接，视为连接失败 | `Timeout` |
 | `SessionHandshakeTimeout` | 10000 | TCP 服务端 | 新会话的 TLS 握手 + 初始化 | 关闭该会话，不触发 `SessionConnected` | `Timeout` |
 | `SendTimeout` | 2000 | 全部 | 单帧完整写出 | 本次返回失败；TCP/串口断开并重连 | `Timeout` / `SendFailed` |
 | `RequestTimeout` | 2000 | 全部 | 从帧写出完成到收到匹配应答；可按调用覆盖 | 返回失败；TCP `Sequential` 默认断开重建；UDP 先按 `RequestRetryCount` 重发 | `Timeout` |
@@ -703,7 +707,7 @@ public class UdpChannelConfig : IChannelConfig
 | `IdleGap.GapTimeout` | 20 | 串口默认分帧 | 判定帧结束的静默时间 | 把已收数据作为一帧交出 | — |
 | 心跳 `Interval` / `Timeout` / `MaxFailures` | 5000 / 2000 / 3 | 全部 | 应用层探测 | 连续失败 N 次即断开并重连 | `HeartbeatFailed` |
 | `IdleTimeout` | 0 | 全部 | 连续没有入站数据 | 断开并重连 | `IdleTimeout` |
-| `DisconnectTimeout` | 1000 | TCP 客户端 | 优雅关闭 | 强制关闭 | — |
+| `DisconnectTimeout` | 1000 | TCP 客户端、串口、UDP | 优雅关闭（含排空已收到但未派发的帧） | 强制关闭 | — |
 | 重连 `Interval` / `MaxInterval` | 1000 / 30000 | 全部 | 重连间隔 | — | 耗尽时 `ReconnectExhausted` |
 | `SessionIdleTimeout` | 0 | TCP 服务端 | 会话无入站数据 | 关闭该会话 | `IdleTimeout` |
 | `StopTimeout` | 3000 | TCP 服务端 | `StopAsync` 等待会话关闭 | 强制中止 | — |
