@@ -253,7 +253,7 @@ public sealed class FrameReceivedEventArgs : EventArgs
 
 "已连接"在三种传输上的含义：TCP = 握手（及 TLS、初始化）完成；串口 = 端口已打开；UDP = socket 已绑定。串口和 UDP 本身无法感知对端是否在线，**必须配合心跳或空闲超时才能发现对端掉线**。
 
-文本协议（扫码枪、视觉、机器人）用扩展方法：`SendTextAsync(string, Encoding?)`、`RequestTextAsync(...)`。
+文本协议（扫码枪、视觉、机器人）的扩展方法 `SendTextAsync(string, Encoding?)`、`RequestTextAsync(...)` 在 P1 未实现（见 20.1 第 1 项，待确认）；文本协议目前用 `Encoding` 转换后调用 `SendAsync` / `RequestAsync`。
 
 状态机：
 
@@ -308,7 +308,7 @@ public interface IFrameCodecFactory { IFrameDecoder CreateDecoder(); IFrameEncod
 | `StartEnd` | 起始符、结束符 | STX…ETX；遇到垃圾字节自动重新同步 |
 | `IdleGap` | 静默时间 `GapTimeout`（毫秒） | 没有分隔符也没有长度字段的串口设备；**串口默认值** |
 
-所有分帧器受 `MaxFrameLength` 约束（默认 64 KiB）。
+所有分帧器受 `MaxFrameLength` 约束（默认 64 KiB）。计量口径（20.1）：`Delimiter` 按分隔符之前的内容计量（`KeepDelimiter=true` 时交付的帧最长为上限加分隔符长度）；`IdleGap` 只在缓冲超过上限时抛出；其余分帧器按线路上的整帧计量。`Delimiter` 跳过连续分隔符之间的空帧；发送时编码器默认追加 `Delimiters[0]`（`FramingOptions.AppendDelimiterOnSend`，D18）。
 
 **用远期协议验证 `LengthField`**（帧总长 = 偏移 + 字段宽度 + 长度值 + 修正值）：
 
@@ -340,6 +340,8 @@ public interface IFrameKeyExtractor
 
 - 入站帧的处理顺序：在途的 `RequestAsync` 认领 → 迟到应答判定（是则丢弃）→ `ReceiveAsync` 等待者认领 → `FrameReceived` 事件队列。应答**不经过**事件队列，慢的事件处理器不会拖慢请求（队列满且为 `Wait` 模式时，背压会让解析暂停，此时应答也会等待）。连接停止时，已进入事件队列的帧在 `DisconnectTimeout` 内继续派发完。
 - 请求超时后的迟到应答：TCP `Sequential` 默认 `ResetOnRequestTimeout = true`（超时即断开重建，与 Modbus TCP 规则 C 同理），关闭重建时与串口、UDP 一样丢弃超时后 `LateReplyWindow` 内到达的帧，并在窗口期内继续持有请求锁（不让下一个请求在窗口期内发出并误认迟到应答）；`Keyed` 保留连接，超时的键在 `LateReplyWindow` 内被记录，同键的迟到应答记 Warning 后丢弃（不当作主动上报派发，避免宿主误当成新消息）；`Matcher` 无法识别迟到应答，按未认领帧派发。
+- `Keyed` 模式下 `RequestAsync` 忽略 `RequestOptions.Matcher`（按关联键匹配），`ReceiveAsync` 在所有模式下使用 Matcher（接收等待者没有关联键）（20.1）。
+- 用户取消等待应答与超时同样处理（D10）：TCP 默认因此断开重建；用户取消正在写出的帧同样断开连接（可能已写出半帧）。
 
 ### 5.4 心跳（三层保活）
 
@@ -369,6 +371,8 @@ public sealed class HeartbeatOptions
 
 UDP 发送与串口写入几乎总是成功，"发送成功即健康"检测不到对端沉默，因此 UDP 与串口启用内置心跳时必须配置 `ExpectedReply`（或提供自定义 `IHealthProbe`），否则构造时抛 `ArgumentException`。
 
+内置探测的其他约束（20.1）：未提供 `IHealthProbe` 时必须有 `Heartbeat.Payload`，否则构造时抛出 `ArgumentException`；UDP 非定向模式启用内置心跳必须提供 `IHealthProbe`（内置探测发往远端）。心跳检测时间：探测按 `Interval` 起始到起始调度，第 `MaxFailures` 次失败约在 `(MaxFailures − 1) × Interval + Timeout` 之后判定；`OnlyWhenIdle` 为真时，两次判定之间有收发流量则跳过本次探测；探测因通道忙未写出任何帧时不计失败，`NotConnected` 的探测结果也不计。
+
 ### 5.5 重连
 
 ```csharp
@@ -383,7 +387,7 @@ public sealed class ReconnectOptions
 }
 ```
 
-退避计算使用 Core 的 `IBackoffPolicy`（带 ±20% 抖动）。"重连"在三种传输上分别是：TCP 重新握手；串口重新打开端口；UDP 重新绑定 socket。
+退避计算使用 Core 的 `IBackoffPolicy`（带 ±20% 抖动）。"重连"在三种传输上分别是：TCP 重新握手；串口重新打开端口；UDP 重新绑定 socket。`ChannelComponents.ReconnectPolicy` 可覆盖由 `ReconnectOptions` 推导的退避策略，但重连仍受 `Reconnect.Enabled` 控制（20.1）。
 
 ### 5.6 握手钩子与组件注入
 
@@ -409,13 +413,15 @@ public class ChannelComponents
 
 `ChannelComponents` 是协议族接入通道层的唯一入口：协议声明"我这样分帧、这样匹配应答、连上后这样握手、这样探活"，通道照做。
 
+握手期间（`IConnectionInitializer` 执行中，以及服务端会话的握手）未被认领的入站帧进入积压缓冲（上限 64 帧，D8）：之后注册的 `ReceiveAsync` 先扫描积压，握手结束后积压按顺序转入派发队列；握手期间不派发 `FrameReceived`。积压溢出按 ProtocolViolation 处理（20.1）。
+
 ---
 
 ## 6. Channels 内部骨架
 
 ### 6.1 ConnectionSupervisor（internal）
 
-- 驱动接口 `IConnectionDriver { OpenAsync(ct); InitializeAsync(ct); CloseAsync(reason); }`，TCP、UDP、串口各自实现。
+- 驱动接口 `IConnectionDriver { OpenAsync(ct); CloseAsync(reason, drainTimeout); }`，TCP、UDP、串口各自实现。握手（TLS 包装与 `IConnectionInitializer`）在 `OpenAsync` 内、同一个握手时限内完成，不单独暴露 `InitializeAsync`；`CloseAsync` 的排空时限即 `DisconnectTimeout`（20.1）。
 - 生命周期锁串行化 Connect、Disconnect、重连尝试；它与发送锁是两把锁，断线期间发送立即得到 `NotConnected`。
 - `ReportConnectionLost(generation, reason, exception)` 可从任意线程调用。**连接代次**：每次连上加 1，旧代次的报告直接忽略，防止旧 socket 迟到的异常打断新连接。
 - 状态事件经单消费者队列**按顺序**、在**锁外**触发，事件处理器里调用 `DisconnectAsync` 不会死锁。
@@ -424,7 +430,7 @@ public class ChannelComponents
 
 - **FrameRouter**：两种通道共用的帧路由——`PendingRequestTable`（三种关联模式、超时、迟到应答）、有界派发队列（`Channel<T>`）、派发循环、`FrameReceived`、统计。
 - **StreamChannel**：把 `Stream`（`NetworkStream`、`SslStream`、`SerialPort.BaseStream`）变成 `IByteChannel`。采用两个循环：**填充循环**从流读入内部 `Pipe`，**解析循环**从 `Pipe` 读出、分帧、复制、交给 FrameRouter。不直接对流使用 `PipeReader.Create(stream)`，因为 net472 的 `NetworkStream` 和 `SerialPort.BaseStream` 不响应取消令牌，`CancelPendingRead()` 打断不了挂起的流读取，静默分帧与半帧计时会失效；内部 `Pipe` 的读端则在两个目标上都可靠响应。缓冲区有未成帧数据时启动计时器（`IFlushableFrameDecoder` 到期交出残余；其他分帧器到 `PartialFrameTimeout` 时 TCP 断开、串口丢弃残余继续）；发送经发送锁和 `SendTimeout` 整帧写出，失败即报告 `SendFailed`。
-- **DatagramChannel**：与具体传输无关（经内部的数据报传输接口收发，只有 Udp 包接触 `UdpClient`），每个数据报直接成为一帧；长度超过 `MaxDatagramSize` 的数据报计为 ProtocolViolation 并丢弃（`UdpClient` 总是返回完整数据报，无法检测截断）。语义与 StreamChannel 对齐，但固定不重建连接。
+- **DatagramChannel**：与具体传输无关（经内部的数据报传输接口收发，只有 Udp 包接触 `UdpClient`），每个数据报直接成为一帧；长度超过 `MaxDatagramSize` 的数据报计入 `ProtocolErrors` 统计并丢弃，不断开连接（`UdpClient` 总是返回完整数据报，无法检测截断）。语义与 StreamChannel 对齐：请求超时不重建连接（由迟到应答窗口处理）；发送失败仍按 11.1 报告 `SendFailed` 并断开（启用重连时重新绑定）（20.1）。
 - TLS 只是把 `NetworkStream` 换成 `SslStream`，StreamChannel 不需要改动。
 
 ### 6.3 帧内存所有权
@@ -447,7 +453,7 @@ flowchart LR
     SUP -->|重连| SRC
 ```
 
-- 每条连接：1 个接收循环 + 1 个派发循环（异步任务，不占专用线程）+ 可选心跳。
+- 每条连接：接收端（字节流为填充循环与解析循环两个任务，数据报为一个接收循环）+ 1 个派发循环（异步任务，不占专用线程）+ 可选心跳（20.1）。
 - 派发队列有界（默认 1024）。TCP 队列满时默认**等待**（暂停读取，由 TCP 流控让对端放慢）；串口和 UDP 没有流控，默认 `DropOldest` 并计数告警。
 - 所有事件在线程池线程上触发，WPF 界面需自行切回 Dispatcher。
 
@@ -500,6 +506,8 @@ public class TcpClientChannelConfig : IChannelConfig
     public QueueFullMode QueueFullMode { get; set; } = QueueFullMode.Wait;
 }
 ```
+
+`Config` 返回构造时传入的对象本身（不是副本）；运行行为只依赖构造时的快照（20.1）。
 
 ### 7.2 TcpServer / TcpSession
 
@@ -566,6 +574,8 @@ public class TcpServerConfig : IChannelConfig
 
 每个会话内部就是一个 StreamChannel，与客户端共用分帧、关联、派发、发送代码。会话断开即移除；服务端的"重连"是监听器故障后的重新监听。会话 ID 用自增 `long`。
 
+会话接入顺序（20.1）：关联表与路由 → `BeginHandshake` → 启动字节通道 → 初始化器（`SessionHandshakeTimeout` 内）→ 入会话表并派发 `SessionConnected`，等待其派发完成 → `EndHandshake` 放出积压 → 启动心跳。接入检查顺序：`MaxSessions`（0 = 不限）→ `AllowedRemoteAddresses`（IP 字面量）→ `TcpChannelComponents.ConnectionFilter`；不通过的连接立即关闭并记 Warning，不触发会话事件。服务端会话的派发队列固定为 `Wait`（`TcpServerConfig` 不提供 `QueueFullMode`）。服务端不接受 `ChannelComponents.HealthProbe`（构造时抛出 `ArgumentException`），心跳探测改用 `TcpChannelComponents.SessionHealthProbeFactory` 按会话创建。
+
 ### 7.3 TLS（可选，默认关闭）
 
 ```csharp
@@ -602,6 +612,9 @@ public sealed class CertificateSource
 - `TcpChannelComponents : ChannelComponents` 额外允许直接注入 `X509Certificate2` 和自定义证书校验回调。
 - 证书校验失败 → `AuthenticationFailed`；握手超时 → `Timeout`。net472 的 `SslStream` 认证不接受取消令牌，超时沿用"销毁 socket 中止"。
 - UDP 上的 DTLS 不支持（BCL 没有实现）。
+- 证书来源（20.1）：构造期结构错误（缺少指纹与 PFX 路径、环境变量未设置、证书缺少私钥等）抛出 `ArgumentException`（D5）；连接期证书加载失败（找不到指纹、PFX 损坏、客户端证书缺少私钥）归类为 `InvalidRequest`。指纹先清洗（去掉所有非十六进制字符，忽略大小写），只读打开证书存储，并接受无效（已过期、不受信任）的证书（`validOnly: false`）。配置来源的客户端证书每次连接加载、连接结束释放；`TcpChannelComponents` 提供的证书由调用方持有，通道不释放。
+- 服务端证书校验优先级（20.1）：`TcpChannelComponents.RemoteCertificateValidation` 存在时以其结果为准；否则 `AllowUntrustedServerCertificate` 为真时接受任何结果并记 Warning（回调存在时不记）；否则要求没有任何校验错误。
+- 已知限制（20.1）：断开时不发送 TLS close_notify，只对套接字执行 `Shutdown(Send)`。
 
 ---
 
@@ -644,8 +657,11 @@ public class SerialChannelConfig : IChannelConfig
 - 基于 `SerialPort.BaseStream` + StreamChannel，不使用 `DataReceived` 事件。
 - 默认 `IdleGap` 20 ms。USB 转串口芯片有延迟计时器（FTDI 默认 16 ms），静默时间必须大于它，否则一帧会被切成两帧。
 - RS-485 多从站共用一条总线时，多个协议客户端共享同一个 `SerialChannel`（通过 `NamedRegistry` 别名），由协议层的站号匹配区分应答。
-- **风险项**：.NET Framework 上 USB 转串口在打开状态下被拔出时，`SerialPort` 内部线程或终结器可能抛出未处理异常导致进程崩溃。实施时专门做热拔插测试，按结果加防护。
+- **风险项**：.NET Framework 上 USB 转串口在打开状态下被拔出时，`SerialPort` 内部线程或终结器可能抛出未处理异常导致进程崩溃。实施时专门做热拔插测试，按结果加防护。状态（20.1）：尚未经人工验证，本期未添加防护代码；检查清单见 Skill `using-junevy-channels`，结论待补充。
 - USB 串口重新插入后 COM 号可能变化，本期不做自动识别。
+- `OpenTimeout` 覆盖整个打开过程（20.1）：拒绝访问（`UnauthorizedAccessException`）在时限内每 20 ms 重试（驱动释放端口是异步的）；其他打开失败立即返回 `ConnectionClosed`（消息含端口名与原始错误）；超时返回 `Timeout`，超时后的端口在驱动返回时释放。
+- `ReadBufferSize` / `WriteBufferSize` 必须为正偶数（`SerialPort` 拒绝奇数），只设置驱动缓冲，不改变通道每次读取的块大小。
+- `ResetOnRequestTimeout` 固定为 false：请求超时不重新打开端口，迟到应答由 `LateReplyWindow` 处理；`PartialFrameAction` 为 `Discard`（残余字节丢弃，连接保持）。
 
 ---
 
@@ -691,7 +707,11 @@ public class UdpChannelConfig : IChannelConfig
 
 - **定向模式**（配置了 RemoteHost，相当于点对点）与**非定向模式**（只绑定本地端口，用 `SendToAsync` / `RequestToAsync` 与任意地址通讯，即 UDP"服务端"）。非定向模式的默认应答匹配额外要求"来源地址 == 请求目标地址"。
 - 广播与组播用于设备发现。
-- **Windows 陷阱**：向无人监听的端口发 UDP 后，本地接收会抛 `SocketException`（10054），接收循环会被打断。实现时用 `SIO_UDP_CONNRESET` 关闭这一行为。
+- 配置约束（20.1）：`RemoteHost` 与 `RemotePort` 必须同时设置或同时不设置；`MaxDatagramSize` ∈ [1, 65507]；`ChannelComponents.FrameCodec` 非法（数据报本身就是一帧）；非定向模式启用内置心跳必须提供 `HealthProbe`（内置探测发往远端）。
+- 定向模式只派发来自远端的数据报，其他来源计入 `FramesDropped`；过滤在代码中完成，不调用 `Socket.Connect`（D13）。定向模式的 `RequestToAsync` 只能请求远端，发往其他地址的请求在发送前以 `InvalidRequest` 拒绝；`SendToAsync` 可单向发往其他地址。
+- 空负载：`SendAsync` 发送零长度数据报；`RequestAsync` / `RequestToAsync` 返回 `InvalidRequest`。超过 `MaxDatagramSize` 的数据报计入 `ProtocolErrors` 并丢弃。
+- `RequestRetryCount` 的每次尝试单独计时，任一尝试的应答都完成请求；全部尝试超时后以 `Timeout` 结束并登记迟到窗口。
+- **Windows 陷阱**：向无人监听的端口发 UDP 后，本地接收会抛 `SocketException`（10054），接收循环会被打断。实现时用 `SIO_UDP_CONNRESET` 关闭这一行为（net472 恒执行；net8.0 仅在 Windows 上执行，20.1）。
 
 ---
 
@@ -716,6 +736,8 @@ public class UdpChannelConfig : IChannelConfig
 | `StopTimeout` | 3000 | TCP 服务端 | `StopAsync` 等待会话关闭 | 强制中止 | — |
 
 - `Sequential` 模式下排队等请求锁的时间不计入 `RequestTimeout`，由调用方的取消令牌约束。
+- 基类 `ClientChannelSettings` 中超时为 0 表示不限时，与传输配置的默认值不同；自定义传输必须显式设置（20.1）。
+- 串口 `OpenTimeout` 内的拒绝访问重试见第 8 节；心跳探测因通道忙未写出任何帧时不计失败（第 5.4 节）。
 - 超时与取消的区分沿用 Modbus：链接 CTS 触发且用户令牌未触发 → `Timeout`；用户令牌触发 → `Cancelled`。
 
 ---
@@ -729,14 +751,14 @@ public class UdpChannelConfig : IChannelConfig
 | `ConnectAsync` 成功 | Connecting → Connected，启动接收、派发、心跳 |
 | `ConnectAsync` 失败 | 返回 Fail；`Reconnect.OnInitialFailure = true` 时同时转入后台重连 |
 | 对端关闭 / 读异常 / 端口被拔出 | 在途请求立即以 `ConnectionClosed` 结束；启用重连 → Reconnecting，否则 → Disconnected |
-| 发送超时或发送异常 | 本次返回失败；连接断开，后续同上 |
-| 请求超时 | 返回 `Timeout`；TCP `Sequential` + `ResetOnRequestTimeout` 时断开重建；串口/UDP 进入迟到应答丢弃窗口 |
-| 帧超长或分帧异常 | `ProtocolViolation`：TCP 断开并重连；串口丢弃缓冲继续 |
-| 心跳连续失败 N 次 | `HeartbeatFailed`：断开并重连 |
+| 发送超时、发送异常或取消正在写出的帧 | 本次返回失败；连接断开，后续同上。取消写出同样断开（可能已写出半帧，D10）；取消发生在等待发送锁期间只返回 `Cancelled`（20.1） |
+| 请求超时 | 返回 `Timeout`；TCP `Sequential` + `ResetOnRequestTimeout` 时断开重建；串口/UDP 进入迟到应答丢弃窗口。Sequential 模式下用户取消等待应答与超时同样处理（D10） |
+| 帧超长或分帧异常 | `ProtocolViolation`：TCP 断开并重连；串口丢弃缓冲继续。握手积压超过 64 帧同样按 `ProtocolViolation` 处理（20.1） |
+| 心跳连续失败 N 次 | `HeartbeatFailed`：断开并重连。探测返回 `NotConnected`，或因通道忙未写出任何帧时，不计为失败（20.1） |
 | 断开期间 `SendAsync` / `RequestAsync` | 立即返回 `NotConnected`，不排队、不隐式连接 |
-| 用户 `DisconnectAsync` | 停止重连；在途请求以 `ConnectionClosed` 结束；**之后不会被任何发送悄悄连回** |
+| 用户 `DisconnectAsync` | 停止重连；在途请求以 `ConnectionClosed` 结束；在 `DisconnectTimeout` 内排空已收到但未派发的帧；**之后不会被任何发送悄悄连回**；Reconnecting 状态下直接转为 Disconnected（`UserRequested`）（20.1） |
 | 重连耗尽 | Disconnected（`ReconnectExhausted`） |
-| `Dispose` | 幂等；在途请求以 `ConnectionClosed` 结束；之后再调用抛 `ObjectDisposedException` |
+| `Dispose` | 幂等；立即释放，不排空已收到的帧；在途请求以 `ConnectionClosed` 结束；同步 `Dispose` 最长等待 `DisconnectTimeout + 1000` ms；之后再调用抛 `ObjectDisposedException`（`DisconnectAsync` 直接返回）（20.1） |
 | 事件处理器抛异常 | 捕获并记日志，不影响接收循环 |
 
 ### 11.2 与 Modbus "懒重连"决策的差异
@@ -753,6 +775,8 @@ Modbus 选择了**懒重连、不要看门狗**（工业轮询的请求天然周
 | 会话对端关闭、读异常、空闲超时、心跳失败 | 移除会话，触发 `SessionClosed`（带原因） |
 | `BroadcastAsync` 部分失败 | 返回成功发送的会话数；失败的会话按发送失败规则关闭 |
 | `StopAsync` | 停止接收新连接 → 关闭全部会话（`StopTimeout`）→ Stopped |
+| `SessionConnected` 处理器阻塞 | 推迟该会话积压帧的派发与心跳的启动，并推迟其他服务端事件的派发（20.1） |
+| 配置了 `ChannelComponents.HealthProbe` | 构造时抛出 `ArgumentException`；改用 `TcpChannelComponents.SessionHealthProbeFactory`，工厂抛出或返回 null 时该会话以 `Error` 关闭（20.1） |
 
 ---
 
@@ -1228,6 +1252,48 @@ P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份
 | 10 | 未定义"字中的位"如何写 | 若默认读-改-写，会与 PLC 程序竞争同一个字 | 默认不支持，需显式开启并记录告警 |
 
 保留不变：通道层的全部设计（Supervisor、StreamChannel / DatagramChannel、分帧、关联、心跳、超时、TLS、串口、UDP）、行为契约、Q2–Q8 与 E1–E3 的结论、WebApi 的功能范围、SECS 的映射（改为"内部复用"）。
+
+---
+
+### 20.1 实施修订（P1）
+
+实施（计划 Task 1–13）后，本设计第 5–11 节与实际实现存在的差异或设计未说明之处，已逐条修改对应章节；下表保留原设计文字以便追溯。"原因"列指向计划第 20 节的验收条目（Task 编号）或第 0 节的决策编号（D 编号）。
+
+| # | 章节 | 原设计 | 实际实现 | 原因（计划第 20 节 / 第 0 节） |
+|---|---|---|---|---|
+| 1 | 5.1 | 文本协议扩展方法 `SendTextAsync(string, Encoding?)`、`RequestTextAsync(...)` | 未实现 | 计划第 0 节 D6 的原则（P1 只实现有使用者的内容）。**待确认**：是否在 P2 前补充（第 21.2 节未列出，需审阅者决定） |
+| 2 | 5.1 | 未指定命名空间 | 抽象、模型、配置在 `Junevy.Communication.Channels`；分帧在 `.Channels.Framing`；DI 在 `.Channels.DependencyInjection`；TCP、UDP、串口分别在 `Junevy.Communication.Tcp` / `.Udp` / `.Serial`，DI 在各自的 `.DependencyInjection` | 计划第 20 节 Task 3、Task 10 |
+| 3 | 5.2 | `MaxFrameLength` 适用于所有分帧器（默认 64 KiB） | `Delimiter` 按分隔符之前的内容计量（`KeepDelimiter=true` 时最长为上限加分隔符长度）；`IdleGap` 只在超过上限时抛出（恰好等于上限的帧可以交出）；其余按整帧计量 | 计划第 20 节 Task 3 |
+| 4 | 5.2 | 未说明空帧与发送时的分隔符 | `Delimiter` 跳过连续分隔符之间的空帧；发送时默认追加 `Delimiters[0]`（`AppendDelimiterOnSend`） | 计划第 0 节 D18 |
+| 5 | 5.3 | 未说明 `Keyed` 模式下的 Matcher | `RequestAsync` 忽略 `RequestOptions.Matcher`（按关联键匹配）；`ReceiveAsync` 在所有模式使用 Matcher | 计划第 20 节 Task 5 |
+| 6 | 5.3 | 未说明 `Keyed` 模式迟到键的数量 | 最多记录 256 个近期超时键，同键的迟到应答记 Warning 后丢弃 | 计划第 0 节 D9 |
+| 7 | 5.3、11.1 | 未说明用户取消等待应答 | Sequential 模式下与超时同样处理（TCP 默认断开重建）；取消正在写出的帧同样断开连接 | 计划第 0 节 D10；第 20 节 Task 6 |
+| 8 | 5.4 | `ExpectedReply` 为"必须收到匹配应答" | 整帧逐字节精确匹配（D14） | 计划第 0 节 D14 |
+| 9 | 5.4 | 说明了探测失败计数与忙时跳过，未说明检测时间与 `NotConnected` 的处理 | 第 `MaxFailures` 次失败约在 `(MaxFailures − 1) × Interval + Timeout` 判定；探测因通道忙未写出任何帧不计失败；`NotConnected` 不计失败 | 计划第 20 节 Task 7、Task 10、Task 13 |
+| 10 | 5.4 | UDP 与串口内置心跳必须配置 `ExpectedReply` | 另外：无 `IHealthProbe` 时内置探测需要 `Heartbeat.Payload`；UDP 非定向模式启用内置心跳必须提供 `IHealthProbe` | 计划第 20 节 Task 13；构造期校验见第 0 节 D5 |
+| 11 | 5.5 | 未说明 `ChannelComponents.ReconnectPolicy` 与 `Reconnect.Enabled` 的关系 | `ReconnectPolicy` 覆盖退避策略，但重连仍受 `Reconnect.Enabled` 控制 | 实现细节（`ChannelComponents` 文档）；计划未单独记录 |
+| 12 | 5.6 | 未说明握手期间到达的帧 | 积压上限 64 帧（D8），溢出为协议违规；`ReceiveAsync` 先扫描积压；握手期间不派发 `FrameReceived` | 计划第 0 节 D8；第 20 节 Task 5、Task 7、Task 9 |
+| 13 | 6.1 | `IConnectionDriver { OpenAsync(ct); InitializeAsync(ct); CloseAsync(reason); }` | `IConnectionDriver { OpenAsync(ct); CloseAsync(reason, drainTimeout); }`：传输打开、TLS 包装与初始化器共用一个握手时限，排空时限由 `CloseAsync` 传入 | 计划第 20 节 Task 7、Task 11 |
+| 14 | 6.2 | 数据报通道"固定不重建连接"；超长数据报计为 ProtocolViolation 并丢弃 | 请求超时不重建连接（迟到应答窗口处理）；发送失败仍报告 `SendFailed` 并断开（启用重连时重新绑定）；超长数据报计入 `ProtocolErrors` 统计并丢弃，不断开连接 | 计划第 0 节 D10；第 20 节 Task 13 |
+| 15 | 6.4 | 每条连接 1 个接收循环 | 字节流为填充循环与解析循环两个任务；数据报为一个接收循环；另有派发循环 | 计划第 0 节 D7；第 20 节 Task 6 |
+| 16 | 7.1 | 未说明 `Config` 的语义 | `Config` 返回调用方传入的对象本身；运行行为只依赖构造时的快照（注释已修正） | 计划第 20 节 Task 10 |
+| 17 | 7.2 | 未展开会话接入顺序 | 入会话表并派发 `SessionConnected` → 等其派发完成 → `EndHandshake` 放出积压 → 启动心跳 | 计划第 20 节 Task 9 |
+| 18 | 7.2 | `ReceiveQueueCapacity` 存在，未说明队列满时的策略 | 服务端会话固定 `QueueFullMode.Wait`，配置中没有该项 | 实现细节（服务端配置未暴露队列模式） |
+| 19 | 7.2 | 未说明服务端对 `ChannelComponents.HealthProbe` 的处理 | 构造时拒绝（`ArgumentException`）；只接受 `TcpChannelComponents.SessionHealthProbeFactory` | 计划第 20 节 Task 9 |
+| 20 | 7.3 | 认证失败 → `AuthenticationFailed`；超时 → `Timeout` | 另：证书配置错误在构造期抛 `ArgumentException`，连接期加载失败归类为 `InvalidRequest`；指纹清洗与无效证书查找；校验优先级（回调 > `AllowUntrustedServerCertificate` > 默认）；客户端证书每次连接加载 | 计划第 20 节 Task 11 |
+| 21 | 7.3 | 未说明 TLS 断开行为 | 断开时不发送 TLS close_notify（只对套接字 `Shutdown(Send)`） | 计划第 20 节 Task 11（已知限制） |
+| 22 | 8 | 打开端口受 `OpenTimeout` 约束 | 拒绝访问在时限内每 20 ms 重试；其他失败立即返回 `ConnectionClosed`；超时返回 `Timeout`，端口在驱动返回时释放 | 计划第 20 节 Task 13（串口打开重试） |
+| 23 | 8 | 未说明请求超时与分帧残余对串口的影响 | `ResetOnRequestTimeout` 固定为 false；`PartialFrameAction` 为 `Discard` | 计划第 20 节 Task 12 |
+| 24 | 8 | 未说明缓冲区参数的约束与作用 | `ReadBufferSize` / `WriteBufferSize` 必须为正偶数，只设置驱动缓冲，不改变读取块大小 | 计划第 20 节 Task 12 |
+| 25 | 8 | "实施时专门做热拔插测试，按结果加防护" | 尚未经人工验证；未添加防护代码；检查清单见 Skill（待人工验证） | 计划第 19 节待办；第 20 节 Task 12 |
+| 26 | 9 | 未说明 UDP 配置约束 | `RemoteHost` 与 `RemotePort` 成对设置；`MaxDatagramSize` ∈ [1, 65507]；`ChannelComponents.FrameCodec` 非法；非定向模式内置心跳需 `HealthProbe` | 计划第 20 节 Task 13 |
+| 27 | 9 | 未说明定向模式的请求规则 | `RequestToAsync` 只能请求远端，发送前拒绝其他地址；来源过滤在代码中完成，不调用 `Socket.Connect` | 计划第 0 节 D13；第 20 节 Task 13 |
+| 28 | 9 | 非定向模式下应答匹配要求"来源地址 == 请求目标地址" | 来源检查先于 Matcher 执行，自定义 Matcher 同样受其约束 | 计划第 20 节 Task 13（与关联表实现一致） |
+| 29 | 9 | 未说明空负载 | `SendAsync` 发送零长度数据报；空负载请求返回 `InvalidRequest` | 计划第 20 节 Task 13 |
+| 30 | 9 | 用 `SIO_UDP_CONNRESET` 关闭 10054 | net472 恒执行；net8.0 仅在 Windows 上执行 | 实现细节（Windows 专属控制码） |
+| 31 | 10 | 超时表给出的是传输配置的默认值 | 自定义传输的基类 `ClientChannelSettings` 中 0 表示不限时，需显式设置 | 实现细节（基类参数，供自定义传输使用） |
+| 32 | 11.1 | 5.3 写明连接停止时在 `DisconnectTimeout` 内派发已入队的帧；未说明 `Dispose` 是否排空 | `DisconnectAsync` 在 `DisconnectTimeout` 内排空已收到但未派发的帧；`Dispose` 立即释放，不排空；同步 `Dispose` 等待上限见 D16 | 计划第 20 节 Task 12（语义确定）；第 0 节 D16 |
+| 33 | 11.3 | 未说明 `SessionConnected` 处理器阻塞的影响 | 推迟该会话的积压帧派发与心跳启动，并推迟其他服务端事件的派发 | 计划第 20 节 Task 9 |
 
 ---
 
