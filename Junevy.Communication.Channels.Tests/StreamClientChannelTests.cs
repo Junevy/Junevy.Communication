@@ -387,6 +387,7 @@ public sealed class StreamClientChannelTests
     public async Task HeartbeatProbeTimeout_DoesNotResetConnection_UntilMaxFailures()
     {
         ClientChannelSettings settings = Settings();
+        settings.LateReplyWindow = 0;   // 保持原默认值（迟到应答窗口关闭）：本用例验证心跳计数，不依赖迟到窗口。默认值已改为 -1，见 ClientChannelSettings。
         settings.ResetOnRequestTimeout = true;
         settings.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 200, Timeout = 200, MaxFailures = 3, Payload = "PING", ExpectedReply = "PONG" };
         await using var channel = new DuplexClientChannel(settings);   // 对端不回复心跳。
@@ -413,6 +414,7 @@ public sealed class StreamClientChannelTests
             return reply.IsSuccess ? CommResult.Success() : reply.ToResult();
         });
         ClientChannelSettings settings = Settings();
+        settings.LateReplyWindow = 0;   // 保持原默认值（迟到应答窗口关闭）：探测内的请求超时只计心跳失败，不占用请求锁。默认值已改为 -1，见 ClientChannelSettings。
         settings.ResetOnRequestTimeout = true;
         settings.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 200, Timeout = 200, MaxFailures = 3 };
         channel = new DuplexClientChannel(settings, new ChannelComponents { HealthProbe = probe });
