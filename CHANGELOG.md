@@ -2,6 +2,12 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — PLC 套件 P2（Plc / Melsec 1.0.0-preview.1；Core 新增 Buffers）
+
+### 新增（Added）
+
+- 2026-10-11 [Plc, Melsec] 新增项目骨架（版本 `1.0.0-preview.1`，目标框架 `net472;net8.0`）：`Junevy.Communication.Plc`（依赖 Channels）与 `Junevy.Communication.Melsec`（依赖 Plc、Tcp、Udp、Serial）；对应测试项目 `Tests/Junevy.Communication.Plc.Tests` 与 `Tests/Junevy.Communication.Melsec.Tests`，各含项目冒烟测试。两个库的 README 暂为占位，文档在 P2 文档任务中填写。
+
 ## [Unreleased] — 通讯通道族 P1（Core / Channels / Tcp / Udp / Serial 1.0.0-preview.1）
 
 ### 新增（Added）
