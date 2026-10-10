@@ -213,9 +213,9 @@ public interface IConnectable
 }
 
 /// 字节收发能力。TCP 客户端、TCP 服务端会话、UDP、串口都实现它。
+/// 不声明 IsConnected：链路状态属于 IConnectable；两处同时声明会让 IClientChannel 上的访问产生歧义（CS0229）。
 public interface IByteChannel
 {
-    bool IsConnected { get; }
     Task<CommResult> SendAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default);
     Task<CommResult<byte[]>> RequestAsync(ReadOnlyMemory<byte> payload, RequestOptions? options = null, CancellationToken cancellationToken = default);
     /// 不发送，只等待下一个匹配帧（例如等设备主动上报 "READY"）。
@@ -528,6 +528,7 @@ public interface ITcpSession : IByteChannel
     IPEndPoint RemoteEndPoint { get; }
     IPEndPoint LocalEndPoint { get; }
     DateTimeOffset ConnectedAt { get; }
+    bool IsConnected { get; }                        // 会话不实现 IConnectable，自行声明
     bool IsTlsActive { get; }
     ConnectionStatistics Statistics { get; }
     IDictionary<string, object?> Items { get; }

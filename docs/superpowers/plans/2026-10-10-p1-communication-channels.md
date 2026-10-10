@@ -339,7 +339,7 @@ public static class ByteSequenceParser
 | FixedLength | 缓冲 ≥ `FrameLength` 时交出 `FrameLength` 字节 |
 | LengthField | 缓冲 < offset + size 时返回 false；读长度值（二进制按大小端读无符号整数；ASCII 把 size 个字符按十六进制或十进制解析，含非法字符时抛 `FrameDecodeException`）；`total = offset + size + length + adjustment`；`total < offset + size` 或 `total > MaxFrameLength` 时抛异常；缓冲 ≥ total 时交出 `[InitialBytesToStrip, total)` |
 | StartEnd | 丢弃起始符之前的字节（重新同步）；从起始符之后找结束符；找到则交出（`KeepMarkers` 决定是否含标记）；未找到且从起始符算起超过 `MaxFrameLength` 时抛异常 |
-| IdleGap | `TryDecode` 只在缓冲 ≥ `MaxFrameLength` 时抛异常，其余返回 false；`TryFlush` 交出全部缓冲；`FlushTimeout = GapTimeout` |
+| IdleGap | `TryDecode` 只在缓冲 > `MaxFrameLength` 时抛异常（`MaxFrameLength` 为允许的最大帧长，含边界），其余返回 false；`TryFlush` 交出全部缓冲；`FlushTimeout = GapTimeout` |
 
 ### 5.3 测试（项目 `Junevy.Communication.Channels.Tests`，类 `FramingTests`）
 
@@ -405,7 +405,7 @@ public sealed class DeviceSimulator
 {
     public DeviceSimulator(IFrameCodecFactory codec, Func<byte[], byte[]?> handler);   // handler 返回 null 表示不回复
     public Task RunAsync(Stream stream, CancellationToken cancellationToken);          // 在任意流上应答（DuplexStreamPair 或 TCP 连接）
-    public static Task<IAsyncDisposable> HostTcpAsync(DeviceSimulator simulator, out int port);   // 用 TcpListener 承载，与被测的 TcpServer 无关
+    public DeviceSimulatorTcpHost HostTcp();   // 用 TcpListener 承载，与被测的 TcpServer 无关；返回的宿主含 Port、AcceptedConnectionCount、DisposeAsync（第 20 节勘误）
 }
 
 public static class TimingAssert
@@ -1133,3 +1133,7 @@ git diff --stat -- Junevy.Communication.Wiki
 
 - Task 2：net472 测试需要 `build/Junevy.Communication.Tests.app.config` 中的 System.Memory 绑定重定向。原因是 SDK 10 自带的 .NET Framework 测试宿主（`sdk/10.0.401/TestHostNetFramework`）使用 System.Memory 4.0.5.0，而库依赖解析为 4.5.5（程序集 4.0.1.2）。重定向只作用于测试宿主，使测试运行在用户实际得到的 4.0.1.2 上。Task 15 写入知识库《测试工程与验收方式》。
 - Task 2：`NamedRegistry.TryRemove` 改为出锁后释放实例（提交 718261d、93ff6e1）。慢释放与跨线程回调两个回归测试均已确认在旧实现上失败。
+- Task 3：命名空间由审阅者确定——Channels 的 `Abstractions/`、`Models/`、`Options/` 公开类型统一放在 `Junevy.Communication.Channels`，`Framing/` 放在 `Junevy.Communication.Channels.Framing`；内置分帧器与编码器为 internal，经 `FrameCodecFactory` 获取。
+- Task 3：设计缺陷修正——`IByteChannel` 删除 `IsConnected`（与 `IConnectable` 重复声明，导致经 `IClientChannel` 访问时报 CS0229），`ITcpSession` 自行声明；`IdleGap` 的 `TryDecode` 改为超过 `MaxFrameLength` 才抛出（原写"达到即抛"，恰好等于上限的帧无法交出）。设计文档 5.1、7.2 与本计划 5.2 已同步。
+- Task 3：`MaxFrameLength` 的计量口径——`Delimiter` 按分隔符之前的内容计量（`KeepDelimiter=true` 时交付的帧最多为上限加分隔符长度），其余分帧器按线路上的整帧计量。该上限用于防止错位数据撑爆内存，差几个字节不影响这一作用，保持现状；Task 14 写入 README 与 Skill。
+- Task 4：计划 6.1 勘误——`HostTcpAsync(..., out int port)` 不合法（async 方法不能有 out 参数），改为 `DeviceSimulator.HostTcp()` 返回 `DeviceSimulatorTcpHost`（含 `Port`、`AcceptedConnectionCount`、`DisposeAsync`）。
