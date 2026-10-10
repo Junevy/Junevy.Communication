@@ -24,7 +24,7 @@ public interface ITcpSession : IByteChannel
     /// <summary>会话是否可用：握手完成且未关闭时为 true。会话不实现 <see cref="IConnectable"/>，因此自行声明。</summary>
     bool IsConnected { get; }
 
-    /// <summary>当前会话是否已完成 TLS。本阶段恒为 false。</summary>
+    /// <summary>当前会话是否已完成 TLS 认证（认证成功后为 true，会话拆除后为 false）。</summary>
     bool IsTlsActive { get; }
 
     /// <summary>会话的连接统计。</summary>

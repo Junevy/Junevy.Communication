@@ -3,8 +3,8 @@ using System.Security.Authentication;
 namespace Junevy.Communication.Tcp;
 
 /// <summary>
-/// TCP 客户端 TLS 配置（设计文档 7.3）。本阶段只定义配置类型：<see cref="Enabled"/> 为 true 时，
-/// 连接返回 <c>NotSupported</c>；TLS 握手在后续阶段实现。默认关闭。
+/// TCP 客户端 TLS 配置（设计文档 7.3）。<see cref="Enabled"/> 为 true 时，TLS 认证在握手时限内完成（与 <c>IConnectionInitializer</c> 共享
+/// <c>HandshakeTimeout</c>），失败时连接返回 <c>AuthenticationFailed</c>。默认关闭。
 /// </summary>
 public sealed class TcpClientTlsOptions
 {

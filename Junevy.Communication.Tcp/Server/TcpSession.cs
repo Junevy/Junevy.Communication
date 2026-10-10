@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Channels.Lifecycle;
@@ -10,7 +11,7 @@ using Microsoft.Extensions.Logging;
 namespace Junevy.Communication.Tcp.Server;
 
 /// <summary>
-/// 服务端的一个 TCP 会话（内部）。持有接入的套接字、字节流通道（<see cref="StreamChannel"/>）、心跳监视器与关闭状态。
+/// 服务端的一个 TCP 会话（内部）。持有接入的套接字、可选的 TLS 流、字节流通道（<see cref="StreamChannel"/>）、心跳监视器与关闭状态。
 /// 会话的生命周期（接入、握手、加入、拆除）由 <see cref="TcpServer"/> 驱动；公开的 <see cref="ITcpSession"/> 操作委托给通道。
 /// 标注"服务端锁"的字段只能在 <see cref="TcpServer"/> 持有其内部锁时读写。
 /// </summary>
@@ -22,13 +23,17 @@ internal sealed class TcpSession : ITcpSession
     private readonly CancellationTokenSource closingSource = new CancellationTokenSource();
     private readonly TaskCompletionSource<bool> completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource<bool> connectedDelivered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly object tlsSync = new object();
     private volatile bool connected;
     private volatile bool closing;
+    private volatile bool tlsActive;
     private volatile StreamChannel? channel;
     private volatile FrameRouter? router;
     private volatile SessionChannelView? view;
     private bool joined;
     private HeartbeatMonitor? heartbeat;
+    private SslStream? tls;
+    private bool transportAborted;
 
     /// <summary>创建会话（尚未建立通道，未加入会话表）。</summary>
     /// <param name="owner">所属服务端。</param>
@@ -62,7 +67,7 @@ internal sealed class TcpSession : ITcpSession
     public bool IsConnected => connected;
 
     /// <inheritdoc />
-    public bool IsTlsActive => false;
+    public bool IsTlsActive => tlsActive;
 
     /// <inheritdoc />
     public ConnectionStatistics Statistics { get; }
@@ -171,8 +176,41 @@ internal sealed class TcpSession : ITcpSession
     /// <summary>标记拆除完成。</summary>
     internal void CompleteClosing() => completion.TrySetResult(true);
 
-    /// <summary>中止传输：销毁套接字，使挂起的读写立即失败。可重复调用。</summary>
-    internal void AbortTransport() => socket.Dispose();
+    /// <summary>
+    /// 记录 TLS 认证成功的流（服务端锁之外）。传输已被中止时返回 false，调用方负责释放该流。
+    /// </summary>
+    /// <param name="stream">认证后的流。</param>
+    /// <returns>是否已记录。</returns>
+    internal bool AttachTls(SslStream stream)
+    {
+        lock (tlsSync)
+        {
+            if (transportAborted)
+                return false;
+
+            tls = stream;
+            tlsActive = true;
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// 中止传输：销毁套接字与 TLS 流，使挂起的读写立即失败。可重复调用；之后记录的 TLS 流会被拒绝（<see cref="AttachTls"/>）。
+    /// </summary>
+    internal void AbortTransport()
+    {
+        SslStream? secured;
+        lock (tlsSync)
+        {
+            transportAborted = true;
+            secured = tls;
+            tls = null;
+            tlsActive = false;
+        }
+
+        socket.Dispose();
+        secured?.Dispose();
+    }
 
     /// <summary>优雅关闭的第一步：关闭发送方向（尽力而为），对端据此得知服务端已不再发送。</summary>
     internal void ShutdownSend()

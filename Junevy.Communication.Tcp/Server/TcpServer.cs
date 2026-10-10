@@ -1,6 +1,9 @@
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Channels.Lifecycle;
 using Junevy.Communication.Channels.Pipeline;
@@ -18,13 +21,13 @@ namespace Junevy.Communication.Tcp;
 /// 会话内部是一个 <c>StreamChannel</c>，与客户端共用分帧、关联、派发与心跳代码。
 /// </summary>
 /// <remarks>
-/// 每个会话的接入顺序：应用套接字选项 → 创建关联表与路由 → <c>BeginHandshake</c> → 启动会话通道 → 在 <c>SessionHandshakeTimeout</c> 内执行初始化器 →
-/// 加入会话表并排队 <c>SessionConnected</c> → 等待该事件派发完成 → <c>EndHandshake</c>（释放握手积压）→ 启动会话心跳。
+/// 每个会话的接入顺序：应用套接字选项 → 在 <c>SessionHandshakeTimeout</c> 总时限内完成握手（启用 TLS 时先做 TLS 认证，然后创建关联表与路由、
+/// <c>BeginHandshake</c>、启动会话通道，最后执行初始化器）→ 加入会话表并排队 <c>SessionConnected</c> → 等待该事件派发完成 → <c>EndHandshake</c>（释放握手积压）→ 启动会话心跳。
 /// 握手失败或超时只关闭会话，不触发任何会话事件。会话的故障（对端关闭、读写异常、心跳失败、空闲超时、协议违规）在后台拆除会话，同一会话只拆除一次。
 /// 服务端事件（<c>StateChanged</c>、<c>SessionConnected</c>、<c>SessionClosed</c>）经单个派发循环按顺序、在锁外触发；
 /// 会话的 <c>FrameReceived</c> 在路由的派发循环中触发，先触发会话级，再触发服务端级。
 /// 在事件处理器内调用停止或关闭只发出信号、不等待，因此不会死锁（计划 D16）。
-/// 配置在构造时校验并复制（D5）。TLS 在后续阶段实现，启用时 <see cref="StartAsync"/> 返回 <c>NotSupported</c>。
+/// 配置在构造时校验并复制（D5）。启用 TLS 时服务端证书在构造时加载（找不到或没有私钥则抛出 <see cref="ArgumentException"/>），并在 <see cref="DisposeAsync"/> 中释放（组件提供的证书除外）。
 /// </remarks>
 public sealed class TcpServer : ITcpServer
 {
@@ -41,6 +44,9 @@ public sealed class TcpServer : ITcpServer
     private readonly HashSet<TcpSession> live = new HashSet<TcpSession>();
     private readonly Queue<QueuedEvent> eventQueue = new Queue<QueuedEvent>();
     private readonly AsyncLocal<DispatchScope?> dispatchScope = new AsyncLocal<DispatchScope?>();
+    private readonly X509Certificate2? serverCertificate;
+    private readonly bool ownsServerCertificate;
+    private readonly RemoteCertificateValidationCallback clientCertificateValidation;
 
     // 以下字段由 sync 保护；state 例外，声明为 volatile 以便无锁读取。
     private volatile ServerState state = ServerState.Stopped;
@@ -70,6 +76,14 @@ public sealed class TcpServer : ITcpServer
         options = new TcpServerOptions(config, components);
         name = $"{config.ListenAddress}:{config.Port}";
         this.logger = logger ?? NullLogger<TcpServer>.Instance;
+        clientCertificateValidation = ValidateClientCertificate;
+
+        if (options.TlsEnabled)
+        {
+            ownsServerCertificate = options.ComponentServerCertificate == null;
+            serverCertificate = options.ComponentServerCertificate
+                ?? CertificateLoader.Load(options.ServerCertificateSource!, "Tls.ServerCertificate");
+        }
     }
 
     /// <inheritdoc />
@@ -127,9 +141,6 @@ public sealed class TcpServer : ITcpServer
     public async Task<CommResult> StartAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        if (options.TlsEnabled)
-            return CommResult.Fail("TLS is not available in this version of TcpServer.", CommErrorKind.NotSupported);
-
         await lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -256,9 +267,26 @@ public sealed class TcpServer : ITcpServer
         Interlocked.Exchange(ref disposed, 1);
         Task stop = BeginStop();
         if (IsInDispatchContext())
+        {
+            // 派发上下文内不等待停止：证书在停止完成后释放（停止本身不会因此等待）。
+            _ = stop.ContinueWith(_ => ReleaseServerCertificate(), TaskScheduler.Default);
             return default;
+        }
 
-        return new ValueTask(stop);
+        return new ValueTask(ReleaseAfterStopAsync(stop));
+    }
+
+    // 停止完成后释放由服务端加载的证书（组件证书由调用方释放）。
+    private async Task ReleaseAfterStopAsync(Task stop)
+    {
+        await stop.ConfigureAwait(false);
+        ReleaseServerCertificate();
+    }
+
+    private void ReleaseServerCertificate()
+    {
+        if (ownsServerCertificate)
+            serverCertificate?.Dispose();
     }
 
     // ————— 监听器 —————
@@ -524,9 +552,6 @@ public sealed class TcpServer : ITcpServer
     private async Task<bool> SetupSessionAsync(TcpSession session)
     {
         ApplySocketOptions(session);
-        if (!OpenChannel(session))
-            return false;
-
         CommResult handshake = await RunHandshakeAsync(session).ConfigureAwait(false);
         if (!handshake.IsSuccess)
         {
@@ -573,7 +598,7 @@ public sealed class TcpServer : ITcpServer
     }
 
     // 创建关联表与路由，BeginHandshake，启动通道（计划 11.2 的顺序）。全部在服务端锁下完成，以便与拆除互斥：拆除之后不会再创建通道。
-    private bool OpenChannel(TcpSession session)
+    private bool OpenChannel(TcpSession session, Stream stream)
     {
         lock (sync)
         {
@@ -602,7 +627,6 @@ public sealed class TcpServer : ITcpServer
                 ReceiveBufferSize = ReceiveBufferSize,
             };
 
-            var stream = new NetworkStream(session.Socket, ownsSocket: true);
             var channel = new StreamChannel(stream, settings, options.Codec.CreateDecoder(), options.Codec.CreateEncoder(), table, router,
                 session.Statistics, logger, (reason, exception) => ScheduleTeardown(session, reason, exception), session.AbortTransport);
 
@@ -612,49 +636,135 @@ public sealed class TcpServer : ITcpServer
         }
     }
 
-    // 握手：在 SessionHandshakeTimeout 内执行初始化器（计划 11.2）。超时或拆除后不再等待初始化器（它可能忽略取消），但观察它的异常。
+    // 握手（计划 11.2、设计文档第 10 节）：TLS 认证、创建通道与初始化器共享 SessionHandshakeTimeout 总时限。
+    // 时限在握手结束后释放，之后的加入与派发不受其约束。超时或拆除后不再等待（它们可能忽略取消令牌），但观察它们的异常。
     private async Task<CommResult> RunHandshakeAsync(TcpSession session)
     {
+        using TimeoutScope scope = TimeoutScope.Start(options.SessionHandshakeTimeout, CancellationToken.None, session.AbortTransport);
+        var raw = new NetworkStream(session.Socket, ownsSocket: true);
+
+        CommResult<Stream> secured = options.TlsEnabled
+            ? await SecureSessionAsync(session, raw, scope).ConfigureAwait(false)
+            : CommResult<Stream>.Success(raw);
+        if (!secured.IsSuccess)
+            return secured.ToResult();
+
+        if (!OpenChannel(session, secured.Data!))
+            return CommResult.Fail("The session was closed during its handshake.", CommErrorKind.ConnectionClosed);
+
         if (options.Initializer == null)
             return CommResult.Success();
 
-        using (TimeoutScope scope = TimeoutScope.Start(options.SessionHandshakeTimeout, CancellationToken.None, session.AbortTransport))
+        return await RunInitializerAsync(session, scope).ConfigureAwait(false);
+    }
+
+    // 服务端 TLS 认证。时限耗尽或会话开始拆除时不再等待（认证可能忽略取消令牌），但观察它的结果：之后成功的流会因传输已中止而被会话拒绝并释放。
+    private async Task<CommResult<Stream>> SecureSessionAsync(TcpSession session, Stream raw, TimeoutScope scope)
+    {
+        Task<CommResult<Stream>> work = AuthenticateSessionAsync(session, raw, scope.Token);
+        if (!await WaitForHandshakeStepAsync(work, session, scope.Token).ConfigureAwait(false))
         {
-            Task<CommResult> work = StartInitializer(session.View!, scope.Token);
-            var interrupted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            using (scope.Token.Register(() => interrupted.TrySetResult(true)))
-            using (session.ClosingToken.Register(() => interrupted.TrySetResult(true)))
+            ObserveAbandoned(work);
+            return HandshakeAbandoned(session).As<Stream>();
+        }
+
+        if (work.IsCanceled || scope.IsTimedOut)
+            return HandshakeAbandoned(session).As<Stream>();
+
+        if (work.IsFaulted)
+        {
+            Exception? cause = work.Exception?.InnerException ?? work.Exception;
+            logger.LogWarning(cause, "The TLS authentication of session {SessionId} threw an exception.", session.Id);
+            return CommResult<Stream>.Fail("The TLS authentication threw an exception.", CommErrorKind.Unspecified, null, cause);
+        }
+
+        return work.Result;
+    }
+
+    // 服务端 TLS 认证本体：成功后把流记录到会话（会话已中止时拒绝，并释放该流）。
+    private async Task<CommResult<Stream>> AuthenticateSessionAsync(TcpSession session, Stream raw, CancellationToken token)
+    {
+        try
+        {
+            SslStream secured = await TlsStreamFactory.AuthenticateServerAsync(raw, serverCertificate!, options.ClientCertificateRequired,
+                                                                              options.TlsProtocols, options.TlsCheckRevocation,
+                                                                              clientCertificateValidation, token).ConfigureAwait(false);
+            if (!session.AttachTls(secured))
             {
-                Task finished = await Task.WhenAny(work, interrupted.Task).ConfigureAwait(false);
-                if (!ReferenceEquals(finished, work))
-                {
-                    ObserveAbandoned(work);
-                    return session.Closing
-                        ? CommResult.Fail("The session was closed during its handshake.", CommErrorKind.ConnectionClosed)
-                        : HandshakeTimeoutResult();
-                }
+                secured.Dispose();
+                return CommResult<Stream>.Fail("The session was closed during its TLS handshake.", CommErrorKind.ConnectionClosed);
             }
 
-            if (work.IsCanceled)
-                return session.Closing
-                    ? CommResult.Fail("The session was closed during its handshake.", CommErrorKind.ConnectionClosed)
-                    : HandshakeTimeoutResult();
-
-            if (work.IsFaulted)
-            {
-                Exception? cause = work.Exception?.InnerException ?? work.Exception;
-                logger.LogWarning(cause, "The connection initializer of session {SessionId} threw an exception.", session.Id);
-                return CommResult.Fail("The connection initializer threw an exception.", CommErrorKind.Unspecified, null, cause);
-            }
-
-            return work.Result;
+            return CommResult<Stream>.Success(secured);
+        }
+        catch (AuthenticationException ex)
+        {
+            logger.LogWarning(ex, "The TLS authentication of session {SessionId} from {Remote} failed.", session.Id, session.RemoteEndPoint);
+            return CommResult<Stream>.Fail("The TLS client authentication failed.", CommErrorKind.AuthenticationFailed, null, ex);
+        }
+        catch (Exception ex) when (ex is IOException || ex is SocketException || ex is ObjectDisposedException)
+        {
+            return CommResult<Stream>.Fail("The TLS handshake lost the connection.", CommErrorKind.ConnectionClosed, null, ex);
         }
     }
 
-    private CommResult HandshakeTimeoutResult()
-        => CommResult.Fail($"The session handshake did not complete within {options.SessionHandshakeTimeout} ms.", CommErrorKind.Timeout);
+    // 在 SessionHandshakeTimeout 内执行初始化器（与 TLS 共享时限）。超时或拆除后不再等待初始化器，但观察它的异常。
+    private async Task<CommResult> RunInitializerAsync(TcpSession session, TimeoutScope scope)
+    {
+        Task<CommResult> work = StartInitializer(session.View!, scope.Token);
+        if (!await WaitForHandshakeStepAsync(work, session, scope.Token).ConfigureAwait(false))
+        {
+            ObserveAbandoned(work);
+            return HandshakeAbandoned(session);
+        }
 
-    // 同步抛出的异常转换为已完成的故障任务，统一由 RunHandshakeAsync 处理。
+        if (work.IsCanceled || scope.IsTimedOut)
+            return HandshakeAbandoned(session);
+
+        if (work.IsFaulted)
+        {
+            Exception? cause = work.Exception?.InnerException ?? work.Exception;
+            logger.LogWarning(cause, "The connection initializer of session {SessionId} threw an exception.", session.Id);
+            return CommResult.Fail("The connection initializer threw an exception.", CommErrorKind.Unspecified, null, cause);
+        }
+
+        return work.Result;
+    }
+
+    // 等待一个握手步骤完成，或握手时限耗尽、会话开始拆除。返回 true 表示步骤已完成。
+    private static async Task<bool> WaitForHandshakeStepAsync(Task work, TcpSession session, CancellationToken windowToken)
+    {
+        var interrupted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (windowToken.Register(() => interrupted.TrySetResult(true)))
+        using (session.ClosingToken.Register(() => interrupted.TrySetResult(true)))
+        {
+            Task finished = await Task.WhenAny(work, interrupted.Task).ConfigureAwait(false);
+            return ReferenceEquals(finished, work);
+        }
+    }
+
+    // 握手步骤未正常完成：会话已在拆除则为"拆除中"，否则为超时（时限到期或步骤被取消）。
+    private CommResult HandshakeAbandoned(TcpSession session)
+    {
+        if (session.Closing)
+            return CommResult.Fail("The session was closed during its handshake.", CommErrorKind.ConnectionClosed);
+
+        return CommResult.Fail($"The session handshake did not complete within {options.SessionHandshakeTimeout} ms.", CommErrorKind.Timeout);
+    }
+
+    // 服务端客户端证书校验（设计文档 7.3）：组件回调优先；否则要求客户端证书时必须提供且没有校验错误，不要求时未提供证书即可，提供的证书仍须没有校验错误。
+    private bool ValidateClientCertificate(object sender, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors errors)
+    {
+        if (options.RemoteCertificateValidation != null)
+            return options.RemoteCertificateValidation(sender, certificate, chain, errors);
+
+        if (certificate == null)
+            return !options.ClientCertificateRequired;
+
+        return errors == SslPolicyErrors.None;
+    }
+
+    // 同步抛出的异常转换为已完成的故障任务，统一由 RunInitializerAsync 处理。
     private Task<CommResult> StartInitializer(IByteChannel view, CancellationToken token)
     {
         try

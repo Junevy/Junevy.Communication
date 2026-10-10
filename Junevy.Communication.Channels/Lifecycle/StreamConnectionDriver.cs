@@ -14,6 +14,7 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
 {
     private readonly StreamClientOptions options;
     private readonly Func<CancellationToken, Task<CommResult<Stream>>> openStream;
+    private readonly Func<Stream, CancellationToken, Task<CommResult<Stream>>> secureStream;
     private readonly Action abortTransport;
     private readonly Func<CancellationToken, Task> closing;
     private readonly Func<PartialFrameAction> partialFrameAction;
@@ -29,6 +30,7 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
     /// </summary>
     /// <param name="options">已校验的运行参数。</param>
     /// <param name="openStream">打开传输（派生类的 OpenStreamAsync）。</param>
+    /// <param name="secureStream">握手时限内的流包装（派生类的 SecureStreamAsync）。</param>
     /// <param name="abortTransport">中止传输（派生类的 AbortTransport）；必须可重复调用。</param>
     /// <param name="closing">优雅关闭前的动作（派生类的 OnClosingAsync）。</param>
     /// <param name="partialFrameAction">读取派生类的 PartialFrameAction（每次打开时读取）。</param>
@@ -38,12 +40,14 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
     /// <param name="logger">日志记录器。</param>
     /// <exception cref="ArgumentNullException">参数为 null。</exception>
     public StreamConnectionDriver(StreamClientOptions options, Func<CancellationToken, Task<CommResult<Stream>>> openStream,
-                                  Action abortTransport, Func<CancellationToken, Task> closing, Func<PartialFrameAction> partialFrameAction,
+                                  Func<Stream, CancellationToken, Task<CommResult<Stream>>> secureStream, Action abortTransport,
+                                  Func<CancellationToken, Task> closing, Func<PartialFrameAction> partialFrameAction,
                                   Func<FrameReceivedEventArgs, Task> raise, Func<string> describeEndpoint,
                                   ConnectionStatistics statistics, ILogger logger)
     {
         this.options = options ?? throw new ArgumentNullException(nameof(options));
         this.openStream = openStream ?? throw new ArgumentNullException(nameof(openStream));
+        this.secureStream = secureStream ?? throw new ArgumentNullException(nameof(secureStream));
         this.abortTransport = abortTransport ?? throw new ArgumentNullException(nameof(abortTransport));
         this.closing = closing ?? throw new ArgumentNullException(nameof(closing));
         this.partialFrameAction = partialFrameAction ?? throw new ArgumentNullException(nameof(partialFrameAction));
@@ -81,19 +85,29 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
         if (!opened.IsSuccess)
             return opened.ToResult();
 
+        // 握手时限从传输打开之后开始计时：流包装（TLS）与初始化器共享这一个窗口（设计文档第 10 节）。握手成功后立即释放窗口，之后不再中止连接。
+        using TimeoutScope window = TimeoutScope.Start(options.HandshakeTimeout, cancellationToken, abortTransport);
         LiveConnection? live = null;
         try
         {
-            live = CreateConnection(opened.Data!, new ConnectionAttempt(owner, generation));
+            CommResult<Stream> secured = await SecureWithinWindowAsync(opened.Data!, window, cancellationToken).ConfigureAwait(false);
+            if (!secured.IsSuccess)
+            {
+                SafeAbortTransport();
+                return secured.ToResult();
+            }
+
+            live = CreateConnection(secured.Data!, new ConnectionAttempt(owner, generation));
             live.Channel.Start();
 
-            CommResult handshake = await HandshakeAsync(live, cancellationToken).ConfigureAwait(false);
+            CommResult handshake = await HandshakeAsync(live, window, cancellationToken).ConfigureAwait(false);
             if (!handshake.IsSuccess)
             {
                 await StopConnectionAsync(live, 0, graceful: false).ConfigureAwait(false);
                 return handshake;
             }
 
+            window.Dispose();
             StartHeartbeat(live);
             current = live;
             logger.LogInformation("Stream connection opened to {Endpoint}.", describeEndpoint());
@@ -144,12 +158,46 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
         return new LiveConnection(channel, router, attempt);
     }
 
-    // 握手：执行初始化器，结束握手并把积压转入派发队列，最后确认握手期间没有发生故障。
-    private async Task<CommResult> HandshakeAsync(LiveConnection live, CancellationToken cancellationToken)
+    // 在握手时限内执行流包装（TLS）。时限耗尽或用户取消后不再等待包装（它可能忽略取消令牌），但观察它的结果，并释放之后才成功的流。
+    private async Task<CommResult<Stream>> SecureWithinWindowAsync(Stream stream, TimeoutScope window, CancellationToken cancellationToken)
+    {
+        Task<CommResult<Stream>> work = StartSecure(stream, window.Token);
+        if (!await WaitForStepAsync(work, window.Token).ConfigureAwait(false))
+        {
+            ObserveAbandonedStream(work);
+            cancellationToken.ThrowIfCancellationRequested();
+            return TimeoutFailure<Stream>();
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            ObserveAbandonedStream(work);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        // 时限可能在包装失败（例如套接字被中止引发的 I/O 异常）之前耗尽：此时归类为超时，而不是连接关闭。
+        if (work.IsCanceled || window.IsTimedOut)
+        {
+            ObserveAbandonedStream(work);
+            return TimeoutFailure<Stream>();
+        }
+
+        if (work.IsFaulted)
+        {
+            Exception? cause = work.Exception?.InnerException ?? work.Exception;
+            logger.LogWarning(cause, "Securing the stream failed.");
+            return CommResult<Stream>.Fail("Securing the stream failed.", CommErrorKind.Unspecified, null, cause);
+        }
+
+        return work.Result;
+    }
+
+    // 握手：执行初始化器（与 TLS 共享同一握手时限），结束握手并把积压转入派发队列，最后确认握手期间没有发生故障。
+    private async Task<CommResult> HandshakeAsync(LiveConnection live, TimeoutScope window, CancellationToken cancellationToken)
     {
         if (options.Initializer != null)
         {
-            CommResult initialized = await RunInitializerAsync(live.Channel, cancellationToken).ConfigureAwait(false);
+            CommResult initialized = await RunInitializerAsync(live.Channel, window, cancellationToken).ConfigureAwait(false);
             if (!initialized.IsSuccess)
                 return initialized;
         }
@@ -163,43 +211,60 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
         return CommResult.Success();
     }
 
-    // 在握手超时之内执行初始化器。超时或取消后不再等待初始化器（它可能忽略取消令牌），但会观察它的异常。
-    private async Task<CommResult> RunInitializerAsync(StreamChannel channel, CancellationToken cancellationToken)
+    // 在握手时限内执行初始化器。时限耗尽或取消后不再等待初始化器（它可能忽略取消令牌），但会观察它的异常。
+    private async Task<CommResult> RunInitializerAsync(StreamChannel channel, TimeoutScope window, CancellationToken cancellationToken)
     {
-        using (TimeoutScope scope = TimeoutScope.Start(options.HandshakeTimeout, cancellationToken, abortTransport))
+        Task<CommResult> work = StartInitializer(new HandshakeView(channel), window.Token);
+        if (!await WaitForStepAsync(work, window.Token).ConfigureAwait(false))
         {
-            Task<CommResult> work = StartInitializer(new HandshakeView(channel), scope.Token);
-            var interrupted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            using (scope.Token.Register(() => interrupted.TrySetResult(true)))
-            {
-                Task finished = await Task.WhenAny(work, interrupted.Task).ConfigureAwait(false);
-                if (!ReferenceEquals(finished, work))
-                {
-                    ObserveAbandoned(work);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    return TimeoutResult();
-                }
-            }
+            ObserveAbandoned(work);
+            cancellationToken.ThrowIfCancellationRequested();
+            return TimeoutResult();
+        }
 
-            if (work.IsCanceled)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                return TimeoutResult();
-            }
+        cancellationToken.ThrowIfCancellationRequested();
+        if (work.IsCanceled || window.IsTimedOut)
+            return TimeoutResult();
 
-            if (work.IsFaulted)
-            {
-                Exception? cause = work.Exception?.InnerException ?? work.Exception;
-                logger.LogWarning(cause, "The connection initializer threw an exception.");
-                return CommResult.Fail("The connection initializer threw an exception.", CommErrorKind.Unspecified, null, cause);
-            }
+        if (work.IsFaulted)
+        {
+            Exception? cause = work.Exception?.InnerException ?? work.Exception;
+            logger.LogWarning(cause, "The connection initializer threw an exception.");
+            return CommResult.Fail("The connection initializer threw an exception.", CommErrorKind.Unspecified, null, cause);
+        }
 
-            return work.Result;
+        return work.Result;
+    }
+
+    // 等待一个握手步骤完成，或握手时限耗尽、用户取消。返回 true 表示步骤已完成（成功、失败或取消均可），false 表示步骤被放弃。
+    private static async Task<bool> WaitForStepAsync(Task work, CancellationToken windowToken)
+    {
+        var interrupted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (windowToken.Register(() => interrupted.TrySetResult(true)))
+        {
+            Task finished = await Task.WhenAny(work, interrupted.Task).ConfigureAwait(false);
+            return ReferenceEquals(finished, work);
         }
     }
 
     private CommResult TimeoutResult()
-        => CommResult.Fail($"The connection initializer did not complete within {options.HandshakeTimeout} ms.", CommErrorKind.Timeout);
+        => CommResult.Fail($"The connection handshake did not complete within {options.HandshakeTimeout} ms.", CommErrorKind.Timeout);
+
+    private CommResult<T> TimeoutFailure<T>()
+        => CommResult<T>.Fail($"The connection handshake did not complete within {options.HandshakeTimeout} ms.", CommErrorKind.Timeout);
+
+    // 同步抛出的异常转换为已完成的故障任务，统一由 SecureWithinWindowAsync 处理。
+    private Task<CommResult<Stream>> StartSecure(Stream stream, CancellationToken token)
+    {
+        try
+        {
+            return secureStream(stream, token);
+        }
+        catch (Exception ex)
+        {
+            return Task.FromException<CommResult<Stream>>(ex);
+        }
+    }
 
     // 同步抛出的异常转换为已完成的故障任务，统一由 RunInitializerAsync 处理。
     private Task<CommResult> StartInitializer(IByteChannel view, CancellationToken token)
@@ -217,6 +282,18 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
     private static void ObserveAbandoned(Task work)
     {
         work.ContinueWith(task => { _ = task.Exception; }, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+    }
+
+    // 被放弃的流包装若之后成功，其流不会被使用：观察异常并释放该流（SslStream 不拥有底层流，释放它不影响套接字）。
+    private static void ObserveAbandonedStream(Task<CommResult<Stream>> work)
+    {
+        work.ContinueWith(task =>
+        {
+            if (task.Status == TaskStatus.RanToCompletion && task.Result.IsSuccess)
+                task.Result.Data!.Dispose();
+            else if (task.IsFaulted)
+                _ = task.Exception;
+        }, TaskContinuationOptions.ExecuteSynchronously);
     }
 
     // 心跳与空闲监视只在握手完成后启动；使用同一个尝试对象报告死亡。

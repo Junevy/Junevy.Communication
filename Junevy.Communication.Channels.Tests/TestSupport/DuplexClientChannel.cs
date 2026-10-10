@@ -13,6 +13,7 @@ internal sealed class DuplexClientChannel : StreamClientChannel
     private readonly object sync = new object();
     private readonly List<DuplexStreamPair> pairs = new List<DuplexStreamPair>();
     private readonly Func<DuplexStreamPair, Task>? onOpened;
+    private readonly Func<Stream, CancellationToken, Task<CommResult<Stream>>>? onSecure;
     private int openCount;
     private int abortCount;
     private DuplexStreamPair? currentPair;
@@ -24,11 +25,14 @@ internal sealed class DuplexClientChannel : StreamClientChannel
     /// <param name="components">代码级覆盖；可为 null。</param>
     /// <param name="onOpened">每次打开时在返回流之前调用（可用于让对端先发送数据）；可为 null。</param>
     /// <param name="logger">日志记录器；为 null 时使用测试日志器。</param>
+    /// <param name="onSecure">替代 <c>SecureStreamAsync</c> 的实现（模拟 TLS 包装）；为 null 时使用基类的默认实现。</param>
     public DuplexClientChannel(ClientChannelSettings settings, ChannelComponents? components = null,
-                               Func<DuplexStreamPair, Task>? onOpened = null, ILogger? logger = null)
+                               Func<DuplexStreamPair, Task>? onOpened = null, ILogger? logger = null,
+                               Func<Stream, CancellationToken, Task<CommResult<Stream>>>? onSecure = null)
         : base("duplex-test", settings, components, logger ?? new TestLogger())
     {
         this.onOpened = onOpened;
+        this.onSecure = onSecure;
     }
 
     /// <summary>OpenStreamAsync 的调用次数（含失败的打开）。</summary>
@@ -65,6 +69,12 @@ internal sealed class DuplexClientChannel : StreamClientChannel
 
         return CommResult<Stream>.Success(pair.A);
     }
+
+    /// <inheritdoc />
+    protected override Task<CommResult<Stream>> SecureStreamAsync(Stream stream, CancellationToken cancellationToken)
+        => onSecure != null
+            ? onSecure(stream, cancellationToken)
+            : base.SecureStreamAsync(stream, cancellationToken);
 
     /// <inheritdoc />
     protected override void AbortTransport()

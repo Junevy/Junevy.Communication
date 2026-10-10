@@ -10,8 +10,7 @@ using static Junevy.Communication.Tcp.Tests.TcpTestHelpers;
 namespace Junevy.Communication.Tcp.Tests;
 
 /// <summary>
-/// TCP 客户端通道的配置校验与快照语义（计划 10.3 的 <c>Config_Invalid_Throws</c>、<c>Config_NotMutated</c>、
-/// <c>Tls_EnabledBeforeTask11_ReturnsNotSupported</c>）。本类不建立套接字连接。
+/// TCP 客户端通道的配置校验与快照语义（计划 10.3 的 <c>Config_Invalid_Throws</c>、<c>Config_NotMutated</c>）。本类不建立套接字连接。
 /// </summary>
 public sealed class TcpClientChannelConfigTests
 {
@@ -100,22 +99,6 @@ public sealed class TcpClientChannelConfigTests
         }
 
         Assert.Equal(before, Describe(config));
-    }
-
-    [Fact(Timeout = 30000)]
-    public async Task Tls_EnabledBeforeTask11_ReturnsNotSupported()
-    {
-        // Task 11 实现 TLS 时删除本测试。
-        var config = CreateConfig(FreePort());
-        config.Tls = new TcpClientTlsOptions { Enabled = true };
-        await using var channel = new TcpClientChannel(config);
-
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 5000);
-
-        Assert.False(result.IsSuccess);
-        Assert.Equal(CommErrorKind.NotSupported, result.ErrorKind);
-        Assert.False(channel.IsTlsActive);
-        Assert.Equal(ConnectionState.Disconnected, channel.State);
     }
 
     // 按属性名把配置改成非法值。每个用例只改一处，其余保持合法。

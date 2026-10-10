@@ -17,6 +17,6 @@ public interface ITcpClientChannel : IClientChannel
     /// <summary>已连接时当前套接字的本地端点；否则为 null。</summary>
     IPEndPoint? LocalEndPoint { get; }
 
-    /// <summary>当前连接是否已完成 TLS。本阶段恒为 false。</summary>
+    /// <summary>当前连接是否已完成 TLS 认证（认证成功后为 true，连接结束后为 false）。</summary>
     bool IsTlsActive { get; }
 }

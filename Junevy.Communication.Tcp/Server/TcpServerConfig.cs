@@ -67,7 +67,7 @@ public class TcpServerConfig : IChannelConfig
     /// <summary>套接字选项（无延迟、保活、收发缓冲、Linger），应用于每个接入的连接。</summary>
     public TcpSocketOptions Socket { get; set; } = new TcpSocketOptions();
 
-    /// <summary>TLS 配置，默认关闭（TLS 在后续阶段实现，启用时启动返回 <c>NotSupported</c>）。</summary>
+    /// <summary>TLS 配置，默认关闭。启用时必须提供服务端证书（<see cref="TcpServerTlsOptions.ServerCertificate"/> 或 <c>TcpChannelComponents.ServerCertificate</c>）。</summary>
     public TcpServerTlsOptions Tls { get; set; } = new TcpServerTlsOptions();
 
     /// <summary>每个会话派发队列的容量（帧数），必须为正，默认 1024。队列满时挂起接收，由 TCP 流控把背压传给对端。</summary>

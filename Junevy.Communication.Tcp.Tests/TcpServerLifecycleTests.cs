@@ -137,20 +137,6 @@ public sealed class TcpServerLifecycleTests
     }
 
     [Fact(Timeout = 30000)]
-    public async Task Tls_Enabled_StartReturnsNotSupported()
-    {
-        // 计划 11.3 的占位测试：TLS 在 Task 11 实现，届时删除此测试。
-        var config = CreateServerConfig(FreePort());
-        config.Tls.Enabled = true;
-        await using var server = new TcpServer(config);
-
-        CommResult result = await WithinAsync(server.StartAsync(), 5000);
-
-        Assert.Equal(CommErrorKind.NotSupported, result.ErrorKind);
-        Assert.Equal(ServerState.Stopped, server.State);
-    }
-
-    [Fact(Timeout = 30000)]
     public async Task SendToUnknownSession_ReturnsNotConnected()
     {
         await using var server = new TcpServer(CreateServerConfig(FreePort()));

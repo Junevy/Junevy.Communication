@@ -1,4 +1,7 @@
 using System.Net;
+using System.Net.Security;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Channels.Framing;
 using Junevy.Communication.Channels.Lifecycle;
@@ -76,7 +79,34 @@ internal sealed class TcpServerOptions
 
         Socket = TcpSocketConfigurator.ValidateAndCopy(config.Socket, nameof(config));
         RestartPolicy = BackoffPolicyFactory.Create(config.RestartOnFault);
+
         TlsEnabled = config.Tls.Enabled;
+        if (TlsEnabled)
+        {
+            // 服务端证书：组件提供的优先（由调用方持有）；否则使用配置来源（构造时只校验结构，加载由 TcpServer 在构造时完成）。
+            ComponentServerCertificate = components?.ServerCertificate;
+            if (ComponentServerCertificate != null)
+            {
+                if (!ComponentServerCertificate.HasPrivateKey)
+                    throw new ArgumentException("TcpChannelComponents.ServerCertificate must include its private key.", nameof(components));
+            }
+            else if (config.Tls.ServerCertificate != null)
+            {
+                CertificateLoader.Validate(config.Tls.ServerCertificate, "Tls.ServerCertificate");
+                ServerCertificateSource = CertificateLoader.Copy(config.Tls.ServerCertificate);
+            }
+            else
+            {
+                throw new ArgumentException("TLS is enabled but no server certificate is configured (Tls.ServerCertificate or TcpChannelComponents.ServerCertificate).",
+                                            nameof(config));
+            }
+
+            TlsProtocols = config.Tls.Protocols;
+            TlsCheckRevocation = config.Tls.CheckCertificateRevocation;
+            ClientCertificateRequired = config.Tls.ClientCertificateRequired;
+        }
+
+        RemoteCertificateValidation = components?.RemoteCertificateValidation;
     }
 
     /// <summary>监听地址。</summary>
@@ -154,8 +184,26 @@ internal sealed class TcpServerOptions
     /// <summary>重新监听的退避策略；未启用时为 null。</summary>
     public IBackoffPolicy? RestartPolicy { get; }
 
-    /// <summary>是否启用 TLS（本阶段启动时返回 NotSupported）。</summary>
+    /// <summary>是否启用 TLS。</summary>
     public bool TlsEnabled { get; }
+
+    /// <summary>组件提供的服务端证书（由调用方持有）；为 null 时使用 <see cref="ServerCertificateSource"/>。仅在启用 TLS 时有效。</summary>
+    public X509Certificate2? ComponentServerCertificate { get; }
+
+    /// <summary>配置中的服务端证书来源（构造时复制）；启用 TLS 且没有组件证书时非 null。</summary>
+    public CertificateSource? ServerCertificateSource { get; }
+
+    /// <summary>TLS 协议版本；<see cref="SslProtocols.None"/> 表示交给操作系统。</summary>
+    public SslProtocols TlsProtocols { get; }
+
+    /// <summary>是否检查证书吊销。</summary>
+    public bool TlsCheckRevocation { get; }
+
+    /// <summary>是否要求客户端证书（双向认证）。</summary>
+    public bool ClientCertificateRequired { get; }
+
+    /// <summary>远端证书校验回调（组件提供，用于校验客户端证书）；为 null 时使用默认规则。</summary>
+    public RemoteCertificateValidationCallback? RemoteCertificateValidation { get; }
 
     private static IPAddress ParseListenAddress(string? text)
     {

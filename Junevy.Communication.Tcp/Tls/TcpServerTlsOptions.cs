@@ -3,8 +3,8 @@ using System.Security.Authentication;
 namespace Junevy.Communication.Tcp;
 
 /// <summary>
-/// TCP 服务端 TLS 配置（设计文档 7.3）。本阶段只定义配置类型：<see cref="Enabled"/> 为 true 时，
-/// <see cref="TcpServer.StartAsync"/> 返回 <c>NotSupported</c>；TLS 握手在后续阶段实现。默认关闭。
+/// TCP 服务端 TLS 配置（设计文档 7.3）。<see cref="Enabled"/> 为 true 时，服务端证书在构造 <see cref="TcpServer"/> 时加载，
+/// 每个会话在 <c>SessionHandshakeTimeout</c> 内完成 TLS 认证（与初始化器共享该时限）。默认关闭。
 /// </summary>
 public sealed class TcpServerTlsOptions
 {

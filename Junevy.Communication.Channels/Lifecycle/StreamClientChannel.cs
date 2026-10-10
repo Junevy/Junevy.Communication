@@ -8,7 +8,7 @@ namespace Junevy.Communication.Channels;
 /// <summary>
 /// 字节流客户端通道的公开基类（D12）。把任何以 <see cref="Stream"/> 表示的传输（TCP、串口、命名管道、蓝牙串口等）
 /// 变成具备连接生命周期、请求/应答关联、心跳、握手钩子与自动重连的 <see cref="IClientChannel"/>。
-/// 派生类实现打开与中止传输，并可覆写优雅关闭与半帧处理方式。
+/// 派生类实现打开与中止传输，并可覆写流包装（例如 TLS）、优雅关闭与半帧处理方式。
 /// </summary>
 /// <remarks>
 /// 公开操作在释放之后抛出 <see cref="ObjectDisposedException"/>（<see cref="DisconnectAsync"/> 除外：释放之后直接返回）。
@@ -41,7 +41,7 @@ public abstract class StreamClientChannel : IClientChannel
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         resolved = new StreamClientOptions(settings, components, this);
-        driver = new StreamConnectionDriver(resolved, OpenStreamAsync, AbortTransport, OnClosingAsync, () => PartialFrameAction,
+        driver = new StreamConnectionDriver(resolved, OpenStreamAsync, SecureStreamAsync, AbortTransport, OnClosingAsync, () => PartialFrameAction,
                                             RaiseFrameReceived, () => DescribeEndpoint(), statistics, logger);
         supervisor = new ConnectionSupervisor(name, driver, resolved.ReconnectPolicy, resolved.ReconnectOnInitialFailure, statistics, logger);
         driver.Attach(supervisor);
@@ -55,6 +55,16 @@ public abstract class StreamClientChannel : IClientChannel
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>成功时为已打开的流。</returns>
     protected abstract Task<CommResult<Stream>> OpenStreamAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 链路连通后、开始收发之前对流做安全包装（例如 TLS）。在 <c>HandshakeTimeout</c> 计时窗口内执行，与 <c>IConnectionInitializer</c> 共享同一时限；
+    /// 超时或取消时基类调用 <see cref="AbortTransport"/>。默认原样返回。失败返回 Fail，用户取消抛出 <see cref="OperationCanceledException"/>。
+    /// </summary>
+    /// <param name="stream"><see cref="OpenStreamAsync"/> 返回的流。</param>
+    /// <param name="cancellationToken">取消令牌（在握手时限内有效）。</param>
+    /// <returns>成功时为用于收发的流（可以是包装后的流）。</returns>
+    protected virtual Task<CommResult<Stream>> SecureStreamAsync(Stream stream, CancellationToken cancellationToken)
+        => Task.FromResult(CommResult<Stream>.Success(stream));
 
     /// <summary>
     /// 立即中止传输（例如销毁套接字、关闭端口）。可以在任意线程上重复调用。
