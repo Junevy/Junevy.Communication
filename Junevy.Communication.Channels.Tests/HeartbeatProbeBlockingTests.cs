@@ -11,12 +11,14 @@ namespace Junevy.Communication.Channels.Tests;
 /// <summary>
 /// 心跳探测与请求锁的交互：探测排在请求锁上、超时时没有写出任何帧，这不是对端沉默的证据，不计为心跳失败。
 /// 使用内存数据报传输，确定性地复现"用户请求的迟到窗口期内探测到期"的情形。
+/// 探测超时取 300 ms：线程池负载很高（整个解决方案并行测试）时续延可能延迟上百毫秒，过短的超时会让获得请求锁的探测来不及写出，
+/// 连续被判为"通道忙"，导致在时限内判定不了死亡（2026-10-10 在全量测试中偶发一次）。
 /// </summary>
 public sealed class HeartbeatProbeBlockingTests
 {
     private static readonly IPEndPoint Peer = new IPEndPoint(IPAddress.Loopback, 7001);
 
-    [Fact(Timeout = 20000)]
+    [Fact(Timeout = 30000)]
     public async Task HeartbeatProbe_BlockedByRequestLock_IsNotCountedAsFailure()
     {
         // 用户请求超时后，Sequential 通道在迟到窗口（1500 ms）内持有请求锁。窗口期内到期的探测排在请求锁上，超时时没有写出任何帧。
@@ -29,7 +31,7 @@ public sealed class HeartbeatProbeBlockingTests
         {
             Enabled = true,
             Interval = 50,
-            Timeout = 100,
+            Timeout = 300,
             MaxFailures = 2,
             OnlyWhenIdle = false,
         }, 0, statistics, deaths.OnDead, new TestLogger());
@@ -38,14 +40,14 @@ public sealed class HeartbeatProbeBlockingTests
         await WaitUntilAsync(() => transport.Sent.Count == 1, 3000);
         monitor.Start();
 
-        // 1000 ms 时仍处于迟到窗口之内（窗口约为 300–1800 ms）：被阻塞的探测不得计为失败，因此不应判定死亡。
-        await Task.Delay(1000);
+        // 1200 ms 时仍处于迟到窗口之内（窗口约为 300–1800 ms）：被阻塞的探测不得计为失败，因此不应判定死亡。
+        await Task.Delay(1200);
         Assert.Equal(0, deaths.Count);
         Assert.Equal(0, statistics.ConsecutiveHeartbeatFailures);
         Assert.True(probe.Attempts >= 3, $"The probe should have run while the request lock was held; attempts: {probe.Attempts}.");
 
         // 迟到窗口结束、请求锁释放后，探测真正发出并被计为失败；连续两次即判定死亡。
-        await WaitUntilAsync(() => deaths.Count >= 1, 8000);
+        await WaitUntilAsync(() => deaths.Count >= 1, 15000);
         Assert.Equal(new[] { DisconnectReason.HeartbeatFailed }, deaths.Reasons);
 
         await monitor.StopAsync();
@@ -89,7 +91,7 @@ public sealed class HeartbeatProbeBlockingTests
         public async Task<CommResult> ProbeAsync(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref attempts);
-            CommResult<byte[]> reply = await channel.RequestAsync(Ping, new RequestOptions { Timeout = 100 }, Peer, cancellationToken)
+            CommResult<byte[]> reply = await channel.RequestAsync(Ping, new RequestOptions { Timeout = 300 }, Peer, cancellationToken)
                 .ConfigureAwait(false);
             return reply.ToResult();
         }

@@ -1166,3 +1166,8 @@ git diff --stat -- Junevy.Communication.Wiki
   - 任务 E（扩展性预演复跑）：预演项目的 `Bind` 变通改为 `HealthProbeFactory`，协议代码 205 行 → 199 行，库代码未改。net8.0 与 net472 各运行一次，场景全部通过：并发请求 20/20 匹配；断线后重连并重新登录，之后 5/5 匹配；心跳失败进入 Reconnecting（`HeartbeatFailed`）。
   - 验收：`dotnet build` Debug 与 Release、`dotnet test` Debug 全部成功。测试数：Core 43、Channels 239、Tcp 122、Udp 34、Serial 59（+2 跳过，未设置 `JUNEVY_SERIAL_PAIR`，未打开真实串口）、Modbus 405（net8.0）；新项目 0 警告（剩余警告全部来自既有的 Modbus、Modbus.Tests、Junevy.Communication.Test 与 wpftmp）。Channels、Tcp、Udp、Serial 在两个目标上各连续运行 3 次，结果一致。
   - 未解决（记录，未修改）：`TcpServer.TryGetSession` 的 `out ITcpSession?` 参数缺少可空特性，调用方需要自行判空（示例中使用 `is not null`）；设计文档没有 4.9 节（`ChannelComponents` 位于 5.6 节，已同步）。
+  - 审阅者验收（2026-10-10）：
+    - 重跑 `dotnet build` Debug 与 Release、`dotnet test` Debug，结果与上面的测试数一致，0 失败；审读任务 A 的代码（客户端驱动解析工厂、服务端按会话调用、互斥校验与 Payload / ExpectedReply 要求的放宽）与知识库 7 处改动，均与代码一致。
+    - 处理"未解决"的第一项：`TryGetSession` 增加 `[NotNullWhen(true)]`，README 与 Skill 示例去掉 `is not null`，新增测试 `TryGetSession_FindsConnectedSession_AndForgetsClosedOne`（此前没有测试调用该方法）。net472 构建因此暴露 CS0436（Tcp 经 `InternalsVisibleTo` 同时看到自己与 Channels 的内部补丁特性），`Common.props` 仅在 net472 上抑制。变异检查：去掉实现上的注解后两个目标都报 CS8767，说明 net472 上补丁特性同样生效。设计 20.1 第 42 项。
+    - 第二项（"4.9 节"）是审阅者派发任务时的笔误，5.6 节正确，无需处理。
+    - 复跑全量时 `HeartbeatProbe_BlockedByRequestLock_IsNotCountedAsFailure`（net472）偶发失败一次，之后 41 次未复现。分析：线程池续延延迟达到 100 ms 的探测超时并持续数秒时，获得请求锁的探测来不及写出即被判为通道忙（按设计不计失败），判定不了死亡；人为限制线程池的实验中逻辑照常推进。只加宽测试余量（探测超时 300 ms、检查点 1200 ms、时限 15 s），变异检查确认测试仍能发现"通道忙计为失败"的回归。
