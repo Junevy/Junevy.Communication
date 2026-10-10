@@ -52,6 +52,7 @@ internal sealed class StreamChannel : IAsyncDisposable
     private int started;
     private int stopRequested;
     private int faultReported;
+    private int sendFailureHandled;
     private Task? fillLoop;
     private Task? parseLoop;
 
@@ -368,6 +369,8 @@ internal sealed class StreamChannel : IAsyncDisposable
     // 整帧写出，受 SendTimeout 约束。超时、取消写出与 I/O 错误都中止传输并报告 SendFailed（D10）。
     private async Task<CommResult> WriteBytesAsync(ReadOnlyMemory<byte> bytes, CancellationToken userToken)
     {
+        // 写出在发送锁下串行进行，因此这里的标记只属于本次写出。
+        Volatile.Write(ref sendFailureHandled, 0);
         using TimeoutScope scope = TimeoutScope.Start(settings.SendTimeout, userToken, OnWriteAborted);
         try
         {
@@ -383,7 +386,8 @@ internal sealed class StreamChannel : IAsyncDisposable
             else
                 failure = CommResult.Fail("The connection was closed while writing a frame.", CommErrorKind.ConnectionClosed, null, ex);
 
-            Fault(DisconnectReason.SendFailed, ex);
+            // 不依赖 TimeoutScope 的回调：取消写出时，写出异常可能先于回调到达，而 scope 释放会注销尚未执行的回调。
+            AbortAfterSendFailure(ex);
             return failure;
         }
 
@@ -396,11 +400,18 @@ internal sealed class StreamChannel : IAsyncDisposable
         return CommResult.Success();
     }
 
-    // 写出超时或被取消时由 TimeoutScope 调用：先报告 SendFailed，再中止传输。
-    // 顺序很重要：中止会让读取端抛出，若先中止，读取端会抢先以 RemoteClosed 报告，掩盖真正的原因。
-    private void OnWriteAborted()
+    // 写出超时或被取消时由 TimeoutScope 调用。
+    private void OnWriteAborted() => AbortAfterSendFailure(null);
+
+    // 写出失败（超时、取消或 I/O 错误）：每次写出至多处理一次。先报告 SendFailed，再中止传输：
+    // 中止会让读取端抛出，若先中止，读取端会抢先以 RemoteClosed 报告，掩盖真正的原因。
+    // 停止过程中由停止流程负责中止，这里不再重复中止（停止不报告故障）。
+    private void AbortAfterSendFailure(Exception? cause)
     {
-        Fault(DisconnectReason.SendFailed, null);
+        if (IsStopping || Interlocked.Exchange(ref sendFailureHandled, 1) != 0)
+            return;
+
+        Fault(DisconnectReason.SendFailed, cause);
         SafeAbortTransport();
     }
 
