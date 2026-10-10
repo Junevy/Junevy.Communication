@@ -580,7 +580,7 @@ public sealed class TcpServer : ITcpServer
             if (session.Closing)
                 return false;
 
-            var table = new PendingRequestTable(options.Correlation, options.KeyExtractor, -1, logger);
+            var table = new PendingRequestTable(options.Correlation, options.KeyExtractor, options.LateReplyWindow, logger);
             table.BeginHandshake();
 
             var router = new FrameRouter(table, options.ReceiveQueueCapacity, QueueFullMode.Wait,
@@ -594,10 +594,10 @@ public sealed class TcpServer : ITcpServer
             {
                 SendTimeout = options.SendTimeout,
                 RequestTimeout = options.RequestTimeout,
-                LateReplyWindow = -1,
+                LateReplyWindow = options.LateReplyWindow,
                 PartialFrameAction = PartialFrameAction.Disconnect,
                 PartialFrameTimeout = options.PartialFrameTimeout,
-                ResetOnRequestTimeout = true,
+                ResetOnRequestTimeout = options.ResetOnRequestTimeout,
                 Correlation = options.Correlation,
                 ReceiveBufferSize = ReceiveBufferSize,
             };
@@ -696,26 +696,39 @@ public sealed class TcpServer : ITcpServer
     }
 
     // 心跳与空闲监视在握手结束之后启动（计划 9.3 的同一顺序）。超时由 HeartbeatMonitor 报告，拆除在后台进行。
+    // 探测只在启用心跳时创建；用户工厂在服务端锁之外调用，工厂抛出的异常使该会话以 Error 拆除（见 RunSessionAsync）。
     private void StartHeartbeat(TcpSession session)
     {
         bool probing = options.Heartbeat.Enabled;
         if (!probing && options.SessionIdleTimeout <= 0)
             return;
 
+        IHealthProbe? probe = probing ? CreateSessionProbe(session) : null;
         lock (sync)
         {
             if (session.Closing)
                 return;
 
-            IHealthProbe? probe = probing
-                ? options.HealthProbe ?? new PayloadHeartbeatProbe(session.View!, options.HeartbeatPayload!, options.HeartbeatExpectedReply, options.Heartbeat.Timeout)
-                : null;
             var monitor = new HeartbeatMonitor(probe, options.Heartbeat, options.SessionIdleTimeout, session.Statistics,
                 reason => ScheduleTeardown(session, reason, null), logger);
 
             session.Heartbeat = monitor;
             monitor.Start();
         }
+    }
+
+    // 会话自己的心跳探测：SessionHealthProbeFactory 返回的专用探测；未设置工厂时使用绑定该会话通道的内置负载探测。
+    private IHealthProbe CreateSessionProbe(TcpSession session)
+    {
+        Func<ITcpSession, IHealthProbe>? factory = options.SessionHealthProbeFactory;
+        if (factory == null)
+            return new PayloadHeartbeatProbe(session.View!, options.HeartbeatPayload!, options.HeartbeatExpectedReply, options.Heartbeat.Timeout);
+
+        IHealthProbe? probe = factory(session);
+        if (probe == null)
+            throw new InvalidOperationException("SessionHealthProbeFactory returned null.");
+
+        return probe;
     }
 
     // ————— 拆除 —————

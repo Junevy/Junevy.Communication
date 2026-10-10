@@ -308,6 +308,161 @@ public sealed class TcpServerSessionTests
         Assert.Equal(new[] { "session:HELLO", "server:HELLO" }, recorder.Frames);
     }
 
+    [Fact(Timeout = 30000)]
+    public async Task SessionHealthProbeFactory_CalledPerSessionWithThatSession()
+    {
+        int port = FreePort();
+        var config = CreateServerConfig(port);
+        config.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 5000, Timeout = 1000, MaxFailures = 3 };
+        var created = new List<ITcpSession>();
+        var components = new TcpChannelComponents
+        {
+            SessionHealthProbeFactory = session =>
+            {
+                lock (created)
+                    created.Add(session);
+
+                return new DelegateProbe(_ => Task.FromResult(CommResult.Success()));
+            },
+        };
+        await using var server = new TcpServer(config, null, components);
+        var recorder = new ServerRecorder(server);
+        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+
+        var clients = new List<TcpClientChannel>();
+        for (int i = 0; i < 3; i++)
+        {
+            TcpClientChannel client = CreateClient(port);
+            clients.Add(client);
+            Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
+        }
+
+        await WaitUntilAsync(() => recorder.ConnectedCount == 3, 5000);
+        await WaitUntilAsync(() =>
+        {
+            lock (created)
+                return created.Count == 3;
+        }, 5000);
+
+        List<ITcpSession> calls;
+        lock (created)
+            calls = created.ToList();
+
+        // 每个会话恰好调用一次，且参数就是该会话本身。
+        Assert.Equal(3, calls.Select(session => session.Id).Distinct().Count());
+        Assert.All(calls, session => Assert.Contains(recorder.Connected, connected => ReferenceEquals(connected, session)));
+        await DisposeAllAsync(clients);
+    }
+
+    [Fact(Timeout = 30000)]
+    public async Task SessionHealthProbeFactory_ProbeFails_ClosesThatSessionOnly()
+    {
+        int port = FreePort();
+        var config = CreateServerConfig(port);
+        config.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 100, Timeout = 200, MaxFailures = 2 };
+        var firstSession = new TaskCompletionSource<ITcpSession>(TaskCreationOptions.RunContinuationsAsynchronously);
+        int calls = 0;
+        var components = new TcpChannelComponents
+        {
+            SessionHealthProbeFactory = session =>
+            {
+                // 只有第一个调用工厂的会话得到失败的探测，其余会话的探测健康。
+                if (Interlocked.Increment(ref calls) == 1)
+                {
+                    firstSession.TrySetResult(session);
+                    return new DelegateProbe(_ => Task.FromResult(CommResult.Fail("The probe reports the session as unhealthy.", CommErrorKind.ProtocolViolation)));
+                }
+
+                return new DelegateProbe(_ => Task.FromResult(CommResult.Success()));
+            },
+        };
+        await using var server = new TcpServer(config, null, components);
+        var recorder = new ServerRecorder(server);
+        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+
+        var clients = new List<TcpClientChannel>();
+        for (int i = 0; i < 3; i++)
+        {
+            TcpClientChannel client = CreateClient(port);
+            clients.Add(client);
+            Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
+        }
+
+        await WaitUntilAsync(() => recorder.ConnectedCount == 3, 5000);
+        ITcpSession unhealthy = await WithinAsync(firstSession.Task, 5000);
+        await WaitUntilAsync(() => recorder.ClosedCount == 1, 10000);
+
+        ServerRecorder.ClosedRecord closed = recorder.Closed[0];
+        Assert.Same(unhealthy, closed.Session);
+        Assert.Equal(DisconnectReason.HeartbeatFailed, closed.Reason);
+
+        // 其他会话的探测健康：在数个探测周期之后仍然连接。
+        await Task.Delay(1000);
+        Assert.Equal(1, recorder.ClosedCount);
+        Assert.Equal(2, server.SessionCount);
+        Assert.All(recorder.Connected.Where(session => !ReferenceEquals(session, unhealthy)), session => Assert.True(session.IsConnected));
+        await DisposeAllAsync(clients);
+    }
+
+    [Fact(Timeout = 30000)]
+    public async Task ServerRequestTimeout_ResetTrue_ClosesSession()
+    {
+        int port = FreePort();
+        await using var server = new TcpServer(CreateServerConfig(port));
+        var recorder = new ServerRecorder(server);
+        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+
+        // 客户端不应答：服务端的请求超时后关闭该会话（ResetOnRequestTimeout 默认为 true）。
+        await using TcpClientChannel client = CreateClient(port);
+        Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
+        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+
+        ITcpSession session = recorder.Connected[0];
+        CommResult<byte[]> reply = await WithinAsync(session.RequestAsync(Ascii("REQ"), new RequestOptions { Timeout = 200 }), 5000);
+
+        Assert.Equal(CommErrorKind.Timeout, reply.ErrorKind);
+        await WaitUntilAsync(() => recorder.ClosedCount == 1, 5000);
+        Assert.Equal(DisconnectReason.RequestTimeout, recorder.Closed[0].Reason);
+        Assert.False(session.IsConnected);
+        Assert.Equal(0, server.SessionCount);
+    }
+
+    [Fact(Timeout = 30000)]
+    public async Task ServerRequestTimeout_ResetFalse_KeepsSessionAndDropsLateReply()
+    {
+        int port = FreePort();
+        var config = CreateServerConfig(port);
+        config.ResetOnRequestTimeout = false;
+        config.LateReplyWindow = 1000;
+        await using var server = new TcpServer(config);
+        var recorder = new ServerRecorder(server);
+        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+
+        // 客户端每收到一帧都在 500 毫秒后应答：第一个请求在 200 毫秒超时，其应答落在 1000 毫秒的迟到窗口内。
+        await using TcpClientChannel client = CreateClient(port);
+        client.FrameReceived += async (sender, args) =>
+        {
+            await Task.Delay(500);
+            await client.SendAsync(Ascii("LATE"));
+        };
+        Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
+        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+
+        ITcpSession session = recorder.Connected[0];
+        CommResult<byte[]> first = await WithinAsync(session.RequestAsync(Ascii("REQ-1"), new RequestOptions { Timeout = 200 }), 10000);
+
+        Assert.Equal(CommErrorKind.Timeout, first.ErrorKind);
+        Assert.True(session.IsConnected, "A request timeout must not close the session when ResetOnRequestTimeout is false.");
+        Assert.Equal(0, recorder.ClosedCount);
+        Assert.Equal(1L, session.Statistics.FramesDropped);
+        Assert.Empty(recorder.Frames);
+
+        // 迟到窗口结束后连接仍可用：第二个请求拿到自己的应答。
+        CommResult<byte[]> second = await WithinAsync(session.RequestAsync(Ascii("REQ-2"), new RequestOptions { Timeout = 3000 }), 10000);
+        Assert.True(second.IsSuccess, second.ToString());
+        Assert.Equal(Ascii("LATE"), DataOf(second));
+    }
+
     private static async Task DisposeAllAsync(IEnumerable<IAsyncDisposable> items)
     {
         foreach (IAsyncDisposable item in items)

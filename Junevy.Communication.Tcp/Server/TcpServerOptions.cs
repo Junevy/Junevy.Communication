@@ -33,6 +33,8 @@ internal sealed class TcpServerOptions
             throw new ArgumentException("RestartOnFault must not be null.", nameof(config));
         if (config.Tls == null)
             throw new ArgumentException("Tls must not be null.", nameof(config));
+        if (components?.HealthProbe != null)
+            throw new ArgumentException("ChannelComponents.HealthProbe is one instance shared by every session and cannot be bound to a single session; use TcpChannelComponents.SessionHealthProbeFactory instead.", nameof(components));
 
         ListenAddress = ParseListenAddress(config.ListenAddress);
         Port = RequireRange(config.Port, 1, MaxPort, nameof(TcpServerConfig.Port));
@@ -45,6 +47,8 @@ internal sealed class TcpServerOptions
         PartialFrameTimeout = RequireNonNegative(config.PartialFrameTimeout, nameof(TcpServerConfig.PartialFrameTimeout));
         SendTimeout = RequirePositive(config.SendTimeout, nameof(TcpServerConfig.SendTimeout));
         RequestTimeout = RequirePositive(config.RequestTimeout, nameof(TcpServerConfig.RequestTimeout));
+        ResetOnRequestTimeout = config.ResetOnRequestTimeout;
+        LateReplyWindow = RequireLateReplyWindow(config.LateReplyWindow);
         StopTimeout = RequirePositive(config.StopTimeout, nameof(TcpServerConfig.StopTimeout));
         ReceiveQueueCapacity = RequirePositive(config.ReceiveQueueCapacity, nameof(TcpServerConfig.ReceiveQueueCapacity));
 
@@ -59,10 +63,10 @@ internal sealed class TcpServerOptions
         Codec = components?.FrameCodec ?? FrameCodecFactory.Create(config.Framing);
         Initializer = components?.Initializer;
         ConnectionFilter = components?.ConnectionFilter;
-        HealthProbe = components?.HealthProbe;
+        SessionHealthProbeFactory = components?.SessionHealthProbeFactory;
 
         Heartbeat = CopyHeartbeat(config.Heartbeat);
-        if (Heartbeat.Enabled && HealthProbe == null)
+        if (Heartbeat.Enabled && SessionHealthProbeFactory == null)
         {
             HeartbeatPayload = ParseBytes(RequirePayload(Heartbeat.Payload), "Heartbeat.Payload");
             HeartbeatExpectedReply = string.IsNullOrEmpty(Heartbeat.ExpectedReply)
@@ -102,8 +106,14 @@ internal sealed class TcpServerOptions
     /// <summary>单帧写出超时（毫秒）。</summary>
     public int SendTimeout { get; }
 
-    /// <summary>请求应答超时（毫秒）。</summary>
+    /// <summary>会话请求的应答超时（毫秒）。</summary>
     public int RequestTimeout { get; }
+
+    /// <summary>请求超时后是否关闭会话。</summary>
+    public bool ResetOnRequestTimeout { get; }
+
+    /// <summary>迟到应答窗口（毫秒），-1 表示等于请求超时。</summary>
+    public int LateReplyWindow { get; }
 
     /// <summary>停止等待时限（毫秒）。</summary>
     public int StopTimeout { get; }
@@ -126,13 +136,13 @@ internal sealed class TcpServerOptions
     /// <summary>连接过滤器；为 null 表示不过滤。</summary>
     public IConnectionFilter? ConnectionFilter { get; }
 
-    /// <summary>代码级心跳探测（由 <see cref="ChannelComponents.HealthProbe"/> 提供）；为 null 时每个会话使用内置的负载探测。</summary>
-    public IHealthProbe? HealthProbe { get; }
+    /// <summary>按会话创建心跳探测的工厂；为 null 时每个会话使用绑定该会话通道的内置负载探测。</summary>
+    public Func<ITcpSession, IHealthProbe>? SessionHealthProbeFactory { get; }
 
     /// <summary>心跳配置的副本。</summary>
     public HeartbeatOptions Heartbeat { get; }
 
-    /// <summary>内置探测的心跳负载（已解析）；未启用或使用代码级探测时为 null。</summary>
+    /// <summary>内置探测的心跳负载（已解析）；未启用或使用工厂探测时为 null。</summary>
     public byte[]? HeartbeatPayload { get; }
 
     /// <summary>内置探测的期望应答（已解析，精确匹配）；为 null 时只要求发送成功。</summary>
@@ -202,7 +212,7 @@ internal sealed class TcpServerOptions
     private static string RequirePayload(string? payload)
     {
         if (string.IsNullOrEmpty(payload))
-            throw new ArgumentException("Heartbeat.Payload is required when no IHealthProbe is supplied.", nameof(TcpServerConfig.Heartbeat));
+            throw new ArgumentException("Heartbeat.Payload is required when no SessionHealthProbeFactory is supplied.", nameof(TcpServerConfig.Heartbeat));
 
         return payload!;
     }
@@ -239,6 +249,15 @@ internal sealed class TcpServerOptions
     {
         if (value < 0)
             throw new ArgumentOutOfRangeException(name, value, "The value must not be negative.");
+
+        return value;
+    }
+
+    // 迟到应答窗口：-1 表示等于请求超时，0 表示不记录迟到应答，其余为固定毫秒数；小于 -1 非法。
+    private static int RequireLateReplyWindow(int value)
+    {
+        if (value < -1)
+            throw new ArgumentOutOfRangeException(nameof(TcpServerConfig.LateReplyWindow), value, "The late reply window must be -1 or a non-negative value.");
 
         return value;
     }

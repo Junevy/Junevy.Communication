@@ -37,8 +37,17 @@ public class TcpServerConfig : IChannelConfig
     /// <summary>单帧写出的超时（毫秒），必须为正，默认 2000。超时后断开该会话。</summary>
     public int SendTimeout { get; set; } = 2000;
 
-    /// <summary>请求应答的默认超时（毫秒），必须为正，默认 2000。超时后断开该会话（与客户端的 Sequential 默认一致）。</summary>
+    /// <summary>会话发起的请求应答的默认超时（毫秒），必须为正，默认 2000。超时后的处理见 <see cref="ResetOnRequestTimeout"/>。</summary>
     public int RequestTimeout { get; set; } = 2000;
+
+    /// <summary>
+    /// 会话发起的请求超时后是否关闭该会话，默认 true（与客户端的默认一致），关闭原因为 <c>RequestTimeout</c>。
+    /// 为 false 时超时的请求进入迟到应答窗口：窗口期内继续持有请求锁，窗口内到达的迟到应答被丢弃并计入 <c>FramesDropped</c>。
+    /// </summary>
+    public bool ResetOnRequestTimeout { get; set; } = true;
+
+    /// <summary>迟到应答窗口（毫秒），仅在 <see cref="ResetOnRequestTimeout"/> 为 false 时生效；-1 表示等于请求超时（默认），0 表示不记录迟到应答。</summary>
+    public int LateReplyWindow { get; set; } = -1;
 
     /// <summary>停止时等待会话关闭的最长时间（毫秒），必须为正，默认 3000；超时后强制中止。</summary>
     public int StopTimeout { get; set; } = 3000;

@@ -1,5 +1,6 @@
 using System.Reflection;
 using Junevy.Communication.Channels;
+using Junevy.Communication.Core.Results;
 
 namespace Junevy.Communication.Tcp.Tests;
 
@@ -132,6 +133,24 @@ public sealed class TcpServerConfigTests
         }
 
         Assert.Equal(before, Describe(config, 2));
+    }
+
+    [Fact(Timeout = 30000)]
+    public void LateReplyWindow_BelowMinusOne_Throws()
+    {
+        AssertRejected(config => config.LateReplyWindow = -2);
+    }
+
+    [Fact(Timeout = 30000)]
+    public void SharedHealthProbeOnServer_Throws()
+    {
+        // 所有会话共用的探测无法绑定到单个会话：服务端只接受 SessionHealthProbeFactory。
+        var components = new TcpChannelComponents
+        {
+            HealthProbe = new DelegateProbe(_ => Task.FromResult(CommResult.Success())),
+        };
+
+        Assert.ThrowsAny<ArgumentException>(() => new TcpServer(new TcpServerConfig { ListenAddress = "127.0.0.1", Port = 5000 }, null, components));
     }
 
     // 每个非法配置都必须在构造时抛出 ArgumentException 族，并且不改写调用方的对象。

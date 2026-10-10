@@ -34,7 +34,11 @@ public interface ITcpServer : IDisposable, IAsyncDisposable
     /// <summary>状态变化事件（启动、运行、停止中、已停止、故障）。</summary>
     event EventHandler<ServerStateChangedEventArgs>? StateChanged;
 
-    /// <summary>会话握手完成之后触发（握手失败或超时的会话不触发任何会话事件）。</summary>
+    /// <summary>
+    /// 会话握手完成并加入会话表之后触发（握手失败或超时的会话不触发任何会话事件）。
+    /// 在该事件派发完成之前，会话的握手积压（握手期间到达的帧）不会派发，会话的心跳也尚未启动：
+    /// 处理器阻塞会推迟该会话积压帧的派发与心跳的启动。服务端事件经单个派发循环依次触发，阻塞的处理器同样会推迟其他服务端事件，应避免长时间阻塞。
+    /// </summary>
     event EventHandler<TcpSessionEventArgs>? SessionConnected;
 
     /// <summary>会话移除之后触发，携带原因（对端关闭、空闲超时、心跳失败、用户关闭、服务端停止等）。</summary>
