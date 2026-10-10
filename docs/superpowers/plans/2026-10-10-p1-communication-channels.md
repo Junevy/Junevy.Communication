@@ -1128,6 +1128,7 @@ git diff --stat -- Junevy.Communication.Wiki
 - Modbus 测试工程只测 net8.0（新项目已改为双目标，Modbus 是否跟进留待 Modbus v3）。
 - USB 串口重新插入后 COM 号变化的自动识别（按 VID/PID 查找端口）。
 - UDP 上的 DTLS。
+- **待办（用户确认，2026-10-10）**：USB 转串口热拔插的人工验证。用户当前没有串口硬件，有硬件后按 Task 12 执行报告中的检查清单进行（Task 14 写入 Skill），结论写入 CHANGELOG。
 - WPF 调试页（设计文档 E3：暂不做）。
 - `ByteTransform` / `WordOrder`（P2）、`RetryLoop`（按需）、敏感信息脱敏（P3）。
 - `NamedRegistry<T>` 继承自 `ModbusConnectionManager` 的两处既有行为（Task 2 验收记录）：`TryAdd` / `GetOrAdd` 不加锁，与 `Dispose` 并发时，清空之后插入的实例不会被释放；`RemoveAlias` 删除别名链的中间一环时，其下游别名会悬空（`TryGet` 返回 false 并记 Error）。
@@ -1150,4 +1151,7 @@ git diff --stat -- Junevy.Communication.Wiki
 - Task 11：`TcpChannelComponents` 增加 `ClientCertificate`、`ServerCertificate`、`RemoteCertificateValidation`（服务端用它校验客户端证书）。配置来源的客户端证书每次连接时加载、连接结束释放（重连可取到轮换后的证书）；服务端证书在构造 `TcpServer` 时加载、释放服务端时释放。构造期结构错误抛 `ArgumentException`（D5），连接期证书加载失败（找不到、无私钥、环境变量缺失、PFX 损坏）归类为 `InvalidRequest`。`AllowUntrustedServerCertificate` 开启时每次连接都记 Warning（设置了自定义校验回调时以回调为准，不记）。已知限制：断开时不发送 TLS close_notify（只对套接字 `Shutdown(Send)`）。测试证书两个目标统一用 `CertificateRequest` 生成（net472 4.7.2 起即有，执行者曾误判为不存在而改用 CAPI P/Invoke，验收时纠正）。
 - Task 12：串口固定 `ResetOnRequestTimeout = false`（无法换连接，走迟到窗口）；`SerialChannelConfig` 增加 `HandshakeTimeout`（默认 5000）与 `DisconnectTimeout`（默认 1000）——执行者曾推断为"不限时"，验收时纠正（初始化器挂起不应只能靠取消令牌结束；断开时须排空已收到的帧）。UDP 同样增加这两项（Task 13）。缓冲区大小必须为偶数（`SerialPort` 规定）；`ReadBufferSize` 只设置驱动缓冲，不用作通道读取块大小。Serial 只用公开基类，未开放 Channels 的 internal。**待人工验证**：USB 转串口热拔插（检查清单见 Task 12 执行报告，Task 14 写入 Skill）；真实端口测试需设置 `JUNEVY_SERIAL_PAIR` 后运行。
 - Task 12 验收确定的语义（所有客户端通道通用）：`DisconnectAsync` 是优雅断开，在 `DisconnectTimeout` 内排空已收到但未派发的帧；`Dispose` / `DisposeAsync` 是立即释放，不排空（通常发生在程序退出，此时再向事件处理器派发帧容易访问已释放的对象）。D16 的"最长等待 DisconnectTimeout + 1000"仍是同步 `Dispose()` 的等待上限。Task 14 写入 README 与 Skill。
+- Task 13：`DatagramChannel` 与具体传输无关（内部 `IDatagramTransport`），数据报驱动放在 Channels（`InternalsVisibleTo Junevy.Communication.Udp`）；`ConnectionAttempt` 从 `StreamConnectionDriver` 搬出供两种驱动共用；`PendingRequest.MarkSent()` 支持逐次重发计时。UDP 帧事件在定向模式也携带来源地址；超过 `MaxDatagramSize` 的数据报丢弃（无法检测截断）；`ChannelComponents.FrameCodec` 对 UDP 非法；定向模式 `RequestToAsync` 发往其他地址返回 `InvalidRequest`，`SendToAsync` 允许；空负载 `SendAsync` 发送零长度数据报；非定向模式启用内置心跳必须提供 `HealthProbe`。验收修正：心跳探测期间未发出任何数据（等待请求锁）不计失败；UDP 与串口内置心跳必须配置 `ExpectedReply`；串口打开在 `OpenTimeout` 内重试 `UnauthorizedAccessException`（虚拟串口驱动关闭端口后释放有延迟，实测最长 16 ms）；TCP 连接超时测试改为先探测环境（路由变化后 10.255.255.1 立即返回不可达），Modbus 同类测试受 Q4 约束不改，记为环境依赖。
+- 串口真机测试（COM20/COM21 虚拟对，审阅者运行）：单独运行两个目标均通过；同一测试内换波特率立即重开时偶发"拒绝访问"，已由上述打开重试修正；修正后（7e51d84）连续 3 轮、每轮两个目标、两个测试共 12 次全部通过。
+- M4 验收（2026-10-10，7e51d84）：全量测试 Core 43、Channels 228、Tcp 115、Udp 32、Serial 57（+2 真机测试在未设置环境变量时跳过）均在 net8.0 与 net472 上通过，Modbus 405 通过；新项目 0 警告。
 - Task 4：计划 6.1 勘误——`HostTcpAsync(..., out int port)` 不合法（async 方法不能有 out 参数），改为 `DeviceSimulator.HostTcp()` 返回 `DeviceSimulatorTcpHost`（含 `Port`、`AcceptedConnectionCount`、`DisposeAsync`）。

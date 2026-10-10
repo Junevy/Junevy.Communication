@@ -247,7 +247,7 @@ public sealed class FrameReceivedEventArgs : EventArgs
 {
     public byte[] Data { get; }                     // 独立副本，调用方可以随意持有
     public DateTimeOffset ReceivedAt { get; }
-    public EndPoint? RemoteEndPoint { get; }        // UDP 非定向模式下为来源地址；其余为 null
+    public EndPoint? RemoteEndPoint { get; }        // UDP 下为来源地址（定向与非定向模式都携带）；其余为 null
 }
 ```
 
@@ -351,7 +351,8 @@ public interface IFrameKeyExtractor
 
 ```csharp
 /// 原始通道 = 发心跳包（可选等应答）；协议可替换为自己的探测：MC = 回环测试 0619，S7 = 读 SZL，HSMS = Linktest。
-/// 探测期间发出的请求超时不会触发 ResetOnRequestTimeout，失败按 MaxFailures 计数（否则第一次探测超时就会断开连接）。
+/// 探测期间发出的请求超时不会触发 ResetOnRequestTimeout，失败按 MaxFailures 计数（否则第一次探测超时就会断开连接）；
+/// 探测期间若什么都没发出（例如一直在等请求锁），本次视为跳过，不计失败。
 public interface IHealthProbe { Task<CommResult> ProbeAsync(CancellationToken cancellationToken); }
 
 public sealed class HeartbeatOptions
@@ -362,9 +363,11 @@ public sealed class HeartbeatOptions
     public int MaxFailures { get; set; } = 3;
     public bool OnlyWhenIdle { get; set; } = true;
     public string? Payload { get; set; }             // 内置探测的心跳内容（文本，或以 hex: 开头）
-    public string? ExpectedReply { get; set; }       // 为空：发送成功即健康；非空：必须收到匹配应答
+    public string? ExpectedReply { get; set; }       // 为空：发送成功即健康（仅 TCP 允许）；非空：必须收到匹配应答
 }
 ```
+
+UDP 发送与串口写入几乎总是成功，"发送成功即健康"检测不到对端沉默，因此 UDP 与串口启用内置心跳时必须配置 `ExpectedReply`（或提供自定义 `IHealthProbe`），否则构造时抛 `ArgumentException`。
 
 ### 5.5 重连
 
@@ -421,7 +424,7 @@ public class ChannelComponents
 
 - **FrameRouter**：两种通道共用的帧路由——`PendingRequestTable`（三种关联模式、超时、迟到应答）、有界派发队列（`Channel<T>`）、派发循环、`FrameReceived`、统计。
 - **StreamChannel**：把 `Stream`（`NetworkStream`、`SslStream`、`SerialPort.BaseStream`）变成 `IByteChannel`。采用两个循环：**填充循环**从流读入内部 `Pipe`，**解析循环**从 `Pipe` 读出、分帧、复制、交给 FrameRouter。不直接对流使用 `PipeReader.Create(stream)`，因为 net472 的 `NetworkStream` 和 `SerialPort.BaseStream` 不响应取消令牌，`CancelPendingRead()` 打断不了挂起的流读取，静默分帧与半帧计时会失效；内部 `Pipe` 的读端则在两个目标上都可靠响应。缓冲区有未成帧数据时启动计时器（`IFlushableFrameDecoder` 到期交出残余；其他分帧器到 `PartialFrameTimeout` 时 TCP 断开、串口丢弃残余继续）；发送经发送锁和 `SendTimeout` 整帧写出，失败即报告 `SendFailed`。
-- **DatagramChannel**：UDP 专用，每个数据报直接成为一帧；超过接收缓冲被截断时计为 ProtocolViolation 并丢弃。
+- **DatagramChannel**：与具体传输无关（经内部的数据报传输接口收发，只有 Udp 包接触 `UdpClient`），每个数据报直接成为一帧；长度超过 `MaxDatagramSize` 的数据报计为 ProtocolViolation 并丢弃（`UdpClient` 总是返回完整数据报，无法检测截断）。语义与 StreamChannel 对齐，但固定不重建连接。
 - TLS 只是把 `NetworkStream` 换成 `SslStream`，StreamChannel 不需要改动。
 
 ### 6.3 帧内存所有权
