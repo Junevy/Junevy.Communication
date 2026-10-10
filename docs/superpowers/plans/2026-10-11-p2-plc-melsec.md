@@ -582,5 +582,9 @@ public static class McProtocolProfile
   - 现象：`ConnectionStatistics` 与 `ConnectionStateChangedEventArgs` 的构造函数是 internal，Channels 之外无法实现 `IClientChannel`（自定义通道或测试替身）而不用反射。
   - 变通或缺口：`ScriptedClientChannel` 用反射创建统计对象（见其 `CreateStatistics` 上的注释）；无法触发 `StateChanged`，因此只测试订阅转发。
   - 建议：评估公开构造函数（或统计记录方法）。属于 Channels 的公开 API 设计，P2 后处理。
+- **MELSEC 软元件地址（Task 8）**
+  - 现象：`PlcAddress.Device` 的类型是 `IPlcDeviceDefinition`，MELSEC 需要具体的 `McDevice`（`AsciiCode`、`BinaryCode`）。计划规定的 `McAddress.Device` 因此用 `new` 隐藏基类成员。
+  - 变通或缺口：通过基类引用访问 `Device` 得到的是接口类型，取代码需要向下转换。`McAddress` 另存了一份 `McDevice` 字段，只为让新属性返回具体类型。
+  - 建议：Plc 提供泛型的地址基类（例如 `PlcAddress<TDevice>`，`Device` 返回 `TDevice`），或让解析器的结果保留具体的设备类型。属于 Plc 的通用能力，P2 后评估。
 
 ### 20.3 最终度量（Task 14）
