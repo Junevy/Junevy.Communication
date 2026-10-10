@@ -548,10 +548,12 @@ public class TcpServerConfig : IChannelConfig
     public int PartialFrameTimeout { get; set; }
     public int SendTimeout { get; set; } = 2000;
     public int RequestTimeout { get; set; } = 2000;
+    public bool ResetOnRequestTimeout { get; set; } = true;  // 服务端对会话的请求超时后关闭该会话
+    public int LateReplyWindow { get; set; } = -1;           // ResetOnRequestTimeout = false 时生效
     public int StopTimeout { get; set; } = 3000;
     public FramingOptions Framing { get; set; } = new();
     public CorrelationMode Correlation { get; set; } = CorrelationMode.Sequential;
-    public HeartbeatOptions Heartbeat { get; set; } = new();
+    public HeartbeatOptions Heartbeat { get; set; } = new(); // 自定义探测用 TcpChannelComponents.SessionHealthProbeFactory 按会话创建
     public ReconnectOptions RestartOnFault { get; set; } = new();   // 监听器故障后重新监听
     public TcpSocketOptions Socket { get; set; } = new();
     public TcpServerTlsOptions Tls { get; set; } = new();
