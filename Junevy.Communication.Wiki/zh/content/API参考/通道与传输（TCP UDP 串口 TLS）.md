@@ -227,6 +227,8 @@
 
 **`ChannelFactoryBuilder`**（无 DI 容器的宿主使用）：`Create()`、`WithLoggerFactory(ILoggerFactory)`、`WithCreator(IChannelCreator)`、`Build()`。
 
+**日志注入**：直接构造的通道与服务端接受 `ILogger<T>?` 作为第二个参数（`TcpClientChannel`、`TcpServer`、`UdpChannel`、`SerialChannel`）；为 null 时不记录任何日志。工厂通过 `WithLoggerFactory` 或 DI 容器中的 `ILoggerFactory` 为每个通道创建 `ILogger<T>`。TX / RX 十六进制只在 `Debug` 级别输出（类别名如 `Junevy.Communication.Tcp.TcpClientChannel`）。
+
 **依赖注入**：
 
 | 方法 | 命名空间 | 行为 |
@@ -246,7 +248,8 @@
 | `Correlation` | `CorrelationMode?` | 替代配置的关联模式 |
 | `KeyExtractor` | `IFrameKeyExtractor?` | `Keyed` 模式必填 |
 | `Initializer` | `IConnectionInitializer?` | 连接后的握手 |
-| `HealthProbe` | `IHealthProbe?` | 替代内置探测。服务端不接受（见服务端一节） |
+| `HealthProbe` | `IHealthProbe?` | 替代内置探测。与 `HealthProbeFactory` 互斥（同时设置构造即抛 `ArgumentException`）。服务端不接受（见服务端一节） |
+| `HealthProbeFactory` | `Func<IByteChannel, IHealthProbe>?` | 需要引用通道本身的探测。仅启用心跳时调用。**客户端**（TCP、UDP、串口）：第一次成功打开、启动心跳之前以通道自身调用一次，结果跨重连复用；抛出或返回 null 使本次打开失败（`Unspecified`），由重连策略处理。**服务端**：每个会话启动心跳时调用一次，参数为该会话（可转换为 `ITcpSession`）；抛出或返回 null 时该会话以 `Error` 关闭。不需要 `Heartbeat.Payload` 与 `ExpectedReply`（20.1 第 39 项） |
 | `ReconnectPolicy` | `IBackoffPolicy?` | 替代由 `ReconnectOptions` 推导的退避策略，仍受 `Reconnect.Enabled` 控制 |
 
 ## TCP 客户端
@@ -294,7 +297,7 @@
 | `event FrameReceived`（`TcpSessionFrameEventArgs`） | 任一会话收到的帧 |
 | `Task<CommResult> StartAsync(CancellationToken = default)` | 绑定并开始监听 |
 | `Task StopAsync(CancellationToken = default)` | 关闭全部会话，等待至多 `StopTimeout` |
-| `bool TryGetSession(long sessionId, out ITcpSession? session)` | 按 ID 查找 |
+| `bool TryGetSession(long sessionId, [NotNullWhen(true)] out ITcpSession? session)` | 按 ID 查找；返回 true 时 `session` 非 null |
 | `Task<CommResult> SendAsync(long sessionId, ReadOnlyMemory<byte> payload, CancellationToken = default)` | 发送给指定会话 |
 | `Task<int> BroadcastAsync(ReadOnlyMemory<byte> payload, Func<ITcpSession, bool>? filter = null, CancellationToken = default)` | 返回成功发送的会话数 |
 
@@ -323,16 +326,20 @@
 | `LateReplyWindow` | -1 | 仅在 `ResetOnRequestTimeout = false` 时生效 |
 | `StopTimeout` | 3000 | `StopAsync` 等待会话关闭的时限 |
 | `Framing` / `Correlation` | `new FramingOptions()` / `Sequential` | 分帧与关联 |
-| `Heartbeat` | `new HeartbeatOptions()` | 会话心跳；启用时需 `Payload` 或 `SessionHealthProbeFactory` |
+| `Heartbeat` | `new HeartbeatOptions()` | 会话心跳；启用时需 `Payload` 或基类的 `HealthProbeFactory` |
 | `RestartOnFault` | `new ReconnectOptions()`（`Enabled = false`） | 监听器故障后的重新监听策略 |
 | `Socket` / `Tls` | `new TcpSocketOptions()` / `new TcpServerTlsOptions()` | 套接字与 TLS |
 | `ReceiveQueueCapacity` | 1024 | 派发队列容量。服务端没有 `QueueFullMode`，固定为 `Wait` |
 
-**服务端组件**：`TcpChannelComponents` 的 `ConnectionFilter` 与 `SessionHealthProbeFactory`（`Func<ITcpSession, IHealthProbe>`，按会话创建心跳探测）只对服务端有效。`ChannelComponents.HealthProbe` 传给 `TcpServer` 时构造即抛 `ArgumentException`。
+**服务端组件**：`TcpChannelComponents` 的 `ConnectionFilter` 只对服务端有效。心跳探测的代码级覆盖是基类的 `HealthProbeFactory`：启用心跳时每个会话调用一次，参数为该会话（`ITcpSession`）。`ChannelComponents.HealthProbe` 传给 `TcpServer` 时构造即抛 `ArgumentException`（20.1 第 40 项：`TcpChannelComponents.SessionHealthProbeFactory` 已删除）。
+
+**会话初始化器**：`ChannelComponents.Initializer` 对每个接入的会话执行一次，位于 `SessionHandshakeTimeout` 之内（与 TLS 共享）。它在会话加入 `Sessions` 并派发 `SessionConnected` 之前完成。初始化器的 `IByteChannel` 支持 `SendAsync`、`RequestAsync`、`ReceiveAsync`，不派发 `FrameReceived`。握手期间到达的帧进入 64 帧积压，`SessionConnected` 派发完成后按序派发；积压溢出为 `ProtocolViolation`，会话被关闭。失败或超时只关闭该会话，不触发任何会话事件；服务端不重试（与客户端不同，客户端在每次重连时重新执行初始化器）。
+
+**会话关闭与重启**：`ITcpSession.CloseAsync` 以原因 `UserRequested` 只关闭该会话，在服务端事件处理器内调用时只发出信号、不等待。`StopAsync` 完成后可再次 `StartAsync`，绑定同一地址与端口（既有测试 `Start_Stop_Restart` 覆盖）。
 
 ## TLS 与套接字选项
 
-**`TcpChannelComponents`**（继承 `ChannelComponents`，公开）：除基类成员外，增加 `X509Certificate2? ClientCertificate`（客户端证书，必须包含私钥，由调用方持有）、`X509Certificate2? ServerCertificate`（服务端证书，由调用方持有，服务端释放时不释放）、`RemoteCertificateValidationCallback? RemoteCertificateValidation`（客户端校验服务端证书，或服务端校验客户端证书）、`ConnectionFilter`、`SessionHealthProbeFactory`。
+**`TcpChannelComponents`**（继承 `ChannelComponents`，公开）：除基类成员外，增加 `X509Certificate2? ClientCertificate`（客户端证书，必须包含私钥，由调用方持有）、`X509Certificate2? ServerCertificate`（服务端证书，由调用方持有，服务端释放时不释放）、`RemoteCertificateValidationCallback? RemoteCertificateValidation`（客户端校验服务端证书，或服务端校验客户端证书）、`ConnectionFilter`。心跳探测工厂使用基类的 `HealthProbeFactory`（见工厂一节）。
 
 **`TcpClientTlsOptions`**：`Enabled`（`false`）、`TargetHost`（`null`，表示使用 `Host`）、`Protocols`（`SslProtocols.None`，交给操作系统）、`CheckCertificateRevocation`（`true`）、`AllowUntrustedServerCertificate`（`false`，仅限调试，开启后每次连接记 Warning）、`ClientCertificate`（`CertificateSource?`）。
 
