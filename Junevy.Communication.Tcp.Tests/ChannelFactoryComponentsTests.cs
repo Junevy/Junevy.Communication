@@ -37,6 +37,38 @@ public sealed class ChannelFactoryComponentsTests
         Assert.True(keys.RequestKeyCalls > 0);
     }
 
+    [Fact(Timeout = 30000)]
+    public async Task TcpCreator_CopiesHealthProbeFactory()
+    {
+        using LoopbackServer server = LoopbackServer.Start((index, client, token) => EchoLinesAsync(client.GetStream(), token));
+        var received = new List<IByteChannel>();
+        var probe = new DelegateProbe(_ => Task.FromResult(CommResult.Success()));
+        var components = new ChannelComponents
+        {
+            HealthProbeFactory = channel =>
+            {
+                lock (received)
+                    received.Add(channel);
+
+                return probe;
+            },
+        };
+
+        // 没有 Payload：只有复制过去的工厂能满足心跳的要求，否则创建通道时抛出 ArgumentException。
+        var config = CreateConfig(server.Port);
+        config.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 100, Timeout = 500, MaxFailures = 3 };
+
+        await using IClientChannel channel = new TcpClientChannelCreator().Create("tcp", config, components, NullLoggerFactory.Instance);
+        CommResult connected = await channel.ConnectAsync();
+        Assert.True(connected.IsSuccess, connected.ErrorMessage);
+
+        lock (received)
+        {
+            Assert.Single(received);
+            Assert.Same(channel, received[0]);
+        }
+    }
+
     // 记录分帧器创建次数的编解码工厂，委托给内部工厂。
     private sealed class CountingCodecFactory : IFrameCodecFactory
     {

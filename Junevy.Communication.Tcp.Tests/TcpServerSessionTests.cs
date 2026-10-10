@@ -356,6 +356,49 @@ public sealed class TcpServerSessionTests
         await DisposeAllAsync(clients);
     }
 
+    // 工厂抛出或返回 null 时，只关闭该会话，原因为 Error；其他会话不受影响。
+    [Fact(Timeout = 30000)]
+    public async Task HealthProbeFactory_ThrowsOrReturnsNull_ClosesThatSessionWithError()
+    {
+        int port = FreePort();
+        var config = CreateServerConfig(port);
+        config.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 100, Timeout = 200, MaxFailures = 2 };
+        int calls = 0;
+        var components = new TcpChannelComponents
+        {
+            HealthProbeFactory = _ =>
+            {
+                int call = Interlocked.Increment(ref calls);
+                if (call == 1)
+                    throw new InvalidOperationException("The probe factory failed.");
+
+                if (call == 2)
+                    return null!;
+
+                return new DelegateProbe(_ => Task.FromResult(CommResult.Success()));
+            },
+        };
+        await using var server = new TcpServer(config, null, components);
+        var recorder = new ServerRecorder(server);
+        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+
+        var clients = new List<TcpClientChannel>();
+        for (int i = 0; i < 3; i++)
+        {
+            TcpClientChannel client = CreateClient(port);
+            clients.Add(client);
+            Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
+        }
+
+        await WaitUntilAsync(() => recorder.ClosedCount == 2, 10000);
+        Assert.All(recorder.Closed, closed => Assert.Equal(DisconnectReason.Error, closed.Reason));
+
+        // 第三个会话的工厂返回了正常的探测：它保持连接。
+        await Task.Delay(500);
+        Assert.Equal(1, server.SessionCount);
+        await DisposeAllAsync(clients);
+    }
+
     [Fact(Timeout = 30000)]
     public async Task HealthProbeFactory_ProbeFails_ClosesThatSessionOnly()
     {
