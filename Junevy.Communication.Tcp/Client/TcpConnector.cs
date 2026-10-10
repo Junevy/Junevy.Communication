@@ -40,7 +40,7 @@ internal sealed class TcpConnector
         this.localAddress = localAddress;
         this.localPort = localPort;
         this.connectTimeout = connectTimeout;
-        this.socketOptions = CopyOf(socketOptions ?? throw new ArgumentNullException(nameof(socketOptions)));
+        this.socketOptions = TcpSocketConfigurator.Copy(socketOptions ?? throw new ArgumentNullException(nameof(socketOptions)));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -181,17 +181,10 @@ internal sealed class TcpConnector
         return CommResult<Socket>.Success(socket);
     }
 
+    // 套接字选项与绑定：选项在连接之前应用（缓冲区与 Linger 必须早于连接），本地地址在选项之后绑定。
     private void ConfigureSocket(Socket socket)
     {
-        socket.NoDelay = socketOptions.NoDelay;
-        if (socketOptions.ReceiveBufferSize > 0)
-            socket.ReceiveBufferSize = socketOptions.ReceiveBufferSize;
-        if (socketOptions.SendBufferSize > 0)
-            socket.SendBufferSize = socketOptions.SendBufferSize;
-        if (socketOptions.LingerTime >= 0)
-            socket.LingerState = new LingerOption(true, socketOptions.LingerTime);
-
-        ApplyKeepAlive(socket);
+        TcpSocketConfigurator.Apply(socket, socketOptions, logger, $"{host}:{port}");
 
         if (localAddress != null || localPort > 0)
         {
@@ -201,40 +194,7 @@ internal sealed class TcpConnector
         }
     }
 
-    // 保活只是连接的调优项：设置失败时记录警告，连接继续使用系统默认值。
-    private void ApplyKeepAlive(Socket socket)
-    {
-        TcpKeepAliveOptions keepAlive = socketOptions.KeepAlive;
-        try
-        {
-            socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, keepAlive.Enabled);
-            if (!keepAlive.Enabled)
-                return;
-
 #if NET8_0_OR_GREATER
-            socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, ToWholeSeconds(keepAlive.Time));
-            socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, ToWholeSeconds(keepAlive.Interval));
-            socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, keepAlive.RetryCount);
-#else
-            // net472 没有按秒的选项，只能经 SIO_KEEPALIVE_VALS 设置 {onoff, 空闲毫秒, 间隔毫秒}（均为小端 uint）。
-            // 重试次数无法设置，由系统决定（Windows 默认 10 次），RetryCount 在此不生效。
-            byte[] values = new byte[12];
-            WriteUInt32LittleEndian(values, 0, 1);
-            WriteUInt32LittleEndian(values, 4, (uint)keepAlive.Time);
-            WriteUInt32LittleEndian(values, 8, (uint)keepAlive.Interval);
-            socket.IOControl(IOControlCode.KeepAliveValues, values, null);
-#endif
-        }
-        catch (SocketException ex)
-        {
-            logger.LogWarning(ex, "Applying the TCP keep-alive options to {Host}:{Port} failed; the system defaults are used.", host, port);
-        }
-    }
-
-#if NET8_0_OR_GREATER
-    // 毫秒向上取整为秒（最小 1 秒）。
-    private static int ToWholeSeconds(int milliseconds) => (int)((milliseconds + 999L) / 1000L);
-
     private static Task ConnectSocketAsync(Socket socket, IPEndPoint endPoint, CancellationToken token)
         => socket.ConnectAsync(endPoint, token).AsTask();
 #else
@@ -252,14 +212,6 @@ internal sealed class TcpConnector
         }
 
         await connect.ConfigureAwait(false);
-    }
-
-    private static void WriteUInt32LittleEndian(byte[] buffer, int offset, uint value)
-    {
-        buffer[offset] = (byte)value;
-        buffer[offset + 1] = (byte)(value >> 8);
-        buffer[offset + 2] = (byte)(value >> 16);
-        buffer[offset + 3] = (byte)(value >> 24);
     }
 
     private static void ObserveFault(Task task)
@@ -311,20 +263,4 @@ internal sealed class TcpConnector
 
     private static string DescribeFailure(Exception ex)
         => ex is SocketException socketException ? socketException.SocketErrorCode.ToString() : ex.GetType().Name;
-
-    private static TcpSocketOptions CopyOf(TcpSocketOptions source)
-        => new TcpSocketOptions
-        {
-            NoDelay = source.NoDelay,
-            ReceiveBufferSize = source.ReceiveBufferSize,
-            SendBufferSize = source.SendBufferSize,
-            LingerTime = source.LingerTime,
-            KeepAlive = new TcpKeepAliveOptions
-            {
-                Enabled = source.KeepAlive.Enabled,
-                Time = source.KeepAlive.Time,
-                Interval = source.KeepAlive.Interval,
-                RetryCount = source.KeepAlive.RetryCount,
-            },
-        };
 }

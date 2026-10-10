@@ -9,6 +9,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Tcp 服务端会话复用字节流内部件（StreamChannel、FrameRouter、PendingRequestTable、HeartbeatMonitor），与客户端共用同一套分帧、关联与派发实现。 -->
+    <InternalsVisibleTo Include="Junevy.Communication.Tcp" />
     <InternalsVisibleTo Include="Junevy.Communication.Channels.Tests" />
   </ItemGroup>
 

@@ -229,29 +229,7 @@ public sealed class TcpClientChannel : StreamClientChannel, ITcpClientChannel
             throw new ArgumentException("Reconnect must not be null.", nameof(config));
         if (config.Tls == null)
             throw new ArgumentException("Tls must not be null.", nameof(config));
-        ValidateSocket(config);
-    }
-
-    private static void ValidateSocket(TcpClientChannelConfig config)
-    {
-        TcpSocketOptions socket = config.Socket ?? throw new ArgumentException("Socket must not be null.", nameof(config));
-        if (socket.ReceiveBufferSize < 0)
-            throw new ArgumentOutOfRangeException("Socket.ReceiveBufferSize", socket.ReceiveBufferSize, "The receive buffer size must not be negative.");
-        if (socket.SendBufferSize < 0)
-            throw new ArgumentOutOfRangeException("Socket.SendBufferSize", socket.SendBufferSize, "The send buffer size must not be negative.");
-        if (socket.LingerTime < -1)
-            throw new ArgumentOutOfRangeException("Socket.LingerTime", socket.LingerTime, "The linger time must be -1 or a non-negative value.");
-
-        TcpKeepAliveOptions keepAlive = socket.KeepAlive ?? throw new ArgumentException("Socket.KeepAlive must not be null.", nameof(config));
-        if (!keepAlive.Enabled)
-            return;
-
-        if (keepAlive.Time <= 0)
-            throw new ArgumentOutOfRangeException("Socket.KeepAlive.Time", keepAlive.Time, "The keep-alive time must be positive.");
-        if (keepAlive.Interval <= 0)
-            throw new ArgumentOutOfRangeException("Socket.KeepAlive.Interval", keepAlive.Interval, "The keep-alive interval must be positive.");
-        if (keepAlive.RetryCount < 1)
-            throw new ArgumentOutOfRangeException("Socket.KeepAlive.RetryCount", keepAlive.RetryCount, "The keep-alive retry count must be at least 1.");
+        TcpSocketConfigurator.ValidateAndCopy(config.Socket, nameof(config));
     }
 
     private static void RequirePositive(int value, string name)
