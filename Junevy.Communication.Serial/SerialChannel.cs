@@ -14,8 +14,8 @@ namespace Junevy.Communication.Serial;
 /// </summary>
 /// <remarks>
 /// 构造时校验并复制配置（D5）：非法值抛出 <see cref="ArgumentException"/> 族，调用方的配置对象不会被修改；运行行为只依赖构造时的快照。
-/// 设计文档第 10 节未为串口列出握手超时与断开等待，因此握手不限时，断开时不等待。请求超时不重新打开端口（<c>ResetOnRequestTimeout</c> 为 false），
-/// 迟到应答由 <c>LateReplyWindow</c> 处理。
+/// 握手受 <see cref="SerialChannelConfig.HandshakeTimeout"/> 约束（超时关闭端口并返回 <c>Timeout</c>）；断开时在 <see cref="SerialChannelConfig.DisconnectTimeout"/> 内
+/// 排空已收到的帧。请求超时不重新打开端口（<c>ResetOnRequestTimeout</c> 为 false），迟到应答由 <c>LateReplyWindow</c> 处理。
 /// </remarks>
 public sealed class SerialChannel : StreamClientChannel, ISerialChannel
 {
@@ -211,19 +211,19 @@ public sealed class SerialChannel : StreamClientChannel, ISerialChannel
     }
 
     // 校验配置并生成基类的运行参数（D5）。基类在构造期间读取并复制这些值，不保留对调用方对象的引用。
-    // 设计文档第 10 节未为串口列出握手超时与断开等待，因此两者为 0（不限时 / 不等待）；请求超时不重建连接，迟到应答由 LateReplyWindow 处理。
+    // 请求超时不重建连接，迟到应答由 LateReplyWindow 处理（ResetOnRequestTimeout 固定为 false，设计文档第 10 节）。
     private static ClientChannelSettings BuildSettings(SerialChannelConfig config)
     {
         Validate(config);
         return new ClientChannelSettings
         {
-            HandshakeTimeout = 0,
+            HandshakeTimeout = config.HandshakeTimeout,
             SendTimeout = config.SendTimeout,
             RequestTimeout = config.RequestTimeout,
             LateReplyWindow = config.LateReplyWindow,
             IdleTimeout = config.IdleTimeout,
             PartialFrameTimeout = config.PartialFrameTimeout,
-            DisconnectTimeout = 0,
+            DisconnectTimeout = config.DisconnectTimeout,
             Framing = config.Framing,
             Correlation = config.Correlation,
             ResetOnRequestTimeout = false,
@@ -257,8 +257,10 @@ public sealed class SerialChannel : StreamClientChannel, ISerialChannel
         RequireEvenBufferSize(config.WriteBufferSize, nameof(SerialChannelConfig.WriteBufferSize));
 
         RequirePositive(config.OpenTimeout, nameof(SerialChannelConfig.OpenTimeout));
+        RequirePositive(config.HandshakeTimeout, nameof(SerialChannelConfig.HandshakeTimeout));
         RequirePositive(config.SendTimeout, nameof(SerialChannelConfig.SendTimeout));
         RequirePositive(config.RequestTimeout, nameof(SerialChannelConfig.RequestTimeout));
+        RequireNonNegative(config.DisconnectTimeout, nameof(SerialChannelConfig.DisconnectTimeout));
     }
 
     // 复制端口相关的参数（构造时的快照，D5）：之后修改调用方的对象不影响已创建的通道，每次打开都使用这份副本。
@@ -283,6 +285,12 @@ public sealed class SerialChannel : StreamClientChannel, ISerialChannel
     {
         if (value <= 0)
             throw new ArgumentOutOfRangeException(name, value, "The value must be positive.");
+    }
+
+    private static void RequireNonNegative(int value, string name)
+    {
+        if (value < 0)
+            throw new ArgumentOutOfRangeException(name, value, "The value must not be negative.");
     }
 
     // SerialPort 对奇数的缓冲区大小在设置时抛出 IOException，因此在配置时拒绝（D5）。

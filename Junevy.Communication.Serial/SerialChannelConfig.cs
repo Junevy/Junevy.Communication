@@ -47,6 +47,12 @@ public class SerialChannelConfig : IChannelConfig
     /// <summary>单次打开端口的时限（毫秒），必须为正，默认 2000。<c>SerialPort.Open</c> 可能被驱动阻塞；超时后的端口在打开完成时释放。</summary>
     public int OpenTimeout { get; set; } = 2000;
 
+    /// <summary>连接握手的时限（毫秒），必须为正，默认 5000。包括 <c>IConnectionInitializer</c> 的执行；超时后关闭端口并返回 <c>Timeout</c>。</summary>
+    public int HandshakeTimeout { get; set; } = 5000;
+
+    /// <summary>断开时的排空时限（毫秒），必须 ≥ 0，默认 1000。<c>DisconnectAsync</c> 在此时限内派发已收到的帧，超时后强制关闭。</summary>
+    public int DisconnectTimeout { get; set; } = 1000;
+
     /// <summary>单帧写出的超时（毫秒），必须为正，默认 2000。</summary>
     public int SendTimeout { get; set; } = 2000;
 

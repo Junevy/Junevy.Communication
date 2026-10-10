@@ -34,9 +34,6 @@ internal sealed class SerialPortHandle : ISerialPortHandle
     /// <inheritdoc />
     public Stream BaseStream => port.BaseStream;
 
-    /// <inheritdoc />
-    public bool IsOpen => port.IsOpen;
-
     /// <summary>
     /// 打开端口，之后设置超时：读取无限等待（帧结束由分帧器与 IdleTimeout 判定）；写出超时为 SendTimeout 的后备（发送计时由 StreamChannel 负责）。
     /// </summary>

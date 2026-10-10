@@ -77,7 +77,8 @@ internal static class SerialTestHelpers
     /// <paramref name="reconnect"/> 为 true 时以 50 ms 固定间隔无限重连。
     /// </summary>
     public static SerialChannelConfig CreateConfig(FramingOptions? framing = null, int openTimeout = 2000, int partialFrameTimeout = 0,
-                                                   int receiveQueueCapacity = 1024, bool reconnect = false, int requestTimeout = 2000)
+                                                   int receiveQueueCapacity = 1024, bool reconnect = false, int requestTimeout = 2000,
+                                                   int handshakeTimeout = 5000, int disconnectTimeout = 1000)
     {
         var config = new SerialChannelConfig
         {
@@ -85,6 +86,8 @@ internal static class SerialTestHelpers
             BaudRate = 115200,
             OpenTimeout = openTimeout,
             RequestTimeout = requestTimeout,
+            HandshakeTimeout = handshakeTimeout,
+            DisconnectTimeout = disconnectTimeout,
             PartialFrameTimeout = partialFrameTimeout,
             ReceiveQueueCapacity = receiveQueueCapacity,
         };

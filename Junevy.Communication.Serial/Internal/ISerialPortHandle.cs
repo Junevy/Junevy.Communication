@@ -11,9 +11,6 @@ internal interface ISerialPortHandle : IDisposable
     /// <summary>已打开端口的数据流（<c>SerialPort.BaseStream</c>）。只能在 <see cref="Open"/> 成功之后访问。</summary>
     Stream BaseStream { get; }
 
-    /// <summary>端口是否处于打开状态。</summary>
-    bool IsOpen { get; }
-
     /// <summary>打开端口。可能被驱动阻塞；失败时抛出异常。</summary>
     void Open();
 

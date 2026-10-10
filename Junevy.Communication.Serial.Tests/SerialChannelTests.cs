@@ -297,7 +297,83 @@ public sealed class SerialChannelTests
 
         Assert.Equal(ConnectionState.Disconnected, channel.State);
         Assert.True(handle.DisposeCount >= 1, "Disconnect must release the port.");
-        Assert.False(handle.IsOpen);
+    }
+
+    [Fact(Timeout = 30000)]
+    public async Task Initializer_Hangs_ConnectTimesOutWithinHandshakeTimeout()
+    {
+        // 握手初始化器永不返回（也不响应取消令牌）：握手时限到期后驱动放弃等待，ConnectAsync 返回 Timeout，端口被释放。
+        var factory = new FakeSerialPortHandleFactory();
+        var components = new ChannelComponents { Initializer = new NeverReturningInitializer() };
+        await using var channel = CreateChannel(factory, CreateConfig(handshakeTimeout: 300), components: components);
+
+        var stopwatch = Stopwatch.StartNew();
+        CommResult result = await WithinAsync(channel.ConnectAsync(), 5000);
+        stopwatch.Stop();
+
+        Assert.Equal(CommErrorKind.Timeout, result.ErrorKind);
+        Assert.InRange(stopwatch.Elapsed.TotalMilliseconds, 240d, 2300d);
+        Assert.Equal(ConnectionState.Disconnected, channel.State);
+
+        FakeSerialPortHandle handle = Assert.Single(factory.Handles);
+        await WaitUntilAsync(() => handle.DisposeCount >= 1, 3000);
+        Assert.Equal(1, handle.DisposeCount);
+    }
+
+    [Fact(Timeout = 30000)]
+    public async Task Disconnect_DrainsQueuedFramesWithinDisconnectTimeout()
+    {
+        // 派发循环被第一帧的处理器阻塞，之后每帧处理约 50 ms；另外三帧留在派发队列中。
+        // DisconnectAsync 必须在 DisconnectTimeout 内把这些已收到的帧全部派发完才返回（Task 5 的排空语义）。
+        using var release = new ManualResetEventSlim(false);
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var delivered = new List<byte[]>();
+        int calls = 0;
+        var factory = new FakeSerialPortHandleFactory();
+        await using var channel = CreateChannel(factory, CreateConfig(framing: DelimiterFraming(), disconnectTimeout: 1000));
+        channel.FrameReceived += (sender, args) =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+            {
+                entered.TrySetResult(true);
+                release.Wait(TimeSpan.FromSeconds(10));
+            }
+
+            Thread.Sleep(50);
+            lock (delivered)
+                delivered.Add(args.Data);
+        };
+        Assert.True((await WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
+        FakeSerialPortHandle handle = Assert.Single(factory.Handles);
+
+        Task disconnecting;
+        try
+        {
+            await WriteRawAsync(handle.Device, Ascii("F1\r\n"));
+            await WithinAsync(entered.Task, 3000);
+            await WriteRawAsync(handle.Device, Ascii("F2\r\nF3\r\nF4\r\n"));
+            await WaitUntilAsync(() => channel.Statistics.FramesReceived == 4, 3000);
+            await Task.Delay(100);   // 让解析循环把 F4 路由进派发队列（路由本身不阻塞）。
+
+            disconnecting = channel.DisconnectAsync();
+        }
+        finally
+        {
+            release.Set();
+        }
+
+        await WithinAsync(disconnecting, 5000);
+
+        List<byte[]> frames;
+        lock (delivered)
+            frames = new List<byte[]>(delivered);
+        Assert.Equal(4, frames.Count);
+        Assert.Equal(Ascii("F1"), frames[0]);
+        Assert.Equal(Ascii("F2"), frames[1]);
+        Assert.Equal(Ascii("F3"), frames[2]);
+        Assert.Equal(Ascii("F4"), frames[3]);
+        Assert.Equal(0, channel.Statistics.FramesDropped);
+        Assert.Equal(ConnectionState.Disconnected, channel.State);
     }
 
     [Fact(Timeout = 30000)]
@@ -342,6 +418,14 @@ public sealed class SerialChannelTests
         Assert.Equal("COM3", used.PortName);
         Assert.Equal(115200, used.BaudRate);
         Assert.Equal(2000, used.OpenTimeout);
+    }
+
+    // 永不完成的握手初始化器（不响应取消令牌）：驱动必须在握手时限到期后放弃等待它。
+    private sealed class NeverReturningInitializer : IConnectionInitializer
+    {
+        private readonly TaskCompletionSource<CommResult> never = new TaskCompletionSource<CommResult>();
+
+        public Task<CommResult> InitializeAsync(IByteChannel channel, CancellationToken cancellationToken) => never.Task;
     }
 
     private static int CountConnected(List<ConnectionStateChangedEventArgs> states)

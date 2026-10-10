@@ -42,9 +42,6 @@ internal sealed class FakeSerialPortHandle : ISerialPortHandle
     /// <inheritdoc />
     public Stream BaseStream => pair.A;
 
-    /// <inheritdoc />
-    public bool IsOpen => isOpen;
-
     /// <summary><see cref="DiscardInBuffer"/> 被调用的次数。</summary>
     public int DiscardCount => Volatile.Read(ref discardCount);
 

@@ -27,6 +27,8 @@ public sealed class SerialChannelConfigTests
         Assert.Equal(4096, config.ReadBufferSize);
         Assert.Equal(2048, config.WriteBufferSize);
         Assert.Equal(2000, config.OpenTimeout);
+        Assert.Equal(5000, config.HandshakeTimeout);
+        Assert.Equal(1000, config.DisconnectTimeout);
         Assert.Equal(2000, config.SendTimeout);
         Assert.Equal(2000, config.RequestTimeout);
         Assert.Equal(0, config.IdleTimeout);
@@ -58,6 +60,9 @@ public sealed class SerialChannelConfigTests
     [InlineData("WriteBufferSize", -1)]
     [InlineData("WriteBufferSize", 3)]
     [InlineData("OpenTimeout", 0)]
+    [InlineData("HandshakeTimeout", 0)]
+    [InlineData("HandshakeTimeout", -1)]
+    [InlineData("DisconnectTimeout", -1)]
     [InlineData("SendTimeout", -1)]
     [InlineData("RequestTimeout", 0)]
     [InlineData("IdleTimeout", -1)]
@@ -91,6 +96,8 @@ public sealed class SerialChannelConfigTests
             ReadBufferSize = 8192,
             WriteBufferSize = 4096,
             OpenTimeout = 1500,
+            HandshakeTimeout = 4000,
+            DisconnectTimeout = 700,
             SendTimeout = 2500,
             RequestTimeout = 1200,
             IdleTimeout = 9000,
@@ -168,6 +175,12 @@ public sealed class SerialChannelConfigTests
                 break;
             case "LateReplyWindow":
                 config.LateReplyWindow = (int)value!;
+                break;
+            case "HandshakeTimeout":
+                config.HandshakeTimeout = (int)value!;
+                break;
+            case "DisconnectTimeout":
+                config.DisconnectTimeout = (int)value!;
                 break;
             case "ReceiveQueueCapacity":
                 config.ReceiveQueueCapacity = (int)value!;
