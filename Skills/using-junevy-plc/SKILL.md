@@ -114,17 +114,31 @@ Larger operations are split automatically (2000 words become 960, 960, 80). The 
 ## Error Handling
 
 ```csharp
-CommResult<short> result = await plc.ReadInt16Async("D100", cancellationToken);
-if (!result.IsSuccess)
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Junevy.Communication.Core.Results;
+using Junevy.Communication.Plc;
+
+public static class McErrorHandlingExample
 {
-    switch (result.ErrorKind)
+    public static async Task<short?> ReadSpeedAsync(IPlcClient plc, CancellationToken cancellationToken = default)
     {
-        case CommErrorKind.RemoteError:
-            // ProtocolErrorCode is the raw MC end code, for example 0xC051. Look it up in the manual.
-            break;
-        case CommErrorKind.NotConnected:
-            // Wait for the link with WaitForConnectedAsync, or enable Reconnect.
-            break;
+        CommResult<short> result = await plc.ReadInt16Async("D100", cancellationToken);
+        if (result.IsSuccess)
+            return result.Data;
+
+        switch (result.ErrorKind)
+        {
+            case CommErrorKind.RemoteError:
+                // ProtocolErrorCode is the raw MC end code, for example 0xC051. Look it up in the manual.
+                break;
+            case CommErrorKind.NotConnected:
+                // Wait for the link with WaitForConnectedAsync, or enable Reconnect.
+                break;
+        }
+
+        return null;
     }
 }
 ```
