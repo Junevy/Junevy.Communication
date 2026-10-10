@@ -547,7 +547,7 @@ internal sealed class StreamChannelSettings
 **填充循环**：
 1. `Memory<byte> memory = pipe.Writer.GetMemory(ReceiveBufferSize)`。
 2. 读取：net8 用 `stream.ReadAsync(memory, stopToken)`；net472 用 `MemoryMarshal.TryGetArray` 取得数组段后调用 `stream.ReadAsync(array, offset, count, stopToken)`（net472 的流可能忽略令牌，停止时依靠 `abortTransport` 销毁底层对象打断读取）。
-3. 读到 0 字节 → `onFault(RemoteClosed)` 并结束；异常 → 若正在停止则静默结束，否则 `onFault(Error 或 RemoteClosed, ex)`。
+3. 读到 0 字节或读取出错：**不直接报告**，只记录原因（0 字节或 IOException → RemoteClosed，其他 → Error）与异常，然后正常完成 Pipe 写端；正在停止时不记录。由解析循环在处理完全部已收到的数据之后再报告（Task 6 验收修正：设备"回完应答立即断开"时，请求必须拿到应答而不是 ConnectionClosed）。
 4. `writer.Advance(n)`；`await writer.FlushAsync()`。解析循环跟不上时 `FlushAsync` 会挂起，形成背压（TCP 由此触发流控）。
 5. `Pipe` 选项：`pauseWriterThreshold = 1 MiB`、`resumeWriterThreshold = 512 KiB`、`useSynchronizationContext = false`。
 
@@ -558,6 +558,7 @@ internal sealed class StreamChannelSettings
 4. 若剩余未成帧字节 > 0，且分帧器是 `IFlushableFrameDecoder` 或 `PartialFrameTimeout > 0`，启动计时器（时长为 `FlushTimeout` 或 `PartialFrameTimeout`），到期调用 `pipe.Reader.CancelPendingRead()`；有新数据到达时重置计时器。
 5. 读到 `result.IsCanceled` 且计时器已触发：`IFlushableFrameDecoder` 调用 `TryFlush` 交帧；否则按半帧超时处理——`PartialFrameAction.Disconnect` 调用 `onFault(PartialFrameTimeout)`，`Discard` 丢弃全部剩余字节并递增 `ProtocolErrors`。
 6. `FrameDecodeException`：`Disconnect` 调用 `onFault(ProtocolViolation)`；`Discard` 丢弃缓冲、递增 `ProtocolErrors` 后继续。
+7. 读到 `result.IsCompleted`：先分帧并路由缓冲中的全部完整帧；`IFlushableFrameDecoder` 再 `TryFlush` 交出残留；不可刷新的残留半帧丢弃（记 Warning、递增 `ProtocolErrors`）；最后按填充循环记录的原因调用 `onFault`（未记录原因说明是停止导致的完成，不报告）。
 
 **发送**：
 1. `await sendLock.WaitAsync(userToken)`；在此处被取消返回 `Cancelled`，不影响连接。
@@ -1138,4 +1139,5 @@ git diff --stat -- Junevy.Communication.Wiki
 - Task 3：设计缺陷修正——`IByteChannel` 删除 `IsConnected`（与 `IConnectable` 重复声明，导致经 `IClientChannel` 访问时报 CS0229），`ITcpSession` 自行声明；`IdleGap` 的 `TryDecode` 改为超过 `MaxFrameLength` 才抛出（原写"达到即抛"，恰好等于上限的帧无法交出）。设计文档 5.1、7.2 与本计划 5.2 已同步。
 - Task 3：`MaxFrameLength` 的计量口径——`Delimiter` 按分隔符之前的内容计量（`KeepDelimiter=true` 时交付的帧最多为上限加分隔符长度），其余分帧器按线路上的整帧计量。该上限用于防止错位数据撑爆内存，差几个字节不影响这一作用，保持现状；Task 14 写入 README 与 Skill。
 - Task 5：路由顺序改为"在途请求 → 迟到判定 → 接收等待者"；`FrameRouter.StopAsync(drainTimeout)` 停止时排空已收到的帧；`Keyed` 模式下 `RequestAsync` 忽略 `RequestOptions.Matcher`（按关联键匹配），`ReceiveAsync` 在所有模式下都使用 Matcher（HSMS 被动端靠它等待 Select.req）；`FrameRouter.StopAsync` 重复调用时等待同一次停止完成；空负载请求由 `StreamChannel` 以 `InvalidRequest` 拒绝；`Sequential` 超时且不重建连接时，在迟到窗口期内继续持有请求锁（写入 8.2）。`QueueFullMode.DropNewest` 映射为 `BoundedChannelFullMode.DropWrite`（`DropNewest` 会移除已入队的最新帧）。
+- Task 6：对端关闭（EOF）或读取出错时，先处理完已收到的数据再报告故障（8.2 填充第 3 条、解析第 7 条）；测试套件新增 `NonCancellableStream`，用于在测试中模拟 net472 不响应取消令牌的流，验证 D7。`StreamChannel` 报告故障后不会自行停止——Task 7 的 Supervisor 必须在收到 `onFault` 后停止该通道，且不得在 `onFault` 回调中同步等待停止完成。
 - Task 4：计划 6.1 勘误——`HostTcpAsync(..., out int port)` 不合法（async 方法不能有 out 参数），改为 `DeviceSimulator.HostTcp()` 返回 `DeviceSimulatorTcpHost`（含 `Port`、`AcceptedConnectionCount`、`DisposeAsync`）。
