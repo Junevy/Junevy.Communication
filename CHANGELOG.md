@@ -32,6 +32,7 @@
 - 2026-10-10 [Udp] 启用内置心跳且没有 `ChannelComponents.HealthProbe` 时必须设置 `Heartbeat.ExpectedReply`，否则构造时抛出 `ArgumentException`：UDP 发送几乎总是成功，"发送成功即健康"无法发现对端沉默（设计 5.4、D14）。TCP 保持可选。
 - 2026-10-10 [Serial] 启用内置心跳且没有 `ChannelComponents.HealthProbe` 时必须设置 `Heartbeat.ExpectedReply`，否则构造时抛出 `ArgumentException`：串口写入几乎总是成功，理由与 UDP 相同（设计 5.4、D14）。
 - 2026-10-10 [Serial] 打开端口时的拒绝访问（`UnauthorizedAccessException`）视为可能的瞬时状态：驱动释放端口是异步的，关闭后立即重开可能被拒绝。在 `OpenTimeout` 总时限内每 20 ms 重试一次，每次重试创建新的端口对象，失败的端口立即释放；时限用尽仍被拒绝访问则返回 `ConnectionClosed`，消息说明已重试。其他打开失败（端口不存在、被占用）仍立即返回 `ConnectionClosed`，不重试；用户取消立即结束。
+- 2026-10-10 [Tcp] 修复连接超时测试在不丢弃 SYN 的网络环境下的误失败：`Connect_Timeout_ReturnsTimeoutWithinBudget` 改用 `BlackholeAddressFactAttribute`，发现时探测 `10.255.255.1`；若在 300 ms 内以非超时错误结束（路由变化后可能出现），则跳过并说明原因，否则照常执行。Modbus 测试工程中的同类用例未修改。
 
 ## [Unreleased] — 分支 refactor/modbus-p3-architecture（v2.0.0）
 

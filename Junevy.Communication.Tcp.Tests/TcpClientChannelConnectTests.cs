@@ -65,7 +65,7 @@ public sealed class TcpClientChannelConnectTests
         Assert.Equal(ConnectionState.Disconnected, channel.State);
     }
 
-    [Fact(Timeout = 30000)]
+    [BlackholeAddressFact(Timeout = 30000)]
     public async Task Connect_Timeout_ReturnsTimeoutWithinBudget()
     {
         // 10.255.255.1 为不可路由地址；ConnectTimeout 设为 500 毫秒，区间为 [400, 2500] 毫秒。
