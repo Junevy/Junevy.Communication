@@ -779,14 +779,136 @@ public sealed class FrameRouterTests
     }
 
     [Fact]
+    public async Task Stop_DrainsQueuedFramesWithinTimeout()
+    {
+        var sink = new RecordingSink();
+        Func<FrameReceivedEventArgs, Task> slow = async args =>
+        {
+            await Task.Delay(50);
+            await sink.Handle(args);
+        };
+
+        await using var rig = new RouterRig(CorrelationMode.Sequential, raise: slow);
+        rig.Start();
+
+        // 每帧派发约 50 ms，因此 5 帧大部分仍在队列中。
+        for (int i = 1; i <= 5; i++)
+            await rig.Router.RouteAsync(Ascii($"frame-{i}"), null, CancellationToken.None);
+
+        // 排空窗口 2000 ms 足够：全部派发完毕后 StopAsync 才返回。
+        await rig.Router.StopAsync(2000);
+
+        Assert.Equal(5, sink.Count);
+        for (int i = 1; i <= 5; i++)
+            Assert.Equal(Ascii($"frame-{i}"), sink.Frames[i - 1]);
+        Assert.Equal(0, rig.Statistics.FramesDropped);
+    }
+
+    [Fact]
+    public async Task Stop_DrainTimeoutExpires_DropsRemaining()
+    {
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sink = new RecordingSink();
+
+        await using var rig = new RouterRig(CorrelationMode.Sequential, raise: BlockingRaise(entered, release, sink));
+        rig.Start();
+
+        try
+        {
+            // 第一帧使处理器阻塞；之后 5 帧在队列中等待派发。
+            await rig.Router.RouteAsync(Ascii("blocker"), null, CancellationToken.None);
+            await WithinAsync(entered.Task, 2000);
+            for (int i = 1; i <= 5; i++)
+                await rig.Router.RouteAsync(Ascii($"frame-{i}"), null, CancellationToken.None);
+
+            // 排空窗口 200 ms 到期：StopAsync 在区间内返回，不等待仍被阻塞的处理器。
+            var stopwatch = Stopwatch.StartNew();
+            await WithinAsync(rig.Router.StopAsync(200).AsTask(), 3000);
+            stopwatch.Stop();
+            Assert.InRange(stopwatch.Elapsed.TotalMilliseconds, 160d, 2200d);
+
+            // 队列中未派发的 5 帧计入 FramesDropped。
+            Assert.Equal(5, rig.Statistics.FramesDropped);
+        }
+        finally
+        {
+            release.TrySetResult(true);
+        }
+
+        // 放行处理器：只有已在处理的第一帧会交付；排队中的帧不会再派发。
+        await WaitUntilAsync(() => sink.Count == 1, 3000);
+        await Task.Delay(200);
+        Assert.Equal(1, sink.Count);
+        Assert.Equal(Ascii("blocker"), sink.Frames[0]);
+        Assert.Equal(5, rig.Statistics.FramesDropped);
+    }
+
+    [Fact]
     public async Task RouteAfterStop_Throws()
     {
         await using var rig = new RouterRig(CorrelationMode.Sequential);
         rig.Start();
-        await rig.Router.StopAsync();
+        await rig.Router.StopAsync(0);
 
         await Assert.ThrowsAsync<ObjectDisposedException>(
             () => rig.Router.RouteAsync(Ascii("late"), null, CancellationToken.None).AsTask());
+    }
+
+    [Fact]
+    public async Task Sequential_LateReplyWithinWindow_NotClaimedByReceiveWaiter()
+    {
+        await using var rig = new RouterRig(CorrelationMode.Sequential, lateReplyWindow: 1000);
+        rig.Start();
+
+        using PendingRequest request = rig.Table.Register(Ascii("REQ"), null, 100, null, CancellationToken.None);
+        request.StartTimer();
+        CommResult<byte[]> timedOut = await WithinAsync(request.Completion, 2000);
+        Assert.Equal(CommErrorKind.Timeout, timedOut.ErrorKind);
+
+        // 窗口内：无 Matcher 的接收等待者不能认领迟到应答；迟到应答被丢弃。
+        using PendingRequest receive = rig.Table.Register(ReadOnlyMemory<byte>.Empty, null, 5000, null, CancellationToken.None);
+        await rig.Router.RouteAsync(Ascii("late-reply"), null, CancellationToken.None);
+        await Task.Delay(100);
+        Assert.False(receive.Completion.IsCompleted, "A receive waiter must not claim a late reply.");
+        Assert.Equal(1, rig.Statistics.FramesDropped);
+        Assert.Equal(0, rig.Sink.Count);
+
+        // 窗口结束后：同一个接收等待者认领之后到达的帧。
+        await Task.Delay(1200);
+        await rig.Router.RouteAsync(Ascii("next-frame"), null, CancellationToken.None);
+        CommResult<byte[]> result = await WithinAsync(receive.Completion, 2000);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(Ascii("next-frame"), result.Data);
+        Assert.Equal(1, rig.Statistics.FramesDropped);
+    }
+
+    [Fact]
+    public async Task Keyed_LateReply_NotClaimedByReceiveWaiter()
+    {
+        await using var rig = new RouterRig(CorrelationMode.Keyed, lateReplyWindow: 1000, keys: new PrefixKeyExtractor());
+        rig.Start();
+
+        using PendingRequest request = rig.Table.Register(PrefixKeyExtractor.Frame(9, "request"), null, 100, null, CancellationToken.None);
+        request.StartTimer();
+        CommResult<byte[]> timedOut = await WithinAsync(request.Completion, 2000);
+        Assert.Equal(CommErrorKind.Timeout, timedOut.ErrorKind);
+
+        // 窗口内：超时键的迟到应答不能被接收等待者认领，被丢弃。
+        using PendingRequest receive = rig.Table.Register(ReadOnlyMemory<byte>.Empty, null, 5000, null, CancellationToken.None);
+        await rig.Router.RouteAsync(PrefixKeyExtractor.Frame(9, "late"), null, CancellationToken.None);
+        await Task.Delay(100);
+        Assert.False(receive.Completion.IsCompleted, "A receive waiter must not claim a late reply of a timed-out key.");
+        Assert.Equal(1, rig.Statistics.FramesDropped);
+        Assert.Equal(0, rig.Sink.Count);
+
+        // 窗口结束后：同一个接收等待者认领该键之后到达的帧。
+        await Task.Delay(1200);
+        await rig.Router.RouteAsync(PrefixKeyExtractor.Frame(9, "after-window"), null, CancellationToken.None);
+        CommResult<byte[]> result = await WithinAsync(receive.Completion, 2000);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(PrefixKeyExtractor.Frame(9, "after-window"), result.Data);
+        Assert.Equal(1, rig.Statistics.FramesDropped);
     }
 
     [Fact]

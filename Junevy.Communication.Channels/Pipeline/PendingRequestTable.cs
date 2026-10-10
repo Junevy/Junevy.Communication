@@ -85,7 +85,9 @@ internal sealed class PendingRequestTable
                                    EndPoint? expectedRemote, CancellationToken cancellationToken)
     {
         bool isReceive = payload.IsEmpty;
-        var waiter = new PendingRequest(this, payload, matcher, timeout, ResolveLateWindow(timeout), expectedRemote, isReceive);
+        // Keyed 模式按关联键匹配，忽略 Matcher（RequestOptions.Matcher 的约定），对请求与接收等待者一律如此。
+        var waiter = new PendingRequest(this, payload, mode == CorrelationMode.Keyed ? null : matcher, timeout,
+                                        ResolveLateWindow(timeout), expectedRemote, isReceive);
 
         if (cancellationToken.IsCancellationRequested)
         {
@@ -156,58 +158,61 @@ internal sealed class PendingRequestTable
     }
 
     /// <summary>
-    /// 由解析循环调用：按"在途请求 → 接收等待者（FIFO）"的顺序尝试认领；认领在调用线程上同步完成，不经过派发队列。
+    /// 由解析循环调用，按以下顺序判定一个入站帧（计划 7.2 规则 1，经修订）：
+    /// ① 在途请求认领；② 迟到应答判定（Sequential 窗口内未匹配的帧，或 Keyed 命中近期超时键）；③ 接收等待者（FIFO）。
+    /// 迟到应答先于接收等待者判定，因此无 Matcher 的 ReceiveAsync 等待者不会拿走超时请求的迟到应答。
+    /// 认领在调用线程上同步完成，不经过派发队列。
     /// </summary>
     /// <param name="frame">入站帧。</param>
     /// <param name="remote">来源地址；无来源概念的传输为 null。</param>
-    /// <returns>已被认领返回 true。</returns>
-    public bool TryComplete(byte[] frame, EndPoint? remote)
+    /// <returns>
+    /// <see cref="ClaimOutcome.Claimed"/>：已被在途请求或接收等待者认领；
+    /// <see cref="ClaimOutcome.LateReply"/>：迟到应答（已记 Warning），调用方丢弃并计入 FramesDropped；
+    /// <see cref="ClaimOutcome.Unclaimed"/>：未认领，由调用方决定积压或派发。
+    /// </returns>
+    public ClaimOutcome TryComplete(byte[] frame, EndPoint? remote)
     {
         PendingRequest? claimed;
+        ClaimOutcome outcome = ClaimOutcome.Unclaimed;
         lock (gate)
         {
-            claimed = TakeRequest(frame, remote) ?? TakeReceiver(frame, remote);
-        }
-
-        if (claimed == null)
-            return false;
-
-        claimed.TryFinish(CommResult<byte[]>.Success(frame));
-        return true;
-    }
-
-    /// <summary>
-    /// 判断未认领的帧是否属于迟到应答（Sequential 处于丢弃窗口内，或 Keyed 命中近期超时键）。
-    /// 是则记 Warning 并返回 true，由调用方丢弃并递增 <c>FramesDropped</c>；Matcher 模式无法识别迟到应答，总是返回 false。
-    /// </summary>
-    /// <param name="frame">未认领的入站帧。</param>
-    /// <returns>属于迟到应答返回 true。</returns>
-    public bool IsLateReply(byte[] frame)
-    {
-        bool late;
-        lock (gate)
-        {
-            long now = Stopwatch.GetTimestamp();
-            switch (mode)
+            claimed = TakeRequest(frame, remote);
+            if (claimed == null)
             {
-                case CorrelationMode.Sequential:
-                    late = now < sequentialLateUntil;
-                    break;
-
-                case CorrelationMode.Keyed:
-                    late = IsLateKey(frame, now);
-                    break;
-
-                default:
-                    late = false;
-                    break;
+                if (IsLateUnclaimed(frame, Stopwatch.GetTimestamp()))
+                    outcome = ClaimOutcome.LateReply;
+                else
+                    claimed = TakeReceiver(frame, remote);
             }
         }
 
-        if (late)
+        if (claimed != null)
+        {
+            claimed.TryFinish(CommResult<byte[]>.Success(frame));
+            return ClaimOutcome.Claimed;
+        }
+
+        if (outcome == ClaimOutcome.LateReply)
             logger.LogWarning("Dropped a late reply of {Length} bytes that arrived after its request timed out.", frame.Length);
 
-        return late;
+        return outcome;
+    }
+
+    // 调用方必须持有 gate。判断未认领的帧是否属于迟到应答：Sequential 处于丢弃窗口内，或 Keyed 命中近期超时键。
+    // Matcher 模式无法识别迟到应答，总是返回 false。
+    private bool IsLateUnclaimed(byte[] frame, long now)
+    {
+        switch (mode)
+        {
+            case CorrelationMode.Sequential:
+                return now < sequentialLateUntil;
+
+            case CorrelationMode.Keyed:
+                return IsLateKey(frame, now);
+
+            default:
+                return false;
+        }
     }
 
     /// <summary>
@@ -503,6 +508,19 @@ internal sealed class PendingRequestTable
             return false;
         }
     }
+}
+
+/// <summary>入站帧经关联表判定后的结果（<see cref="PendingRequestTable.TryComplete"/>）。</summary>
+internal enum ClaimOutcome
+{
+    /// <summary>已被在途请求或接收等待者认领。</summary>
+    Claimed,
+
+    /// <summary>迟到应答，应丢弃并计入 FramesDropped。</summary>
+    LateReply,
+
+    /// <summary>未认领，由调用方决定进入握手积压或派发队列。</summary>
+    Unclaimed,
 }
 
 /// <summary>未被认领的帧的去向（<see cref="PendingRequestTable.ClassifyUnclaimed"/>）。</summary>

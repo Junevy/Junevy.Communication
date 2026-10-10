@@ -90,7 +90,7 @@ internal sealed class RouterRig : IAsyncDisposable
     public void Start() => Router.Start();
 
     /// <summary>停止派发循环。</summary>
-    public ValueTask DisposeAsync() => Router.StopAsync();
+    public ValueTask DisposeAsync() => Router.StopAsync(0);
 }
 
 /// <summary>

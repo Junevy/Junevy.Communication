@@ -6,8 +6,8 @@ using Microsoft.Extensions.Logging;
 namespace Junevy.Communication.Channels.Pipeline;
 
 /// <summary>
-/// 帧路由（设计文档 6.2、6.4 节，计划 7.2 节）：入站帧先由 <see cref="PendingRequestTable"/> 认领；
-/// 未认领且非迟到应答的帧进入握手积压（握手期间）或有界派发队列；派发循环在单独的任务中串行调用 <c>raise</c>。
+/// 帧路由（设计文档 6.2、6.4 节，计划 7.2 节）：入站帧先由 <see cref="PendingRequestTable"/> 判定（在途请求认领 → 迟到应答丢弃 → 接收等待者认领）；
+/// 未被认领的帧进入握手积压（握手期间）或有界派发队列；派发循环在单独的任务中串行调用 <c>raise</c>。
 /// 认领在调用 <see cref="RouteAsync"/> 的线程上同步完成，不经过派发队列，因此慢的事件处理器不会拖慢应答（6.4 节）。
 /// </summary>
 /// <remarks>
@@ -84,7 +84,7 @@ internal sealed class FrameRouter : IAsyncDisposable
     }
 
     /// <summary>
-    /// 路由一帧：先认领；否则迟到应答丢弃；否则握手积压或派发队列。
+    /// 路由一帧：在途请求认领 → 迟到应答丢弃 → 接收等待者认领 → 握手积压或派发队列（计划 7.2 规则 1，经修订）。
     /// Wait 模式下队列满时挂起直到有空位（背压）。
     /// </summary>
     /// <param name="frame">入站帧（调用方已复制为独立数组）。</param>
@@ -101,13 +101,14 @@ internal sealed class FrameRouter : IAsyncDisposable
         await routeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (table.TryComplete(frame, remote))
-                return;
-
-            if (table.IsLateReply(frame))
+            switch (table.TryComplete(frame, remote))
             {
-                statistics.IncrementFramesDropped();
-                return;
+                case ClaimOutcome.Claimed:
+                    return;
+
+                case ClaimOutcome.LateReply:
+                    statistics.IncrementFramesDropped();
+                    return;
             }
 
             switch (table.ClassifyUnclaimed(frame, remote))
@@ -152,21 +153,48 @@ internal sealed class FrameRouter : IAsyncDisposable
     }
 
     /// <summary>
-    /// 停止派发：取消派发循环（正在执行的 <c>raise</c> 完成后退出），并等待循环结束。队列中尚未派发的帧被丢弃。可重复调用。
+    /// 停止路由。<paramref name="drainTimeout"/> 毫秒内继续派发队列中剩余的帧：完成写端后派发循环处理完队列即退出，StopAsync 随之返回。
+    /// 排空超时仍未派发完时，取消派发循环，剩余帧计入 <c>FramesDropped</c> 并记 Warning；此时不再等待可能仍被阻塞的处理器返回。
+    /// <paramref name="drainTimeout"/> ≤ 0 表示不排空：立即取消派发循环，等待正在执行的 <c>raise</c> 完成后返回，队列中剩余的帧同样计入丢弃。
+    /// 停止之后 <see cref="RouteAsync"/> 抛出 <see cref="ObjectDisposedException"/>；重复调用无效果。
     /// </summary>
-    public async ValueTask StopAsync()
+    /// <param name="drainTimeout">排空的最长毫秒数；≤ 0 表示不排空。</param>
+    public async ValueTask StopAsync(int drainTimeout)
     {
-        Interlocked.Exchange(ref stopped, 1);
-        queue.Writer.TryComplete();
-        stopSource.Cancel();
+        if (Interlocked.Exchange(ref stopped, 1) != 0)
+            return;
 
-        Task? task = dispatchTask;
-        if (task != null)
-            await task.ConfigureAwait(false);
+        queue.Writer.TryComplete();
+        Task? loop = dispatchTask;
+        if (loop == null)
+        {
+            // 从未启动：队列中的帧没有派发机会。
+            DropUndispatched();
+            return;
+        }
+
+        if (drainTimeout > 0)
+        {
+            Task finished = await Task.WhenAny(loop, Task.Delay(drainTimeout)).ConfigureAwait(false);
+            if (ReferenceEquals(finished, loop))
+            {
+                await loop.ConfigureAwait(false);
+                return;
+            }
+
+            // 排空超时：处理器可能仍阻塞，不再等待它返回。
+            stopSource.Cancel();
+            DropUndispatched();
+            return;
+        }
+
+        stopSource.Cancel();
+        await loop.ConfigureAwait(false);
+        DropUndispatched();
     }
 
-    /// <summary>等同于 <see cref="StopAsync"/>。</summary>
-    public ValueTask DisposeAsync() => StopAsync();
+    /// <summary>等同于 <c>StopAsync(0)</c>，即不排空直接停止。</summary>
+    public ValueTask DisposeAsync() => StopAsync(0);
 
     /// <summary>
     /// 把一个事件派发给每个订阅者：单个订阅者抛出的异常只记 Error 日志，其余订阅者照常收到。
@@ -227,7 +255,29 @@ internal sealed class FrameRouter : IAsyncDisposable
 
     private async ValueTask EnqueueAsync(QueueItem item, CancellationToken cancellationToken)
     {
-        await queue.Writer.WriteAsync(item, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await queue.Writer.WriteAsync(item, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ChannelClosedException)
+        {
+            // 等待空位时路由被停止：与停止之后的 RouteAsync 一致。
+            throw new ObjectDisposedException(nameof(FrameRouter));
+        }
+    }
+
+    // 停止时仍在队列中、尚未派发的帧：每帧计入 FramesDropped，并记一条 Warning。
+    private void DropUndispatched()
+    {
+        int dropped = 0;
+        while (queue.Reader.TryRead(out _))
+        {
+            statistics.IncrementFramesDropped();
+            dropped++;
+        }
+
+        if (dropped > 0)
+            logger.LogWarning("Stopping the frame router dropped {Count} undispatched frame(s).", dropped);
     }
 
     private void OnItemDropped(QueueItem item)
