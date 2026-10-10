@@ -25,7 +25,7 @@
 | D13 | UDP 不调用 `Socket.Connect`，定向模式的来源过滤在代码中完成，两种模式走同一条路径 | 13 |
 | D14 | 内置心跳探测的 `ExpectedReply` 采用**精确匹配**（整帧逐字节相等） | 7 |
 | D15 | 测试套件**复制**Modbus 测试工程中的 `ScriptedTcpServer` / `SilentTcpServer` 并泛化；Modbus 测试工程不改（Q4） | 4 |
-| D16 | `Dispose()` 同步等待 `DisposeAsync()` 完成（库内部全部 `ConfigureAwait(false)`，不会因同步上下文死锁），最长等待 `DisconnectTimeout + 1000` 毫秒 | 7、9、13 |
+| D16 | `Dispose()` 同步等待 `DisposeAsync()` 完成（库内部全部 `ConfigureAwait(false)`，不会因同步上下文死锁），最长等待 `DisconnectTimeout + 1000` 毫秒。边界（Task 5 验收确定）：派发队列在时限内未排空时，返回时只保证不再派发新的帧，不等待仍在执行的事件处理器；在 `FrameReceived` / `StateChanged` 处理器内调用 `DisconnectAsync` / `DisposeAsync` 不会死锁（派发上下文内只发出停止信号，不等待派发循环） | 5、7、9、13 |
 | D17 | `ChannelFactory` 只管理客户端通道（`IClientChannel`）；`TcpServer` 由宿主直接创建和持有 | 10 |
 | D18 | `Delimiter` 分帧跳过空帧（连续分隔符之间的空内容不交付）；`Delimiter` 编码器默认在发送时追加 `Delimiters[0]`（`FramingOptions.AppendDelimiterOnSend = true`）；其余模式的编码器原样发送 | 3 |
 
@@ -470,13 +470,13 @@ internal sealed class FrameRouter : IAsyncDisposable
                        Func<FrameReceivedEventArgs, Task> raise, ConnectionStatistics statistics, ILogger logger);
     public void Start();                                                   // 启动派发循环
     public ValueTask RouteAsync(byte[] frame, EndPoint? remote, CancellationToken cancellationToken);   // Wait 模式在队列满时挂起
-    public ValueTask StopAsync();
+    public ValueTask StopAsync(int drainTimeout);   // 在 drainTimeout 内派发完队列中已收到的帧，超时才丢弃剩余帧（Task 5 验收修正）
 }
 ```
 
 ### 7.2 固定规则
 
-1. 路由顺序：`TryComplete` 认领 → 否则 `IsLateReply` 丢弃 → 否则（握手期间进积压，否则进派发队列）。
+1. 路由顺序：在途请求认领 → 迟到应答判定（是则丢弃）→ 接收等待者认领 → 握手期间进积压，否则进派发队列。迟到判定必须先于接收等待者，否则默认匹配任意帧的 `ReceiveAsync` 会拿走超时请求的迟到应答（Task 5 验收修正）。
 2. `Sequential`：同一时刻至多一个请求型等待者（由调用方的请求锁保证，表内再做断言）；请求未指定 Matcher 时认领任意帧。
 3. `Matcher`：多个请求型等待者按注册顺序依次判定；未指定 Matcher 的等同"任意帧"。
 4. `Keyed`：按键字典匹配；`TryGetResponseKey` 返回 false 的帧视为未认领。
@@ -566,12 +566,13 @@ internal sealed class StreamChannelSettings
 4. 失败：超时返回 `Timeout`；用户取消返回 `Cancelled`；I/O 异常返回 `ConnectionClosed`。三种情况都调用 `onFault(SendFailed)`（D10）。
 
 **请求**：
-1. `Sequential` 先 `await requestLock.WaitAsync(userToken)`（被取消返回 `Cancelled`）；`Matcher` / `Keyed` 不加请求锁。
-2. `table.Register(...)` → `SendAsync` → 发送失败则释放等待者并返回发送失败 → `StartTimer()` → 等待 `Completion`。
-3. 超时，或用户取消等待：`Sequential` 且 `ResetOnRequestTimeout` 时调用 `onFault(RequestTimeout)`；否则进入迟到应答窗口。
-4. `finally` 释放请求锁。
+1. 负载为空时立即返回 `InvalidRequest`（空负载在 `PendingRequestTable` 中表示 `ReceiveAsync`，Task 5 验收确定）。
+2. `Sequential` 先 `await requestLock.WaitAsync(userToken)`（被取消返回 `Cancelled`）；`Matcher` / `Keyed` 不加请求锁。
+3. `table.Register(...)` → `SendAsync` → 发送失败则释放等待者并返回发送失败 → `StartTimer()` → 等待 `Completion`。
+4. 超时，或用户取消等待：`Sequential` 且 `ResetOnRequestTimeout` 时调用 `onFault(RequestTimeout)`；否则进入迟到应答窗口，并且**在窗口期内继续持有请求锁**再释放——否则下一个请求会在窗口期内发出并认领上一个请求的迟到应答（Task 5 验收确定）。用户取消时，等待窗口的这段时间不受用户令牌约束，但连接停止时立即结束。
+5. `finally` 释放请求锁。
 
-**停止**：设置停止标志 → `abortTransport()` → `pipe.Writer.Complete()` → 在 `drainTimeout` 内等待两个循环退出 → `table.FailAll(ConnectionClosed)` → `router.StopAsync()`。`onFault` 对同一个 `StreamChannel` 实例至多调用一次（Interlocked 标志）。
+**停止**：设置停止标志 → `abortTransport()` → `pipe.Writer.Complete()` → 在 `drainTimeout` 内等待两个循环退出 → `table.FailAll(ConnectionClosed)` → `router.StopAsync(drainTimeout)`（已收到但尚未派发的帧在时限内送达）。`onFault` 对同一个 `StreamChannel` 实例至多调用一次（Interlocked 标志）。
 
 ### 8.3 测试（类 `StreamChannelTests`，使用 `DuplexStreamPair`）
 
@@ -1136,4 +1137,5 @@ git diff --stat -- Junevy.Communication.Wiki
 - Task 3：命名空间由审阅者确定——Channels 的 `Abstractions/`、`Models/`、`Options/` 公开类型统一放在 `Junevy.Communication.Channels`，`Framing/` 放在 `Junevy.Communication.Channels.Framing`；内置分帧器与编码器为 internal，经 `FrameCodecFactory` 获取。
 - Task 3：设计缺陷修正——`IByteChannel` 删除 `IsConnected`（与 `IConnectable` 重复声明，导致经 `IClientChannel` 访问时报 CS0229），`ITcpSession` 自行声明；`IdleGap` 的 `TryDecode` 改为超过 `MaxFrameLength` 才抛出（原写"达到即抛"，恰好等于上限的帧无法交出）。设计文档 5.1、7.2 与本计划 5.2 已同步。
 - Task 3：`MaxFrameLength` 的计量口径——`Delimiter` 按分隔符之前的内容计量（`KeepDelimiter=true` 时交付的帧最多为上限加分隔符长度），其余分帧器按线路上的整帧计量。该上限用于防止错位数据撑爆内存，差几个字节不影响这一作用，保持现状；Task 14 写入 README 与 Skill。
+- Task 5：路由顺序改为"在途请求 → 迟到判定 → 接收等待者"；`FrameRouter.StopAsync(drainTimeout)` 停止时排空已收到的帧；`Keyed` 模式下 `RequestAsync` 忽略 `RequestOptions.Matcher`（按关联键匹配），`ReceiveAsync` 在所有模式下都使用 Matcher（HSMS 被动端靠它等待 Select.req）；`FrameRouter.StopAsync` 重复调用时等待同一次停止完成；空负载请求由 `StreamChannel` 以 `InvalidRequest` 拒绝；`Sequential` 超时且不重建连接时，在迟到窗口期内继续持有请求锁（写入 8.2）。`QueueFullMode.DropNewest` 映射为 `BoundedChannelFullMode.DropWrite`（`DropNewest` 会移除已入队的最新帧）。
 - Task 4：计划 6.1 勘误——`HostTcpAsync(..., out int port)` 不合法（async 方法不能有 out 参数），改为 `DeviceSimulator.HostTcp()` 返回 `DeviceSimulatorTcpHost`（含 `Port`、`AcceptedConnectionCount`、`DisposeAsync`）。
