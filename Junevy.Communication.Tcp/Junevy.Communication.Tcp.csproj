@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\build\Junevy.Communication.Common.props" />
+
+  <ItemGroup>
+    <ProjectReference Include="..\Junevy.Communication.Channels\Junevy.Communication.Channels.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Junevy.Communication.Tcp.Tests" />
+  </ItemGroup>
+
+</Project>

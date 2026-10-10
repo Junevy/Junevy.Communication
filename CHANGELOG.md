@@ -2,6 +2,12 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — 通讯通道族 P1（Core / Channels / Tcp / Udp / Serial 1.0.0-preview.1）
+
+### 新增（Added）
+
+- 2026-10-10 [Core, Channels, Tcp, Udp, Serial, Testing] 通道族项目骨架（版本 `1.0.0-preview.1`，目标框架 `net472;net8.0`）：新增 6 个库项目与 5 个对应测试项目；公共设置位于 `build/Junevy.Communication.Common.props` 与 `build/Junevy.Communication.Tests.props`，各 csproj 显式 Import（不引入 `Directory.Build.props`，Modbus 项目不受影响）；库项目开启 `TreatWarningsAsErrors` 并保留 CS1591；net472 的可空性特性由 `build/Polyfills/NullableAttributes.cs` 提供；每个测试项目含 `ProjectSmokeTests.Runtime_MatchesTargetFramework`，证明测试在 .NET Framework 与 .NET 8 上实际执行。
+
 ## [Unreleased] — 分支 refactor/modbus-p3-architecture（v2.0.0）
 
 ### 迁移指南（1.x → 2.0）

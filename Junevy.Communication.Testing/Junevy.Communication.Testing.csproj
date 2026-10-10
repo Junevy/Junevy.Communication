@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\build\Junevy.Communication.Common.props" />
+
+  <!-- 测试辅助库：只供测试项目引用，不生成 NuGet 包。 -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Junevy.Communication.Channels\Junevy.Communication.Channels.csproj" />
+  </ItemGroup>
+
+</Project>

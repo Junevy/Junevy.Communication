@@ -1,0 +1,22 @@
+<Project>
+  <!-- 通道族库项目的公共设置（D2：各库 csproj 显式 Import；不使用 Directory.Build.props，避免影响 Modbus 项目）。 -->
+  <PropertyGroup>
+    <TargetFrameworks>net472;net8.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Version>1.0.0-preview.1</Version>
+    <Authors>Junevy</Authors>
+    <Company>Junevy</Company>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/Junevy/Junevy.Communication</RepositoryUrl>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+  <!-- net472 没有可空性分析特性：仅 net472 目标编译 Polyfills/ 下的内部补丁（NullableAttributes.cs）。 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
+    <Compile Include="$(MSBuildThisFileDirectory)Polyfills\*.cs" LinkBase="Polyfills" />
+  </ItemGroup>
+</Project>
