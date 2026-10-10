@@ -360,24 +360,32 @@ public sealed class NamedRegistryTests
     [Fact]
     public async Task TryRemove_InstanceDisposeCallsBackIntoRegistry_NoDeadlock()
     {
-        using var registry = new NamedRegistry<CallbackProbe>();
+        // 回调必须跨线程执行：同一线程可以重入已持有的 Monitor 锁，同线程回调无法暴露"锁内释放"的死锁。
+        // 释放（DisposeAsync）在另一线程上调用 TryGet 与 RegisterAlias，并等待该线程完成。
+        // 若释放仍持有注册表锁，该线程会阻塞在 RegisterAlias 的加锁上，而释放方正在等待它，TryRemove 无法在 2 s 内返回。
+        // 断言失败时不释放注册表：此时锁可能仍被死锁的释放方持有，Dispose 会一直阻塞。
+        var registry = new NamedRegistry<CallbackProbe>();
         bool readBack = false;
         bool aliasAdded = false;
-        var callbackProbe = new CallbackProbe(() =>
+        var callbackProbe = new CallbackProbe(() => Task.Run(() =>
         {
             readBack = registry.TryGet("other", out _);
             aliasAdded = registry.RegisterAlias("other-alias", "other");
-        });
+        }));
         Assert.True(registry.TryAdd("x", callbackProbe));
-        Assert.True(registry.TryAdd("other", new CallbackProbe(() => { })));
+        Assert.True(registry.TryAdd("other", new CallbackProbe(() => Task.CompletedTask)));
 
         var removal = Task.Run(() => registry.TryRemove("x"));
         var completed = await Task.WhenAny(removal, Task.Delay(2000));
 
-        Assert.Same(removal, completed); // 2 s 内未返回即判定为死锁。
+        Assert.True(
+            ReferenceEquals(completed, removal),
+            "TryRemove did not return within 2 s: the instance was released while the registry lock was held (deadlock).");
         Assert.True(await removal);
         Assert.True(readBack);
         Assert.True(aliasAdded);
+
+        registry.Dispose();
     }
 
     /// <summary>仅记录 Dispose 次数的测试替身。</summary>
@@ -419,17 +427,17 @@ public sealed class NamedRegistryTests
         }
     }
 
-    /// <summary>释放时同步执行指定回调的测试替身。</summary>
-    private sealed class CallbackProbe : IDisposable
+    /// <summary>释放时执行指定异步回调的测试替身。</summary>
+    private sealed class CallbackProbe : IAsyncDisposable
     {
-        private readonly Action onDispose;
+        private readonly Func<Task> onDispose;
 
-        public CallbackProbe(Action onDispose)
+        public CallbackProbe(Func<Task> onDispose)
         {
             this.onDispose = onDispose;
         }
 
-        public void Dispose() => onDispose();
+        public async ValueTask DisposeAsync() => await onDispose();
     }
 
     /// <summary>同时实现两种释放接口的测试替身，用于验证优先调用 DisposeAsync。</summary>
