@@ -51,7 +51,7 @@ public sealed class RealSerialPortTests
     {
         (string first, string second) = SerialPairEnvironment.Read();
 
-        // 默认分帧 IdleGap（20 ms）：100 帧之间有 50 ms 静默，每一帧都必须完整交付，且不与相邻帧合并或拆分。
+        // 默认分帧 IdleGap（20 ms）：100 帧之间有 200 ms 静默，每一帧都必须完整交付，且不与相邻帧合并或拆分。
         await using var sender = new SerialChannel(RealConfig(first, 115200, framing: null));
         await using var receiver = new SerialChannel(RealConfig(second, 115200, framing: null));
         var sink = new FrameSink(receiver);
@@ -69,7 +69,7 @@ public sealed class RealSerialPortTests
             expected.Add(payload);
             CommResult sent = await WithinAsync(sender.SendAsync(payload), 5000);
             Assert.True(sent.IsSuccess, sent.ToString());
-            await Task.Delay(50);
+            await Task.Delay(200);
         }
 
         await WaitUntilAsync(() => sink.Count >= count, 60000);

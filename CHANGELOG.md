@@ -30,6 +30,8 @@
 - 2026-10-10 [Channels] 修复心跳探测超时与 `ResetOnRequestTimeout` 的冲突：心跳探测（内置探测与 `IHealthProbe` 自定义探测）期间发出的请求超时或取消等待时，不再以 `RequestTimeout` 重建连接，改按迟到应答窗口处理（Sequential 模式在窗口期内继续持有请求锁）；失败由 `HeartbeatMonitor` 按 `MaxFailures` 计数，达到上限以 `HeartbeatFailed` 断开。`HeartbeatMonitor` 在每次探测期间建立内部探测上下文（`HeartbeatProbeScope`，`AsyncLocal`，探测返回后失效），只有该上下文内的请求享有豁免，用户请求的超时行为不变。修复前，TCP 默认配置下第一次心跳超时即以 `RequestTimeout` 断开，`MaxFailures` 失效。`IHealthProbe` 的文档已注明此约定。
 - 2026-10-10 [Channels] 心跳探测排在请求锁或发送锁上、超时时没有写出任何帧（通道忙）时，不再计为心跳失败，也不影响连续失败计数：`HeartbeatProbeScope` 登记探测是否到达通道操作、是否开始写出一帧（`StreamChannel` 与 `DatagramChannel` 在探测上下文内登记），`HeartbeatMonitor` 对此类失败只记 Debug（"probe skipped: channel busy"）。修复前，用户请求超时后在迟到窗口内持有请求锁，窗口期内到期的探测会被计为失败，两次即误判 `HeartbeatFailed` 并断开连接。没有触及通道的自定义 `IHealthProbe` 失败照常计数；迟到窗口期内持有请求锁的行为不变。
 - 2026-10-10 [Udp] 启用内置心跳且没有 `ChannelComponents.HealthProbe` 时必须设置 `Heartbeat.ExpectedReply`，否则构造时抛出 `ArgumentException`：UDP 发送几乎总是成功，"发送成功即健康"无法发现对端沉默（设计 5.4、D14）。TCP 保持可选。
+- 2026-10-10 [Serial] 启用内置心跳且没有 `ChannelComponents.HealthProbe` 时必须设置 `Heartbeat.ExpectedReply`，否则构造时抛出 `ArgumentException`：串口写入几乎总是成功，理由与 UDP 相同（设计 5.4、D14）。
+- 2026-10-10 [Serial] 打开端口时的拒绝访问（`UnauthorizedAccessException`）视为可能的瞬时状态：驱动释放端口是异步的，关闭后立即重开可能被拒绝。在 `OpenTimeout` 总时限内每 20 ms 重试一次，每次重试创建新的端口对象，失败的端口立即释放；时限用尽仍被拒绝访问则返回 `ConnectionClosed`，消息说明已重试。其他打开失败（端口不存在、被占用）仍立即返回 `ConnectionClosed`，不重试；用户取消立即结束。
 
 ## [Unreleased] — 分支 refactor/modbus-p3-architecture（v2.0.0）
 

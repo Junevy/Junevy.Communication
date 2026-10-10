@@ -34,7 +34,8 @@ public sealed class SerialChannelTests
     {
         var factory = new FakeSerialPortHandleFactory
         {
-            Configure = (index, handle) => handle.OpenException = new UnauthorizedAccessException("Access to the port 'COM3' is denied."),
+            // 端口不存在不是瞬时状态：不重试（拒绝访问才重试，见 Open_TransientAccessDenied_RetriesAndSucceeds）。
+            Configure = (index, handle) => handle.OpenException = new IOException("The port 'COM3' does not exist."),
         };
         await using var channel = CreateChannel(factory, CreateConfig());
 
@@ -43,9 +44,54 @@ public sealed class SerialChannelTests
         Assert.False(result.IsSuccess);
         Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
         Assert.Contains("COM3", result.ErrorMessage!);
-        Assert.Contains("Access to the port 'COM3' is denied.", result.ErrorMessage!);
+        Assert.Contains("The port 'COM3' does not exist.", result.ErrorMessage!);
         Assert.Equal(ConnectionState.Disconnected, channel.State);
         Assert.Equal(1, Assert.Single(factory.Handles).DisposeCount);
+    }
+
+    [Fact(Timeout = 30000)]
+    public async Task Open_TransientAccessDenied_RetriesAndSucceeds()
+    {
+        // 驱动释放端口是异步的：刚关闭的端口可能在短时间内仍被拒绝访问。前两次打开抛出 UnauthorizedAccessException，第三次成功。
+        var factory = new FakeSerialPortHandleFactory
+        {
+            Configure = (index, handle) =>
+            {
+                if (index < 2)
+                    handle.OpenException = new UnauthorizedAccessException("Access to the port 'COM3' is denied.");
+            },
+        };
+        await using var channel = CreateChannel(factory, CreateConfig(openTimeout: 2000));
+
+        CommResult result = await WithinAsync(channel.ConnectAsync(), 5000);
+
+        Assert.True(result.IsSuccess, result.ToString());
+        Assert.Equal(ConnectionState.Connected, channel.State);
+        Assert.Equal(3, factory.CreateCount);
+        Assert.Equal(1, factory.Handles[0].DisposeCount);
+        Assert.Equal(1, factory.Handles[1].DisposeCount);
+    }
+
+    [Fact(Timeout = 30000)]
+    public async Task Open_PersistentAccessDenied_FailsAfterOpenTimeout()
+    {
+        // 拒绝访问持续存在：在 OpenTimeout 总时限内反复重试，时限用尽后以 ConnectionClosed 失败，消息说明已经重试。
+        var factory = new FakeSerialPortHandleFactory
+        {
+            Configure = (index, handle) => handle.OpenException = new UnauthorizedAccessException("Access to the port 'COM3' is denied."),
+        };
+        await using var channel = CreateChannel(factory, CreateConfig(openTimeout: 300));
+
+        var stopwatch = Stopwatch.StartNew();
+        CommResult result = await WithinAsync(channel.ConnectAsync(), 5000);
+        stopwatch.Stop();
+
+        Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
+        Assert.Contains("attempt", result.ErrorMessage!);
+        Assert.Contains("Access to the port 'COM3' is denied.", result.ErrorMessage!);
+        Assert.InRange(stopwatch.Elapsed.TotalMilliseconds, 240d, 2300d);
+        Assert.True(factory.CreateCount >= 2, $"The open must be retried while access is denied; attempts: {factory.CreateCount}.");
+        Assert.Equal(ConnectionState.Disconnected, channel.State);
     }
 
     [Fact(Timeout = 30000)]

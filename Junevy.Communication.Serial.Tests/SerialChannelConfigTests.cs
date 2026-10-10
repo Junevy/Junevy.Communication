@@ -1,5 +1,6 @@
 using System.IO.Ports;
 using Junevy.Communication.Channels;
+using Junevy.Communication.Core.Results;
 using static Junevy.Communication.Serial.Tests.SerialTestHelpers;
 
 namespace Junevy.Communication.Serial.Tests;
@@ -118,6 +119,35 @@ public sealed class SerialChannelConfigTests
         }
 
         Assert.Equal(before, Describe(config));
+    }
+
+    [Fact(Timeout = 30000)]
+    public void HeartbeatWithoutExpectedReply_Throws()
+    {
+        // 串口写入几乎总是成功：内置探测必须指定期望的应答，否则对端沉默无法被发现（设计 5.4、D14）。
+        SerialChannelConfig config = CreateValidConfig();
+        config.Heartbeat = new HeartbeatOptions { Enabled = true, Payload = "PING", Interval = 100, Timeout = 100 };
+
+        ArgumentException exception = Assert.ThrowsAny<ArgumentException>(() => new SerialChannel(config).Dispose());
+        Assert.Contains("ExpectedReply", exception.Message);
+    }
+
+    [Fact(Timeout = 30000)]
+    public void HeartbeatWithoutExpectedReply_WithHealthProbe_Constructs()
+    {
+        // 代码级探测替代内置探测时，不需要 ExpectedReply；此时校验不应拒绝配置。
+        SerialChannelConfig config = CreateValidConfig();
+        config.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 100, Timeout = 100 };
+        var components = new ChannelComponents { HealthProbe = new NoopProbe() };
+
+        using var channel = new SerialChannel(config, null, components);
+
+        Assert.Equal("COM3", channel.Name);
+    }
+
+    private sealed class NoopProbe : IHealthProbe
+    {
+        public Task<CommResult> ProbeAsync(CancellationToken cancellationToken) => Task.FromResult(CommResult.Success());
     }
 
     // 合法的基准配置：每个用例只改动一处。
