@@ -8,6 +8,7 @@
 
 - 2026-10-11 [Plc, Melsec] 新增项目骨架（版本 `1.0.0-preview.1`，目标框架 `net472;net8.0`）：`Junevy.Communication.Plc`（依赖 Channels）与 `Junevy.Communication.Melsec`（依赖 Plc、Tcp、Udp、Serial）；对应测试项目 `Tests/Junevy.Communication.Plc.Tests` 与 `Tests/Junevy.Communication.Melsec.Tests`，各含项目冒烟测试。两个库的 README 暂为占位，文档在 P2 文档任务中填写。
 - 2026-10-11 [Core] 新增字节序转换 `Buffers`（计划 P2-D3）：`WordOrder`（`ABCD` / `BADC` / `CDAB` / `DCBA`，按字的排列命名）与静态类 `ByteTransform`，覆盖 16、32、64 位整数与单双精度浮点的读写。读写共用一个重排函数（四种排列都是对合）；读取只使用源的前 N 个字节，写入只改写目标的前 N 个字节；长度不足抛出 `ArgumentException`，未定义的字序抛出 `ArgumentOutOfRangeException`。浮点与位模式互转使用同一块内存的显式布局结构（net472 没有 `BitConverter.SingleToInt32Bits`）。Core README 新增 "Byte Order Transform" 小节。`RetryLoop` 按 P2-D3 不加入 Core。
+- 2026-10-11 [Plc] 新增地址型设备的基础类型（`Addressing/`）：`PlcAddressUnit`（Bit / Word）、`PlcAccess`（Words / Bits）、`IPlcDeviceDefinition`（符号、单位、进制、编号上限）、抽象基类 `PlcAddress`（原始文本、软元件、编号、位号；协议派生自己的地址类型）。声明式解析器 `PlcAddressParser<TDevice, TAddress>`：去掉首尾空白；符号大小写不敏感，取最长前缀且匹配后不回退到更短的前缀（`ZR` 优先于 `Z`，`DX` 优先于 `D`）；编号按软元件进制解析，饱和解析保证超长数字不溢出；字软元件可带位号（进制 10 或 16，范围 0–15），位软元件带位号失败；设备表在构造时整体校验（空符号、重复符号抛 `ArgumentException`，非法进制或上限抛 `ArgumentOutOfRangeException`）。失败消息为英文并包含原始文本。
 
 ## [Unreleased] — 通讯通道族 P1（Core / Channels / Tcp / Udp / Serial 1.0.0-preview.1）
 
