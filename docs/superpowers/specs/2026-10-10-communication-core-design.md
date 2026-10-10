@@ -800,12 +800,12 @@ Modbus 选择了**懒重连、不要看门狗**（工业轮询的请求天然周
 | 套件提供（写一次，所有协议共享） | 协议实现（以 MELSEC 为例） |
 |---|---|
 | 连接、重连、心跳、超时、TLS（来自 Channels） | 请求帧构建、响应帧解析 |
-| 同一协议跑在 TCP / UDP / 串口上 | 各传输下的分帧声明（通常是一行 `LengthField` 配置） |
-| 请求管线：复合操作锁、重试、错误归类、日志 | 地址语法：`D100`、`X1A`、`ZR0` → 软元件代码 + 编号 |
-| 类型化读写：Int16/UInt16/Int32/UInt32/Int64/Float/Double/String/Bool 及数组 | 单次请求上限（MC 3E 批量读：字单位 960 点、位单位 7168 点） |
-| 大块读写自动拆包 | 结束码表 |
-| 字节序与字序转换（来自 Core） | 默认字节序 |
-| 声明式地址解析器（软元件表 + 进制 + 位索引） | 可选：握手（S7、FINS）、心跳命令（MC 回环测试 0619） |
+| 同一协议跑在 TCP / UDP / 串口上 | 各传输下的通道组件声明（分帧、关联、键提取器、心跳探测，见 12.7） |
+| 请求管线：内部操作锁、重试、错误归类、日志 | 地址语法：`D100`、`X1A`、`ZR0` → 软元件代码 + 编号 |
+| 类型化读写：Int16/UInt16/Int32/UInt32/Int64/Float/Double/String/Bool 及数组 | 单次请求上限（MELSEC：字 960 点；位：以太网二进制 7168 点、ASCII 3584 点，串口 7904 点） |
+| 大块读写自动拆包 | 结束码：保留原始码，不做说明表（P2-D12） |
+| 字节序与字序转换（来自 Core 的 `Buffers`） | 默认字节序（由协议选项决定，P2-D9） |
+| 声明式地址解析器（软元件表 + 进制 + 位索引） | 软元件表；可选：握手（S7、FINS，设计预期）、心跳命令（MELSEC 回环测试 0619） |
 | 工厂、注册表、DI | 配置类（网络号、PC 号、站号、帧类型、编码） |
 | 设备模拟器底座（第 13 节） | 协议的模拟器适配与测试用例 |
 
@@ -815,9 +815,9 @@ Modbus 选择了**懒重连、不要看门狗**（工业轮询的请求天然周
 /// 对外公共形状：按地址读写原始存储区。类型化读写全部是基于它的扩展方法，协议不需要重复实现。
 public interface IPlcClient : IConnectable, IDisposable, IAsyncDisposable
 {
-    PlcDataFormat DataFormat { get; }         // 默认字节序 / 字序 / 字符串编码，可按调用覆盖
+    PlcDataFormat DataFormat { get; }         // 默认字节序 / 字序 / 字符串编码，由协议选项决定，不按调用覆盖（P2-D9）
 
-    /// count 以地址的原生单位计（字地址按字，字节地址按字节）；超过单次上限时套件自动拆包。
+    /// count 以地址的原生单位计（字地址按字）；超过单次上限时套件自动拆包。P2 只有字与位两种单位（P2-D4）。
     Task<CommResult<byte[]>> ReadAsync(string address, int count, CancellationToken cancellationToken = default);
     Task<CommResult> WriteAsync(string address, ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default);
     Task<CommResult<bool[]>> ReadBitsAsync(string address, int count, CancellationToken cancellationToken = default);
@@ -825,38 +825,40 @@ public interface IPlcClient : IConnectable, IDisposable, IAsyncDisposable
 }
 
 // 类型化扩展方法（一份实现，所有协议共享）：
-// ReadInt16Async("D100") / ReadInt16Async("D100", 10) / ReadFloatAsync / ReadStringAsync(address, length) / ReadBoolAsync("M0")
-// WriteAsync("D100", (short)5) / WriteAsync("D200", 3.14f) / WriteStringAsync / WriteBoolAsync …
+// ReadInt16Async("D100") / ReadInt16Async("D100", 10) / ReadFloatAsync / ReadStringAsync(address, byteLength) / ReadBoolAsync("M0")
+// WriteInt16Async("D100", 5) / WriteFloatAsync("D200", 3.14f) / WriteStringAsync / WriteBoolAsync …（显式类型名，P2-D8；没有按类型重载的 WriteAsync）
 
 /// 协议作者继承的骨架。
 public abstract class PlcClientBase<TAddress> : IPlcClient where TAddress : PlcAddress
 {
-    protected PlcClientBase(IClientChannel channel, PlcClientOptions options, ILogger logger);
+    protected PlcClientBase(IClientChannel channel, PlcClientOptions options, PlcDataFormat dataFormat, ILogger logger);
 
-    // —— 协议必须实现 ——
-    protected abstract TAddress ParseAddress(string address);              // 通常一行：return AddressParser.Parse(address);
-    protected abstract int GetMaxUnitsPerRead(TAddress address);           // 可依赖运行时协商结果（S7 的 PDU 大小）
-    protected abstract int GetMaxUnitsPerWrite(TAddress address);
-    protected abstract void BuildReadRequest(TAddress address, int count, IBufferWriter<byte> output);
-    protected abstract CommResult<ReadOnlyMemory<byte>> ParseReadResponse(TAddress address, int count, ReadOnlyMemory<byte> frame);
-    protected abstract void BuildWriteRequest(TAddress address, ReadOnlySpan<byte> data, IBufferWriter<byte> output);
-    protected abstract CommResult ParseWriteResponse(ReadOnlyMemory<byte> frame);
+    // —— 协议必须实现（protected internal abstract；其他程序集以 protected override 实现）——
+    protected internal abstract bool TryParseAddress(string address, out TAddress? parsed, out string? error);
+    protected internal abstract int GetMaxReadPoints(TAddress address, PlcAccess access);     // 依访问方式与传输给出单次上限
+    protected internal abstract int GetMaxWritePoints(TAddress address, PlcAccess access);
+    protected internal abstract void BuildReadWordsRequest(TAddress address, int offset, int count, IBufferWriter<byte> output);
+    protected internal abstract CommResult<byte[]> ParseReadWordsResponse(int count, ReadOnlySpan<byte> frame);   // 规范化布局（P2-D5）
+    protected internal abstract void BuildWriteWordsRequest(TAddress address, int offset, ReadOnlySpan<byte> words, IBufferWriter<byte> output);
+    protected internal abstract void BuildReadBitsRequest(TAddress address, int offset, int count, IBufferWriter<byte> output);
+    protected internal abstract CommResult<bool[]> ParseReadBitsResponse(int count, ReadOnlySpan<byte> frame);
+    protected internal abstract void BuildWriteBitsRequest(TAddress address, int offset, ReadOnlySpan<bool> values, IBufferWriter<byte> output);
+    protected internal abstract CommResult ParseWriteResponse(ReadOnlySpan<byte> frame);
 
-    // —— 协议按需覆写（默认实现见 12.6）——
-    protected virtual void BuildReadBitsRequest(TAddress address, int count, IBufferWriter<byte> output);
-    protected virtual CommResult<bool[]> ParseReadBitsResponse(TAddress address, int count, ReadOnlyMemory<byte> frame);
-    protected virtual void BuildWriteBitsRequest(TAddress address, ReadOnlySpan<bool> values, IBufferWriter<byte> output);
-    protected virtual CommResult ParseWriteBitsResponse(ReadOnlyMemory<byte> frame);
+    // —— 协议可覆写 ——
+    protected internal virtual CommResult ValidateRange(TAddress address, PlcAccess access, int count);   // 协议无法表示的请求返回 InvalidRequest（P2-D14）
 
-    // —— 套件实现：拆包、重试、错误归类、日志、复合操作锁 ExclusiveAsync() ——
+    // —— 套件实现：拆包、重试、错误归类、日志、内部操作锁（不公开，P2-D6）——
 }
 
-/// 地址的公共部分；协议派生出自己的地址类型（McAddress 增加软元件代码等）。
+/// 地址的公共部分；协议派生出自己的地址类型（McAddress 增加强类型的软元件）。
 public abstract class PlcAddress
 {
     public string Text { get; }
-    public PlcAddressUnit Unit { get; }       // Bit / Byte / Word
-    public int? BitIndex { get; }             // "D100.5" 的 5
+    public IPlcDeviceDefinition Device { get; }   // 符号、单位、进制、编号上限；协议用声明式表提供实例
+    public PlcAddressUnit Unit { get; }           // Bit / Word（Byte 留到 P4，P2-D4）；由 Device.Unit 给出
+    public int Number { get; }
+    public int? BitIndex { get; }                 // "D100.5" 的 5；位号的进制由协议决定（MELSEC 为十六进制）
 }
 ```
 
@@ -865,18 +867,25 @@ public abstract class PlcAddress
 MELSEC 的整张软元件表可以写成约 30 行声明：
 
 ```csharp
-static readonly PlcAddressParser<McAddress> AddressParser = new PlcAddressParser<McAddress>(McAddress.Create)
-    .Device("D",  code: 0xA8, unit: PlcAddressUnit.Word, radix: 10)
-    .Device("W",  code: 0xB4, unit: PlcAddressUnit.Word, radix: 16)
-    .Device("ZR", code: 0xB0, unit: PlcAddressUnit.Word, radix: 10)
-    .Device("M",  code: 0x90, unit: PlcAddressUnit.Bit,  radix: 10)
-    .Device("X",  code: 0x9C, unit: PlcAddressUnit.Bit,  radix: 16)
-    .Device("Y",  code: 0x9D, unit: PlcAddressUnit.Bit,  radix: 16)
-    // … L、F、V、B、SM、SD、R、TN、CN 等
-    ;
+// 软元件表是一个数组，解析器构造一次。McDeviceTable.AddressParser 即此形式。
+static readonly McDevice[] Devices =
+{
+    new McDevice("D",  PlcAddressUnit.Word, 10, "D*", 0xA8),
+    new McDevice("W",  PlcAddressUnit.Word, 16, "W*", 0xB4),
+    new McDevice("ZR", PlcAddressUnit.Word, 16, "ZR", 0xB0),   // ZR 为十六进制（修正：原设计写 10）
+    new McDevice("M",  PlcAddressUnit.Bit,  10, "M*", 0x90),
+    new McDevice("X",  PlcAddressUnit.Bit,  16, "X*", 0x9C),
+    new McDevice("Y",  PlcAddressUnit.Bit,  16, "Y*", 0x9D),
+    // … L、F、V、B、SM、SD、R、TN、CN 等；完整的 28 行见 Junevy.Communication.Melsec/McDeviceTable.cs
+};
+
+static readonly PlcAddressParser<McDevice, McAddress> AddressParser = new PlcAddressParser<McDevice, McAddress>(
+    Devices,
+    (device, number, bit, text) => new McAddress(device, number, bit, text),
+    bitIndexRadix: 16);
 ```
 
-解析器负责：最长前缀匹配（`ZR` 优先于 `Z`）、按软元件的进制解析编号、`.n` 位索引、大小写不敏感、非法地址返回 `InvalidRequest` 并给出可读消息。
+解析器负责：最长前缀匹配（`ZR` 优先于 `Z`，按符号长度降序匹配后不回退）、按软元件的进制解析编号并检查上限、`.n` 位索引（MELSEC 为十六进制 0–F）、大小写不敏感。`TryParse` 对非法地址给出可读的错误文本，客户端将其报告为 `InvalidRequest`。
 
 ### 12.5 请求管线与重试
 
@@ -886,7 +895,7 @@ static readonly PlcAddressParser<McAddress> AddressParser = new PlcAddressParser
 |---|---|
 | 开始时通道未连接 | 立即返回 `NotConnected`（不等待，不重试） |
 | 设备返回错误码（`RemoteError`） | 终态，立即返回，不重试 |
-| `Timeout` / `ConnectionClosed` / `ProtocolViolation` | 链路由通道负责重建；`RetryCount > 0` 且在 `RetryInterval` 内链路恢复时重试，否则返回**真实的** ErrorKind（不把 Timeout 掩盖成 NotConnected） |
+| `Timeout` / `ConnectionClosed` / `ProtocolViolation` | 链路由通道负责重建；`RetryCount > 0` 且在 `RetryInterval` 内链路恢复时重试（按单个请求，P2-D7；解析期的协议违规同样重试），否则返回**真实的** ErrorKind（不把 Timeout 掩盖成 NotConnected） |
 | 拆包读写中任意一包失败 | 整体返回该失败，不返回部分数据 |
 
 `PlcClientOptions.RetryCount` 默认 0：轮询循环本身就在重试，库内默认快速失败。
@@ -907,8 +916,11 @@ public sealed class McClient : PlcClientBase<McAddress>
     public static McClient CreateUdp(UdpChannelConfig transport, McClientOptions options, ILoggerFactory? loggerFactory = null);
     public static McClient CreateSerial(SerialChannelConfig transport, McClientOptions options, ILoggerFactory? loggerFactory = null);
 
-    // 内部：McProtocolProfile.CreateComponents(transportKind, options) 返回分帧、关联、心跳探测
-    // 3E 二进制 → LengthField(7, 2, BinaryLE)；3E ASCII → LengthField(14, 4, AsciiHex)；4E → Keyed（序列号）；心跳 → 回环测试 0619
+    // 内部：McProtocolProfile.ConfigureStream / ConfigureDatagram 把分帧、关联、键提取器与心跳探测填入调用方提供的通道组件；组件已由调用方设置则抛出 ArgumentException
+    // 3E、4E 的二进制与 ASCII：长度字段分帧，头部偏移由字段编码宽度计算（Framing/McStreamFraming）
+    // 4E：Keyed 关联，序列号来自进程级计数器（P2-D11），键提取器 McSerialKeyExtractor；UDP 数据报不分帧
+    // 4C 格式 4（ASCII）：CR LF 分隔符；格式 5（二进制）：Mc4CBinaryFrameCodecFactory（DLE 边界）
+    // 心跳：HealthProbeFactory = McLoopbackProbe，发送 0619，数据固定为 1234ABCD
 }
 ```
 
@@ -919,33 +931,34 @@ var plc = McClient.CreateTcp(new TcpClientChannelConfig { Host = "192.168.1.10",
                              new McClientOptions { FrameType = McFrameType.Frame3E });
 await plc.ConnectAsync();
 var speed = await plc.ReadInt16Async("D100");
-var ok    = await plc.WriteAsync("D200", 3.14f);
+var ok    = await plc.WriteFloatAsync("D200", 3.14f);
 ```
 
 ### 12.8 以 MELSEC 为例：新增一个协议要写什么
 
 ```
 Junevy.Communication.Melsec/
-  McClientOptions.cs        网络号、PC 号、I/O 号、站号、帧类型（3E/4E）、编码（二进制/ASCII）、CPU 监视定时器
-  McAddress.cs              软元件代码、编号、单位
-  McAddressTable.cs         约 30 行声明式软元件表
-  McFrame.cs                3E/4E × 二进制/ASCII 的请求帧（批量读 0401、批量写 1401、回环测试 0619）与响应头校验
-  McErrorCodes.cs           结束码说明表
-  McProtocolProfile.cs      各传输的分帧、关联、心跳声明
-  McClient.cs               继承 PlcClientBase<McAddress>：实现 7 个必需钩子 + 3 个工厂方法
-  DependencyInjection/      AddMelsec()
+  McClientOptions.cs        网络号、PC 号、I/O 号、站号、帧类型（3E/4E/4C）、编码（二进制/ASCII）、监视定时器（P2-D15）
+  McAddress.cs              强类型的软元件、编号、位号（十六进制）
+  McDeviceTable.cs          28 行声明式软元件表与地址解析器（内部）
+  Protocol/                 字段编码（McFieldCodec 及二进制、ASCII 两种实现）、请求体（0401 / 1401 / 0619）、3E / 4E 与 4C 帧、分隔符与和校验、应答解码；无通道依赖
+  McProtocolProfile.cs      各传输的通道组件（分帧、关联、键提取器、心跳探测）与守卫
+  McClient.cs, McClient.Hooks.cs   继承 PlcClientBase<McAddress>：实现 10 个抽象钩子，覆写 ValidateRange；3 个公开工厂方法与内部命名重载
+  DependencyInjection/      McTransport、McClientConfig、McClientCreator、AddMelsec()
+  （无 McErrorCodes：结束码不做说明表，P2-D12）
 Junevy.Communication.Melsec.Tests/
-  McDeviceAdapter.cs        把 MC 帧翻译成存储区操作，挂到套件的 MemoryDeviceSimulator 上（约 100 行）
-  McClientTests.cs
+  TestSupport/McDeviceAdapter.cs   把 MC 请求翻译成 PlcMemory 操作并生成应答（回环、两种 4C 格式；P2 实际 269 行，见 20.2）
+  McEndToEnd*Tests.cs              TCP、UDP、4C 的端到端矩阵；McSerialPairTests 为真实串口（可选）
+  McClientTests.cs 等               单元测试
 ```
 
 不需要写的：连接、断线检测、重连、心跳调度、超时、粘包半包、请求串行化、重试、拆包、类型化读写、字节序转换、日志、注册表、DI、TCP/UDP/串口适配、模拟服务器。
 
-**同一套件对 S7 与 FINS 的检验**：S7 的握手（COTP CR + Setup Communication）走 `IConnectionInitializer`，单次上限依赖协商出的 PDU 大小（`GetMaxUnitsPerRead` 可读取运行时状态），地址按字节计（`PlcAddressUnit.Byte`）；FINS/TCP 的节点地址握手同样走 `IConnectionInitializer`，FINS/UDP 用通道的 `RequestRetryCount`。三者都不需要改套件。
+**同一套件对 S7 与 FINS 的检验（设计预期，P2 未实现）**：S7 的握手（COTP CR + Setup Communication）走 `IConnectionInitializer`，单次上限依赖协商出的 PDU 大小（`GetMaxReadPoints` 可读取运行时状态），地址按字节计（`PlcAddressUnit.Byte`，P2-D4 留到 P4）；FINS/TCP 的节点地址握手同样走 `IConnectionInitializer`，FINS/UDP 用通道的重试设置。设计预期是三者都不需要改套件；P2 只有 MELSEC，这一条尚未验证。
 
 ### 12.9 工厂与 DI
 
-`PlcClientFactory` 基于 Core 的 `NamedRegistry<IPlcClient>`，按协议配置类型选择创建器（与 `IModbusClientCreator` 同构）。每个协议包注册自己的创建器：`services.AddPlcClients().AddMelsec().AddSiemensS7()`。
+`PlcClientFactory` 基于 Core 的 `NamedRegistry<IPlcClient>`，按协议配置类型选择创建器（与 `IModbusClientCreator` 同构）。每个协议包注册自己的创建器：`services.AddMelsec()`（内部调用 `AddPlcClients()`，幂等）。`AddSiemensS7()` 只是设计示例，P4 才实现。
 
 ---
 
@@ -1311,6 +1324,37 @@ P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份
 | 42 | 7.2 | `TryGetSession` 的 `out ITcpSession? session` 没有可空性特性，返回 true 后调用方仍须判空 | 增加 `[NotNullWhen(true)]`（只改注解，源码与二进制兼容）。net472 上 Tcp、Udp 经 `InternalsVisibleTo` 同时看到自己与 Channels 的内部补丁特性（CS0436），`Common.props` 仅在 net472 上抑制该警告 | 计划第 20 节（收尾补丁审阅者验收） |
 
 ---
+
+### 20.2 实施修订（P2）
+
+实施（计划 Task 1–14）后，本设计第 12 节与实际实现存在的差异，已逐条修改第 12 节正文（本节保留原设计文字以便追溯）。"原因"列指向计划第 0 节的决策编号（P2-D 编号），或第 20 节的验收条目（Task 编号）。摩擦记录（扩展性缺口）见计划第 20.2 节，并在 Skill `using-junevy-plc` 的 "Lessons" 一节中汇总。
+
+| # | 章节 | 原设计 | 实际实现 | 原因（计划第 0 节 / 第 20 节） |
+|---|---|---|---|---|
+| 1 | 12.2 | 请求管线含"复合操作锁" | 操作锁为内部实现；不提供公开的 `ExclusiveAsync` | P2-D6；计划第 19 节 |
+| 2 | 12.2、12.8 | 结束码说明表（`McErrorCodes.cs`） | 不做说明表：`RemoteError` 携带原始码，消息为 `MC end code 0xXXXX.` | P2-D12 |
+| 3 | 12.2 | 单次上限：MC 3E 批量读字 960 点、位 7168 点 | 字 960 点；位：以太网二进制 7168 点、ASCII 3584 点，串口 7904 点 | 计划第 14 节上限表（Task 11）；手册 p.70–96 |
+| 4 | 12.3 | `IPlcClient.DataFormat` 可按调用覆盖 | 由协议选项决定（MELSEC：`McClientOptions.DataFormat`，默认 `DCBA` 加 ASCII 字符串），不按调用覆盖 | P2-D9 |
+| 5 | 12.3 | 按类型重载的 `WriteAsync(string, short)` 等 | 显式类型名（`WriteInt16Async` 等）；字面量不会绑定到错误的宽度 | P2-D8 |
+| 6 | 12.3 | `PlcAddressUnit` 含 `Byte` | 只有 `Bit` 与 `Word`；`Byte` 留到 P4 随 S7 加入 | P2-D4 |
+| 7 | 12.3 | 构造函数 `(channel, options, logger)`；钩子为 `protected abstract`，名为 `ParseAddress`、`BuildReadRequest` 等 | 构造函数 `(channel, options, dataFormat, logger)`；钩子为 `protected internal abstract`（其他程序集以 `protected override` 实现），按字与位分开，共 10 个抽象钩子与虚拟的 `ValidateRange` | 计划第 20 节 Task 4（F1：直接调用钩子，去掉适配器）；Task 9–11 |
+| 8 | 12.3 | `PlcAddress` 含可写的单位属性，无设备对象 | `PlcAddress` 持有 `IPlcDeviceDefinition Device`（`Unit` 由它给出）、`Number` 与 `BitIndex`；MELSEC 的 `McAddress.Device` 用 `new` 隐藏为具体类型 | 计划第 20 节 Task 3、Task 8（摩擦记录） |
+| 9 | 12.4 | 解析器为流式的 `PlcAddressParser<McAddress>(McAddress.Create).Device(...)` | `PlcAddressParser<TDevice, TAddress>(devices, create, bitIndexRadix)`，软元件表为数组 | 计划第 20 节 Task 3 |
+| 10 | 12.4 | `ZR` 为十进制（`radix: 10`）；位号为十进制 | `ZR` 为十六进制；位号为十六进制 0–F（`D100.F`） | 手册 p.67–68；P2-D10；计划第 11 节 |
+| 11 | 12.5 | 重试针对整个操作 | 按单个请求（拆包时逐包）重试；解析期的协议违规同样重试 | P2-D7；计划第 20 节 Task 4 审阅（接受） |
+| 12 | 12.6 | 未说明字中的位如何读写 | 读取字中的位由字读取完成；写入默认 `NotSupported`，`AllowReadModifyWriteBits` 开启后在操作锁内读-改-写，并每次记录 Warning | P2-D10 |
+| 13 | 12.7 | `McProtocolProfile.CreateComponents(transportKind, options)` 返回组件 | `ConfigureStream` 与 `ConfigureDatagram` 填入调用方提供的组件；组件中已由调用方设置的同名属性抛出 `ArgumentException`，不静默覆盖 | 计划第 20 节 Task 11（审阅） |
+| 14 | 12.7 | 工厂方法 `CreateTcp` 等为唯一形式 | 公开的三个工厂方法之外，另有内部命名重载，供 DI 创建器使用，使客户端名称进入通道日志 | 计划第 20 节 Task 13 |
+| 15 | 12.7 | 4E 的序列号来源未说明 | 进程级单调计数器（`Interlocked`，低 16 位）；客户端请求与心跳探测共用 | P2-D11 |
+| 16 | 12.7 | 3E ASCII 分帧为 `LengthField(14, 4, AsciiHex)`；4C 未说明 | 长度字段的偏移由字段编码宽度计算（`McStreamFraming`）；4C 格式 4 为 CR LF，格式 5 为 DLE 边界分帧器 | 计划第 20 节 Task 10、Task 11 |
+| 17 | 12.8 | 文件清单含 `McAddressTable.cs`、`McFrame.cs`、`McErrorCodes.cs` | 实际为 `McDeviceTable.cs`、`Protocol/` 下的字段编码与帧类型；没有 `McErrorCodes.cs` | P2-D12；计划第 20 节 Task 8–10 |
+| 18 | 12.8 | `McClient` 实现 7 个必需钩子 | 实现 10 个抽象钩子，并覆写 `ValidateRange`；钩子数与各自行数见计划第 20.3 节 | 计划第 20 节 Task 11 |
+| 19 | 12.8 | `McDeviceAdapter.cs` 约 100 行 | 269 行（有效行 216）：保留回环、两种 4C 格式与 3E/4E 应答，超出计划 Task 12 的 200 行目标；此偏差待审阅者裁定 | 计划第 15 节（Task 12） |
+| 20 | 12.9 | DI：`services.AddPlcClients().AddMelsec()` | `AddMelsec()` 内部调用 `AddPlcClients()`，幂等；`AddPlcClients()` 仍可单独调用 | 计划第 20 节 Task 13 |
+| 21 | 12.8 | S7 与 FINS 的检验描述（使用 `PlcAddressUnit.Byte`） | 设计预期，P2 未实现：`Byte` 留到 P4（P2-D4）；本段保留为后续协议的检验方向 | P2-D4；计划第 19 节 |
+| 22 | 13 | `SequenceFactory` 位于 Channels.Tests（未列在测试套件中） | 移入 `Junevy.Communication.Testing` 并公开，新增 `FromSegments`；Channels.Tests 与 Melsec.Tests 共用同一实现 | 计划第 20 节 Task 10（审阅修复） |
+| 23 | 3.2、4 | Core 的 `RetryLoop` | 未加入 Core（Plc 是唯一使用者）；Core 新增 `Buffers/`，含 `WordOrder` 与 `ByteTransform` | P2-D3 |
+| 24 | 12.7、12.8 | （未提及） | 4C 格式 4 应答的和校验范围包含 ETX；格式 5 异常应答的 2 字节错误码按小端解析。两项按手册图示推断，未经真机验证，README 与代码注释注明 | P2-D16 |
 
 ## 21. 决策记录
 

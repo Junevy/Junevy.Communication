@@ -387,3 +387,47 @@ await serial.ConnectAsync();
 - Channels log through an `ILogger<T>` passed at construction. Without one they log nothing; frames are logged in hex at `Debug`.
 
 The skill `Skills/using-junevy-channels/SKILL.md` describes the full contract, including late replies, heartbeat timing and the serial hot-plug checklist.
+
+## PLC Protocols (preview)
+
+The PLC family reads and writes device memory by address. `Junevy.Communication.Plc` is the protocol-neutral suite. It adds the request pipeline (batching, retries, an operation lock), the typed reads and writes, the address and option types, and the factory with dependency-injection registration; connections, reconnect, heartbeat and timeouts come from the channel family. `Junevy.Communication.Melsec` is the first protocol: MELSEC MC 3E and 4E over TCP and UDP, and 4C over serial.
+
+> **Preview**: the family ships as `1.0.0-preview.1`. The MELSEC encoding is checked against the manual's examples but has not been verified against a real PLC. The Melsec README lists the items still to verify.
+
+### Packages
+
+| Package | Purpose | Depends on |
+|---|---|---|
+| `Junevy.Communication.Plc` | `IPlcClient`, typed extensions, addresses, options, factory, DI | Channels |
+| `Junevy.Communication.Melsec` | MELSEC MC client: 3E and 4E over TCP and UDP, 4C over serial | Plc, Tcp, Udp, Serial |
+
+```text
+dotnet add package Junevy.Communication.Melsec --prerelease
+```
+
+### Typed reads and writes over TCP
+
+```csharp
+using Junevy.Communication.Core.Results;
+using Junevy.Communication.Melsec;
+using Junevy.Communication.Plc;
+using Junevy.Communication.Tcp;
+
+await using var plc = McClient.CreateTcp(
+    new TcpClientChannelConfig { Host = "192.168.1.10", Port = 5000 },
+    new McClientOptions { FrameType = McFrameType.Frame3E, Encoding = McEncoding.Binary });
+
+await plc.ConnectAsync();
+
+CommResult<short> speed = await plc.ReadInt16Async("D100");
+CommResult written = await plc.WriteFloatAsync("D200", 3.14f);
+```
+
+### Behaviour at a glance
+
+- Operations return `CommResult`. Invalid addresses, device errors, timeouts and disconnects are results, not exceptions.
+- A PLC error response is `RemoteError`, and `ProtocolErrorCode` carries the raw end code.
+- Retries are off by default (`RetryCount = 0`). Each request is retried on its own when a large operation is split into packets.
+- Addresses are `D100`, `M0`, `X1A`, `ZR0`, and `D100.F` for bit F of a word. The bit index and the device numbers of hexadecimal devices are hexadecimal.
+
+The package READMEs (`Junevy.Communication.Plc/README.md` and `Junevy.Communication.Melsec/README.md`) have the defaults, limits and the device table. The skill `Skills/using-junevy-plc/SKILL.md` covers usage, errors, DI, and how to add a protocol.
