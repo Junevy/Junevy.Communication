@@ -95,6 +95,19 @@ internal sealed class PendingRequest : IDisposable
     }
 
     /// <summary>
+    /// 标记请求帧已写出，但不启动内置计时器：超时由调用方自行计时（UDP 的重发按尝试计时，见 <c>DatagramChannel</c>）。
+    /// 之后的超时仍会登记迟到应答窗口。若已完成则无效果。
+    /// </summary>
+    internal void MarkSent()
+    {
+        lock (sync)
+        {
+            if (!finished)
+                started = true;
+        }
+    }
+
+    /// <summary>
     /// 尝试完成等待者。只有第一次调用返回 true；之后的调用（超时、取消、认领之间的竞态）返回 false 且不改变结果。
     /// 完成时释放计时器；回调在线程池上异步执行（<see cref="TaskCreationOptions.RunContinuationsAsynchronously"/>）。
     /// </summary>

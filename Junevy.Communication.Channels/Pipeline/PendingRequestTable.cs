@@ -305,11 +305,10 @@ internal sealed class PendingRequestTable
     }
 
     /// <summary>计时器到期：以 <see cref="CommErrorKind.Timeout"/> 完成，并按模式记录迟到应答窗口。</summary>
-    internal void OnTimeout(PendingRequest waiter)
-    {
-        Expire(waiter, CommResult<byte[]>.Fail(
-            $"No reply was received within {waiter.TimeoutMs} ms.", CommErrorKind.Timeout));
-    }
+    internal void OnTimeout(PendingRequest waiter) => OnTimeout(waiter, $"No reply was received within {waiter.TimeoutMs} ms.");
+
+    /// <summary>以指定消息超时结束等待（由自行计时的调用方使用，例如 UDP 的全部重发超时）：完成为 <see cref="CommErrorKind.Timeout"/>，并记录迟到应答窗口。</summary>
+    internal void OnTimeout(PendingRequest waiter, string message) => Expire(waiter, CommResult<byte[]>.Fail(message, CommErrorKind.Timeout));
 
     /// <summary>用户取消等待：以 <see cref="CommErrorKind.Cancelled"/> 完成，并按模式记录迟到应答窗口（D10）。</summary>
     internal void OnUserCancel(PendingRequest waiter)

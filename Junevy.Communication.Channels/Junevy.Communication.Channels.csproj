@@ -11,6 +11,8 @@
   <ItemGroup>
     <!-- Tcp 服务端会话复用字节流内部件（StreamChannel、FrameRouter、PendingRequestTable、HeartbeatMonitor），与客户端共用同一套分帧、关联与派发实现。 -->
     <InternalsVisibleTo Include="Junevy.Communication.Tcp" />
+    <!-- Udp 的数据报驱动与 UdpChannel 复用 ConnectionSupervisor、DatagramChannel 等内部件（与 Tcp 的先例一致，计划 15.1）。 -->
+    <InternalsVisibleTo Include="Junevy.Communication.Udp" />
     <InternalsVisibleTo Include="Junevy.Communication.Channels.Tests" />
   </ItemGroup>
 
