@@ -8,7 +8,7 @@ public sealed class FramingOptions
     /// <summary>分帧模式，默认 <see cref="FramingMode.Raw"/>。</summary>
     public FramingMode Mode { get; set; } = FramingMode.Raw;
 
-    /// <summary>单帧最大长度（字节），默认 65536。所有分帧器都受此约束。</summary>
+    /// <summary>单帧允许的最大长度（字节，含本值），默认 65536。超过时分帧器抛出 <see cref="Framing.FrameDecodeException"/>；Raw 模式按本值切块交出。</summary>
     public int MaxFrameLength { get; set; } = 65536;
 
     /// <summary>

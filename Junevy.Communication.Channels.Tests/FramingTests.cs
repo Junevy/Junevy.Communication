@@ -285,6 +285,34 @@ public sealed class FramingTests
         Assert.False(flushable.TryFlush(ref buffer, out _));
     }
 
+    [Fact]
+    public void IdleGap_ExactlyMaxFrameLength_IsFlushed()
+    {
+        // MaxFrameLength 为允许的最大帧长（含）：恰好等于上限的数据不应在 TryDecode 时抛出，静默之后应整体交出。
+        var options = new FramingOptions { Mode = FramingMode.IdleGap, MaxFrameLength = 16 };
+        IFrameDecoder decoder = FrameCodecFactory.Create(options).CreateDecoder();
+        var flushable = Assert.IsAssignableFrom<IFlushableFrameDecoder>(decoder);
+        byte[] data = Enumerable.Repeat((byte)'A', 16).ToArray();
+        ReadOnlySequence<byte> buffer = SequenceFactory.Segmented(data, 4);
+
+        Assert.False(decoder.TryDecode(ref buffer, out _));
+        Assert.Equal(16, buffer.Length);
+
+        Assert.True(flushable.TryFlush(ref buffer, out ReadOnlySequence<byte> frame));
+        Assert.Equal(data, frame.ToArray());
+        Assert.Equal(0, buffer.Length);
+    }
+
+    [Fact]
+    public void IdleGap_MaxFrameLengthPlusOne_Throws()
+    {
+        var options = new FramingOptions { Mode = FramingMode.IdleGap, MaxFrameLength = 16 };
+        IFrameDecoder decoder = FrameCodecFactory.Create(options).CreateDecoder();
+        ReadOnlySequence<byte> buffer = SequenceFactory.Segmented(Enumerable.Repeat((byte)'A', 17).ToArray(), 5);
+
+        Assert.Throws<FrameDecodeException>(() => { decoder.TryDecode(ref buffer, out _); });
+    }
+
     // ————————————————— 工厂校验与配置快照 —————————————————
 
     [Theory]
