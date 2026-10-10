@@ -27,6 +27,10 @@
 - 2026-10-11 [文档] 新增 Skill `Skills/using-junevy-plc/SKILL.md`：使用者部分（MELSEC 快速开始、传输与帧、类型化 API、地址、选项与重试、错误处理、心跳与重连、DI、排障、未验证项）、协议作者指南（包结构、设备表与地址、十个钩子与 `ValidateRange`、通道组件与工厂、创建器与 DI、测试约定、必写与不需要写）与 P2 摩擦记录的陷阱。
 - 2026-10-11 [文档] 设计文档 `docs/superpowers/specs/2026-10-10-communication-core-design.md` 第 12 节按实现修正（钩子形状与可见性、`PlcAddress`、解析器 API、ZR 十六进制、字与位的上限、结束码不做说明表、内部操作锁、DI 形式、分帧与守卫、文件清单），并新增 "20.2 实施修订（P2）" 表（24 条，逐条给出原因）。
 
+### 修复（Fixed）
+
+- 2026-10-11 [Melsec] `McClient` 的范围检查（`ValidateRange`）改用 `long` 计算末尾编号：字访问位软元件时 `16 × count` 可能超出 `int`，回绕成负数会让越界的范围通过检查（例如 `ReadAsync("M0", 200_000_000)` 原本越过检查、返回 `NotConnected`，现在返回 `InvalidRequest`）。新增回归测试 `WordAccess_OnABitDevice_WithAHugeCount_DoesNotOverflowTheRangeCheck`，修复前两个目标均失败。
+
 ## [Unreleased] — 通讯通道族 P1（Core / Channels / Tcp / Udp / Serial 1.0.0-preview.1）
 
 ### 新增（Added）
@@ -65,6 +69,7 @@
 - 2026-10-10 [Tcp] 修复连接超时测试在不丢弃 SYN 的网络环境下的误失败：`Connect_Timeout_ReturnsTimeoutWithinBudget` 改用 `BlackholeAddressFactAttribute`，发现时探测 `10.255.255.1`；若在 300 ms 内以非超时错误结束（路由变化后可能出现），则跳过并说明原因，否则照常执行。Modbus 测试工程中的同类用例未修改。
 - 2026-10-10 [Channels] 验收修正（生命周期与心跳）：客户端握手改为先 `BeginHandshake()` 再启动字节通道，避免解析循环在握手积压开启前派发已到达的帧；心跳探测返回 `NotConnected` 不计为失败；处于 Reconnecting 时调用 `DisconnectAsync` 直接转为 Disconnected（原因 `UserRequested`）。
 - 2026-10-11 [Channels] 加宽心跳测试 `HeartbeatProbe_BlockedByRequestLock_IsNotCountedAsFailure` 的时间余量（只改测试）：探测超时 100 → 300 ms，窗口内的检查点 1000 → 1200 ms，判定死亡的等待时限 8 → 15 s。该测试在整个解决方案并行测试时于 net472 偶发失败一次（单独运行 25 次、三进程并行 10 次、全量 6 次均未复现）：线程池续延延迟达到探测超时时，获得请求锁的探测来不及写出就被判为"通道忙"，按设计不计失败，因而在时限内判定不了死亡；库的行为不变。变异检查：去掉监视器的"通道忙不计失败"分支后，两个目标都在窗口内误判死亡、测试失败。
+- 2026-10-11 [Tcp] 修复测试竞态（只改测试）：`TcpClientChannelLifecycleTests` 的两个用例在 `ConnectAsync` 返回后立即调用 `ScriptedTcpServer.CloseConnection(0)`，此时服务端的接受循环可能还没登记这条连接，偶发 `ArgumentOutOfRangeException`（P2 全量运行 7 次出现 1 次）。关闭前先等待 `AcceptedConnectionCount == 1`。
 
 ### 变更（Changed）
 - 2026-10-10 [Channels] `ClientChannelSettings` 超时默认值与 TCP 客户端配置对齐：`HandshakeTimeout` 5000、`SendTimeout` 2000、`RequestTimeout` 2000、`DisconnectTimeout` 1000、`LateReplyWindow` -1（原默认 0 即不限时，派生通道遗漏赋值时请求可永不超时）；`IdleTimeout`、`PartialFrameTimeout` 仍为 0（禁用）；`ResetOnRequestTimeout` 默认仍为 false。0 仍表示不限时。TCP 与串口的 `BuildSettings` 已显式赋值这些项，行为不变；UDP 不使用 `ClientChannelSettings`。`StreamClientChannelTests` 中两个心跳探测用例显式保留原值 0（迟到应答窗口关闭）。

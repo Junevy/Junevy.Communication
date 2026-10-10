@@ -578,6 +578,15 @@ public static class McProtocolProfile
 
 ### 20.1 各 Task 验收（审阅者填写）
 
+- **里程碑 1（Task 0–6）**：审阅者重跑 Debug / Release 构建与全量测试（一致、0 失败），逐个审读新增生产文件，重复块扫描（5 行窗口）与方法长度扫描（≥ 40 行）均无命中，公开面与计划一致。打回一项：`IPlcProtocol` 接口与私有适配器 `ProtocolHooks` 只做转发（约 70 行），改为把钩子声明为 `protected internal`，流水线直接调用（`7d4513d`）。延后到 P2 之后的重构：`PlcClientFactory` 与 `ChannelFactory` 的外壳重复（约 83 行）、第三个 `IBufferWriter` 实现；记入第 19 节。`ConnectionStatistics` 构造函数为 internal 的缺口记为第 20.2 节第一条。
+- **里程碑 2（F1、Task 7–10）**：同样重跑与扫描；黄金向量 V1–V10 在测试中逐字节出现（V9 为字符串拼接，和校验 84 / 08）。打回六项并在 `1a9a3e5` 修复：删除只供测试使用的默认访问路径；位数据改用 `bool`（`TryReadBits(…, Span<bool>)`、`McResponse.Bits`）；删除只断言常量值的测试；具名掩码并用 `UInt8Size` / `UInt16Size` 取代字面量；`McAddress` 去掉重复的设备字段；`SequenceFactory` 移入 Testing。决定：ASCII 十进制编号上限 999999 由字段编码层提供，`ValidateRange` 使用同一来源；Task 10 先写生产代码的流程偏差经审阅者独立审读后接受。
+- **里程碑 3（Task 11–14）**：审阅者在 Haiku 的最终状态上连续 3 次全量测试（一致、0 失败），新项目 Release 0 警告；审读 `McClient`、`McProtocolProfile`、`McProtocolSettings`、`McFrameExchange`、分帧与 DI 代码，扫描无命中，公开面与计划一致。审阅者自行修复两项：
+  - `McClient.ValidateRange` 以 `int` 计算 `16 × count`，大数量时回绕成负数而放行；改为 `long`，回归测试修复前两个目标均失败、修复后通过。
+  - P1 测试 `TcpClientChannelLifecycleTests` 的竞态（`ConnectAsync` 后立即 `CloseConnection(0)`，服务端可能尚未登记连接）：关闭前等待 `AcceptedConnectionCount == 1`；修复后该类连续 5 次通过。Melsec 端到端测试同类调用之前已有一次完整读写往返，不受影响。
+  - `McDeviceAdapter`（269 行，测试代码）超出 200 行目标：接受（在 Q1 的 300 行上限内）。
+  - 真实串口（COM20 / COM21 虚拟对，审阅者运行）：`McSerialPairTests`（格式 5 + 和校验）与 Serial 的两个真实串口测试，两轮、两个目标全部通过。
+  - 独立核对扩展性度量：自 Task 8 起 Core / Channels / Plc / Tcp / Udp / Serial 的生产代码没有任何修改（只新增 Plc 的 README）；整个 P2 期间 Channels / Tcp / Udp / Serial 未改动；Melsec 有效行 1304、Plc 有效行 1054。
+
 ### 20.2 扩展性摩擦记录（执行者从 Task 8 起填写；格式：现象 / 变通或缺口 / 建议）
 
 - **Plc 套件测试（P2 里程碑 1 复核时补记）**

@@ -1349,7 +1349,7 @@ P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份
 | 16 | 12.7 | 3E ASCII 分帧为 `LengthField(14, 4, AsciiHex)`；4C 未说明 | 长度字段的偏移由字段编码宽度计算（`McStreamFraming`）；4C 格式 4 为 CR LF，格式 5 为 DLE 边界分帧器 | 计划第 20 节 Task 10、Task 11 |
 | 17 | 12.8 | 文件清单含 `McAddressTable.cs`、`McFrame.cs`、`McErrorCodes.cs` | 实际为 `McDeviceTable.cs`、`Protocol/` 下的字段编码与帧类型；没有 `McErrorCodes.cs` | P2-D12；计划第 20 节 Task 8–10 |
 | 18 | 12.8 | `McClient` 实现 7 个必需钩子 | 实现 10 个抽象钩子，并覆写 `ValidateRange`；钩子数与各自行数见计划第 20.3 节 | 计划第 20 节 Task 11 |
-| 19 | 12.8 | `McDeviceAdapter.cs` 约 100 行 | 269 行（有效行 216）：保留回环、两种 4C 格式与 3E/4E 应答，超出计划 Task 12 的 200 行目标；此偏差待审阅者裁定 | 计划第 15 节（Task 12） |
+| 19 | 12.8 | `McDeviceAdapter.cs` 约 100 行 | 269 行（有效行 216）：保留回环、两种 4C 格式与 3E/4E 应答，超出计划 Task 12 的 200 行目标；审阅者接受（测试代码，在 Q1 的 300 行上限之内） | 计划第 15 节（Task 12） |
 | 20 | 12.9 | DI：`services.AddPlcClients().AddMelsec()` | `AddMelsec()` 内部调用 `AddPlcClients()`，幂等；`AddPlcClients()` 仍可单独调用 | 计划第 20 节 Task 13 |
 | 21 | 12.8 | S7 与 FINS 的检验描述（使用 `PlcAddressUnit.Byte`） | 设计预期，P2 未实现：`Byte` 留到 P4（P2-D4）；本段保留为后续协议的检验方向 | P2-D4；计划第 19 节 |
 | 22 | 13 | `SequenceFactory` 位于 Channels.Tests（未列在测试套件中） | 移入 `Junevy.Communication.Testing` 并公开，新增 `FromSegments`；Channels.Tests 与 Melsec.Tests 共用同一实现 | 计划第 20 节 Task 10（审阅修复） |
