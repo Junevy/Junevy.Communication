@@ -108,9 +108,8 @@ public sealed class UdpLifecycleTests
         await Polling.WaitUntilAsync(() => changes.Any(args =>
             args.CurrentState == ConnectionState.Reconnecting && args.Reason == DisconnectReason.HeartbeatFailed));
 
-        // 这里只断言首个探测已到达对端。后续探测可能排在请求锁上（迟到窗口与探测超时同长），
-        // 被监视器超时后仍计为失败而未发出，因此不能断言到达的探测数量。
-        Assert.True(peer.ReceivedCount >= 1);
+        // 离开 Connected 之前，对端至少收到 MaxFailures 个探测：被计为失败的探测都已真正发出（排在请求锁上未发出的探测不计失败）。
+        Assert.True(peer.ReceivedCount >= config.Heartbeat.MaxFailures);
     }
 
     [Fact(Timeout = 30000)]

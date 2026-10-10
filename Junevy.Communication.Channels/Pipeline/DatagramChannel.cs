@@ -1,5 +1,6 @@
 using System.Net;
 using Junevy.Communication.Channels.Framing;
+using Junevy.Communication.Channels.Lifecycle;
 using Junevy.Communication.Core.Diagnostics;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Core.Utils;
@@ -129,6 +130,8 @@ internal sealed class DatagramChannel : IAsyncDisposable
     public async Task<CommResult<byte[]>> RequestAsync(ReadOnlyMemory<byte> payload, RequestOptions? options, EndPoint? destination,
                                                        CancellationToken cancellationToken)
     {
+        // 心跳探测的通道操作开始登记（可能随后排在请求锁上）：见 HeartbeatProbeScope.ChannelBusy。
+        HeartbeatProbeScope.NoteChannelOperation();
         if (payload.IsEmpty)
             return CommResult<byte[]>.Fail(EmptyRequestMessage, CommErrorKind.InvalidRequest);
         if (destination == null)
@@ -333,6 +336,7 @@ internal sealed class DatagramChannel : IAsyncDisposable
     // 发送一个数据报（发送锁串行化所有写出；等待锁期间取消不影响连接）。
     private async Task<CommResult> SendFrameAsync(ReadOnlyMemory<byte> payload, EndPoint destination, CancellationToken userToken)
     {
+        HeartbeatProbeScope.NoteChannelOperation();
         if (IsClosed)
             return ClosedFailure();
 
@@ -364,6 +368,7 @@ internal sealed class DatagramChannel : IAsyncDisposable
         using TimeoutScope scope = TimeoutScope.Start(settings.SendTimeout, userToken, OnWriteAborted);
         try
         {
+            HeartbeatProbeScope.NoteWriteStarted();
             await transport.SendToAsync(payload, destination, scope.Token).ConfigureAwait(false);
         }
         catch (Exception ex)

@@ -1,5 +1,6 @@
 using System.Net;
 using Junevy.Communication.Channels;
+using Junevy.Communication.Core.Results;
 
 namespace Junevy.Communication.Udp.Tests;
 
@@ -93,12 +94,44 @@ public sealed class UdpConfigTests
             MaxDatagramSize = 65507,
             RequestRetryCount = 3,
             LateReplyWindow = 0,
-            Heartbeat = new HeartbeatOptions { Enabled = true, Payload = "hex:0A", Interval = 1, Timeout = 1, MaxFailures = 1 },
+            Heartbeat = new HeartbeatOptions { Enabled = true, Payload = "hex:0A", ExpectedReply = "PONG", Interval = 1, Timeout = 1, MaxFailures = 1 },
             RemoteHost = "localhost",
             RemotePort = 65535,
         });
 
         Assert.Equal("udp://0.0.0.0:0->localhost:65535", channel.Name);
+    }
+
+    [Fact(Timeout = 30000)]
+    public void HeartbeatWithoutExpectedReply_Throws()
+    {
+        // UDP 发送几乎总是成功：内置探测只判断发送时，无法发现对端沉默，因此必须指定期望的应答（设计 5.4、D14）。
+        var config = new UdpChannelConfig
+        {
+            RemoteHost = "127.0.0.1",
+            RemotePort = 9,
+            Heartbeat = new HeartbeatOptions { Enabled = true, Payload = "PING", Interval = 100, Timeout = 100 },
+        };
+
+        ArgumentException exception = Assert.ThrowsAny<ArgumentException>(() => new UdpChannel(config).Dispose());
+        Assert.Contains("ExpectedReply", exception.Message);
+    }
+
+    [Fact(Timeout = 30000)]
+    public void HeartbeatWithoutExpectedReply_WithHealthProbe_Constructs()
+    {
+        // 代码级探测替代内置探测时，不需要 ExpectedReply；此时校验不应拒绝配置。
+        var config = new UdpChannelConfig
+        {
+            RemoteHost = "127.0.0.1",
+            RemotePort = 9,
+            Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 100, Timeout = 100 },
+        };
+        var components = new ChannelComponents { HealthProbe = new NoopProbe() };
+
+        using var channel = new UdpChannel(config, null, components);
+
+        Assert.Equal("udp://0.0.0.0:0->127.0.0.1:9", channel.Name);
     }
 
     private static IEnumerable<(string Name, Action<UdpChannelConfig> Mutate, ChannelComponents? Components)> InvalidCases()
@@ -130,13 +163,19 @@ public sealed class UdpConfigTests
         yield return ("Heartbeat without a probe on an undirected channel",
             c => c.Heartbeat = new HeartbeatOptions { Enabled = true, Payload = "PING", Interval = 100, Timeout = 100, MaxFailures = 1 }, null);
         yield return ("Heartbeat interval is zero",
-            c => { c.RemoteHost = "127.0.0.1"; c.RemotePort = 9; c.Heartbeat = new HeartbeatOptions { Enabled = true, Payload = "PING", Interval = 0 }; }, null);
+            c => { c.RemoteHost = "127.0.0.1"; c.RemotePort = 9; c.Heartbeat = new HeartbeatOptions { Enabled = true, Payload = "PING", ExpectedReply = "PONG", Interval = 0 }; }, null);
         yield return ("Heartbeat without a payload",
-            c => { c.RemoteHost = "127.0.0.1"; c.RemotePort = 9; c.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 100, Timeout = 100 }; }, null);
+            c => { c.RemoteHost = "127.0.0.1"; c.RemotePort = 9; c.Heartbeat = new HeartbeatOptions { Enabled = true, ExpectedReply = "PONG", Interval = 100, Timeout = 100 }; }, null);
         yield return ("Heartbeat payload is not a valid byte sequence",
-            c => { c.RemoteHost = "127.0.0.1"; c.RemotePort = 9; c.Heartbeat = new HeartbeatOptions { Enabled = true, Payload = "hex:ZZ", Interval = 100, Timeout = 100 }; }, null);
+            c => { c.RemoteHost = "127.0.0.1"; c.RemotePort = 9; c.Heartbeat = new HeartbeatOptions { Enabled = true, Payload = "hex:ZZ", ExpectedReply = "PONG", Interval = 100, Timeout = 100 }; }, null);
         yield return ("FrameCodec is supplied", _ => { }, new ChannelComponents { FrameCodec = new NoFramingCodec() });
         yield return ("Keyed correlation without a key extractor", _ => { }, new ChannelComponents { Correlation = CorrelationMode.Keyed });
+    }
+
+    // 仅用于校验测试：构造期间不会调用探测。
+    private sealed class NoopProbe : IHealthProbe
+    {
+        public Task<CommResult> ProbeAsync(CancellationToken cancellationToken) => Task.FromResult(CommResult.Success());
     }
 
     // 仅用于校验测试：UDP 不分帧，任何分帧工厂都应被拒绝，因此这里的成员永远不会被调用。

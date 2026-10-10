@@ -102,6 +102,11 @@ internal sealed class UdpChannelSettings
             throw new ArgumentException("The built-in heartbeat probe is sent to the remote endpoint, so it requires a directed channel (RemoteHost); "
                                         + "supply ChannelComponents.HealthProbe for an undirected channel.");
 
+        // UDP 发送几乎总是成功：内置探测只判断发送，无法发现对端沉默，因此必须指定期望的应答（设计 5.4、D14）。
+        if (config.Heartbeat.Enabled && components?.HealthProbe == null && string.IsNullOrEmpty(config.Heartbeat.ExpectedReply))
+            throw new ArgumentException("The built-in heartbeat of a UDP channel must set Heartbeat.ExpectedReply: a UDP send almost always succeeds, "
+                                        + "so the probe could not detect a silent peer. Set ExpectedReply or supply ChannelComponents.HealthProbe.");
+
         return new UdpChannelSettings
         {
             LocalAddress = localAddress,

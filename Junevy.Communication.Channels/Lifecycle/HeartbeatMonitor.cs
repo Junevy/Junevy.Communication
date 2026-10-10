@@ -158,12 +158,13 @@ internal sealed class HeartbeatMonitor : IAsyncDisposable
                     continue;
                 }
 
-                CommResult result = await ProbeOnceAsync(stopToken).ConfigureAwait(false);
+                ProbeOutcome outcome = await ProbeOnceAsync(stopToken).ConfigureAwait(false);
                 stopToken.ThrowIfCancellationRequested();
 
                 // 探测自身的收发不计为业务流量，因此在探测结束后重新取样。
                 lastTraffic = Traffic();
 
+                CommResult result = outcome.Result;
                 if (result.IsSuccess)
                 {
                     statistics.ResetConsecutiveHeartbeatFailures();
@@ -173,6 +174,13 @@ internal sealed class HeartbeatMonitor : IAsyncDisposable
                 // 尚未连接的探测说明连接正在被关闭或重建，由生命周期处理，不计入心跳失败。
                 if (result.ErrorKind == CommErrorKind.NotConnected)
                     continue;
+
+                // 通道忙：探测排在请求锁或发送锁上直到超时，没有写出任何帧。这不是对端沉默的证据，不计入心跳失败，也不影响连续失败计数。
+                if (outcome.ChannelBusy)
+                {
+                    logger.LogDebug("Heartbeat probe skipped: channel busy ({Result}).", result);
+                    continue;
+                }
 
                 int failures = statistics.IncrementConsecutiveHeartbeatFailures();
                 logger.LogWarning("Heartbeat probe failed ({Failures} of {MaxFailures}): {Result}", failures, maxFailures, result);
@@ -190,29 +198,48 @@ internal sealed class HeartbeatMonitor : IAsyncDisposable
     }
 
     // 单次探测：探测在超时后被放弃（取消）；探测本身忽略取消令牌时，也不会让循环无限等待。
-    private async Task<CommResult> ProbeOnceAsync(CancellationToken stopToken)
+    // 结果同时带回探测上下文的登记：探测是否因通道忙而未写出任何帧（见 HeartbeatProbeScope.ChannelBusy）。
+    private async Task<ProbeOutcome> ProbeOnceAsync(CancellationToken stopToken)
     {
         using (CancellationTokenSource probeSource = CancellationTokenSource.CreateLinkedTokenSource(stopToken))
         {
-            Task<CommResult> probeTask = StartProbe(probeSource.Token);
+            (Task<CommResult> probeTask, HeartbeatProbeScope scope) = StartProbe(probeSource.Token);
             Task timeout = Task.Delay(probeTimeout, stopToken);
             Task finished = await Task.WhenAny(probeTask, timeout).ConfigureAwait(false);
             if (ReferenceEquals(finished, probeTask))
-                return await probeTask.ConfigureAwait(false);
+            {
+                CommResult completed = await probeTask.ConfigureAwait(false);
+                return new ProbeOutcome(completed, scope.ChannelBusy);
+            }
 
             probeSource.Cancel();
-            return CommResult.Fail($"No heartbeat reply was received within {probeTimeout} ms.", CommErrorKind.Timeout);
+            var timedOut = CommResult.Fail($"No heartbeat reply was received within {probeTimeout} ms.", CommErrorKind.Timeout);
+            return new ProbeOutcome(timedOut, scope.ChannelBusy);
         }
     }
 
     // 在心跳探测上下文中启动探测（见 HeartbeatProbeScope）：上下文只在探测启动的同步部分内挂到监视循环的执行流上，
-    // 返回后恢复原有上下文；探测自身的续延已捕获该上下文，直到探测返回为止都享有豁免。
-    private Task<CommResult> StartProbe(CancellationToken probeToken)
+    // 返回后恢复原有上下文；探测自身的续延已捕获该上下文，直到探测返回为止都享有豁免。调用方凭返回的上下文读取探测的登记。
+    private (Task<CommResult> Probe, HeartbeatProbeScope Scope) StartProbe(CancellationToken probeToken)
     {
         using (HeartbeatProbeScope scope = HeartbeatProbeScope.Enter())
         {
-            return ProbeSafelyAsync(probeToken, scope);
+            return (ProbeSafelyAsync(probeToken, scope), scope);
         }
+    }
+
+    // 单次探测的结果，以及探测是否因通道忙而未写出任何帧（见 HeartbeatProbeScope.ChannelBusy）。
+    private readonly struct ProbeOutcome
+    {
+        public ProbeOutcome(CommResult result, bool channelBusy)
+        {
+            Result = result;
+            ChannelBusy = channelBusy;
+        }
+
+        public CommResult Result { get; }
+
+        public bool ChannelBusy { get; }
     }
 
     private async Task<CommResult> ProbeSafelyAsync(CancellationToken probeToken, HeartbeatProbeScope scope)

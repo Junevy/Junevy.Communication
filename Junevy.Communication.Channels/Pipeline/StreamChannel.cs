@@ -152,6 +152,8 @@ internal sealed class StreamChannel : IAsyncDisposable
     public async Task<CommResult<byte[]>> RequestAsync(ReadOnlyMemory<byte> payload, RequestOptions? options,
                                                        EndPoint? expectedRemote, CancellationToken cancellationToken)
     {
+        // 心跳探测的通道操作开始登记（可能随后排在请求锁上）：见 HeartbeatProbeScope.ChannelBusy。
+        HeartbeatProbeScope.NoteChannelOperation();
         if (payload.IsEmpty)
             return CommResult<byte[]>.Fail(EmptyRequestMessage, CommErrorKind.InvalidRequest);
         if (IsClosed)
@@ -325,6 +327,7 @@ internal sealed class StreamChannel : IAsyncDisposable
     // 写出一帧（计划 8.2 发送流程）。发送锁串行化所有写出；等待锁期间取消不影响连接。
     private async Task<CommResult> WriteFrameAsync(ReadOnlyMemory<byte> payload, CancellationToken userToken)
     {
+        HeartbeatProbeScope.NoteChannelOperation();
         if (IsClosed)
             return ClosedFailure();
 
@@ -345,6 +348,7 @@ internal sealed class StreamChannel : IAsyncDisposable
             if (bytes.IsEmpty)
                 return CommResult.Success();
 
+            HeartbeatProbeScope.NoteWriteStarted();
             return await WriteBytesAsync(bytes, userToken).ConfigureAwait(false);
         }
         finally
