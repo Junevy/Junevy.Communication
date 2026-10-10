@@ -606,5 +606,13 @@ public static class McProtocolProfile
   - 现象：`IFrameDecoder.TryDecode` 接收 `ReadOnlySequence<byte>`。Channels 只提供分隔符与起止标记的扫描；格式 5 需要"跳过成对的 10H 后找未转义的 DLE ETX"，仓库里没有可复用的逐字节前进式读取器，`SequenceReader<T>` 在 Channels 中也未使用。
   - 变通或缺口：`Mc4CBinaryFrameDecoder` 把不超过 MaxFrameLength 的窗口复制为数组，再交给协议层的 `McDleFrame.Scan`；每次到达都会重新扫描已缓存的字节。
   - 建议：Channels 提供前进式的字节读取器（或基于 `SequenceReader<T>` 的扩展），分帧器不必复制窗口。属于 Channels 的通用能力，P2 后评估。
+- **MELSEC 客户端的传输配置（Task 11）**
+  - 现象：`ChannelComponents` 的设置覆盖传输配置的同名设置（`TcpClientChannelConfig.Framing`、`Correlation` 等），通道不报告这种覆盖。
+  - 变通或缺口：`McClient.CreateTcp` / `CreateUdp` / `CreateSerial` 用默认实例比较，传输配置不是默认值时抛出 ArgumentException，不静默覆盖。
+  - 建议：通道在组件覆盖配置时可见（或拒绝），让两者的优先级在类型上明确。属于 Channels 的通用能力，P2 后评估。
+- **协议客户端与通道的对应（Task 11）**
+  - 现象：`McClient(IClientChannel, McClientOptions)` 无法检查通道是否已由 `McProtocolProfile` 配置（分帧、关联与键提取器只能由调用方保证）。
+  - 变通或缺口：构造函数的文档要求调用方使用 `McProtocolProfile`；三个工厂方法始终完成配置。
+  - 建议：通道提供已配置的分帧与关联的只读视图，协议客户端构造时核对。属于 Channels 与 Plc 的通用能力，P2 后评估。
 
 ### 20.3 最终度量（Task 14）

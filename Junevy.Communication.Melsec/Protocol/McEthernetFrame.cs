@@ -28,8 +28,8 @@ internal sealed class McEthernetFrame
 
     private bool Is4E => frameType == McFrameType.Frame4E;
 
-    /// <summary>访问路径的字段宽度：网络号 1、PC 号 1、I/O 号 2、模块站号 1（手册 p.42）。</summary>
-    private int RouteSize => 3 * codec.UInt8Size + codec.UInt16Size;
+    /// <summary>访问路径的字段宽度（手册 p.42）。</summary>
+    private int RouteSize => McAccessRoute.FieldSize(codec);
 
     /// <summary>写入请求帧。</summary>
     /// <param name="output">输出缓冲。</param>
@@ -38,6 +38,15 @@ internal sealed class McEthernetFrame
     /// <param name="route">访问路径。</param>
     /// <param name="body">请求数据（命令、子命令与参数，已按编码写好）。</param>
     public void WriteRequest(IBufferWriter<byte> output, ushort serial, ushort monitoringTimer, McAccessRoute route, ReadOnlySpan<byte> body)
+        => McFrameOutput.Write(BuildRequest(serial, monitoringTimer, route, body), output);
+
+    /// <summary>编码请求帧并返回字节（客户端与心跳探测直接使用）。</summary>
+    /// <param name="serial">4E 的序列号（3E 忽略）。</param>
+    /// <param name="monitoringTimer">监视定时器（250 ms 为单位）。</param>
+    /// <param name="route">访问路径。</param>
+    /// <param name="body">请求数据。</param>
+    /// <returns>完整的请求帧。</returns>
+    public byte[] BuildRequest(ushort serial, ushort monitoringTimer, McAccessRoute route, ReadOnlySpan<byte> body)
     {
         using var frame = new MemoryStream();
         codec.WriteSubheader(frame, Is4E ? McCommands.Request4E : McCommands.Request3E);
@@ -51,7 +60,7 @@ internal sealed class McEthernetFrame
         codec.WriteUInt16(frame, checked((ushort)(codec.UInt16Size + body.Length)));
         codec.WriteUInt16(frame, monitoringTimer);
         codec.WriteRaw(frame, body);
-        McFrameOutput.CopyTo(frame, output);
+        return frame.ToArray();
     }
 
     /// <summary>解码应答帧。结束码非 0 时仍返回成功，携带结束码且数据为空；由 <see cref="McResponse.CheckEndCode"/> 转换为 RemoteError。</summary>

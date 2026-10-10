@@ -31,6 +31,13 @@ internal sealed class Mc4CFrame
     /// <param name="route">访问路径。</param>
     /// <param name="body">请求数据（命令、子命令与参数，已按编码写好）。</param>
     public void WriteRequest(IBufferWriter<byte> output, Mc4CAccessRoute route, ReadOnlySpan<byte> body)
+        => McFrameOutput.Write(BuildRequest(route, body), output);
+
+    /// <summary>编码请求帧并返回字节（客户端与心跳探测直接使用）。</summary>
+    /// <param name="route">访问路径。</param>
+    /// <param name="body">请求数据。</param>
+    /// <returns>完整的请求帧（格式 4 不含 CR LF）。</returns>
+    public byte[] BuildRequest(Mc4CAccessRoute route, ReadOnlySpan<byte> body)
     {
         using var frame = new MemoryStream();
         if (IsFormat4)
@@ -38,7 +45,7 @@ internal sealed class Mc4CFrame
         else
             WriteRequestFormat5(frame, route, body);
 
-        McFrameOutput.CopyTo(frame, output);
+        return frame.ToArray();
     }
 
     /// <summary>

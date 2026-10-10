@@ -17,4 +17,7 @@ internal static class McLimits
 
     /// <summary>串口（C24）的位访问最大点数，二进制与 ASCII 相同。</summary>
     public const int SerialBitPoints = 7904;
+
+    /// <summary>一个字包含的位数；字访问位软元件时，每个字覆盖 16 个点。</summary>
+    public const int BitsPerWord = 16;
 }

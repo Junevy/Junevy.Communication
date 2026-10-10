@@ -25,4 +25,9 @@ internal readonly struct McAccessRoute
 
     /// <summary>请求目标模块站号。</summary>
     public byte ModuleStationNumber { get; }
+
+    /// <summary>访问路径的字段宽度：二进制 5 字节，ASCII 10 个字符。</summary>
+    /// <param name="codec">字段编码策略。</param>
+    /// <returns>字段宽度。</returns>
+    public static int FieldSize(McFieldCodec codec) => 3 * codec.UInt8Size + codec.UInt16Size;
 }
