@@ -176,6 +176,47 @@ sealed class SequenceKeyExtractor : IFrameKeyExtractor
 
 `Keyed` mode requires a `KeyExtractor`. Without one, the channel constructor throws `ArgumentException`.
 
+## Text Protocols
+
+Barcode readers, vision systems and many controllers exchange text lines. `ByteChannelTextExtensions` adds `SendTextAsync`, `RequestTextAsync` and `ReceiveTextAsync` to every `IByteChannel`: client channels, server sessions and UDP channels.
+
+```csharp
+using System.Text;
+using Junevy.Communication.Channels;
+using Junevy.Communication.Core.Results;
+using Junevy.Communication.Tcp;
+
+await using var scanner = new TcpClientChannel(new TcpClientChannelConfig
+{
+    Host = "192.168.1.120",
+    Port = 9004,
+    Framing = new FramingOptions { Mode = FramingMode.Delimiter, Delimiters = new[] { "\r\n" } },
+});
+
+CommResult connected = await scanner.ConnectAsync();
+if (!connected.IsSuccess)
+{
+    Console.WriteLine($"connect failed: {connected.ErrorKind} {connected.ErrorMessage}");
+    return;
+}
+
+// UTF-8 without a BOM. The CR LF delimiter is appended once by the framing encoder; do not add it to the text.
+CommResult sent = await scanner.SendTextAsync("TRIGGER");
+
+// The reply is decoded with the same encoding. A failure keeps its ErrorKind.
+CommResult<string> reply = await scanner.RequestTextAsync("READ?", new RequestOptions { Timeout = 1000 });
+Console.WriteLine(reply.IsSuccess ? reply.Data : $"{reply.ErrorKind}: {reply.ErrorMessage}");
+
+// Wait for an unsolicited line that the device writes in ASCII.
+CommResult<string> line = await scanner.ReceiveTextAsync(new RequestOptions { Timeout = 5000 }, Encoding.ASCII);
+```
+
+- The text is encoded as UTF-8 without a BOM, unless you pass an `Encoding`.
+- Nothing is appended to the text. The framing encoder appends `Delimiters[0]` once (`AppendDelimiterOnSend`, on by default). Adding a terminator yourself makes the device receive two.
+- Replies are decoded with the same encoding and do not include the delimiter.
+- A failed result keeps its `ErrorKind`, message, protocol code and exception.
+- A `null` channel or text throws `ArgumentNullException`.
+
 ## Custom Byte-Stream Transport
 
 Derive from `StreamClientChannel` to add a transport that is exposed as a `Stream` (named pipes, Bluetooth serial, and so on). The base class provides the connection lifecycle, framing, correlation, heartbeat, handshake and reconnect.
@@ -190,7 +231,7 @@ public static class Program
 {
     public static async Task Main()
     {
-        // The base class has no timeout defaults: a zero value means "no limit", so set every timeout explicitly.
+        // Timeouts default to the TCP client values. A zero value means "no limit", so set the values your protocol needs.
         var settings = new ClientChannelSettings
         {
             HandshakeTimeout = 5000,
@@ -263,16 +304,21 @@ Override `SecureStreamAsync` to wrap the stream (for example in TLS). Override `
 
 ## Options and Defaults
 
-`ClientChannelSettings` is what a `StreamClientChannel` subclass receives. Its defaults differ from the transport configuration classes: a zero timeout means "no limit".
+`ClientChannelSettings` is what a `StreamClientChannel` subclass receives. Its timeout defaults equal the TCP client defaults, so a subclass that forgets to set one still gets a timeout. A zero timeout means "no limit".
 
-| Setting | `ClientChannelSettings` default | Transport config default (for example `TcpClientChannelConfig`) |
+| Setting | `ClientChannelSettings` default | `TcpClientChannelConfig` default |
 |---|---|---|
-| `HandshakeTimeout`, `SendTimeout`, `RequestTimeout`, `DisconnectTimeout` | 0 (no limit) | 5000, 2000, 2000, 1000 |
-| `LateReplyWindow` | 0 (no late-reply window) | -1 (equal to `RequestTimeout`) |
+| `HandshakeTimeout` | 5000 ms | 5000 ms |
+| `SendTimeout` | 2000 ms | 2000 ms |
+| `RequestTimeout` | 2000 ms | 2000 ms |
+| `DisconnectTimeout` | 1000 ms | 1000 ms |
+| `LateReplyWindow` | -1 (equal to `RequestTimeout`) | -1 |
 | `IdleTimeout`, `PartialFrameTimeout` | 0 (disabled) | 0 (disabled) |
-| `ResetOnRequestTimeout` | false | true (TCP) |
+| `ResetOnRequestTimeout` | false: the connection is kept and the late-reply window applies | true: the connection is rebuilt |
+| `ReceiveBufferSize` | 4096 | not set by the TCP configuration (base default 4096) |
 | `ReceiveQueueCapacity` | 1024 | 1024 |
-| `QueueFullMode` | `Wait` | `Wait` (TCP); `DropOldest` (serial, UDP) |
+| `Correlation` | `Sequential` | `Sequential` |
+| `QueueFullMode` | `Wait` | `Wait` (serial and UDP use `DropOldest`) |
 
 | `HeartbeatOptions` | Default |
 |---|---|

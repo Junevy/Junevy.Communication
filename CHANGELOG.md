@@ -25,6 +25,7 @@
 - 2026-10-10 [Udp] 新增 UDP 客户端通道 `UdpChannel`（`IUdpChannel`，直接组合 `ConnectionSupervisor` 与数据报驱动，不继承 `StreamClientChannel`）、配置 `UdpChannelConfig`（设计文档第 9 节，按 D11 增加 `MulticastLoopback`）、公开创建器 `UdpChannelCreator`（配置类型 `UdpChannelConfig`，配置类型不符时抛出 `ArgumentException`）与依赖注入扩展 `AddUdpChannels()`（`Junevy.Communication.Udp.DependencyInjection`，幂等）。定向模式由 `RemoteHost` 与 `RemotePort` 同时设置启用：`SendAsync` / `RequestAsync` 发往远端，内置心跳探测也发往远端；非定向模式只能使用 `SendToAsync` / `RequestToAsync`，在非定向模式下调用 `SendAsync` / `RequestAsync` 返回 `InvalidRequest`。定向模式下 `RequestToAsync` 只能请求远端，发送前拒绝其他地址（否则应答会被来源过滤丢弃），`SendToAsync` 仍可单向发往其他地址。打开套接字时依次完成 SIO_UDP_CONNRESET（net472 恒执行，net8 仅在 Windows 执行）、SO_REUSEADDR、`ReceiveBufferSize`（SO_RCVBUF）、绑定、广播、组播（回环与 TTL）并加入组播组，定向模式在打开时解析远端；不调用 `Socket.Connect`。构造时校验配置（D5）：地址与端口范围、RemoteHost 与 RemotePort 成对设置、组播地址必须确为组播段、`MaxDatagramSize` ∈ [1, 65507]、超时与重试参数的符号约束等，非法时抛出 `ArgumentException` 族，调用方的配置对象不会被修改。`ChannelComponents.FrameCodec` 对 UDP 不适用（数据报天然有边界），非空时构造抛出 `ArgumentException`。默认名称为 `udp://本地地址:端口`，定向模式为 `udp://本地地址:端口->远端主机:端口`。
 - 2026-10-10 [Udp] 定向模式下的 `FrameReceived` 事件同样携带来源地址（`RemoteEndPoint`）；非定向模式的行为不变。
 - 2026-10-10 [Channels] 分帧计量口径固化并写入文档：`Delimiter` 的 `MaxFrameLength` 按分隔符之前的内容计量（`KeepDelimiter=true` 时交付的帧最长为上限加分隔符长度）；`IdleGap` 只在缓冲超过上限时抛出（恰好等于上限的帧可以交出）；其余分帧器按线路上的整帧计量。
+- 2026-10-10 [Channels] 新增文本扩展方法 `ByteChannelTextExtensions`（`SendTextAsync`、`RequestTextAsync`、`ReceiveTextAsync`，适用于任何 `IByteChannel`）：默认 UTF-8（无 BOM），可传入 `Encoding`；不追加分隔符，分隔符由 `Delimiter` 编码器的 `AppendDelimiterOnSend` 负责；失败结果原样保留错误分类、消息、协议码与异常；`channel` 或 `text` 为 null 抛出 `ArgumentNullException`。
 
 ### 修复（Fixed）
 - 2026-10-10 [Channels] 对端关闭时先处理完已收到的数据，再报告故障：填充循环读到 0 字节或出错时只记录原因（0 字节与 IOException 为 RemoteClosed，其他为 Error）并完成管道写端；解析循环先分帧并派发全部完整帧，可刷新分帧器整段交出残留数据，其余残留半帧丢弃并记 Warning、递增 ProtocolErrors，然后报告记录的原因（停止过程中不记录）。此前对端回完应答即断开时，在途请求会以 ConnectionClosed 失败，而不是拿到已收到的应答。
@@ -37,6 +38,9 @@
 - 2026-10-10 [Tcp] 修复连接超时测试在不丢弃 SYN 的网络环境下的误失败：`Connect_Timeout_ReturnsTimeoutWithinBudget` 改用 `BlackholeAddressFactAttribute`，发现时探测 `10.255.255.1`；若在 300 ms 内以非超时错误结束（路由变化后可能出现），则跳过并说明原因，否则照常执行。Modbus 测试工程中的同类用例未修改。
 - 2026-10-10 [Channels] 验收修正（生命周期与心跳）：客户端握手改为先 `BeginHandshake()` 再启动字节通道，避免解析循环在握手积压开启前派发已到达的帧；心跳探测返回 `NotConnected` 不计为失败；处于 Reconnecting 时调用 `DisconnectAsync` 直接转为 Disconnected（原因 `UserRequested`）。
 
+### 变更（Changed）
+- 2026-10-10 [Channels] `ClientChannelSettings` 超时默认值与 TCP 客户端配置对齐：`HandshakeTimeout` 5000、`SendTimeout` 2000、`RequestTimeout` 2000、`DisconnectTimeout` 1000、`LateReplyWindow` -1（原默认 0 即不限时，派生通道遗漏赋值时请求可永不超时）；`IdleTimeout`、`PartialFrameTimeout` 仍为 0（禁用）；`ResetOnRequestTimeout` 默认仍为 false。0 仍表示不限时。TCP 与串口的 `BuildSettings` 已显式赋值这些项，行为不变；UDP 不使用 `ClientChannelSettings`。`StreamClientChannelTests` 中两个心跳探测用例显式保留原值 0（迟到应答窗口关闭）。
+
 ### 文档（Docs）
 - 2026-10-10 [Core, Channels, Tcp, Udp, Serial] 新增各包 README.md（英文）：用途、安装（`dotnet add package ... --prerelease`）、示例（均经临时控制台项目编译验证）、超时表摘录与 net472 降级行为；5 个库的 csproj 声明 `PackageReadmeFile` 并打包 README.md，消除 NuGet 缺少 readme 的提示。
 - 2026-10-10 [Channels, Tcp, Udp, Serial] 新增 `Skills/using-junevy-channels/SKILL.md`：包选择与 DI、状态机与 `DisconnectAsync` / `Dispose` 语义、分帧与关联、心跳检测时间、TLS、UDP、串口、扩展点、排查表；串口热拔插检查清单标注"待人工验证"。
@@ -44,6 +48,7 @@
 - 2026-10-10 [Tcp, Udp, Serial] 修正通道类与服务端 XML 注释中"构造时校验并复制配置"的措辞：`Config` 返回调用方传入的对象本身，运行行为只依赖构造时的快照（只改注释，不改行为）。
 - 2026-10-10 [Channels, Tcp, Udp, Serial] 设计文档第 5–11 节按实现同步；差异与原因见设计文档第 20.1 节（实施修订表）。
 - 2026-10-10 [Serial] 串口热拔插（USB 转串口在打开状态下拔出）尚未经人工验证（计划第 19 节待办），风险未复现也未排除，未添加防护代码。检查清单见 Skill；结论待人工测试后补充。
+- 2026-10-10 [Channels, Tcp] README 与 Skill 增加文本扩展的用法（示例已编译验证）及 `ClientChannelSettings` 默认值说明；设计文档 5.1 删除"未实现"注记，20.1 第 1、31 项改为"已在 P1 实现 / 默认值已对齐"。
 
 ## [Unreleased] — 分支 refactor/modbus-p3-architecture（v2.0.0）
 

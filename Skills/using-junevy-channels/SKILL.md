@@ -20,7 +20,6 @@ Byte-channel library family for .NET (net472 + net8.0) by Junevy, version `1.0.0
 - Modbus TCP or RTU. Use `using-junevy-modbus`, which has its own result types and reconnect rules.
 - PLC address-based access (typed reads and writes), protocol suites, SECS/GEM, OPC UA, MQTT, FTP, or WebApi. None of these are in P1.
 - Modbus ASCII, DTLS (TLS over UDP), or a guarantee that a USB-serial hot-plug is safe (see the checklist below).
-- Text helpers such as `SendTextAsync` or `RequestTextAsync`: they are not part of P1. Encode with `Encoding` yourself.
 
 ## Package Selection
 
@@ -155,6 +154,47 @@ var asciiLines = new FramingOptions { Mode = FramingMode.Delimiter, Delimiters =
 var stxEtx = new FramingOptions { Mode = FramingMode.StartEnd, StartMarker = "hex:02", EndMarker = "hex:03", KeepMarkers = true };
 
 IFrameCodecFactory codec = FrameCodecFactory.Create(modbusTcp);   // validates and copies the options
+```
+
+## Text Protocols
+
+`ByteChannelTextExtensions` (namespace `Junevy.Communication.Channels`) adds `SendTextAsync`, `RequestTextAsync` and `ReceiveTextAsync` to every `IByteChannel`: client channels, `ITcpSession` and `IUdpChannel`.
+
+- The text is encoded as UTF-8 without a BOM unless you pass an `Encoding` (for example `Encoding.ASCII`).
+- Nothing is appended to the text. The framing encoder appends `Delimiters[0]` once (`AppendDelimiterOnSend`, on by default). Pair text calls with a `Delimiter` framing, and do not add a terminator yourself.
+- Replies are decoded with the same encoding and do not include the delimiter (`KeepDelimiter` is false by default).
+- A failed result keeps its `ErrorKind`, message, protocol code and exception. Decoding never turns a failure into a success.
+- A `null` channel or text throws `ArgumentNullException`.
+
+```csharp
+using System.Text;
+using Junevy.Communication.Channels;
+using Junevy.Communication.Core.Results;
+using Junevy.Communication.Tcp;
+
+await using var scanner = new TcpClientChannel(new TcpClientChannelConfig
+{
+    Host = "192.168.1.120",
+    Port = 9004,
+    Framing = new FramingOptions { Mode = FramingMode.Delimiter, Delimiters = new[] { "\r\n" } },
+});
+
+CommResult connected = await scanner.ConnectAsync();
+if (!connected.IsSuccess)
+{
+    Console.WriteLine($"connect failed: {connected.ErrorKind} {connected.ErrorMessage}");
+    return;
+}
+
+// UTF-8 without a BOM. The CR LF delimiter is appended once by the framing encoder; do not add it to the text.
+CommResult sent = await scanner.SendTextAsync("TRIGGER");
+
+// The reply is decoded with the same encoding. A failure keeps its ErrorKind.
+CommResult<string> reply = await scanner.RequestTextAsync("READ?", new RequestOptions { Timeout = 1000 });
+Console.WriteLine(reply.IsSuccess ? reply.Data : $"{reply.ErrorKind}: {reply.ErrorMessage}");
+
+// Wait for an unsolicited line that the device writes in ASCII.
+CommResult<string> line = await scanner.ReceiveTextAsync(new RequestOptions { Timeout = 5000 }, Encoding.ASCII);
 ```
 
 ## Request–Response Correlation
@@ -579,7 +619,7 @@ sealed class SequenceKeyExtractor : IFrameKeyExtractor
 - `AbortTransport()`: must be idempotent and callable from any thread. It must unblock pending reads and writes, because stream I/O on net472 ignores cancellation tokens.
 - Optional: `OnClosingAsync(CancellationToken)` (graceful step, at most `DisconnectTimeout`), `SecureStreamAsync(Stream, CancellationToken)` (wrap, for example in TLS, inside `HandshakeTimeout`), `PartialFrameAction` (default `Disconnect`; `Discard` keeps the connection), and `DescribeEndpoint()` (for logs).
 - Constructor: `base(name, ClientChannelSettings, ChannelComponents?, ILogger)`.
-- `ClientChannelSettings` has no defaults for timeouts. **Zero means no limit.** Set `RequestTimeout`, `SendTimeout`, `HandshakeTimeout` and `DisconnectTimeout` explicitly.
+- `ClientChannelSettings` timeout defaults equal the TCP client defaults: handshake 5000 ms, send 2000 ms, request 2000 ms, disconnect 1000 ms, late-reply window −1 (equal to the request timeout). **Zero still means no limit**: set the values your protocol needs explicitly.
 - Do not depend on the internal types (`ConnectionSupervisor`, `StreamChannel`, `FrameRouter`). Datagram transports are internal to the Udp package.
 
 ```csharp
@@ -644,7 +684,8 @@ public sealed class SkeletonChannel : StreamClientChannel
 - Opening one serial port from two channels. Share one channel with aliases.
 - Using `Raw` framing for serial.
 - Leaving `ExpectedReply` unset on UDP or serial heartbeats.
-- Setting a `ClientChannelSettings` timeout to zero, or leaving it at the default, when writing a custom transport. Zero means no limit.
+- Setting a `ClientChannelSettings` timeout to zero when writing a custom transport. Zero means no limit, so a request can wait forever.
+- Adding a CR LF to text passed to `SendTextAsync` or `RequestTextAsync`. The framing encoder appends the delimiter, so the device receives two.
 - Setting `Matcher` on a `Keyed` request. It is ignored; the key decides.
 - Indexing the request span inside a matcher. For `ReceiveAsync` it is empty.
 - Assuming events run on the UI thread.

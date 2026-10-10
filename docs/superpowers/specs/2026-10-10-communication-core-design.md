@@ -253,7 +253,7 @@ public sealed class FrameReceivedEventArgs : EventArgs
 
 "已连接"在三种传输上的含义：TCP = 握手（及 TLS、初始化）完成；串口 = 端口已打开；UDP = socket 已绑定。串口和 UDP 本身无法感知对端是否在线，**必须配合心跳或空闲超时才能发现对端掉线**。
 
-文本协议（扫码枪、视觉、机器人）的扩展方法 `SendTextAsync(string, Encoding?)`、`RequestTextAsync(...)` 在 P1 未实现（见 20.1 第 1 项，待确认）；文本协议目前用 `Encoding` 转换后调用 `SendAsync` / `RequestAsync`。
+文本协议（扫码枪、视觉、机器人）用扩展方法（`ByteChannelTextExtensions`）：`SendTextAsync(string, Encoding?)`、`RequestTextAsync(...)`、`ReceiveTextAsync(...)`，适用于任何 `IByteChannel`。默认编码 UTF-8（无 BOM）；不追加分隔符，分隔符由 Delimiter 编码器的 `AppendDelimiterOnSend` 负责（20.1 第 1 项）。
 
 状态机：
 
@@ -736,7 +736,7 @@ public class UdpChannelConfig : IChannelConfig
 | `StopTimeout` | 3000 | TCP 服务端 | `StopAsync` 等待会话关闭 | 强制中止 | — |
 
 - `Sequential` 模式下排队等请求锁的时间不计入 `RequestTimeout`，由调用方的取消令牌约束。
-- 基类 `ClientChannelSettings` 中超时为 0 表示不限时，与传输配置的默认值不同；自定义传输必须显式设置（20.1）。
+- 基类 `ClientChannelSettings` 的超时默认值与 TCP 客户端配置一致（握手 5000、写出 2000、请求 2000、断开排空 1000、迟到窗口 -1），遗漏赋值的派生通道仍有超时保护；0 仍表示不限时（20.1 第 31 项）。
 - 串口 `OpenTimeout` 内的拒绝访问重试见第 8 节；心跳探测因通道忙未写出任何帧时不计失败（第 5.4 节）。
 - 超时与取消的区分沿用 Modbus：链接 CTS 触发且用户令牌未触发 → `Timeout`；用户令牌触发 → `Cancelled`。
 
@@ -1261,7 +1261,7 @@ P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份
 
 | # | 章节 | 原设计 | 实际实现 | 原因（计划第 20 节 / 第 0 节） |
 |---|---|---|---|---|
-| 1 | 5.1 | 文本协议扩展方法 `SendTextAsync(string, Encoding?)`、`RequestTextAsync(...)` | 未实现 | 计划第 0 节 D6 的原则（P1 只实现有使用者的内容）。**待确认**：是否在 P2 前补充（第 21.2 节未列出，需审阅者决定） |
+| 1 | 5.1 | 文本协议扩展方法 `SendTextAsync(string, Encoding?)`、`RequestTextAsync(...)` | 已在 P1 实现：`ByteChannelTextExtensions`，另有 `ReceiveTextAsync`；默认 UTF-8（无 BOM），不追加分隔符，失败结果原样透传 | 审阅者决定在 P1 内补上（计划 Task 14 审阅结论，修改 1）。计划第 0 节 D6 原本未列出该项 |
 | 2 | 5.1 | 未指定命名空间 | 抽象、模型、配置在 `Junevy.Communication.Channels`；分帧在 `.Channels.Framing`；DI 在 `.Channels.DependencyInjection`；TCP、UDP、串口分别在 `Junevy.Communication.Tcp` / `.Udp` / `.Serial`，DI 在各自的 `.DependencyInjection` | 计划第 20 节 Task 3、Task 10 |
 | 3 | 5.2 | `MaxFrameLength` 适用于所有分帧器（默认 64 KiB） | `Delimiter` 按分隔符之前的内容计量（`KeepDelimiter=true` 时最长为上限加分隔符长度）；`IdleGap` 只在超过上限时抛出（恰好等于上限的帧可以交出）；其余按整帧计量 | 计划第 20 节 Task 3 |
 | 4 | 5.2 | 未说明空帧与发送时的分隔符 | `Delimiter` 跳过连续分隔符之间的空帧；发送时默认追加 `Delimiters[0]`（`AppendDelimiterOnSend`） | 计划第 0 节 D18 |
@@ -1291,7 +1291,7 @@ P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份
 | 28 | 9 | 非定向模式下应答匹配要求"来源地址 == 请求目标地址" | 来源检查先于 Matcher 执行，自定义 Matcher 同样受其约束 | 计划第 20 节 Task 13（与关联表实现一致） |
 | 29 | 9 | 未说明空负载 | `SendAsync` 发送零长度数据报；空负载请求返回 `InvalidRequest` | 计划第 20 节 Task 13 |
 | 30 | 9 | 用 `SIO_UDP_CONNRESET` 关闭 10054 | net472 恒执行；net8.0 仅在 Windows 上执行 | 实现细节（Windows 专属控制码） |
-| 31 | 10 | 超时表给出的是传输配置的默认值 | 自定义传输的基类 `ClientChannelSettings` 中 0 表示不限时，需显式设置 | 实现细节（基类参数，供自定义传输使用） |
+| 31 | 10 | 超时表给出的是传输配置的默认值；基类 `ClientChannelSettings` 的超时默认值为 0（不限时） | 基类超时默认值与 TCP 客户端配置对齐：握手 5000、写出 2000、请求 2000、断开排空 1000、迟到窗口 -1；0 仍表示不限时。测试 `ClientChannelSettings_DefaultsMatchTcpClient` 锁定该对齐。**默认值已对齐** | 审阅者决定（计划 Task 14 审阅结论，修改 2） |
 | 32 | 11.1 | 5.3 写明连接停止时在 `DisconnectTimeout` 内派发已入队的帧；未说明 `Dispose` 是否排空 | `DisconnectAsync` 在 `DisconnectTimeout` 内排空已收到但未派发的帧；`Dispose` 立即释放，不排空；同步 `Dispose` 等待上限见 D16 | 计划第 20 节 Task 12（语义确定）；第 0 节 D16 |
 | 33 | 11.3 | 未说明 `SessionConnected` 处理器阻塞的影响 | 推迟该会话的积压帧派发与心跳启动，并推迟其他服务端事件的派发 | 计划第 20 节 Task 9 |
 
