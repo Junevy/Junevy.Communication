@@ -258,3 +258,131 @@ Behavior:
 - TCP responses validate MBAP protocol id, transaction id, and unit id.
 - Register addresses are protocol-level zero-based addresses.
 - For industrial field use, keep polling intervals larger than the slave response time, set explicit timeouts, enable reconnect for long-running services, and log failed requests with enough device context to diagnose wiring/network faults.
+
+## Communication Channels (preview)
+
+The repository also contains a family of byte-channel libraries for TCP, UDP and serial communication. They share one lifecycle, framing, request/response correlation and heartbeat implementation.
+
+> **Preview**: the family ships as `1.0.0-preview.1`. The public API may change before P2 (the PLC protocol suite and the MELSEC validation). Pin the version if you depend on it.
+
+### Packages
+
+| Package | Purpose | Depends on |
+|---|---|---|
+| `Junevy.Communication.Core` | Results and error kinds, backoff policies, timeout scope, named registry | `Microsoft.Extensions.*.Abstractions` only; no Pipelines, no Channels |
+| `Junevy.Communication.Channels` | Abstractions, framing, correlation, lifecycle, `ChannelFactory` | Core, `System.IO.Pipelines`, `System.Threading.Channels` |
+| `Junevy.Communication.Tcp` | `TcpClientChannel`, `TcpServer`, optional TLS | Channels |
+| `Junevy.Communication.Udp` | `UdpChannel` (directed and undirected) | Channels |
+| `Junevy.Communication.Serial` | `SerialChannel` | Channels, `System.IO.Ports` |
+
+Core does not depend on Pipelines or Channels, so a protocol package that does not use byte channels can reference Core alone. Each package has its own README with examples, timeout tables and platform notes.
+
+Install the transport you need (preview packages need `--prerelease`):
+
+```text
+dotnet add package Junevy.Communication.Tcp --prerelease
+```
+
+### TCP client
+
+```csharp
+using System.Text;
+using Junevy.Communication.Channels;
+using Junevy.Communication.Tcp;
+
+await using var client = new TcpClientChannel(new TcpClientChannelConfig
+{
+    Host = "192.168.1.100",
+    Port = 5000,
+    Framing = new FramingOptions { Mode = FramingMode.Delimiter, Delimiters = new[] { "\r\n" } },
+});
+
+if (await client.ConnectAsync() is { IsSuccess: true })
+{
+    var reply = await client.RequestAsync(Encoding.ASCII.GetBytes("READ 100"));
+    Console.WriteLine(reply.IsSuccess ? Encoding.ASCII.GetString(reply.Data!) : reply.ErrorMessage);
+}
+```
+
+### TCP server
+
+```csharp
+using Junevy.Communication.Channels;
+using Junevy.Communication.Tcp;
+
+var server = new TcpServer(new TcpServerConfig
+{
+    Port = 5000,
+    Framing = new FramingOptions { Mode = FramingMode.Delimiter, Delimiters = new[] { "\r\n" } },
+});
+
+server.FrameReceived += async (sender, e) => await e.Session.SendAsync(e.Data);   // echo
+
+await server.StartAsync();
+Console.ReadLine();
+await server.StopAsync();
+server.Dispose();
+```
+
+### TLS
+
+```csharp
+using System.Security.Authentication;
+using Junevy.Communication.Tcp;
+
+await using var secure = new TcpClientChannel(new TcpClientChannelConfig
+{
+    Host = "plc.example.local",
+    Port = 8443,
+    Tls = new TcpClientTlsOptions { Enabled = true, Protocols = SslProtocols.Tls12 },
+});
+
+await secure.ConnectAsync();
+```
+
+Certificates come from the Windows certificate store (by thumbprint) or from a PFX file whose password is read from an environment variable. Passwords are never written in configuration.
+
+### UDP
+
+```csharp
+using System.Text;
+using Junevy.Communication.Channels;
+using Junevy.Communication.Udp;
+
+await using var udp = new UdpChannel(new UdpChannelConfig
+{
+    RemoteHost = "192.168.1.50",
+    RemotePort = 4000,
+    Heartbeat = new HeartbeatOptions { Enabled = true, Payload = "hex:00", ExpectedReply = "hex:01" },
+});
+
+await udp.ConnectAsync();
+var reply = await udp.RequestAsync(Encoding.ASCII.GetBytes("STATUS?"));
+```
+
+### Serial
+
+```csharp
+using Junevy.Communication.Channels;
+using Junevy.Communication.Serial;
+
+await using var serial = new SerialChannel(new SerialChannelConfig
+{
+    PortName = "COM3",
+    BaudRate = 115200,
+    Framing = new FramingOptions { Mode = FramingMode.Delimiter, Delimiters = new[] { "\r\n" } },
+});
+
+await serial.ConnectAsync();
+```
+
+### Behaviour at a glance
+
+- `ConnectAsync` returns a `CommResult`. It throws `OperationCanceledException` only when the caller cancels.
+- Reconnect is off by default. Enable it with `Reconnect = new ReconnectOptions { Enabled = true }`; the channel then reconnects in the background, without a request to trigger it.
+- `DisconnectAsync` disconnects gracefully and stops reconnection. `Dispose` releases the channel at once, without draining received frames.
+- Sending or requesting while not connected returns `NotConnected` immediately; nothing is queued.
+- Events (`StateChanged`, `FrameReceived`) are raised on thread-pool threads. Marshal to the UI thread yourself (for example WPF's `Dispatcher`).
+- TLS is available for TCP. DTLS is not supported.
+
+The skill `Skills/using-junevy-channels/SKILL.md` describes the full contract, including late replies, heartbeat timing and the serial hot-plug checklist.
