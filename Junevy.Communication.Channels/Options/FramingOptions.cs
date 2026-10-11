@@ -5,11 +5,14 @@ namespace Junevy.Communication.Channels;
 /// </summary>
 public sealed class FramingOptions
 {
+    /// <summary>单帧最大长度的默认值（字节）；<see cref="MaxFrameLength"/> 的初始值。</summary>
+    public const int DefaultMaxFrameLength = 65536;
+
     /// <summary>分帧模式，默认 <see cref="FramingMode.Raw"/>。</summary>
     public FramingMode Mode { get; set; } = FramingMode.Raw;
 
     /// <summary>单帧允许的最大长度（字节，含本值），默认 65536。超过时分帧器抛出 <see cref="Framing.FrameDecodeException"/>；Raw 模式按本值切块交出。</summary>
-    public int MaxFrameLength { get; set; } = 65536;
+    public int MaxFrameLength { get; set; } = DefaultMaxFrameLength;
 
     /// <summary>
     /// 分隔符列表（文本或 <c>hex:</c> 格式，见 <c>ByteSequenceParser</c>）；<see cref="FramingMode.Delimiter"/> 模式必填。

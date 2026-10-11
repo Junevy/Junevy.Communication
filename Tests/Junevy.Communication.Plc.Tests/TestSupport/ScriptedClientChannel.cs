@@ -9,7 +9,7 @@ namespace Junevy.Communication.Plc.Tests;
 /// </summary>
 internal sealed class ScriptedClientChannel : IClientChannel
 {
-    private static readonly ConnectionStatistics StatisticsInstance = CreateStatistics();
+    private readonly ConnectionStatisticsRecorder statistics = new ConnectionStatisticsRecorder();
 
     private readonly object sync = new object();
     private readonly Queue<ScriptedReply> script = new Queue<ScriptedReply>();
@@ -85,7 +85,7 @@ internal sealed class ScriptedClientChannel : IClientChannel
     public bool IsConnected => Connected;
 
     /// <inheritdoc />
-    public ConnectionStatistics Statistics => StatisticsInstance;
+    public ConnectionStatistics Statistics => statistics.Statistics;
 
     /// <inheritdoc />
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged
@@ -100,6 +100,17 @@ internal sealed class ScriptedClientChannel : IClientChannel
             lock (sync)
                 stateChanged -= value;
         }
+    }
+
+    /// <summary>引发状态变化事件，参数原样传给订阅者（测试用）。</summary>
+    /// <param name="args">要引发的参数。</param>
+    public void RaiseStateChanged(ConnectionStateChangedEventArgs args)
+    {
+        EventHandler<ConnectionStateChangedEventArgs>? handler;
+        lock (sync)
+            handler = stateChanged;
+
+        handler?.Invoke(this, args);
     }
 
     /// <summary>
@@ -209,13 +220,6 @@ internal sealed class ScriptedClientChannel : IClientChannel
             connected = false;
 
         return next.Reply;
-    }
-
-    private static ConnectionStatistics CreateStatistics()
-    {
-        // ConnectionStatistics 的构造函数是 internal，测试替身通过反射创建一个全零的统计对象。
-        // 见计划 §20.2（Plc 套件测试）：Channels 提供公开构造函数后移除此反射。
-        return (ConnectionStatistics)Activator.CreateInstance(typeof(ConnectionStatistics), nonPublic: true)!;
     }
 
     private sealed class ScriptedReply

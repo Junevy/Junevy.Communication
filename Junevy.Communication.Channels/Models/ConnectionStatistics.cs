@@ -1,7 +1,7 @@
 namespace Junevy.Communication.Channels;
 
 /// <summary>
-/// 连接统计。所有属性线程安全：读取使用 <see cref="Interlocked"/> 或 <see cref="Volatile"/>；递增方法为 internal，仅由通道内部调用。
+/// 连接统计。所有属性线程安全：读取使用 <see cref="Interlocked"/> 或 <see cref="Volatile"/>；递增方法为 internal；自定义实现通过 <see cref="ConnectionStatisticsRecorder"/> 记录。
 /// 时间戳以 UTC ticks 保存，0 表示 null（从未发生或未连接）。
 /// </summary>
 public sealed class ConnectionStatistics

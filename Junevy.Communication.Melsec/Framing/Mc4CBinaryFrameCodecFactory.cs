@@ -11,7 +11,6 @@ internal sealed class Mc4CBinaryFrameCodecFactory : IFrameCodecFactory
 {
     private readonly bool sumCheck;
     private readonly int maxFrameLength;
-    private readonly IFrameEncoder encoder;
 
     /// <summary>创建工厂。</summary>
     /// <param name="sumCheck">是否带和校验，必须与 PLC 侧设置一致。</param>
@@ -20,12 +19,11 @@ internal sealed class Mc4CBinaryFrameCodecFactory : IFrameCodecFactory
     {
         this.sumCheck = sumCheck;
         this.maxFrameLength = maxFrameLength;
-        encoder = FrameCodecFactory.Create(new FramingOptions { MaxFrameLength = maxFrameLength }).CreateEncoder();
     }
 
     /// <inheritdoc />
     public IFrameDecoder CreateDecoder() => new Mc4CBinaryFrameDecoder(sumCheck, maxFrameLength);
 
     /// <inheritdoc />
-    public IFrameEncoder CreateEncoder() => encoder;
+    public IFrameEncoder CreateEncoder() => PassthroughFrameEncoder.Instance;
 }

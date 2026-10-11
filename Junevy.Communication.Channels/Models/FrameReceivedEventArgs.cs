@@ -3,13 +3,18 @@ using System.Net;
 namespace Junevy.Communication.Channels;
 
 /// <summary>
-/// <see cref="IByteChannel.FrameReceived"/> 事件的参数。由通道内部创建。
+/// <see cref="IByteChannel.FrameReceived"/> 事件的参数。通道内部创建；自定义通道也可以用公开构造函数创建后引发。
 /// </summary>
 public sealed class FrameReceivedEventArgs : EventArgs
 {
-    internal FrameReceivedEventArgs(byte[] data, DateTimeOffset receivedAt, EndPoint? remoteEndPoint)
+    /// <summary>创建帧接收参数。<paramref name="data"/> 直接保存、不复制，调用方应传入之后不再修改的数组。</summary>
+    /// <param name="data">帧内容。</param>
+    /// <param name="receivedAt">接收时间。</param>
+    /// <param name="remoteEndPoint">来源地址；只有 UDP 非定向模式有值，其余传 null。</param>
+    /// <exception cref="ArgumentNullException"><paramref name="data"/> 为 null。</exception>
+    public FrameReceivedEventArgs(byte[] data, DateTimeOffset receivedAt, EndPoint? remoteEndPoint)
     {
-        Data = data;
+        Data = data ?? throw new ArgumentNullException(nameof(data));
         ReceivedAt = receivedAt;
         RemoteEndPoint = remoteEndPoint;
     }

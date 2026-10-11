@@ -31,7 +31,7 @@ public static class McProtocolProfile
     {
         RequireComponents(components);
         RequireUnset(components);
-        components.FrameCodec = McStreamFraming.Create(settings, new FramingOptions().MaxFrameLength);
+        components.FrameCodec = McStreamFraming.Create(settings, FramingOptions.DefaultMaxFrameLength);
         ApplyCorrelation(components, settings);
         return components;
     }

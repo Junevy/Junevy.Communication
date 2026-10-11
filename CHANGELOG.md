@@ -10,11 +10,13 @@
 - 2026-10-11 [Architecture.Tests] 新增架构守卫测试项目 `Tests/Junevy.Communication.Architecture.Tests`（计划 Task 1，P25-D2）：`ProductionAssemblies_GrantInternalsOnlyToTheirTestsAndTheRegisteredExceptions` 检查生产程序集的 `InternalsVisibleTo` 只能指向 `<自身>.Tests` 或登记表中的两条（Channels → Tcp、Channels → Udp，理由照抄 Channels.csproj）；`ProductionAssemblies_ReferenceOnlyLowerLayers` 检查各生产程序集引用的 `Junevy.Communication.*` 程序集不超过分层表（Plc 不引用任何传输包，Modbus 不在表中）。
 - 2026-10-11 [Core] 新增公开的缓冲写入器 `ByteBufferWriter`（`Buffers/`，计划 Task 2，P25-D11）：实现 `IBufferWriter<byte>`，初始容量 256 字节（构造函数可指定，必须大于 0），可选从 `ArrayPool<byte>` 租用数组；增长为"两倍与所需大小取大者"，池化时增长与释放都归还旧数组；`Dispose` 可重复调用，之后除 `Dispose` 外的成员抛出 `ObjectDisposedException`。它取代 Channels 的 `PooledBufferWriter`、Plc 的 `PlcRequestBuffer` 与 Testing 的 `ByteArrayBufferWriter`。
 - 2026-10-11 [Core] 新增前进式字节读取器 `ByteSequenceReader`（`Buffers/`，计划 Task 3，P25-D6）：`ref struct`，成员名与 `SequenceReader<T>` 一致（`Sequence`、`Position`、`Consumed`、`Remaining`、`End`、`TryRead`、`TryPeek`、`Advance`），在 `ReadOnlySequence<byte>` 上跨段读取、只在段边界取下一段，不复制数据。net472 没有 `SequenceReader<T>`，以后去掉 net472 时可直接替换。
+- 2026-10-11 [Channels] 扩展公开面（计划 Task 4，P25-D10）：新增公开的 `ConnectionStatisticsRecorder`，记录方法转发到统计对象；实现类把记录器保持为私有字段，只把 `Statistics` 交给使用者。`ConnectionStateChangedEventArgs` 与 `FrameReceivedEventArgs` 的构造函数改为 public，后者拒绝 null 数据。`PassthroughFrameEncoder` 改为 public（`Instance` 原样输出，空负载不写入）。新增 `FramingOptions.DefaultMaxFrameLength`（65536），`MaxFrameLength` 的默认值改为引用它。
 
 ### 变更（Changed）
 
 - 2026-10-11 [Melsec] 格式 5 的 DLE 扫描只保留一份实现：`McDleFrame.Scan` 改为在 `ReadOnlySequence<byte>` 上扫描（内部使用 `ByteSequenceReader`）；`Mc4CBinaryFrameDecoder` 不再把窗口复制成数组，仍只看不超过 MaxFrameLength 的范围；应答解码时整帧复制一次后扫描。行为不变。
 - 2026-10-11 [Channels, Plc, Melsec] 手写的 `GetSpan` + `CopyTo` + `Advance` 改用 BCL 的 `IBufferWriter<byte>.Write(ReadOnlySpan<byte>)`：`PassthroughFrameEncoder.Encode`、MELSEC 的 3E / 4E 与 4C 请求写入、`McClient` 的四个构建钩子；行为不变。
+- 2026-10-11 [Melsec] 4C 格式 5 的编码器改为 `PassthroughFrameEncoder.Instance`，不再借用 Raw 工厂；`McProtocolProfile` 使用 `FramingOptions.DefaultMaxFrameLength`。行为不变。
 
 ### 破坏性变更（Breaking）
 
