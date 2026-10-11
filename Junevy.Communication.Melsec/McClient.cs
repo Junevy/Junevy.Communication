@@ -93,6 +93,15 @@ public sealed partial class McClient : PlcClientBase<McAddress>
             transport,
             (delivery, medium) => McProtocolProfile.Configure(new ChannelComponents(), snapshot, delivery, medium),
             loggerFactory);
-        return new McClient(channel, snapshot, options, loggerFactory?.CreateLogger<McClient>());
+        try
+        {
+            return new McClient(channel, snapshot, options, loggerFactory?.CreateLogger<McClient>());
+        }
+        catch
+        {
+            // 客户端构造失败（例如 PlcClientOptions 非法）时，通道没有其他所有者，在此释放；异常原样抛出。
+            channel.Dispose();
+            throw;
+        }
     }
 }

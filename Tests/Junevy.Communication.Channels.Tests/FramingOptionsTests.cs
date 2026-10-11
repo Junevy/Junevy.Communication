@@ -8,6 +8,6 @@ public sealed class FramingOptionsTests
     [Fact]
     public void DefaultMaxFrameLength_EqualsTheDefaultOfMaxFrameLength()
     {
-        Assert.Equal(new FramingOptions().MaxFrameLength, FramingOptions.DefaultMaxFrameLength);
+        Assert.Equal(FramingOptions.DefaultMaxFrameLength, new FramingOptions().MaxFrameLength);
     }
 }

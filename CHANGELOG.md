@@ -51,6 +51,11 @@
 - 2026-10-11 [Channels, Plc, Melsec, Testing] 删除内部类型 `PooledBufferWriter`（Channels）、`PlcRequestBuffer`（Plc）与 `McFrameOutput`（Melsec），以及测试辅助 `ByteArrayBufferWriter`（Testing，不发布；测试改用 `ByteBufferWriter`，其 `Count` 对应 `WrittenCount`）。
 - 2026-10-11 [Melsec] 移除 `McClient` 的 internal 工厂实现（`CreateTcp` / `CreateUdp` / `CreateSerial` 的带名称重载）与内部的 `RequireEthernet` / `RequireSerial`，以及 `McProtocolProfile` 的 internal `ConfigureStream` / `ConfigureDatagram`；帧与介质的规则只保留在 `McProtocolProfile.Configure`。
 
+### 修复（Fixed）
+
+- 2026-10-11 [Melsec] 修复 `McClient.Create` 在客户端构造失败时泄漏通道的问题：选项非法（例如 `RetryCount` 为负）时，`PlcClientBase` 在通道创建之后才校验选项，此前通道未被释放；现在构造失败时先释放通道，再原样抛出异常。
+- 2026-10-11 [Melsec] 修复测试 `McEndToEndTcpTests.ServerClosesTheConnection_TheClientReconnectsAndReadsAgain` 的竞态：断开后先等待重连完成再读取（P2-D7：重连期间的读取立即返回 NotConnected，不重试）。
+
 ## [Unreleased] — PLC 套件 P2（Plc / Melsec 1.0.0-preview.1；Core 新增 Buffers）
 
 ### 新增（Added）

@@ -66,7 +66,6 @@ public sealed class ChannelFactory : NamedFactory<IClientChannel>
     public bool TryAdd(string name, IChannelConfig config, out IClientChannel? channel, ChannelComponents? components = null)
     {
         ThrowIfDisposed();
-        channel = null;
         IChannelCreator creator = creatorCatalog.Resolve(config);
         return TryAddCore(name, key => creator.Create(key, config, components, loggerFactory), out channel);
     }

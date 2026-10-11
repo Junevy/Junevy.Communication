@@ -44,6 +44,9 @@ public sealed class RecordingChannelCreator : IChannelCreator
     /// <summary>最近一次收到的日志工厂。</summary>
     public ILoggerFactory? LoggerFactory { get; private set; }
 
+    /// <summary>最近一次创建并返回的通道；尚未创建时为 null。</summary>
+    public IClientChannel? CreatedChannel { get; private set; }
+
     /// <inheritdoc />
     public IClientChannel Create(string? name, IChannelConfig config, ChannelComponents? components, ILoggerFactory loggerFactory)
     {
@@ -52,6 +55,8 @@ public sealed class RecordingChannelCreator : IChannelCreator
         Config = config;
         Components = components;
         LoggerFactory = loggerFactory;
-        return new DuplexClientChannel(new ClientChannelSettings());
+        var channel = new DuplexClientChannel(new ClientChannelSettings());
+        CreatedChannel = channel;
+        return channel;
     }
 }

@@ -413,7 +413,7 @@ using Junevy.Communication.Melsec;
 using Junevy.Communication.Plc;
 using Junevy.Communication.Tcp;
 
-await using var plc = McClient.CreateTcp(
+await using var plc = McClient.Create(
     new TcpClientChannelConfig { Host = "192.168.1.10", Port = 5000 },
     new McClientOptions { FrameType = McFrameType.Frame3E, Encoding = McEncoding.Binary });
 

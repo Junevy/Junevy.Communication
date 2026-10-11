@@ -100,6 +100,8 @@ public sealed class McEndToEndTcpTests
         Assert.Equal((short)7, (await client.ReadInt16Async("D100")).Data);
 
         server.CloseConnection(0);
+        // 等待重连完成再读取：重连期间的读取按 P2-D7 立即返回 NotConnected，不会重试。
+        await McEndToEndSupport.WaitUntilAsync(() => server.AcceptedConnectionCount == 2 && client.IsConnected, 10000);
         CommResult<short> result = await client.ReadInt16Async("D100");
 
         Assert.True(result.IsSuccess, result.ErrorMessage);

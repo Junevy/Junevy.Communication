@@ -10,7 +10,7 @@ namespace Junevy.Communication.Melsec;
 public static class McProtocolProfile
 {
     /// <summary>
-    /// 为 MELSEC 配置通道组件（取代 ConfigureStream 与 ConfigureDatagram）：字节流设置分帧，数据报不设分帧；关联、键提取器与心跳探测两者都设置。
+    /// 为 MELSEC 配置通道组件：字节流设置分帧，数据报不设分帧；关联、键提取器与心跳探测两者都设置。
     /// </summary>
     /// <typeparam name="TComponents">通道组件类型。</typeparam>
     /// <param name="components">要配置的组件。</param>

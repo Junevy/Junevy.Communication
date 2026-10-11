@@ -106,6 +106,22 @@ public sealed class McClientTests
     }
 
     [Fact(Timeout = 20000)]
+    public async Task Create_WhenTheClientConstructionFails_DisposesTheChannelItCreated()
+    {
+        // RetryCount 为负：PlcClientBase 在通道创建之后才校验选项，因此构造失败时通道必须已被释放。
+        var creator = new RecordingChannelCreator(typeof(CustomConfig), ChannelDelivery.Stream, ChannelMedium.Serial);
+
+        ArgumentOutOfRangeException exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+        {
+            McClient.Create(new CustomConfig(), creator, new McClientOptions { FrameType = McFrameType.Frame4C, RetryCount = -1 });
+        });
+
+        Assert.Equal("RetryCount", exception.ParamName);
+        Assert.NotNull(creator.CreatedChannel);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => creator.CreatedChannel!.ConnectAsync());
+    }
+
+    [Fact(Timeout = 20000)]
     public void Options_AreSnapshottedAtConstruction_LaterChangesDoNotAffectTheSettings()
     {
         var options = new McClientOptions { MonitoringTimer = 7 };
