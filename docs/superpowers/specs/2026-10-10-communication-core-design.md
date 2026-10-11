@@ -1356,6 +1356,26 @@ P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份
 | 23 | 3.2、4 | Core 的 `RetryLoop` | 未加入 Core（Plc 是唯一使用者）；Core 新增 `Buffers/`，含 `WordOrder` 与 `ByteTransform` | P2-D3 |
 | 24 | 12.7、12.8 | （未提及） | 4C 格式 4 应答的和校验范围包含 ETX；格式 5 异常应答的 2 字节错误码按小端解析。两项按手册图示推断，未经真机验证，README 与代码注释注明 | P2-D16 |
 
+### 20.3 实施修订（P2.5）
+
+接缝整理（计划 `docs/superpowers/plans/2026-10-11-p25-seams.md`，Task 0–15）的行为不变，但公开面与内部结构有下列差异。"原设计"列为本文件原文的要点；"原因"列指向计划第 0 节的决策编号（P25-D 编号）或对应的 Task。破坏性变更的迁移方式见 CHANGELOG 的"破坏性变更"小节。
+
+| # | 章节 | 原设计 | 实际实现 | 原因（计划第 0 节 / 第 17–19 节） |
+|---|---|---|---|---|
+| 1 | 12.7 | 协议为每种传输提供工厂方法（`CreateTcp`、`CreateUdp`、`CreateSerial`） | 删除三个工厂方法；唯一的创建入口为 `McClient.Create(transport, options)` 与 `Create(transport, creator, options)`；协议只提供 `Create(IChannelConfig …)` | P25-D4（Task 8） |
+| 2 | 12.7 | 按传输分别配置组件（`ConfigureStream` / `ConfigureDatagram`） | 统一为 `McProtocolProfile.Configure(components, options, delivery, medium)`；组件由创建器的 `Delivery` 与 `Medium` 决定；帧类型与介质的组合在一处校验 | P25-D4（Task 8） |
+| 3 | 3.2、4 | 组件与传输配置的同名设置（分帧、关联）静默以组件为准 | 冲突在通道构造时抛出 `ArgumentException`（`ComponentPrecedence`）；心跳与重连等补充组件不在此列 | P25-D3（Task 5） |
+| 4 | 4 | `IChannelCreator` 只有 `Create(name, …)`，名称必填 | 增加只读属性 `Delivery`（`ChannelDelivery`）与 `Medium`（`ChannelMedium`）；`name` 可为 null，由传输给出默认名称（破坏性变更） | P25-D5（Task 7） |
+| 5 | 3.2、4 | 各包自行实现缓冲写入器（Channels 的 `PooledBufferWriter`、Plc 的 `PlcRequestBuffer`、测试的 `ByteArrayBufferWriter`） | Core 提供公开的 `ByteBufferWriter`，三者删除 | P25-D11（Task 2） |
+| 6 | 3.2、4 | Core 没有前进式字节读取器 | Core 提供 `ByteSequenceReader`，成员名与 `SequenceReader<T>` 一致；net472 没有 `SequenceReader<T>`，去掉 net472 时可直接替换 | P25-D6（Task 3） |
+| 7 | 4 | 工厂外壳由 `ChannelFactory` 与 `PlcClientFactory` 各自实现 | Core 提供 `IConfigTypedCreator`、`CreatorCatalog<TCreator>` 与抽象基类 `NamedFactory<TItem>`；两个工厂派生该基类；`TryGet` 的输出参数名由 `channel` / `client` 变为 `item` | P25-D12（Task 6） |
+| 8 | 11（Tcp） | `TcpServer` 为单一类型，包含监听、接入、握手、会话与派发 | 拆分为 `TcpListenerLoop`、`TcpSessionAdmission`、`TcpSessionHandshake`、`TcpSessionLifecycle`、`ServerEventDispatcher` 与共享状态 `TcpServerCore`；`TcpServer` 保留公开 API、启停与组装（`TcpServer.cs` 1216 → 448 行） | 补审第 2 节（Task 13） |
+| 9 | 11（Tcp） | 测试通过 `TcpServer.SimulateListenerFault()` 注入监听故障 | 删除该测试钩子；监听器抽象为 internal 的 `ITcpListener`，测试通过内部构造函数注入会失败的监听器 | P25-D14（Task 13） |
+| 10 | 6、9 | 字节流与数据报各自实现请求编排、停止序列、握手与选项校验 | 共享部件 `RequestCoordinator`、`ChannelStopSequence`、`HandshakeRunner`、`ClientOptionsCore`、`SupervisedChannelCore<TChannel>`；两种通道只保留传输差异 | 补审第 1、3 节（Task 9–12） |
+| 11 | 6（Serial） | `SerialChannel` 的打开路径为单一方法 | 打开路径移到同一类的分部文件 `SerialChannel.Open.cs`；拒绝访问后的等待抽为私有方法；`SerialChannel` 不在 IVT 名单内 | 补审第 6 节（Task 12） |
+| 12 | 4（架构） | 项目之间的内部可见性未限制 | 新增架构测试：生产程序集之间的 `InternalsVisibleTo` 只允许登记的两处（Channels → Tcp、Channels → Udp），引用只能指向低层；去掉这两处的 IVT 留到有外部传输作者需求时再评估 | P25-D2（Task 1） |
+| 13 | 12.7 | 协议客户端的创建顺序未规定 | 固定为"校验协议选项 → 创建器建通道（校验传输配置）→ 构造客户端"；构造失败时释放已建的通道，不留下半成品 | P25-D7、里程碑 2 审阅 G1 |
+
 ## 21. 决策记录
 
 ### 21.1 已确认（2026-10-10）

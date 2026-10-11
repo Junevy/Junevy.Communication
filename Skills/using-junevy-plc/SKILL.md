@@ -249,7 +249,7 @@ The `Build*` hooks return `void`, so they cannot report an error. Put representa
 
 - Declare the channel components for each transport in a profile: a `FrameCodec` (for example a length field or a DLE codec), `Correlation`, an optional `KeyExtractor` and a `HealthProbeFactory` for the heartbeat.
 - Guard the profile: if the caller already set one of these components, throw `ArgumentException`. Do not override it silently.
-- Provide two static factories per transport. The public one takes `(TransportConfig, options, ILoggerFactory?)`. The internal one takes `(string? name, TransportConfig, options, ILoggerFactory?)` for the DI creator, so the channel gets the client's name in its logs.
+- Provide one creation entry per protocol: `Create(IChannelConfig transport, ...)`. Add an overload per built-in transport only as a shortcut to it. Create the channel with `PlcChannelBinding.CreateChannel(creator, name, transport, configureComponents, loggerFactory)`: the components come from the creator's `Delivery` and `Medium`, and a transport that is not built in supplies its own `IChannelCreator`, so the protocol package does not change (P25-D4).
 - Check the transport configuration's defaults (framing, correlation) and throw `ArgumentException` when they differ.
 
 ### Creator, DI and tests

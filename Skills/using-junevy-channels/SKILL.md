@@ -743,6 +743,7 @@ sealed class PingProbe : IHealthProbe
 - Constructor: `base(name, ClientChannelSettings, ChannelComponents?, ILogger)`.
 - `ClientChannelSettings` timeout defaults equal the TCP client defaults: handshake 5000 ms, send 2000 ms, request 2000 ms, disconnect 1000 ms, late-reply window −1 (equal to the request timeout). **Zero still means no limit**: set the values your protocol needs explicitly.
 - Do not depend on the internal types (`ConnectionSupervisor`, `StreamChannel`, `FrameRouter`). Datagram transports are internal to the Udp package.
+- Expose the transport through an `IChannelCreator` with `Delivery = ChannelDelivery.Stream` and `Medium = ChannelMedium.Network` (or `ChannelMedium.Serial`). `Create` accepts a null name; then use your default name. Validate the configuration with `ComponentPrecedence.Validate`: a same-named setting that conflicts with a component (`FrameCodec` for `Framing`, `Correlation`) throws `ArgumentException` at construction (P25-D3). Heartbeat and reconnect components are supplements and are not checked.
 
 ```csharp
 using Junevy.Communication.Channels;

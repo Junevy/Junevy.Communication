@@ -123,3 +123,22 @@ Calling `GetOrAdd` with a name that already exists returns the existing client a
 ## Writing a Protocol
 
 A protocol derives from `PlcClientBase<TAddress>` and implements the hooks that describe its frames: address parsing, point limits per request, the word and bit request and response builders, and the write response. It may override `ValidateRange` to reject requests the protocol cannot represent. The base class provides the rest. See `Junevy.Communication.Melsec` as the reference implementation, and the `using-junevy-plc` skill in the repository for a step-by-step guide.
+
+A protocol offers one creation entry, which takes the transport configuration and a creator for that transport (the built-in creators are used when the protocol offers a shortcut). `PlcChannelBinding.CreateChannel` creates the channel: it takes the creator, the optional name, the transport configuration (its type must be the creator's `ConfigType`) and a delegate that returns the components for the creator's `Delivery` and `Medium`. A transport that is not built in supplies its own `IChannelCreator`, and the protocol works with it without changes to the protocol package.
+
+```csharp
+using Junevy.Communication.Channels;
+using Junevy.Communication.Plc;
+using Microsoft.Extensions.Logging;
+
+public static class ProtocolChannelExample
+{
+    public static IClientChannel CreateChannel(IChannelCreator creator, IChannelConfig transport, ILoggerFactory? loggerFactory = null)
+        => PlcChannelBinding.CreateChannel(
+            creator,
+            null,
+            transport,
+            (delivery, medium) => new ChannelComponents(),
+            loggerFactory);
+}
+```

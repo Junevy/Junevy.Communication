@@ -418,6 +418,55 @@ Override `SecureStreamAsync` to wrap the stream (for example in TLS). Override `
 | `MaxAttempts` | 0 (unlimited) |
 | `OnInitialFailure` | false (a failed first `ConnectAsync` does not start background reconnection) |
 
+## Extension Points
+
+- `IChannelCreator` declares the transport traits `Delivery` (`ChannelDelivery.Stream` or `ChannelDelivery.Datagram`) and `Medium` (`ChannelMedium.Network` or `ChannelMedium.Serial`). A protocol reads them to configure the components: a stream transport receives the protocol's frame codec, a datagram transport does not.
+- `Create(string? name, ...)` accepts a null name. The transport then uses its default name.
+- Component precedence: when `ChannelComponents.FrameCodec` is set, the `Framing` of the transport configuration must equal that transport's default. When `ChannelComponents.Correlation` is set, the `Correlation` of the configuration must be the default or equal to the component's value. A conflict throws `ArgumentException` when the channel is constructed. Heartbeat and reconnect components are supplements and are not checked.
+- `ConnectionStatisticsRecorder` is the write side of `ConnectionStatistics`. Hand `Statistics` to the caller; the record methods stay inside the implementation.
+- `ConnectionStateChangedEventArgs`, `FrameReceivedEventArgs` and `PassthroughFrameEncoder` are public for custom transports.
+
+A creator for an existing transport, written against the current interface:
+
+```csharp
+using Junevy.Communication.Channels;
+using Junevy.Communication.Tcp;
+using Microsoft.Extensions.Logging;
+
+// Migration from the earlier interface: declare Delivery and Medium, and accept a null name.
+public sealed class NamedTcpCreator : IChannelCreator
+{
+    private readonly TcpClientChannelCreator inner = new TcpClientChannelCreator();
+
+    public Type ConfigType => inner.ConfigType;
+
+    public ChannelDelivery Delivery => inner.Delivery;
+
+    public ChannelMedium Medium => inner.Medium;
+
+    public IClientChannel Create(string? name, IChannelConfig config, ChannelComponents? components, ILoggerFactory loggerFactory)
+        => inner.Create(name, config, components, loggerFactory);
+}
+```
+
+Recording statistics for a custom transport:
+
+```csharp
+using System;
+using Junevy.Communication.Channels;
+
+public static class StatisticsExample
+{
+    public static ConnectionStatistics Record()
+    {
+        var recorder = new ConnectionStatisticsRecorder();
+        recorder.RecordFrameSent(16, DateTimeOffset.UtcNow);
+        recorder.RecordFrameReceived(8, DateTimeOffset.UtcNow);
+        return recorder.Statistics;
+    }
+}
+```
+
 ## Platform Notes
 
 - Same API on `net472` and `net8.0`.

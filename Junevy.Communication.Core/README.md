@@ -178,6 +178,66 @@ ByteTransform.WriteSingle(destination, 0.75f, WordOrder.DCBA); // 00-00-40-3F
 
 Core has no transport timeouts. `TimeoutScope` takes its timeout as a parameter, in milliseconds.
 
+## Buffers
+
+`ByteBufferWriter` is the one buffer writer shared by the packages. It implements `IBufferWriter<byte>` and can rent its array from an `ArrayPool<byte>`. `ByteSequenceReader` is a forward reader over a `ReadOnlySequence<byte>` that moves across segments without copying (it has the members of `SequenceReader<T>`, which is not available on net472).
+
+```csharp
+using System;
+using System.Buffers;
+using Junevy.Communication.Core.Buffers;
+
+public static class BufferExample
+{
+    public static bool WriteAndRead()
+    {
+        var writer = new ByteBufferWriter(initialCapacity: 16);
+        writer.Write(new byte[] { 0x01, 0x02, 0x03 });
+
+        var reader = new ByteSequenceReader(new ReadOnlySequence<byte>(writer.WrittenMemory));
+        return reader.TryRead(out byte first) && first == 0x01;
+    }
+}
+```
+
+## Creator Catalog and Named Factory
+
+`CreatorCatalog<TCreator>` selects a creator by the exact runtime type of its configuration object (`TCreator` implements `IConfigTypedCreator`, which declares `ConfigType`). `NamedFactory<TItem>` is the base class of the channel and client factories: it keeps named items, aliases and disposal, and a derived factory only supplies the creation logic through `GetOrAddCore` and `TryAddCore`.
+
+```csharp
+using System;
+using Junevy.Communication.Core.Registry;
+using Microsoft.Extensions.Logging;
+
+public sealed class DemoConfig
+{
+}
+
+public sealed class DemoCreator : IConfigTypedCreator
+{
+    public Type ConfigType => typeof(DemoConfig);
+}
+
+public static class CatalogExample
+{
+    public static DemoCreator Resolve()
+    {
+        var catalog = new CreatorCatalog<DemoCreator>(new[] { new DemoCreator() });
+        return catalog.Resolve(new DemoConfig());
+    }
+}
+
+public sealed class TextCache : NamedFactory<string>
+{
+    public TextCache(ILogger logger)
+        : base(logger)
+    {
+    }
+
+    public string GetOrAdd(string name, Func<string, string> create) => GetOrAddCore(name, create);
+}
+```
+
 ## Platform Notes
 
 - The public API and its behaviour are the same on `net472` and `net8.0`.
