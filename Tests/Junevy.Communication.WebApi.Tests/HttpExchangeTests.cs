@@ -175,6 +175,17 @@ public sealed class HttpExchangeTests
     }
 
     [Fact]
+    public async Task Send_ResponseWithoutAContentObject_IsAnEmptyBody()
+    {
+        var handler = new StubHttpHandler().EnqueueResponse(() => new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+
+        HttpExchangeOutcome outcome = await SendAsync(handler, TestContexts.Sending());
+
+        Assert.Empty(outcome.Response!.Body);
+        Assert.Equal(200, outcome.Response.StatusCode);
+    }
+
+    [Fact]
     public async Task Send_HandlerNeverResponds_TimesOutAsTimeout()
     {
         var handler = new StubHttpHandler().EnqueueHang();

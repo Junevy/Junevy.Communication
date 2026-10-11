@@ -624,6 +624,26 @@ public static class WebApiServiceCollectionExtensions
 7. **Task 3：`ResponseEnvelopeOptions` 的校验不在本 Task。** 它只属于 REST 配置（`WebApiClientConfig.Envelope`），路径与成功码的规则随 Task 8 的 REST 配置校验一起写；本 Task 只提供类型与默认值测试。
 8. **net472 绑定重定向：** `System.Text.Json` 8.0.5 已写入 csproj，但本里程碑没有代码使用它，net472 测试宿主未出现 `FileLoadException`，`build/Junevy.Communication.Tests.app.config` 未修改。Task 8 开始使用后再评估。
 
+里程碑 2（Task 4–7，执行日 2026-10-11）：
+
+1. **Task 4：`WebApiComponents.Serializer` 暂未添加（需要审阅者在 Task 8 前决定）。** 计划第 9 节把 `Serializer`（类型 `IWebApiSerializer`）放在根命名空间的 `WebApiComponents` 上，而 `IWebApiSerializer` 按第 13 节在 `Serialization` 命名空间，第 3 节又规定根命名空间不得依赖任何 WebApi 内部命名空间，两条无法同时成立（`WebApiLayeringTests` 会失败）。本里程碑的 `WebApiComponents` 只有 `Interceptors`、`RetryBackoff`、`HttpHandler`。建议方案：把 `IWebApiSerializer` 放到根命名空间（`SystemTextJsonWebApiSerializer` 仍在 `Serialization`，依赖根）；请裁决。
+2. **Task 4：三个内置认证拦截器共用一个内部类 `HeaderAuthInterceptor`。** Basic、Bearer、ApiKey 只在头名和取值方式上不同（Q2），因此是一个类加三个工厂方法；行为与计划一致（头被标记为敏感，Bearer 提供者每次发送尝试前调用）。`Basic` 的用户名含冒号抛 `ArgumentException`（RFC 7617），所有字符串参数为 null 抛 `ArgumentNullException`、为空抛 `ArgumentException`。
+3. **Task 4：net472 的 `System.Net.Http`。** 隐式 using 在 net472 上不含 `System.Net.Http`，用到 `HttpMessageHandler` 等类型的文件显式 `using System.Net.Http;`；`WebApi.Tests.csproj` 在 net472 下增加 `<Reference Include="System.Net.Http" />`。`build/Junevy.Communication.Tests.app.config` 仍未修改，`System.Text.Json` 仍未被使用。
+4. **Task 5：按审阅者决定改了 `EndpointSettings`。** `RedactedHeaders` / `RedactedQueryParameters` 列表换成 `IsRedactedHeader(name)` / `IsRedactedQueryParameter(name)`（内部为 `OrdinalIgnoreCase` 的 `HashSet`），快照隔离测试同步更新。
+5. **Task 5：响应没有内容对象时按空正文处理。** net472 上自定义处理器返回的 `new HttpResponseMessage(...)` 的 `Content` 为 null（net8.0 为空内容），`HttpResponseReader` 兼容两者；有对应测试。
+6. **Task 5：`WebApiRedactor` 与 `WebApiLogFormatter` 分成两个类。** 计划只写了 `WebApiLogFormatter`；脱敏（头、URI）供事件参数与日志共用，格式化日志只消费已脱敏的事件参数，所以拆开（Q1）。
+7. **Task 6：`ResponseReceived` 与可用性报告只针对"已发出"的尝试。** 拦截器 `Fail` / 抛异常、URI 改了来源、`OnSendingAsync` 期间超时的尝试没有发出请求：不触发 `RequestSending`，也不触发 `ResponseReceived`，不报告给可用性跟踪（计划第 11 节第 2 步第 2 条已规定前者，后两者是对该条的延伸）。`OnSendingAsync` 期间的超时按"尝试超时"可重试，重试时没有对应的 `ResponseReceived`。
+8. **Task 6：`RequestCompleted.Attempts` 是实际发出的尝试次数**（被拦截器中止的尝试不计），而上下文里的 `Attempt` 序号每次尝试（含被中止的）都加 1。
+9. **Task 6：重放优先于重试规则，但被忽略的第二次重放请求会继续走重试规则**（例如重放后又收到 503，仍可按 `RetryCount` 重试）。
+10. **Task 6：重复扫描后追加提交 `1083a94`。** Task 6 提交（`a94f1bf`）后度量显示重复窗口 24→26：`InterceptorChain` 的两个阶段各抄了一份 try/catch 循环。按"不 amend"的规则另起一个提交，两个阶段共用 `RunAsync`，度量回到 24，行为不变。
+11. **Task 6：`AttemptLoop.ExecuteAsync` 增加可选参数 `closingToken`**（端点正在释放的信号）。它触发而调用方没有取消时，最终结果由 `Cancelled` 改为 `ConnectionClosed`（P3-D13）；该在途尝试的 `ResponseReceived.ErrorKind` 仍是 `Cancelled`，`RequestCompleted` 与返回值是 `ConnectionClosed`。
+12. **Task 6：无法解析的相对 URI**（`Uri.TryCreate` 失败）以 `InvalidRequest` 结束，走与 `Reject` 相同的路径（`Attempts = 0`）。REST / SOAP 外观仍应在 Task 8 / 9 里先校验路径。
+13. **Task 7：健康检查在构造时就开始，用户来不及在构造返回前订阅 `AvailabilityChanged`。** 第一次探测引起的变化可能先于订阅发生；`Availability` 属性始终是真实状态（Task 12 的 README 需要写明"订阅后读一次 `Availability`"）。测试里用闸门卡住第一次探测来规避。
+14. **Task 7：没有引入 `System.Threading.Channels`。** `OrderedEventQueue<T>` 用 `ConcurrentQueue` 加 `SemaphoreSlim` 实现，WebApi.csproj 未新增包引用。
+15. **Task 7：`EndpointCore` 不释放 `closing` 令牌源与有序队列的信号量。** 两者都没有计时器或等待句柄，并且释放后仍可能被在途调用读取（释放它们反而会产生 `ObjectDisposedException` 竞争），已在代码里注明原因；`HealthCheckLoop` 的停止令牌源在循环结束后释放。
+16. **Task 7：同步 `Dispose()` 沿用 `SupervisedChannelCore` 的先例**（`DisposeAsync().AsTask().Wait(limit)`，上限 `DisposeDrainMilliseconds + 1000`，超时记 Warning），不使用 `GetAwaiter().GetResult()`。
+17. **测试耗时：** `Dispose_WithAStuckSubscriber_GivesUpAfterTheDrainLimitAndLogsAWarning` 需要真实等待约 2 秒（排空上限是具名常量，没有为测试做可注入的时钟）。
+
 ### 19.3 基线与度量
 
 #### Task 0 基线（2026-10-11，`7c6f0ec`，Debug，`dotnet test Junevy.Communication.slnx -c Debug`）
@@ -651,3 +671,14 @@ public static class WebApiServiceCollectionExtensions
 | 超过 300 行的文件 | 9（NamedRegistry 461、ConnectionSupervisor 690、StreamConnectionDriver 314、DatagramChannel 352、FrameRouter 394、PendingRequestTable 537、StreamChannel 621、TcpClientChannel 372、TcpServer 448） |
 | 生产 → 生产 IVT | 2（架构测试） |
 | 有效行 | Core 957、Channels 4811、Tcp 2416、Udp 560、Serial 386、Plc 968、Melsec 1275 |
+
+#### 里程碑 2 结束时（Task 7，2026-10-11）
+
+| 指标 | 值 |
+|---|---|
+| 重复窗口（6 行，含 WebApi） | 24（7 组，与基线相同；WebApi 内部与跨程序集均为 0） |
+| 超过 60 行的方法 | 0 |
+| 超过 300 行的文件 | 9（不增加；WebApi 最大文件 `AttemptLoop.cs` 175 行） |
+| 生产 → 生产 IVT | 2（架构测试通过） |
+| WebApi 有效行 | 1677（Task 7 结束，里程碑 3–4 还会增加 REST / SOAP / 工厂） |
+| WebApi.Tests | net8.0 378、net472 379（通过 / 0 失败 / 0 跳过） |

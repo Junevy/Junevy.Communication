@@ -22,21 +22,24 @@ internal static class HttpResponseReader
     public static async Task<HttpExchangeOutcome> ReadAsync(HttpResponseMessage response, int maxBodySize, TimeoutScope scope)
     {
         int statusCode = (int)response.StatusCode;
-        long? declared = response.Content.Headers.ContentLength;
+
+        // 真实的 HttpClient 总会给响应一个内容对象，但注入的处理器（net472 上的 HttpResponseMessage 默认没有内容）可以不给，按空正文处理。
+        HttpContent? content = response.Content;
+        long? declared = content?.Headers.ContentLength;
         if (declared > maxBodySize)
             return TooLarge(maxBodySize, statusCode);
 
-        byte[]? body = await ReadBodyAsync(response, maxBodySize, scope.Token).ConfigureAwait(false);
+        byte[]? body = content == null ? Array.Empty<byte>() : await ReadBodyAsync(response, content, maxBodySize, scope.Token).ConfigureAwait(false);
         if (body == null)
             return TooLarge(maxBodySize, statusCode);
 
-        string? contentType = response.Content.Headers.ContentType?.ToString();
-        return HttpExchangeOutcome.Received(new HttpExchangeResponse(statusCode, response.ReasonPhrase, FlattenHeaders(response), body, contentType));
+        string? contentType = content?.Headers.ContentType?.ToString();
+        return HttpExchangeOutcome.Received(new HttpExchangeResponse(statusCode, response.ReasonPhrase, FlattenHeaders(response, content), body, contentType));
     }
 
-    private static async Task<byte[]?> ReadBodyAsync(HttpResponseMessage response, int maxBodySize, CancellationToken token)
+    private static async Task<byte[]?> ReadBodyAsync(HttpResponseMessage response, HttpContent content, int maxBodySize, CancellationToken token)
     {
-        using Stream stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+        using Stream stream = await content.ReadAsStreamAsync().ConfigureAwait(false);
         using CancellationTokenRegistration abort = token.Register(response.Dispose);
         using var buffer = new MemoryStream();
         var chunk = new byte[ReadBufferSize];
@@ -52,10 +55,11 @@ internal static class HttpResponseReader
         return buffer.ToArray();
     }
 
-    private static IReadOnlyDictionary<string, string> FlattenHeaders(HttpResponseMessage response)
+    private static IReadOnlyDictionary<string, string> FlattenHeaders(HttpResponseMessage response, HttpContent? content)
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (KeyValuePair<string, IEnumerable<string>> header in response.Headers.Concat(response.Content.Headers))
+        IEnumerable<KeyValuePair<string, IEnumerable<string>>> all = content == null ? response.Headers : response.Headers.Concat(content.Headers);
+        foreach (KeyValuePair<string, IEnumerable<string>> header in all)
             headers[header.Key] = string.Join(HeaderValueSeparator, header.Value);
 
         return headers;

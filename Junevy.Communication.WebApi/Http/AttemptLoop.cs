@@ -14,6 +14,7 @@ internal sealed class AttemptLoop
 {
     private const string RetryAfterHeader = "Retry-After";
     private const int ServerErrorStatus = 500;
+    private const string ClosedMessage = "The WebApi client was disposed while the request was in flight.";
 
     private readonly EndpointIdentity identity;
     private readonly EndpointSettings settings;
@@ -55,14 +56,24 @@ internal sealed class AttemptLoop
     /// <param name="timeout">本次调用每次尝试的超时（毫秒），覆盖配置值；null 使用配置值。</param>
     /// <param name="interpret">协议层解释响应的委托。</param>
     /// <param name="cancellationToken">调用方的取消令牌。</param>
+    /// <param name="closingToken">端点正在释放的信号；它触发而调用方没有取消时，在途的调用以 <see cref="CommErrorKind.ConnectionClosed"/> 结束。</param>
     /// <returns>调用的最终结果。</returns>
-    public async Task<WebApiResult<T>> ExecuteAsync<T>(HttpRequestSnapshot snapshot, int? timeout, ResponseInterpreter<T> interpret, CancellationToken cancellationToken)
+    public async Task<WebApiResult<T>> ExecuteAsync<T>(HttpRequestSnapshot snapshot, int? timeout, ResponseInterpreter<T> interpret,
+                                                       CancellationToken cancellationToken, CancellationToken closingToken = default)
     {
         if (!identity.TryResolve(snapshot.RelativeUri, out Uri requestUri))
             return Reject<T>(snapshot.Method, "The request path is not a valid URI.", CommErrorKind.InvalidRequest);
 
         var call = new CallState(NextCallId(), snapshot, requestUri, redactor.RedactUri(requestUri));
-        WebApiResult<T> result = await RunAttemptsAsync(call, timeout ?? settings.Timeout, interpret, cancellationToken).ConfigureAwait(false);
+        WebApiResult<T> result;
+        using (CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, closingToken))
+        {
+            result = await RunAttemptsAsync(call, timeout ?? settings.Timeout, interpret, linked.Token).ConfigureAwait(false);
+        }
+
+        if (result.ErrorKind == CommErrorKind.Cancelled && closingToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            result = WebApiResult<T>.Fail(ClosedMessage, CommErrorKind.ConnectionClosed);
+
         Complete(call.CallId, snapshot.Method, call.RedactedUri, call.SentAttempts, call.Clock.Elapsed, result);
         return result;
     }

@@ -33,6 +33,9 @@ internal sealed class EndpointEvents
     /// <summary>每次调用结束时。</summary>
     public event EventHandler<WebApiCompletedEventArgs>? RequestCompleted;
 
+    /// <summary>可用性变化时（由有序队列的单个消费者触发）。</summary>
+    public event EventHandler<WebApiAvailabilityChangedEventArgs>? AvailabilityChanged;
+
     /// <summary>记录并触发 <see cref="RequestSending"/>。</summary>
     /// <param name="args">事件参数。</param>
     public void RaiseSending(WebApiSendingEventArgs args)
@@ -53,4 +56,9 @@ internal sealed class EndpointEvents
     /// <param name="args">事件参数。</param>
     public void RaiseCompleted(WebApiCompletedEventArgs args)
         => EventSubscribers.InvokeEach(RequestCompleted, sender, args, logger, nameof(RequestCompleted));
+
+    /// <summary>触发 <see cref="AvailabilityChanged"/>。</summary>
+    /// <param name="args">事件参数。</param>
+    public void RaiseAvailabilityChanged(WebApiAvailabilityChangedEventArgs args)
+        => EventSubscribers.InvokeEach(AvailabilityChanged, sender, args, logger, nameof(AvailabilityChanged));
 }
