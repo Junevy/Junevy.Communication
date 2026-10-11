@@ -103,11 +103,9 @@ public sealed class TcpServerLifecycleTests
         int port = FreePort();
         var config = CreateServerConfig(port);
         config.RestartOnFault = new ReconnectOptions { Enabled = true, Mode = ReconnectMode.FixedInterval, Interval = 100 };
-        await using var server = new TcpServer(config);
+        await using var server = new TcpServer(config, null, null, FaultOnFirstAcceptListener.CreateFactory());
         var recorder = new ServerRecorder(server);
         Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
-
-        server.SimulateListenerFault();
 
         await WaitUntilAsync(() => recorder.States.Count == 4, 5000);
         Assert.Equal(
@@ -124,11 +122,9 @@ public sealed class TcpServerLifecycleTests
     public async Task ListenerFault_WithoutRestart_StaysFaulted()
     {
         int port = FreePort();
-        await using var server = new TcpServer(CreateServerConfig(port));
+        await using var server = new TcpServer(CreateServerConfig(port), null, null, FaultOnFirstAcceptListener.CreateFactory());
         var recorder = new ServerRecorder(server);
         Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
-
-        server.SimulateListenerFault();
 
         await WaitUntilAsync(() => recorder.States.Count == 3, 5000);
         await Task.Delay(300);

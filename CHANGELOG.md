@@ -33,6 +33,7 @@
 - 2026-10-11 [Channels, Tcp] 握手共享部件（计划 Task 11，补审第 1、2 节）：握手时限内的初始化器步骤（运行、等待、放弃任务的观察、超时与故障的结果）抽为 internal 的 `HandshakeRunner`，字节流驱动、数据报驱动与 TCP 服务端会话共用，日志文本与放弃时的结果由调用方传入；客户端的握手编排（初始化器 → 结束握手 → 确认握手期间没有故障）为 `HandshakeRunner.CompleteClientHandshakeAsync`，工厂探测（每个通道生命周期只解析一次）与心跳监视器的创建抽为 internal 的 `ClientProbeSource`，驱动与监督器的绑定规则抽为 `SupervisorBinding`。字节流的通道视图（驱动的 `HandshakeView` 与会话的 `SessionChannelView`）合并为 internal 的 `StreamChannelView`。`StreamConnectionDriver.OpenAsync` 与 `DatagramConnectionDriver.OpenAsync` 拆分为打开与握手两段，每个方法不超过 60 行。超时、初始化器故障与放弃时的文本、异常类型与参数名不变，已有测试未修改。行为不变。
 - 2026-10-11 [Channels, Udp, Serial] 客户端外观的共享部件（计划 Task 12，补审第 3、6 节）：监督器的持有、状态、连接 / 断开 / 等待连接的转发、同步释放（等待上限 `DisconnectTimeout + 1000` 毫秒，D16）与释放之后的检查抽为 internal 的 `SupervisedChannelCore<TChannel>`；`StreamClientChannel` 与 `UdpChannel` 的这些成员改为一行转发，两者的收发与传输差异保留在各自类型中。`HeartbeatMonitor` 的单次探测抽为 internal 的 `HeartbeatProbeRunner`，监视循环拆分为空闲判定与探测判定（`RunAsync` 不超过 60 行）。`SerialChannel` 的打开路径（`OpenStreamAsync`）移到同一类的分部文件 `SerialChannel.Open.cs`，拒绝访问后的等待抽为私有方法。释放之后的异常类型名、事件、超时与消息文本不变。行为不变。
 - 2026-10-11 [Channels] 监督外观的释放等待与异常类型名（J1）：同步释放在 `DisconnectTimeout` 之外额外等待的 1000 毫秒改为具名常量 `DisposeGraceMilliseconds`（D16，等待上限不变）；监督外观只保存公开通道的类型名（字符串），不再持有通道对象。释放之后的 `ObjectDisposedException` 消息不变。行为不变。
+- 2026-10-11 [Tcp] `TcpServer` 按职责拆分（计划 Task 13，补审第 2、5 节）：监听器循环（`TcpListenerLoop`，经内部的 `ITcpListener` 与 `TcpListenerFactory` 绑定，默认实现为 `SocketTcpListener`）、接入检查（`TcpSessionAdmission`：停止中、会话上限、白名单、连接过滤器与广播筛选）、会话握手（`TcpSessionHandshake`：TLS 与初始化器复用 `HandshakeRunner`）、会话生命周期（`TcpSessionLifecycle`：加入、心跳与拆除）、事件派发（`ServerEventDispatcher`）与共享状态（`TcpServerCore`）；`TcpServer` 保留公开 API、启停与会话表的组装。`AdmitSocket` 拆分后每个方法不超过 60 行；`TcpServer.cs` 由 1216 行减为 448 行。公开 API、事件顺序、派发上下文判断、拒绝原因与日志文本、重新监听的退避以及握手语义均不变。行为不变。
 
 ### 破坏性变更（Breaking）
 
@@ -56,6 +57,7 @@
 
 - 2026-10-11 [Channels, Plc, Melsec, Testing] 删除内部类型 `PooledBufferWriter`（Channels）、`PlcRequestBuffer`（Plc）与 `McFrameOutput`（Melsec），以及测试辅助 `ByteArrayBufferWriter`（Testing，不发布；测试改用 `ByteBufferWriter`，其 `Count` 对应 `WrittenCount`）。
 - 2026-10-11 [Melsec] 移除 `McClient` 的 internal 工厂实现（`CreateTcp` / `CreateUdp` / `CreateSerial` 的带名称重载）与内部的 `RequireEthernet` / `RequireSerial`，以及 `McProtocolProfile` 的 internal `ConfigureStream` / `ConfigureDatagram`；帧与介质的规则只保留在 `McProtocolProfile.Configure`。
+- 2026-10-11 [Tcp] 删除 `TcpServer.SimulateListenerFault()`（测试钩子，P25-D14）。测试改为通过内部构造函数注入会失败的监听器（`Tests/Junevy.Communication.Tcp.Tests/TestSupport/FaultOnFirstAcceptListener.cs`）；公开 API 不变。
 
 ### 修复（Fixed）
 
