@@ -8,7 +8,7 @@ public interface IPlcDeviceDefinition
     /// <summary>软元件符号，例如 "D"、"ZR"、"SM"；解析时大小写不敏感。</summary>
     string Symbol { get; }
 
-    /// <summary>软元件的单位：位或字。</summary>
+    /// <summary>软元件的单位：位、字还是字节。</summary>
     PlcAddressUnit Unit { get; }
 
     /// <summary>编号的进制：10 或 16。</summary>

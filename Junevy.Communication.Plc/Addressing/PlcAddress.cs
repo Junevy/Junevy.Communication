@@ -12,7 +12,7 @@ public abstract class PlcAddress
     /// <param name="text">去掉首尾空白后的原始文本。</param>
     /// <param name="device">软元件定义。</param>
     /// <param name="number">编号（已按软元件进制解析）。</param>
-    /// <param name="bitIndex">位号（只用于字软元件，0–15）；没有位号时为 null。</param>
+    /// <param name="bitIndex">位号（字软元件 0–15，字节软元件 0–7，位软元件不带）；没有位号时为 null。</param>
     /// <exception cref="ArgumentNullException"><paramref name="text"/> 或 <paramref name="device"/> 为 null。</exception>
     protected PlcAddress(string text, IPlcDeviceDefinition device, int number, int? bitIndex)
     {
@@ -34,7 +34,7 @@ public abstract class PlcAddress
     /// <summary>编号。</summary>
     public int Number { get; }
 
-    /// <summary>位号（0–15），只出现在字软元件上；没有位号时为 null。</summary>
+    /// <summary>位号（字软元件 0–15，字节软元件 0–7），不出现在位软元件上；没有位号时为 null。</summary>
     public int? BitIndex { get; }
 
     /// <summary>返回原始文本。</summary>

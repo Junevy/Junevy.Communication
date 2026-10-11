@@ -184,6 +184,12 @@ public abstract class PlcClientBase<TAddress> : IPlcClient where TAddress : PlcA
     public Task<CommResult> WriteBitsAsync(string address, ReadOnlyMemory<bool> values, CancellationToken cancellationToken = default)
         => pipeline.WriteBitsAsync(address, values, cancellationToken);
 
+    /// <inheritdoc />
+    public CommResult<PlcAddress> ParseAddress(string address)
+        => TryParseAddress(address ?? string.Empty, out TAddress? parsed, out string? error)
+            ? CommResult<PlcAddress>.Success(parsed)
+            : CommResult<PlcAddress>.Fail(error!, CommErrorKind.InvalidRequest);
+
     /// <summary>
     /// 释放客户端及其通道（P2-D13）。释放之后的公开操作返回 <c>NotConnected</c>。可重复调用。
     /// </summary>

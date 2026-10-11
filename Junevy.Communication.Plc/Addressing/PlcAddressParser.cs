@@ -5,7 +5,7 @@ namespace Junevy.Communication.Plc;
 /// <summary>
 /// 声明式地址解析器：由软元件表解析 "D100"、"x1a"、"ZR1F"、"D100.5" 这类文本。
 /// 规则：去掉首尾空白；符号大小写不敏感，取最长前缀且匹配后不回退到更短的前缀；编号按软元件的进制解析并检查上限；
-/// 字软元件可带位号（0–15，进制由构造参数决定）；失败消息为英文，并包含原始文本。
+/// 位软元件不能带位号，字软元件的位号为 0–15，字节软元件为 0–7（进制由构造参数决定）；失败消息为英文，并包含原始文本。
 /// </summary>
 /// <typeparam name="TDevice">软元件定义的类型。</typeparam>
 /// <typeparam name="TAddress">解析结果的地址类型。</typeparam>
@@ -17,7 +17,9 @@ public sealed class PlcAddressParser<TDevice, TAddress>
     private const int HexadecimalRadix = 16;
     private const int FirstHexLetterValue = 10;
     private const int BitsPerWord = 16;
-    private const int MaxBitIndex = BitsPerWord - 1;
+    private const int BitsPerByte = 8;
+    private const int MaxWordBitIndex = BitsPerWord - 1;
+    private const int MaxByteBitIndex = BitsPerByte - 1;
 
     private readonly TDevice[] devicesByPrefixLength;
     private readonly Func<TDevice, int, int?, string, TAddress> create;
@@ -122,7 +124,9 @@ public sealed class PlcAddressParser<TDevice, TAddress>
             return false;
         }
 
-        return TryParseValue(text, digits, bitIndexRadix, MaxBitIndex, "bit index", out bitIndex, out error);
+        // 位号上限由单位决定（S2）：字节软元件一个地址 8 位，字软元件 16 位。
+        long maximum = device.Unit == PlcAddressUnit.Byte ? MaxByteBitIndex : MaxWordBitIndex;
+        return TryParseValue(text, digits, bitIndexRadix, maximum, "bit index", out bitIndex, out error);
     }
 
     // 编号与位号共用：数字必须全部合法，数值不得超过上限（饱和解析，溢出安全）。

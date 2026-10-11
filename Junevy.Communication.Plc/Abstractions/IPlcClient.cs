@@ -48,4 +48,11 @@ public interface IPlcClient : IConnectable, IDisposable, IAsyncDisposable
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>写入结果。</returns>
     Task<CommResult> WriteBitsAsync(string address, ReadOnlyMemory<bool> values, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 用本协议的地址语法解析文本，供宿主在加载配置时校验地址。同步、不产生 I/O、线程安全，释放之后仍可调用。
+    /// </summary>
+    /// <param name="address">地址文本，例如 "D100" 或 "DB1.DBB0"；为 null 时按空串处理。</param>
+    /// <returns>解析成功时为地址；文本非法时为 <c>InvalidRequest</c>，此时 Data 为 null。</returns>
+    CommResult<PlcAddress> ParseAddress(string address);
 }

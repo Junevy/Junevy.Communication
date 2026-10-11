@@ -23,6 +23,7 @@ internal class FakePlcClient : PlcClientBase<TestAddress>
     {
         new TestDevice("D", PlcAddressUnit.Word, 10, 9999),
         new TestDevice("M", PlcAddressUnit.Bit, 10, 9999),
+        new TestDevice("B", PlcAddressUnit.Byte, 10, 9999),
     };
 
     private static readonly PlcAddressParser<TestDevice, TestAddress> Parser =
