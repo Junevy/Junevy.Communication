@@ -2,29 +2,28 @@ using System.Buffers;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Channels.Framing;
 using Junevy.Communication.Melsec.Framing;
-using Junevy.Communication.Tcp;
 using static Junevy.Communication.Melsec.Tests.McTestSupport;
 
 namespace Junevy.Communication.Melsec.Tests;
 
 /// <summary>
-/// 协议配置 <see cref="McProtocolProfile"/>（计划 Task 11）：组件属性已由调用方设置时拒绝（不静默覆盖）；
-/// 按帧类型设置分帧、关联与键提取器；各帧的分帧切分（长度字段、CR LF、DLE 边界）；4E 的关联键。
+/// 协议配置 <see cref="McProtocolProfile"/>（计划 Task 11、Task 8）：组件属性已由调用方设置时拒绝（不静默覆盖）；
+/// 按交付方式与介质校验帧类型；按帧类型设置分帧、关联与键提取器；各帧的分帧切分（长度字段、CR LF、DLE 边界）；4E 的关联键。
 /// </summary>
 public sealed class McProtocolProfileTests
 {
     [Theory(Timeout = 20000)]
-    [InlineData(McFrameType.Frame3E, McEncoding.Binary, CorrelationMode.Sequential, false)]
-    [InlineData(McFrameType.Frame3E, McEncoding.Ascii, CorrelationMode.Sequential, false)]
-    [InlineData(McFrameType.Frame4E, McEncoding.Binary, CorrelationMode.Keyed, true)]
-    [InlineData(McFrameType.Frame4E, McEncoding.Ascii, CorrelationMode.Keyed, true)]
-    [InlineData(McFrameType.Frame4C, McEncoding.Binary, CorrelationMode.Sequential, false)]
-    [InlineData(McFrameType.Frame4C, McEncoding.Ascii, CorrelationMode.Sequential, false)]
-    public void ConfigureStream_SetsFramingCorrelationKeyExtractorAndProbeFactory(
-        McFrameType frameType, McEncoding encoding, CorrelationMode correlation, bool hasKeyExtractor)
+    [InlineData(McFrameType.Frame3E, McEncoding.Binary, ChannelMedium.Network, CorrelationMode.Sequential, false)]
+    [InlineData(McFrameType.Frame3E, McEncoding.Ascii, ChannelMedium.Network, CorrelationMode.Sequential, false)]
+    [InlineData(McFrameType.Frame4E, McEncoding.Binary, ChannelMedium.Network, CorrelationMode.Keyed, true)]
+    [InlineData(McFrameType.Frame4E, McEncoding.Ascii, ChannelMedium.Network, CorrelationMode.Keyed, true)]
+    [InlineData(McFrameType.Frame4C, McEncoding.Binary, ChannelMedium.Serial, CorrelationMode.Sequential, false)]
+    [InlineData(McFrameType.Frame4C, McEncoding.Ascii, ChannelMedium.Serial, CorrelationMode.Sequential, false)]
+    public void Configure_Stream_SetsFramingCorrelationKeyExtractorAndProbeFactory(
+        McFrameType frameType, McEncoding encoding, ChannelMedium medium, CorrelationMode correlation, bool hasKeyExtractor)
     {
-        var components = McProtocolProfile.ConfigureStream(
-            new TcpChannelComponents(), new McClientOptions { FrameType = frameType, Encoding = encoding });
+        var components = McProtocolProfile.Configure(
+            new ChannelComponents(), new McClientOptions { FrameType = frameType, Encoding = encoding }, ChannelDelivery.Stream, medium);
 
         Assert.NotNull(components.FrameCodec);
         Assert.Equal(correlation, components.Correlation);
@@ -32,67 +31,87 @@ public sealed class McProtocolProfileTests
         Assert.NotNull(components.HealthProbeFactory);
     }
 
+    [Theory(Timeout = 20000)]
+    [InlineData(McFrameType.Frame4C, ChannelDelivery.Stream, ChannelMedium.Network)]
+    [InlineData(McFrameType.Frame3E, ChannelDelivery.Stream, ChannelMedium.Serial)]
+    [InlineData(McFrameType.Frame4E, ChannelDelivery.Datagram, ChannelMedium.Serial)]
+    [InlineData(McFrameType.Frame4C, ChannelDelivery.Datagram, ChannelMedium.Network)]
+    public void Configure_RejectsAFrameTheDeliveryOrMediumDoesNotCarry(McFrameType frameType, ChannelDelivery delivery, ChannelMedium medium)
+    {
+        Assert.Throws<ArgumentException>(() => { McProtocolProfile.Configure(new ChannelComponents(), new McClientOptions { FrameType = frameType }, delivery, medium); });
+    }
+
     [Fact(Timeout = 20000)]
-    public void ConfigureStream_RejectsAFrameCodecSetByTheCaller()
+    public void Configure_WithNullComponents_IsAnArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => { McProtocolProfile.Configure<ChannelComponents>(null!, new McClientOptions(), ChannelDelivery.Stream, ChannelMedium.Network); });
+    }
+
+    [Fact(Timeout = 20000)]
+    public void Configure_WithAnUndefinedDelivery_IsAnArgumentOutOfRangeException()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => { McProtocolProfile.Configure(new ChannelComponents(), new McClientOptions(), (ChannelDelivery)99, ChannelMedium.Network); });
+    }
+
+    [Fact(Timeout = 20000)]
+    public void Configure_WithAnUndefinedMedium_IsAnArgumentOutOfRangeException()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => { McProtocolProfile.Configure(new ChannelComponents(), new McClientOptions(), ChannelDelivery.Stream, (ChannelMedium)99); });
+    }
+
+    [Fact(Timeout = 20000)]
+    public void Configure_Stream_RejectsAFrameCodecSetByTheCaller()
     {
         var components = new ChannelComponents { FrameCodec = FrameCodecFactory.Create(new FramingOptions()) };
 
-        Assert.Throws<ArgumentException>(() => { McProtocolProfile.ConfigureStream(components, new McClientOptions()); });
+        Assert.Throws<ArgumentException>(() => { McProtocolProfile.Configure(components, new McClientOptions(), ChannelDelivery.Stream, ChannelMedium.Network); });
     }
 
     [Fact(Timeout = 20000)]
-    public void ConfigureStream_RejectsACorrelationSetByTheCaller()
+    public void Configure_Stream_RejectsACorrelationSetByTheCaller()
     {
         var components = new ChannelComponents { Correlation = CorrelationMode.Sequential };
 
-        Assert.Throws<ArgumentException>(() => { McProtocolProfile.ConfigureStream(components, new McClientOptions()); });
+        Assert.Throws<ArgumentException>(() => { McProtocolProfile.Configure(components, new McClientOptions(), ChannelDelivery.Stream, ChannelMedium.Network); });
     }
 
     [Fact(Timeout = 20000)]
-    public void ConfigureStream_RejectsAKeyExtractorSetByTheCaller()
+    public void Configure_Stream_RejectsAKeyExtractorSetByTheCaller()
     {
         var components = new ChannelComponents { KeyExtractor = new McSerialKeyExtractor(McEncoding.Binary) };
 
-        Assert.Throws<ArgumentException>(() => { McProtocolProfile.ConfigureStream(components, new McClientOptions()); });
+        Assert.Throws<ArgumentException>(() => { McProtocolProfile.Configure(components, new McClientOptions(), ChannelDelivery.Stream, ChannelMedium.Network); });
     }
 
     [Fact(Timeout = 20000)]
-    public void ConfigureStream_RejectsAHealthProbeSetByTheCaller()
+    public void Configure_Stream_RejectsAHealthProbeSetByTheCaller()
     {
         var components = new ChannelComponents { HealthProbe = new NoProbe() };
 
-        Assert.Throws<ArgumentException>(() => { McProtocolProfile.ConfigureStream(components, new McClientOptions()); });
+        Assert.Throws<ArgumentException>(() => { McProtocolProfile.Configure(components, new McClientOptions(), ChannelDelivery.Stream, ChannelMedium.Network); });
     }
 
     [Fact(Timeout = 20000)]
-    public void ConfigureStream_RejectsAHealthProbeFactorySetByTheCaller()
+    public void Configure_Stream_RejectsAHealthProbeFactorySetByTheCaller()
     {
         var components = new ChannelComponents { HealthProbeFactory = _ => new NoProbe() };
 
-        Assert.Throws<ArgumentException>(() => { McProtocolProfile.ConfigureStream(components, new McClientOptions()); });
+        Assert.Throws<ArgumentException>(() => { McProtocolProfile.Configure(components, new McClientOptions(), ChannelDelivery.Stream, ChannelMedium.Network); });
     }
 
     [Fact(Timeout = 20000)]
-    public void ConfigureDatagram_RejectsACorrelationSetByTheCaller()
+    public void Configure_Datagram_RejectsACorrelationSetByTheCaller()
     {
         var components = new ChannelComponents { Correlation = CorrelationMode.Sequential };
 
-        Assert.Throws<ArgumentException>(() => { McProtocolProfile.ConfigureDatagram(components, new McClientOptions()); });
+        Assert.Throws<ArgumentException>(() => { McProtocolProfile.Configure(components, new McClientOptions(), ChannelDelivery.Datagram, ChannelMedium.Network); });
     }
 
     [Fact(Timeout = 20000)]
-    public void ConfigureDatagram_RejectsFrame4C_BecauseDatagramsAreEthernetOnly()
+    public void Configure_Datagram_SetsKeyedCorrelationForFrame4E_WithoutFraming()
     {
-        Assert.Throws<ArgumentException>(() =>
-        {
-            McProtocolProfile.ConfigureDatagram(new ChannelComponents(), new McClientOptions { FrameType = McFrameType.Frame4C });
-        });
-    }
-
-    [Fact(Timeout = 20000)]
-    public void ConfigureDatagram_SetsKeyedCorrelationForFrame4E_WithoutFraming()
-    {
-        var components = McProtocolProfile.ConfigureDatagram(new ChannelComponents(), new McClientOptions { FrameType = McFrameType.Frame4E });
+        var components = McProtocolProfile.Configure(
+            new ChannelComponents(), new McClientOptions { FrameType = McFrameType.Frame4E }, ChannelDelivery.Datagram, ChannelMedium.Network);
 
         Assert.Null(components.FrameCodec);
         Assert.Equal(CorrelationMode.Keyed, components.Correlation);
@@ -142,8 +161,8 @@ public sealed class McProtocolProfileTests
     {
         // 格式 4 的 NAK 应答（V10），通道去掉 CR LF 后交给协议层。
         byte[] frame = Join(Hex("15"), Text("F80000FF03FF0000" + "C051"));
-        var components = McProtocolProfile.ConfigureStream(
-            new ChannelComponents(), new McClientOptions { FrameType = McFrameType.Frame4C, Encoding = McEncoding.Ascii });
+        var components = McProtocolProfile.Configure(
+            new ChannelComponents(), new McClientOptions { FrameType = McFrameType.Frame4C, Encoding = McEncoding.Ascii }, ChannelDelivery.Stream, ChannelMedium.Serial);
         IFrameDecoder decoder = components.FrameCodec!.CreateDecoder();
         ReadOnlySequence<byte> buffer = new ReadOnlySequence<byte>(Join(frame, Hex("0D 0A")));
 
@@ -183,7 +202,8 @@ public sealed class McProtocolProfileTests
 
     private static void AssertFirstFrame(McClientOptions options, byte[] frame, byte[] partialNext)
     {
-        var components = McProtocolProfile.ConfigureStream(new ChannelComponents(), options);
+        ChannelMedium medium = options.FrameType == McFrameType.Frame4C ? ChannelMedium.Serial : ChannelMedium.Network;
+        var components = McProtocolProfile.Configure(new ChannelComponents(), options, ChannelDelivery.Stream, medium);
         IFrameDecoder decoder = components.FrameCodec!.CreateDecoder();
         ReadOnlySequence<byte> buffer = new ReadOnlySequence<byte>(Join(frame, partialNext));
 

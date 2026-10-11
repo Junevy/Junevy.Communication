@@ -48,7 +48,7 @@ public static class McTcpExample
     public static async Task RunAsync(CancellationToken cancellationToken = default)
     {
         var options = new McClientOptions { FrameType = McFrameType.Frame3E, Encoding = McEncoding.Binary };
-        await using McClient plc = McClient.CreateTcp(new TcpClientChannelConfig { Host = "192.168.1.10", Port = 5000 }, options);
+        await using McClient plc = McClient.Create(new TcpClientChannelConfig { Host = "192.168.1.10", Port = 5000 }, options);
 
         CommResult connect = await plc.ConnectAsync(cancellationToken);
         if (!connect.IsSuccess)
@@ -70,7 +70,8 @@ public static class McTcpExample
 | UDP | `Frame3E`, `Frame4E` | Datagrams. A late 4E reply is discarded, so the next request gets its own reply |
 | Serial | `Frame4C` only | `McEncoding.Ascii` selects format 4 (ASCII, ENQ / ACK / NAK / STX ETX); `McEncoding.Binary` selects format 5 (DLE framing). `SumCheck` must match the PLC |
 
-- `McClient.CreateTcp` / `CreateUdp` / `CreateSerial` reject a frame type that the transport does not support with `ArgumentException`.
+- `McClient.Create` rejects a frame type that the transport does not support with `ArgumentException`. A transport configuration of a type that has no built-in channel creator throws `NotSupportedException`.
+- A transport that is not built in is created with its own `IChannelCreator`: `McClient.Create(transport, creator, options)`. The creator's `Delivery` and `Medium` decide which frame types the protocol accepts for it.
 - The transport configuration must keep its default framing and correlation. The profile sets them; a changed value throws `ArgumentException` instead of being overridden silently.
 - Creating a client never opens a socket or a serial port. `ConnectAsync` does.
 

@@ -1,3 +1,4 @@
+using Junevy.Communication.Channels;
 using Junevy.Communication.Plc;
 using Microsoft.Extensions.Logging;
 
@@ -18,13 +19,15 @@ public sealed class McClientCreator : IPlcClientCreator
         if (config is not McClientConfig mc)
             throw new ArgumentException($"Expected {nameof(McClientConfig)} but received {config.GetType().FullName}.", nameof(config));
 
-        return mc.Transport switch
+        IChannelConfig transport = mc.Transport switch
         {
-            McTransport.Tcp => McClient.CreateTcp(name, Require(mc.Tcp, mc.Transport), mc.Options, loggerFactory),
-            McTransport.Udp => McClient.CreateUdp(name, Require(mc.Udp, mc.Transport), mc.Options, loggerFactory),
-            McTransport.Serial => McClient.CreateSerial(name, Require(mc.Serial, mc.Transport), mc.Options, loggerFactory),
+            McTransport.Tcp => Require(mc.Tcp, mc.Transport),
+            McTransport.Udp => Require(mc.Udp, mc.Transport),
+            McTransport.Serial => Require(mc.Serial, mc.Transport),
             _ => throw new ArgumentException($"Unknown MELSEC transport '{mc.Transport}'.", nameof(config)),
         };
+
+        return McClient.Create(name, transport, McClient.BuiltInCreators.Resolve(transport), mc.Options, loggerFactory);
     }
 
     private static T Require<T>(T? transport, McTransport kind) where T : class

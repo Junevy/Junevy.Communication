@@ -14,6 +14,9 @@
 - 2026-10-11 [Channels] 新增 `ComponentPrecedence.Validate`（计划 Task 5，P25-D3）：校验协议组件与传输配置的同名设置（分帧与关联）。内置的 TCP 客户端、TCP 服务端、UDP 与串口在校验配置时调用；派生 `StreamClientChannel` 的第三方传输也应在映射配置时调用。心跳、重连等补充型组件不在此列。
 - 2026-10-11 [Core] 新增工厂外壳的公共部分（计划 Task 6，P25-D12）：`IConfigTypedCreator`（只有 `ConfigType`）、`CreatorCatalog<TCreator>`（按配置的精确类型选择创建器）与抽象基类 `NamedFactory<TItem>`（名称、别名、释放与释放后的检查；派生类型只提供创建逻辑）。
 - 2026-10-11 [Channels] 新增传输特征的枚举 `ChannelDelivery`（`Stream` / `Datagram`）与 `ChannelMedium`（`Network` / `Serial`）（计划 Task 7，P25-D4）：通道创建器通过 `Delivery` 与 `Medium` 声明自己的传输特征，协议据此配置组件。
+- 2026-10-11 [Plc] 新增协议客户端的传输绑定 `PlcChannelBinding.CreateChannel`（计划 Task 8，P25-D4）：协议按创建器声明的 `Delivery` 与 `Medium` 配置组件，再由创建器创建通道；传输配置的精确类型必须是创建器的 `ConfigType`。Plc 不引用任何传输包。
+- 2026-10-11 [Melsec] 新增 `McClient.Create` 作为唯一的创建入口（计划 Task 8，P25-D4）：`Create(transport, options, loggerFactory)` 用于内置的 TCP、UDP、串口配置；`Create(transport, transportCreator, options, loggerFactory)` 用于自定义的 `IChannelCreator`。
+- 2026-10-11 [Melsec] 新增 `McProtocolProfile.Configure(components, options, delivery, medium)`（计划 Task 8，P25-D4）：字节流设置分帧，数据报不设分帧；帧类型与介质、交付方式的组合在此一处校验（以太网只接受 3E、4E，串口只接受 4C，数据报不接受 4C）。
 
 ### 变更（Changed）
 
@@ -23,6 +26,7 @@
 - 2026-10-11 [Melsec] `McClient` 删除自行检查传输配置的 `RequireDefault`，分帧与关联的冲突改由通道统一拒绝（异常类型仍为 `ArgumentException`）；`CreateTcp` / `CreateUdp` / `CreateSerial` 的参数文档同步更新。
 - 2026-10-11 [Melsec] 删除仅供测试使用的内部方法 `McEthernetFrame.WriteRequest` 与 `Mc4CFrame.WriteRequest`，测试辅助改为直接调用 `BuildRequest`；编码结果不变。
 - 2026-10-11 [Channels, Plc] `ChannelFactory` 与 `PlcClientFactory` 改为派生 `NamedFactory<TItem>`；创建、异常消息与释放行为不变。`IChannelCreator`、`IPlcClientCreator` 改为继承 `IConfigTypedCreator`（`ConfigType` 的声明移到基接口，实现方无需修改）。
+- 2026-10-11 [Melsec] `McClient` 的内部创建改为经 `PlcChannelBinding` 与内置的 `CreatorCatalog<IChannelCreator>`（TCP、UDP、串口三个创建器）完成；`McClientCreator` 的 `McClientConfig` 与 `McTransport` 形状不变，依赖注入的行为不变。帧类型与介质不匹配仍抛出 `ArgumentException`，消息文本按介质与交付方式重新表述（例如 UDP 使用 4C 时现在报告数据报的规则）。
 
 ### 破坏性变更（Breaking）
 
@@ -39,10 +43,13 @@
           ? new MyChannel((MyConfig)config, components)
           : new MyChannel(name, (MyConfig)config, components);
   ```
+- 2026-10-11 [Melsec] 删除 `McClient.CreateTcp`、`CreateUdp`、`CreateSerial`（公开的三个方法）。迁移：`McClient.CreateTcp(config, options[, loggerFactory])` → `McClient.Create(config, options[, loggerFactory])`；`CreateUdp` 与 `CreateSerial` 同样替换，参数不变。`Create` 对 `TcpClientChannelConfig`、`UdpChannelConfig`、`SerialChannelConfig` 的精确类型可直接使用；其他配置类型抛出 `NotSupportedException`。
+- 2026-10-11 [Melsec] 删除 `McProtocolProfile.ConfigureStream` 与 `ConfigureDatagram`（公开重载）。迁移：`ConfigureStream(components, options)` → `Configure(components, options, ChannelDelivery.Stream, medium)`；`ConfigureDatagram(components, options)` → `Configure(components, options, ChannelDelivery.Datagram, ChannelMedium.Network)`。`medium` 由帧类型决定：3E、4E 用 `ChannelMedium.Network`，4C 用 `ChannelMedium.Serial`。
 
 ### 移除（Removed）
 
 - 2026-10-11 [Channels, Plc, Melsec, Testing] 删除内部类型 `PooledBufferWriter`（Channels）、`PlcRequestBuffer`（Plc）与 `McFrameOutput`（Melsec），以及测试辅助 `ByteArrayBufferWriter`（Testing，不发布；测试改用 `ByteBufferWriter`，其 `Count` 对应 `WrittenCount`）。
+- 2026-10-11 [Melsec] 移除 `McClient` 的 internal 工厂实现（`CreateTcp` / `CreateUdp` / `CreateSerial` 的带名称重载）与内部的 `RequireEthernet` / `RequireSerial`，以及 `McProtocolProfile` 的 internal `ConfigureStream` / `ConfigureDatagram`；帧与介质的规则只保留在 `McProtocolProfile.Configure`。
 
 ## [Unreleased] — PLC 套件 P2（Plc / Melsec 1.0.0-preview.1；Core 新增 Buffers）
 

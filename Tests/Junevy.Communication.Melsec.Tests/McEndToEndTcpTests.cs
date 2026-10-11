@@ -26,7 +26,7 @@ public sealed class McEndToEndTcpTests
         var options = new McClientOptions { FrameType = frameType, Encoding = encoding };
         var adapter = new McDeviceAdapter(frameType, encoding, sumCheck: true, new PlcMemory());
         await using DeviceSimulatorTcpHost host = new DeviceSimulator(McEndToEndSupport.DeviceFraming(options), adapter.Handle).HostTcp();
-        using McClient client = McClient.CreateTcp(new TcpClientChannelConfig { Host = "127.0.0.1", Port = host.Port }, options);
+        using McClient client = McClient.Create(new TcpClientChannelConfig { Host = "127.0.0.1", Port = host.Port }, options);
 
         Assert.True((await client.ConnectAsync()).IsSuccess);
         await McEndToEndSupport.AssertTypedRoundTripAsync(client);
@@ -38,7 +38,7 @@ public sealed class McEndToEndTcpTests
         var options = new McClientOptions();
         var adapter = new McDeviceAdapter(McFrameType.Frame3E, McEncoding.Binary, sumCheck: true, new PlcMemory());
         await using DeviceSimulatorTcpHost host = new DeviceSimulator(McEndToEndSupport.DeviceFraming(options), adapter.Handle).HostTcp();
-        using McClient client = McClient.CreateTcp(new TcpClientChannelConfig { Host = "127.0.0.1", Port = host.Port }, options);
+        using McClient client = McClient.Create(new TcpClientChannelConfig { Host = "127.0.0.1", Port = host.Port }, options);
         Assert.True((await client.ConnectAsync()).IsSuccess);
 
         CommResult<short[]> result = await client.ReadInt16Async("D0", 2000);
@@ -55,7 +55,7 @@ public sealed class McEndToEndTcpTests
         var options = new McClientOptions();
         var adapter = new McDeviceAdapter(McFrameType.Frame3E, McEncoding.Binary, sumCheck: true, new PlcMemory());
         await using DeviceSimulatorTcpHost host = new DeviceSimulator(McEndToEndSupport.DeviceFraming(options), adapter.Handle).HostTcp();
-        using McClient client = McClient.CreateTcp(new TcpClientChannelConfig { Host = "127.0.0.1", Port = host.Port }, options);
+        using McClient client = McClient.Create(new TcpClientChannelConfig { Host = "127.0.0.1", Port = host.Port }, options);
         Assert.True((await client.ConnectAsync()).IsSuccess);
 
         CommResult<bool[]> result = await client.ReadBitsAsync("M0", 8000);
@@ -71,7 +71,7 @@ public sealed class McEndToEndTcpTests
         var options = new McClientOptions();
         var adapter = new McDeviceAdapter(McFrameType.Frame3E, McEncoding.Binary, sumCheck: true, new PlcMemory()) { EndCodeOverride = 0xC051 };
         await using DeviceSimulatorTcpHost host = new DeviceSimulator(McEndToEndSupport.DeviceFraming(options), adapter.Handle).HostTcp();
-        using McClient client = McClient.CreateTcp(new TcpClientChannelConfig { Host = "127.0.0.1", Port = host.Port }, options);
+        using McClient client = McClient.Create(new TcpClientChannelConfig { Host = "127.0.0.1", Port = host.Port }, options);
         Assert.True((await client.ConnectAsync()).IsSuccess);
 
         CommResult<short> result = await client.ReadInt16Async("D100");
@@ -95,7 +95,7 @@ public sealed class McEndToEndTcpTests
             Port = server.Port,
             Reconnect = new ReconnectOptions { Enabled = true, Interval = 100 },
         };
-        using McClient client = McClient.CreateTcp(config, options);
+        using McClient client = McClient.Create(config, options);
         Assert.True((await client.ConnectAsync()).IsSuccess);
         Assert.Equal((short)7, (await client.ReadInt16Async("D100")).Data);
 
@@ -118,7 +118,7 @@ public sealed class McEndToEndTcpTests
             Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 100, Timeout = 100, MaxFailures = 2 },
             Reconnect = new ReconnectOptions { Enabled = true, Interval = 200 },
         };
-        using McClient client = McClient.CreateTcp(config, new McClientOptions());
+        using McClient client = McClient.Create(config, new McClientOptions());
         var changes = new List<ConnectionStateChangedEventArgs>();
         client.StateChanged += (sender, args) =>
         {

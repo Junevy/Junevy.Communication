@@ -39,7 +39,7 @@ public static class McTcpExample
     public static async Task RunAsync(CancellationToken cancellationToken = default)
     {
         var options = new McClientOptions { FrameType = McFrameType.Frame3E, Encoding = McEncoding.Binary };
-        await using McClient plc = McClient.CreateTcp(new TcpClientChannelConfig { Host = "192.168.1.10", Port = 5000 }, options);
+        await using McClient plc = McClient.Create(new TcpClientChannelConfig { Host = "192.168.1.10", Port = 5000 }, options);
 
         CommResult connect = await plc.ConnectAsync(cancellationToken);
         if (!connect.IsSuccess)
@@ -68,12 +68,12 @@ using Junevy.Communication.Udp;
 public static class McTransportsExample
 {
     public static McClient CreateUdp()
-        => McClient.CreateUdp(
+        => McClient.Create(
             new UdpChannelConfig { RemoteHost = "192.168.1.10", RemotePort = 5001 },
             new McClientOptions { FrameType = McFrameType.Frame4E, Encoding = McEncoding.Ascii });
 
     public static McClient CreateSerial()
-        => McClient.CreateSerial(
+        => McClient.Create(
             new SerialChannelConfig { PortName = "COM1", BaudRate = 9600 },
             new McClientOptions { FrameType = McFrameType.Frame4C, Encoding = McEncoding.Binary, SumCheck = true });
 }
@@ -82,6 +82,7 @@ public static class McTransportsExample
 - **TCP and UDP** accept 3E and 4E. UDP is a datagram transport: a 4E reply is matched by its serial number, and a late reply is discarded.
 - **Serial** accepts 4C only. `McEncoding.Ascii` selects format 4 and `McEncoding.Binary` selects format 5. Set `SumCheck` to match the PLC's configuration.
 - The framing and correlation of the transport configuration must keep their defaults. The client sets them from the options, and throws `ArgumentException` when a transport configuration changes them.
+- A transport that is not built in is created with its own channel creator: `McClient.Create(transport, creator, options)`. The creator's `Delivery` and `Medium` decide how the protocol configures the channel and which frame types it accepts. A transport configuration of any other type throws `NotSupportedException` from `McClient.Create(transport, options)`.
 
 ## Options
 
@@ -172,7 +173,7 @@ public static class McResilienceExample
             Reconnect = new ReconnectOptions { Enabled = true, Interval = 1000 },
             Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 5000, Timeout = 2000, MaxFailures = 3 },
         };
-        return McClient.CreateTcp(transport, new McClientOptions { FrameType = McFrameType.Frame3E });
+        return McClient.Create(transport, new McClientOptions { FrameType = McFrameType.Frame3E });
     }
 }
 ```

@@ -22,7 +22,7 @@ public sealed class McEndToEndUdpTests
         var options = new McClientOptions { FrameType = frameType, Encoding = encoding };
         var adapter = new McDeviceAdapter(frameType, encoding, sumCheck: true, new PlcMemory());
         await using DeviceSimulatorUdpHost host = new DeviceSimulator(McEndToEndSupport.DeviceFraming(options), adapter.Handle).HostUdp();
-        using McClient client = McClient.CreateUdp(new UdpChannelConfig { RemoteHost = "127.0.0.1", RemotePort = host.Port }, options);
+        using McClient client = McClient.Create(new UdpChannelConfig { RemoteHost = "127.0.0.1", RemotePort = host.Port }, options);
 
         Assert.True((await client.ConnectAsync()).IsSuccess);
         await McEndToEndSupport.AssertTypedRoundTripAsync(client);
@@ -39,7 +39,7 @@ public sealed class McEndToEndUdpTests
         int requests = 0;
         await using DeviceSimulatorUdpHost host = new DeviceSimulator(McEndToEndSupport.DeviceFraming(options), adapter.Handle)
             .HostUdp(_ => Interlocked.Increment(ref requests) == 1 ? 800 : 0);
-        using McClient client = McClient.CreateUdp(
+        using McClient client = McClient.Create(
             new UdpChannelConfig { RemoteHost = "127.0.0.1", RemotePort = host.Port, RequestTimeout = 300 }, options);
         Assert.True((await client.ConnectAsync()).IsSuccess);
 

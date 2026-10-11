@@ -21,7 +21,7 @@ public sealed class McEndToEnd4CTests
         var adapter = new McDeviceAdapter(McFrameType.Frame4C, encoding, sumCheck, new PlcMemory());
         DeviceSimulator simulator = new DeviceSimulator(McEndToEndSupport.DeviceFraming(options), adapter.Handle);
         using var stopDevice = new CancellationTokenSource();
-        var components = McProtocolProfile.ConfigureStream(new ChannelComponents(), options);
+        var components = McProtocolProfile.Configure(new ChannelComponents(), options, ChannelDelivery.Stream, ChannelMedium.Serial);
         // 打开回调在连接完成之前被等待，因此设备替身在后台运行，回调本身立即完成。
         var channel = new DuplexClientChannel(new ClientChannelSettings(), components, pair =>
         {

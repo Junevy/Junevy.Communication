@@ -9,65 +9,100 @@ using Junevy.Communication.Udp;
 namespace Junevy.Communication.Melsec.Tests;
 
 /// <summary>
-/// <see cref="McClient"/> 的工厂与选项（计划 Task 11）：传输与帧的组合校验、传输配置不被静默覆盖、选项取快照，
-/// 点数上限（按帧与编码），以及末端软元件编号的范围检查（经公开的读取方法，在通道未连接之前返回）。
+/// <see cref="McClient"/> 的创建入口与选项（计划 Task 11、Task 8）：传输与帧的组合校验、传输配置不被静默覆盖、
+/// 不支持的配置类型与自定义创建器、选项取快照，点数上限（按帧与编码），以及末端软元件编号的范围检查（在通道未连接之前返回）。
 /// </summary>
 public sealed class McClientTests
 {
     [Fact(Timeout = 20000)]
-    public void CreateTcp_With4CFrame_IsAnArgumentException()
+    public void Create_OverTcpWith4CFrame_IsAnArgumentException()
     {
-        Assert.Throws<ArgumentException>(() => { McClient.CreateTcp(new TcpClientChannelConfig(), new McClientOptions { FrameType = McFrameType.Frame4C }); });
+        Assert.Throws<ArgumentException>(() => { McClient.Create(new TcpClientChannelConfig(), new McClientOptions { FrameType = McFrameType.Frame4C }); });
     }
 
     [Fact(Timeout = 20000)]
-    public void CreateUdp_With4CFrame_IsAnArgumentException()
+    public void Create_OverUdpWith4CFrame_IsAnArgumentException()
     {
-        Assert.Throws<ArgumentException>(() => { McClient.CreateUdp(new UdpChannelConfig(), new McClientOptions { FrameType = McFrameType.Frame4C }); });
+        Assert.Throws<ArgumentException>(() => { McClient.Create(new UdpChannelConfig(), new McClientOptions { FrameType = McFrameType.Frame4C }); });
     }
 
     [Fact(Timeout = 20000)]
-    public void CreateSerial_With3EFrame_IsAnArgumentException()
+    public void Create_OverSerialWith3EFrame_IsAnArgumentException()
     {
-        Assert.Throws<ArgumentException>(() => { McClient.CreateSerial(new SerialChannelConfig(), new McClientOptions { FrameType = McFrameType.Frame3E }); });
+        Assert.Throws<ArgumentException>(() => { McClient.Create(new SerialChannelConfig(), new McClientOptions { FrameType = McFrameType.Frame3E }); });
     }
 
     [Fact(Timeout = 20000)]
-    public void CreateTcp_WithFramingSetOnTheTransport_IsAnArgumentException()
+    public void Create_OverTcpWithFramingSetOnTheTransport_IsAnArgumentException()
     {
         var transport = new TcpClientChannelConfig { Framing = new FramingOptions { Mode = FramingMode.Delimiter, Delimiters = new[] { "\r\n" } } };
 
-        Assert.Throws<ArgumentException>(() => { McClient.CreateTcp(transport, new McClientOptions()); });
+        Assert.Throws<ArgumentException>(() => { McClient.Create(transport, new McClientOptions()); });
     }
 
     [Fact(Timeout = 20000)]
-    public void CreateTcp_WithCorrelationSetOnTheTransport_IsAnArgumentException()
+    public void Create_OverTcpWithCorrelationSetOnTheTransport_IsAnArgumentException()
     {
         var transport = new TcpClientChannelConfig { Correlation = CorrelationMode.Keyed };
 
-        Assert.Throws<ArgumentException>(() => { McClient.CreateTcp(transport, new McClientOptions()); });
+        Assert.Throws<ArgumentException>(() => { McClient.Create(transport, new McClientOptions()); });
     }
 
     [Fact(Timeout = 20000)]
-    public void CreateSerial_WithDefaultTransport_CreatesAClientWithoutOpeningThePort()
+    public void Create_OverSerialWithDefaultTransport_CreatesAClientWithoutOpeningThePort()
     {
-        using McClient client = McClient.CreateSerial(new SerialChannelConfig(), new McClientOptions { FrameType = McFrameType.Frame4C });
+        using McClient client = McClient.Create(new SerialChannelConfig(), new McClientOptions { FrameType = McFrameType.Frame4C });
 
         Assert.False(client.IsConnected);
     }
 
     [Fact(Timeout = 20000)]
-    public void CreateTcp_LeavesTheCallersOptionsAndTransportUntouched()
+    public void Create_LeavesTheCallersOptionsAndTransportUntouched()
     {
         var options = new McClientOptions { FrameType = McFrameType.Frame4E, MonitoringTimer = 7 };
         var transport = new TcpClientChannelConfig { Host = "127.0.0.1", Port = 5000 };
 
-        using McClient client = McClient.CreateTcp(transport, options);
+        using McClient client = McClient.Create(transport, options);
 
         Assert.False(client.IsConnected);
         Assert.Equal((ushort)7, options.MonitoringTimer);
         Assert.Equal(FramingMode.Raw, transport.Framing.Mode);
         Assert.Equal(CorrelationMode.Sequential, transport.Correlation);
+    }
+
+    [Fact(Timeout = 20000)]
+    public void Create_WithANullTransport_IsAnArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => { McClient.Create(null!, new McClientOptions()); });
+    }
+
+    [Fact(Timeout = 20000)]
+    public void Create_WithAnUnsupportedConfigType_IsANotSupportedException()
+    {
+        Assert.Throws<NotSupportedException>(() => { McClient.Create(new UnregisteredConfig(), new McClientOptions()); });
+    }
+
+    [Fact(Timeout = 20000)]
+    public void Create_WithACustomStreamSerialCreator_ConfiguresTheComponentsFor4CFraming()
+    {
+        var creator = new RecordingChannelCreator(typeof(CustomConfig), ChannelDelivery.Stream, ChannelMedium.Serial);
+
+        using McClient client = McClient.Create(new CustomConfig(), creator, new McClientOptions { FrameType = McFrameType.Frame4C });
+
+        ChannelComponents? components = creator.Components;
+        Assert.False(client.IsConnected);
+        Assert.NotNull(components?.FrameCodec);
+        Assert.Equal(CorrelationMode.Sequential, components?.Correlation);
+    }
+
+    [Fact(Timeout = 20000)]
+    public void Create_WithACustomDatagramCreatorAnd4CFrame_IsAnArgumentExceptionBeforeAnyChannelIsCreated()
+    {
+        var creator = new RecordingChannelCreator(typeof(CustomConfig), ChannelDelivery.Datagram, ChannelMedium.Network);
+
+        Assert.Throws<ArgumentException>(() => { McClient.Create(new CustomConfig(), creator, new McClientOptions { FrameType = McFrameType.Frame4C }); });
+
+        Assert.Equal(0, creator.CreateCount);
     }
 
     [Fact(Timeout = 20000)]
@@ -167,4 +202,12 @@ public sealed class McClientTests
 
     private static McClient UnconnectedClient(McEncoding encoding)
         => new McClient(new DuplexClientChannel(new ClientChannelSettings()), new McClientOptions { Encoding = encoding });
+
+    private sealed class CustomConfig : IChannelConfig
+    {
+    }
+
+    private sealed class UnregisteredConfig : IChannelConfig
+    {
+    }
 }

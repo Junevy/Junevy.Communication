@@ -6,7 +6,7 @@ namespace Junevy.Communication.Melsec.Tests;
 
 /// <summary>
 /// 真实串口端到端（计划 Task 12，可选）：需设置 JUNEVY_SERIAL_PAIR=COMx,COMy（例如 COM20,COM21），未设置时跳过。
-/// 客户端经 McClient.CreateSerial 连接第一个串口，设备替身在第二个串口的 BaseStream 上运行。
+/// 客户端经 McClient.Create 连接第一个串口，设备替身在第二个串口的 BaseStream 上运行。
 /// 执行者不运行本测试，由审阅者在具有串口对的机器上运行。
 /// </summary>
 public sealed class McSerialPairTests
@@ -23,7 +23,7 @@ public sealed class McSerialPairTests
         var simulator = new DeviceSimulator(McEndToEndSupport.DeviceFraming(options), adapter.Handle);
         Task device = simulator.RunAsync(devicePort.BaseStream, stopDevice.Token);
 
-        using McClient client = McClient.CreateSerial(new SerialChannelConfig { PortName = first, BaudRate = 9600 }, options);
+        using McClient client = McClient.Create(new SerialChannelConfig { PortName = first, BaudRate = 9600 }, options);
         try
         {
             Assert.True((await client.ConnectAsync()).IsSuccess);
