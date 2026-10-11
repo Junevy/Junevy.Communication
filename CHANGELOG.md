@@ -7,6 +7,7 @@
 ### 新增（Added）
 
 - 2026-10-11 [构建] 新增代码度量脚本 `build/metrics/`：`dupscan.py`（重复窗口）、`methodlen.py`（超过 60 行的方法）与 `effective_lines.py`（有效行，去掉空行与 `//` 注释行）；用法与生产代码范围见目录内的 README.md。P2.5 基线记录在计划第 21.3 节（重复窗口 177、超长方法 10、`TcpServer.cs` 1216 行、Melsec 1304 / Plc 1054 有效行）。
+- 2026-10-11 [Architecture.Tests] 新增架构守卫测试项目 `Tests/Junevy.Communication.Architecture.Tests`（计划 Task 1，P25-D2）：`ProductionAssemblies_GrantInternalsOnlyToTheirTestsAndTheRegisteredExceptions` 检查生产程序集的 `InternalsVisibleTo` 只能指向 `<自身>.Tests` 或登记表中的两条（Channels → Tcp、Channels → Udp，理由照抄 Channels.csproj）；`ProductionAssemblies_ReferenceOnlyLowerLayers` 检查各生产程序集引用的 `Junevy.Communication.*` 程序集不超过分层表（Plc 不引用任何传输包，Modbus 不在表中）。
 
 ### 变更（Changed）
 

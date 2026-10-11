@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\build\Junevy.Communication.Tests.props" />
+
+  <!-- 架构守卫：读取各生产程序集的元数据（引用与 InternalsVisibleTo），因此引用全部生产程序集。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Junevy.Communication.Core\Junevy.Communication.Core.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Channels\Junevy.Communication.Channels.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Tcp\Junevy.Communication.Tcp.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Udp\Junevy.Communication.Udp.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Serial\Junevy.Communication.Serial.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Plc\Junevy.Communication.Plc.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Melsec\Junevy.Communication.Melsec.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Modbus\Junevy.Communication.Modbus.csproj" />
+  </ItemGroup>
+
+</Project>
