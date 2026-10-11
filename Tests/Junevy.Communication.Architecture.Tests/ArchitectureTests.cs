@@ -8,6 +8,7 @@ using Junevy.Communication.Plc;
 using Junevy.Communication.Serial;
 using Junevy.Communication.Tcp;
 using Junevy.Communication.Udp;
+using Junevy.Communication.WebApi;
 
 namespace Junevy.Communication.Architecture.Tests;
 
@@ -35,7 +36,7 @@ public sealed class ArchitectureTests
         (ChannelsName, UdpName),
     };
 
-    // 分层表（计划 Task 1）：每个生产程序集允许引用的 Junevy.Communication.* 程序集。Plc 不得引用任何传输包。
+    // 分层表（计划 Task 1）：每个生产程序集允许引用的 Junevy.Communication.* 程序集。Plc 不得引用任何传输包；WebApi 只允许引用 Core（P3-D2）。
     private static readonly (Assembly Assembly, string[] AllowedReferences)[] LayerTable =
     {
         (typeof(CommResult).Assembly, Array.Empty<string>()),
@@ -45,6 +46,7 @@ public sealed class ArchitectureTests
         (typeof(SerialChannel).Assembly, new[] { ChannelsName, CoreName }),
         (typeof(PlcClientBase<>).Assembly, new[] { ChannelsName, CoreName }),
         (typeof(McClient).Assembly, new[] { PlcName, ChannelsName, CoreName, TcpName, UdpName, SerialName }),
+        (typeof(WebApiResult<>).Assembly, new[] { CoreName }),
     };
 
     // 参与 InternalsVisibleTo 检查的程序集：分层表中的全部程序集，加上不在分层表中的 Modbus。Modbus 为旧库，只检查 InternalsVisibleTo，不检查引用。

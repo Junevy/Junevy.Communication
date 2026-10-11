@@ -7,6 +7,9 @@
 ### 新增（Added）
 
 - 2026-10-11 [Core] 新增公开静态类 `Junevy.Communication.Core.Diagnostics.EventSubscribers`（计划 Task 1，P3-D14）：`InvokeEach<TArgs>(handler, sender, args, logger, eventName)` 逐个调用事件订阅者，单个订阅者抛出的异常只记 Error 日志，其余订阅者照常收到事件。WebApi 只依赖 Core，通过它派发事件。
+- 2026-10-11 [WebApi] 新增类库项目 `Junevy.Communication.WebApi`（`net472;net8.0`，只依赖 Core，计划 Task 2，P3-D2）与测试项目 `Tests/Junevy.Communication.WebApi.Tests`；net472 引用 `System.Text.Json` 8.0.5 与 `System.Net.Http`。包 README 目前只有标题与一句定位。
+- 2026-10-11 [WebApi] 新增 `WebApiResult<T>`（计划 Task 2，P3-D13）：成功 / 失败结果，携带 HTTP 状态码（`StatusCode`，没有响应时为 null）、对端业务码（`RemoteCode`）、`CommErrorKind` 分类与诊断用的 `Exception`；`Success`、`Fail`（校验与 `CommResult.Fail` 一致）、`As<TOther>()`、`ToString()`（在 `CommResult` 的格式后附 `(HTTP 503, remote code X)`）。新增枚举 `WebApiAvailability`（`Unknown` / `Online` / `Offline`）。
+- 2026-10-11 [Architecture.Tests] 架构守卫扩展到 WebApi（计划 Task 2，P3-D18）：程序集分层表新增 WebApi 行（只允许引用 Core）；新增 `WebApiLayeringTests`，用 NetArchTest.Rules 1.3.2（仅测试项目引用）按命名空间分层表检查 WebApi 内部的依赖方向（含方法体中的类型引用），并要求程序集里的每个命名空间都登记在分层表中。
 
 ### 变更（Changed）
 
