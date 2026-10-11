@@ -1,5 +1,6 @@
 using System.Buffers;
 using Junevy.Communication.Channels;
+using Junevy.Communication.Core.Buffers;
 using Junevy.Communication.Testing;
 
 namespace Junevy.Communication.Serial.Tests;
@@ -97,7 +98,7 @@ internal sealed class SerialDevice
         try
         {
             await Task.Delay(replyDelayMilliseconds, token).ConfigureAwait(false);
-            var output = new ByteArrayBufferWriter();
+            var output = new ByteBufferWriter();
             encoder.Encode(reply(request), output);
             byte[] wire = output.ToArray();
 

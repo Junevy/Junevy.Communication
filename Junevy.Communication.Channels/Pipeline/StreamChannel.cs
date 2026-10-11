@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using Junevy.Communication.Channels.Framing;
 using Junevy.Communication.Channels.Lifecycle;
+using Junevy.Communication.Core.Buffers;
 using Junevy.Communication.Core.Diagnostics;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Core.Utils;
@@ -28,6 +29,7 @@ internal sealed class StreamChannel : IAsyncDisposable
     // Pipe 背压阈值（计划 8.2 第 5 条）：解析循环跟不上时填充循环挂起，形成对流的背压。
     private const int PauseWriterThreshold = 1024 * 1024;
     private const int ResumeWriterThreshold = 512 * 1024;
+    private const int FrameBufferCapacity = 256;
 
     private const string EmptyRequestMessage =
         "A request payload must not be empty; use ReceiveAsync to wait for a frame without sending one.";
@@ -343,7 +345,7 @@ internal sealed class StreamChannel : IAsyncDisposable
             if (userToken.IsCancellationRequested)
                 return CommResult.Fail("The send was cancelled before any byte was written.", CommErrorKind.Cancelled);
 
-            using PooledBufferWriter wire = EncodeFrame(payload);
+            using ByteBufferWriter wire = EncodeFrame(payload);
             ReadOnlyMemory<byte> bytes = wire.WrittenMemory;
             if (bytes.IsEmpty)
                 return CommResult.Success();
@@ -357,9 +359,9 @@ internal sealed class StreamChannel : IAsyncDisposable
         }
     }
 
-    private PooledBufferWriter EncodeFrame(ReadOnlyMemory<byte> payload)
+    private ByteBufferWriter EncodeFrame(ReadOnlyMemory<byte> payload)
     {
-        var wire = new PooledBufferWriter();
+        var wire = new ByteBufferWriter(FrameBufferCapacity, ArrayPool<byte>.Shared);
         try
         {
             encoder.Encode(payload.Span, wire);
@@ -427,7 +429,7 @@ internal sealed class StreamChannel : IAsyncDisposable
 #if NET8_0_OR_GREATER
         await stream.WriteAsync(bytes, token).ConfigureAwait(false);
 #else
-        // net472：流的 Memory 重载不存在，使用数组重载（D7）。帧缓冲由 PooledBufferWriter 提供，始终由数组支持。
+        // net472：流的 Memory 重载不存在，使用数组重载（D7）。帧缓冲由 ByteBufferWriter 提供，始终由数组支持。
         if (!MemoryMarshal.TryGetArray(bytes, out ArraySegment<byte> segment))
             throw new InvalidOperationException("The frame buffer is not backed by an array.");
 

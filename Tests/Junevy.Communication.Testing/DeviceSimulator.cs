@@ -3,6 +3,7 @@ using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;
 using Junevy.Communication.Channels;
+using Junevy.Communication.Core.Buffers;
 
 namespace Junevy.Communication.Testing;
 
@@ -125,7 +126,7 @@ public sealed class DeviceSimulator
 
     private static async Task WriteReplyAsync(Stream stream, IFrameEncoder encoder, byte[] payload, CancellationToken cancellationToken)
     {
-        var output = new ByteArrayBufferWriter();
+        var output = new ByteBufferWriter();
         encoder.Encode(payload, output);
 
         byte[] wire = output.ToArray();

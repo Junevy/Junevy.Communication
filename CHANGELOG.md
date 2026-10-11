@@ -8,12 +8,17 @@
 
 - 2026-10-11 [构建] 新增代码度量脚本 `build/metrics/`：`dupscan.py`（重复窗口）、`methodlen.py`（超过 60 行的方法）与 `effective_lines.py`（有效行，去掉空行与 `//` 注释行）；用法与生产代码范围见目录内的 README.md。P2.5 基线记录在计划第 21.3 节（重复窗口 177、超长方法 10、`TcpServer.cs` 1216 行、Melsec 1304 / Plc 1054 有效行）。
 - 2026-10-11 [Architecture.Tests] 新增架构守卫测试项目 `Tests/Junevy.Communication.Architecture.Tests`（计划 Task 1，P25-D2）：`ProductionAssemblies_GrantInternalsOnlyToTheirTestsAndTheRegisteredExceptions` 检查生产程序集的 `InternalsVisibleTo` 只能指向 `<自身>.Tests` 或登记表中的两条（Channels → Tcp、Channels → Udp，理由照抄 Channels.csproj）；`ProductionAssemblies_ReferenceOnlyLowerLayers` 检查各生产程序集引用的 `Junevy.Communication.*` 程序集不超过分层表（Plc 不引用任何传输包，Modbus 不在表中）。
+- 2026-10-11 [Core] 新增公开的缓冲写入器 `ByteBufferWriter`（`Buffers/`，计划 Task 2，P25-D11）：实现 `IBufferWriter<byte>`，初始容量 256 字节（构造函数可指定，必须大于 0），可选从 `ArrayPool<byte>` 租用数组；增长为"两倍与所需大小取大者"，池化时增长与释放都归还旧数组；`Dispose` 可重复调用，之后除 `Dispose` 外的成员抛出 `ObjectDisposedException`。它取代 Channels 的 `PooledBufferWriter`、Plc 的 `PlcRequestBuffer` 与 Testing 的 `ByteArrayBufferWriter`。
 
 ### 变更（Changed）
+
+- 2026-10-11 [Channels, Plc, Melsec] 手写的 `GetSpan` + `CopyTo` + `Advance` 改用 BCL 的 `IBufferWriter<byte>.Write(ReadOnlySpan<byte>)`：`PassthroughFrameEncoder.Encode`、MELSEC 的 3E / 4E 与 4C 请求写入、`McClient` 的四个构建钩子；行为不变。
 
 ### 破坏性变更（Breaking）
 
 ### 移除（Removed）
+
+- 2026-10-11 [Channels, Plc, Melsec, Testing] 删除内部类型 `PooledBufferWriter`（Channels）、`PlcRequestBuffer`（Plc）与 `McFrameOutput`（Melsec），以及测试辅助 `ByteArrayBufferWriter`（Testing，不发布；测试改用 `ByteBufferWriter`，其 `Count` 对应 `WrittenCount`）。
 
 ## [Unreleased] — PLC 套件 P2（Plc / Melsec 1.0.0-preview.1；Core 新增 Buffers）
 

@@ -19,7 +19,6 @@ internal sealed class PassthroughFrameEncoder : IFrameEncoder
         if (payload.Length == 0)
             return;
 
-        payload.CopyTo(output.GetSpan(payload.Length));
-        output.Advance(payload.Length);
+        output.Write(payload);
     }
 }

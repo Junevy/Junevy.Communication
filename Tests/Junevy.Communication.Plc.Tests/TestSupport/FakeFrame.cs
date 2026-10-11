@@ -37,8 +37,7 @@ internal static class FakeFrame
     /// <summary>写入负载。</summary>
     public static void WriteBytes(IBufferWriter<byte> output, ReadOnlySpan<byte> bytes)
     {
-        bytes.CopyTo(output.GetSpan(bytes.Length));
-        output.Advance(bytes.Length);
+        output.Write(bytes);
     }
 
     /// <summary>读取请求头：操作、符号、编号与点数或字数。</summary>

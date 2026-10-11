@@ -1,5 +1,6 @@
 using System.Buffers;
 using Junevy.Communication.Channels.Framing;
+using Junevy.Communication.Core.Buffers;
 using Junevy.Communication.Melsec.Framing;
 using Junevy.Communication.Testing;
 using static Junevy.Communication.Melsec.Tests.McTestSupport;
@@ -112,7 +113,7 @@ public sealed class Mc4CBinaryFrameDecoderTests
     public void CodecFactory_EncoderPassesTheFrameThrough()
     {
         var factory = new Mc4CBinaryFrameCodecFactory(true, 256);
-        var output = new ByteArrayBufferWriter();
+        var output = new ByteBufferWriter();
 
         factory.CreateEncoder().Encode(Response, output);
 

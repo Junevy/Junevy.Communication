@@ -1,5 +1,6 @@
 using System.Buffers;
 using Junevy.Communication.Channels;
+using Junevy.Communication.Core.Buffers;
 using Junevy.Communication.Core.Results;
 using Microsoft.Extensions.Logging;
 
@@ -94,7 +95,7 @@ internal sealed class PlcPacketExchange
     private async Task<CommResult> SendOnceAsync(Action<IBufferWriter<byte>> buildRequest, Func<byte[], CommResult> parseResponse,
                                                  CancellationToken cancellationToken)
     {
-        var request = new PlcRequestBuffer();
+        using var request = new ByteBufferWriter();
         buildRequest(request);
 
         CommResult<byte[]> reply = await channel.RequestAsync(request.WrittenMemory, cancellationToken: cancellationToken).ConfigureAwait(false);

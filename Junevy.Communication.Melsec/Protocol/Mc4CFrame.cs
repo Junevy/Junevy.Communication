@@ -31,7 +31,7 @@ internal sealed class Mc4CFrame
     /// <param name="route">访问路径。</param>
     /// <param name="body">请求数据（命令、子命令与参数，已按编码写好）。</param>
     public void WriteRequest(IBufferWriter<byte> output, Mc4CAccessRoute route, ReadOnlySpan<byte> body)
-        => McFrameOutput.Write(BuildRequest(route, body), output);
+        => output.Write(BuildRequest(route, body));
 
     /// <summary>编码请求帧并返回字节（客户端与心跳探测直接使用）。</summary>
     /// <param name="route">访问路径。</param>

@@ -4,6 +4,7 @@ using System.Net;
 using System.Text;
 using Junevy.Communication.Channels.Framing;
 using Junevy.Communication.Channels.Pipeline;
+using Junevy.Communication.Core.Buffers;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Testing;
 using Microsoft.Extensions.Logging;
@@ -946,7 +947,7 @@ internal sealed class StreamPeer
     /// <summary>编码并发送一个负载。</summary>
     public async Task SendFrameAsync(byte[] payload)
     {
-        var output = new ByteArrayBufferWriter();
+        var output = new ByteBufferWriter();
         encoder.Encode(payload, output);
         await SendRawAsync(output.ToArray());
     }

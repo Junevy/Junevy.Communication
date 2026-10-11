@@ -24,7 +24,7 @@ public sealed partial class McClient
 
     /// <inheritdoc />
     protected override void BuildReadWordsRequest(McAddress address, int offset, int count, IBufferWriter<byte> output)
-        => McFrameOutput.Write(exchange.BatchRead(address.Device, WordHead(address, offset), count, bitUnit: false), output);
+        => output.Write(exchange.BatchRead(address.Device, WordHead(address, offset), count, bitUnit: false));
 
     /// <inheritdoc />
     protected override CommResult<byte[]> ParseReadWordsResponse(int count, ReadOnlySpan<byte> frame)
@@ -32,11 +32,11 @@ public sealed partial class McClient
 
     /// <inheritdoc />
     protected override void BuildWriteWordsRequest(McAddress address, int offset, ReadOnlySpan<byte> words, IBufferWriter<byte> output)
-        => McFrameOutput.Write(exchange.BatchWriteWords(address.Device, WordHead(address, offset), words), output);
+        => output.Write(exchange.BatchWriteWords(address.Device, WordHead(address, offset), words));
 
     /// <inheritdoc />
     protected override void BuildReadBitsRequest(McAddress address, int offset, int count, IBufferWriter<byte> output)
-        => McFrameOutput.Write(exchange.BatchRead(address.Device, address.Number + offset, count, bitUnit: true), output);
+        => output.Write(exchange.BatchRead(address.Device, address.Number + offset, count, bitUnit: true));
 
     /// <inheritdoc />
     protected override CommResult<bool[]> ParseReadBitsResponse(int count, ReadOnlySpan<byte> frame)
@@ -44,7 +44,7 @@ public sealed partial class McClient
 
     /// <inheritdoc />
     protected override void BuildWriteBitsRequest(McAddress address, int offset, ReadOnlySpan<bool> values, IBufferWriter<byte> output)
-        => McFrameOutput.Write(exchange.BatchWriteBits(address.Device, address.Number + offset, values), output);
+        => output.Write(exchange.BatchWriteBits(address.Device, address.Number + offset, values));
 
     /// <inheritdoc />
     protected override CommResult ParseWriteResponse(ReadOnlySpan<byte> frame) => exchange.ReadWrite(frame);

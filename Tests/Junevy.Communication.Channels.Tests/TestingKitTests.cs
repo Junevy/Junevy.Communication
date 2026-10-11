@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using Junevy.Communication.Channels.Framing;
+using Junevy.Communication.Core.Buffers;
 using Junevy.Communication.Testing;
 using Microsoft.Extensions.Logging;
 
@@ -68,7 +69,7 @@ public sealed class TestingKitTests
         var simulator = new DeviceSimulator(codec, frame => frame);
         Task device = simulator.RunAsync(pair.B, cancellation.Token);
 
-        var writer = new ByteArrayBufferWriter();
+        var writer = new ByteBufferWriter();
         IFrameEncoder encoder = codec.CreateEncoder();
         encoder.Encode(Ascii("PING"), writer);
         encoder.Encode(Ascii("PONG2"), writer);

@@ -38,7 +38,7 @@ internal sealed class McEthernetFrame
     /// <param name="route">访问路径。</param>
     /// <param name="body">请求数据（命令、子命令与参数，已按编码写好）。</param>
     public void WriteRequest(IBufferWriter<byte> output, ushort serial, ushort monitoringTimer, McAccessRoute route, ReadOnlySpan<byte> body)
-        => McFrameOutput.Write(BuildRequest(serial, monitoringTimer, route, body), output);
+        => output.Write(BuildRequest(serial, monitoringTimer, route, body));
 
     /// <summary>编码请求帧并返回字节（客户端与心跳探测直接使用）。</summary>
     /// <param name="serial">4E 的序列号（3E 忽略）。</param>
