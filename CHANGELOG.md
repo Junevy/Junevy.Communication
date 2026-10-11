@@ -28,6 +28,8 @@
 - 2026-10-11 [WebApi] 端点配置快照 `EndpointSettings` 不再暴露脱敏名单，改为 `IsRedactedHeader(name)` 与 `IsRedactedQueryParameter(name)`（内部用不区分大小写的 `HashSet`，大小写规则只在快照里定一次）；公开 API 不变。
 - 2026-10-11 [WebApi] 释放端点而结束的在途尝试，其 `ResponseReceived.ErrorKind` 现在也是 `ConnectionClosed`（原为 `Cancelled`），与最终结果和 `RequestCompleted` 一致；取消来自端点的释放信号而不是调用方时才改判，退避等待期间被释放同样如此，且不再重试；可用性跟踪仍读传输层结果，不把它算作失败（计划 Task 6 的审阅修订）。`OrderedEventQueue` 的消费回调用 try/finally 保证派发标志总会复位。
 - 2026-10-12 [WebApi] 重试的状态码规则只适用于按状态码归类的结果（`RemoteError` / `ResourceExhausted`）：正文超限等协议违规（`ProtocolViolation`）即使带着 503 也不重试，与 README 的重试表一致；删除 `XmlBodyCodec` 中只供测试使用的内部成员（审阅者最终验收修订）。
+- 2026-10-12 [文档] 根 `readme.md` 改为项目简介与协议索引：Modbus 的完整使用说明（原根 readme 的 Modbus 部分，含功能码、手动构造、工厂与 DI、自定义传输、原始请求、事务 ID、错误分类、重连与重试、注意事项）移入 `Junevy.Communication.Modbus/README.md`（原文件是其子集，只增不减）；通道族、PLC、WebApi 的摘要小节删除，改为表格链接到各包 README。
+- 2026-10-12 [Modbus] NuGet 包附带 `README.md`（`PackageReadmeFile`），与其他包一致；包内容即移入后的完整 Modbus 使用说明。代码与版本号（2.0.0）不变。
 
 ## [Unreleased] — 接缝整理 P2.5（Core / Channels / Tcp / Udp / Serial / Plc / Melsec）
 

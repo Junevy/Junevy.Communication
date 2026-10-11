@@ -28,7 +28,12 @@
 		<!-- 公共成员 XML 注释尚未全覆盖（CS1591），文档全覆盖为后续专项；此处仅要求生成文档文件供 NuGet 使用 -->
 		<NoWarn>$(NoWarn);CS1591</NoWarn>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="README.md" Pack="true" PackagePath="\" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />
