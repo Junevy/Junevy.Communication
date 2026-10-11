@@ -609,6 +609,17 @@ public static class WebApiServiceCollectionExtensions
 
 ### 19.2 执行中的偏差与发现（执行者填写：现象 / 处理 / 是否需要审阅者决定）
 
+里程碑 1（Task 0–3，执行日 2026-10-11）：
+
+1. **Task 1：已有测试调用了被删除的内部方法（需要审阅者决定）。** 第 6 节第 3 条没有列出 `Tests/Junevy.Communication.Channels.Tests/FrameRouterTests.cs`（`HandlerException_DoesNotStopDispatch`，第 412 行）对 `FrameRouter.RaiseToSubscribers` 的直接调用；按计划删除该方法后这个已有测试无法编译（Q17 要求此时停下汇报）。处理：为了不让里程碑停在 Task 1，只改了这一处调用点（`FrameRouter.RaiseToSubscribers(handlers, this, args, logger)` → `EventSubscribers.InvokeEach(handlers, this, args, logger, "FrameReceived")`，外加一行 `using`），断言与测试意图不变。证据：`git diff --stat b31dd27 -- Tests` 在 Task 1 提交后为 FrameRouterTests.cs 2 行增、1 行减，加 1 个新增文件；没有测试被删除或改名。审阅者若不接受，撤销方式是还原这两行并保留 `RaiseToSubscribers` 为一行转发（与 Q20 冲突），请裁决。
+2. **Task 1：Q18「只减不增」。** 新增 `using Junevy.Communication.Core.Diagnostics;` 使 ConnectionSupervisor（690→691）、StreamClientChannel、TcpServer、TcpSession、UdpChannel 各增加 1 行（均为调用点所需，Tcp / Udp 属第 6 节第 3 条的例外）；LifecycleSupport 减 30 行、FrameRouter 减 26 行。
+3. **Task 2：`WebApiResult<T>.Fail` 的校验与 `CommResult.ValidateFailure` 重复（4 行）。** 后者在 Core 内是 `internal`，WebApi 不能引用（Q16 禁止新增 IVT，第 2 节 Q19 禁止新增未列出的公开成员）。处理：在 `WebApiResult<T>` 中写了等价的两个检查。如果审阅者愿意把它公开（`CommResult.ValidateFailure`），可以删除这份重复。
+4. **Task 2：`ToString()` 的格式。** 计划只写「与 CommResult 相同的格式，另附 HTTP 503 / remote code X」。实现：失败为 `Kind: message`，成功为 `Success`，有状态码 / 业务码时追加 ` (HTTP 500, remote code E42)`（同一对括号，逗号分隔），成功结果带状态码时为 `Success (HTTP 200)`。
+5. **Task 2：NetArchTest 的命名空间匹配。** `HaveDependencyOnAny` 按命名空间**前缀**匹配（依赖名末尾加 `.` 反而匹配不到）。禁止集合因此取「分层表中除自身与允许项以外的命名空间」，不带 `.`；方法体内的引用已用故意违规验证会被检出（见汇报）。
+6. **Task 3：计划未写明、实现中补充的校验。** `DefaultHeaders` 的值为 null 抛异常；`IdempotencyHeaderName` 只有空白（非 null、非空串）抛异常；`Auth.Scheme` 取未定义枚举值抛 `ArgumentOutOfRangeException`；`RedactedHeaders` / `RedactedQueryParameters` 为 null 或含空白项抛异常。嵌套选项为 null 抛 `ArgumentException`（参数名如 `Retry`）。
+7. **Task 3：`ResponseEnvelopeOptions` 的校验不在本 Task。** 它只属于 REST 配置（`WebApiClientConfig.Envelope`），路径与成功码的规则随 Task 8 的 REST 配置校验一起写；本 Task 只提供类型与默认值测试。
+8. **net472 绑定重定向：** `System.Text.Json` 8.0.5 已写入 csproj，但本里程碑没有代码使用它，net472 测试宿主未出现 `FileLoadException`，`build/Junevy.Communication.Tests.app.config` 未修改。Task 8 开始使用后再评估。
+
 ### 19.3 基线与度量
 
 #### Task 0 基线（2026-10-11，`7c6f0ec`，Debug，`dotnet test Junevy.Communication.slnx -c Debug`）
