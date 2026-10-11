@@ -36,30 +36,30 @@ internal sealed class EndpointCore : IAsyncDisposable, IDisposable
     /// 组装核心。会抛出异常的步骤（拦截器校验、读取认证环境变量）在创建任何资源之前完成。
     /// </summary>
     /// <param name="sender">事件的发送者（外观对象）。</param>
-    /// <param name="name">端点名称。</param>
+    /// <param name="name">端点名称；null 表示使用基地址的 authority（主机与非默认端口）。</param>
     /// <param name="baseAddress">绝对基地址；相对 URI 以它为基准。</param>
     /// <param name="healthCheckUri">健康检查的绝对地址；不做健康检查为 null。</param>
     /// <param name="settings">已校验的配置快照。</param>
     /// <param name="components">代码级组件；可为 null。</param>
     /// <param name="logger">日志记录器。</param>
     /// <exception cref="ArgumentException">拦截器列表含 null，或认证配置引用的环境变量不存在 / 为空。</exception>
-    public EndpointCore(object sender, string name, Uri baseAddress, Uri? healthCheckUri, EndpointSettings settings, WebApiComponents? components, ILogger logger)
+    public EndpointCore(object sender, string? name, Uri baseAddress, Uri? healthCheckUri, EndpointSettings settings, WebApiComponents? components, ILogger logger)
     {
         IReadOnlyList<IWebApiInterceptor> userInterceptors = CopyInterceptors(components);
         IWebApiInterceptor? authentication = AuthInterceptorFactory.FromOptions(settings.Auth);
 
-        this.name = name;
+        this.name = name ?? baseAddress.Authority;
         this.logger = logger;
         closingToken = closing.Token;
         HttpMessageHandler handler = components?.HttpHandler ?? (ownedHandler = HttpHandlerFactory.Create(settings, baseAddress));
         client = new HttpClient(handler, disposeHandler: false) { Timeout = Timeout.InfiniteTimeSpan };
 
-        var identity = new EndpointIdentity(name, baseAddress);
+        var identity = new EndpointIdentity(this.name, baseAddress);
         var exchange = new HttpExchange(client, settings.MaxResponseBodySize);
         var chain = InterceptorChain.Create(authentication, userInterceptors, logger);
         Events = new EndpointEvents(sender, settings, logger);
         availabilityQueue = new OrderedEventQueue<WebApiAvailabilityChangedEventArgs>(Events.RaiseAvailabilityChanged);
-        tracker = new AvailabilityTracker(name, settings.OfflineThreshold, availabilityQueue.Enqueue, logger);
+        tracker = new AvailabilityTracker(this.name, settings.OfflineThreshold, availabilityQueue.Enqueue, logger);
         loop = new AttemptLoop(identity, settings, exchange, chain, components?.RetryBackoff, Events, tracker, logger);
 
         if (healthCheckUri != null)
@@ -69,6 +69,9 @@ internal sealed class EndpointCore : IAsyncDisposable, IDisposable
             healthCheck = HealthCheckLoop.Start(runner, healthCheckUri, settings, tracker, logger);
         }
     }
+
+    /// <summary>端点名称（日志与事件参数中使用）。</summary>
+    public string Name => name;
 
     /// <summary>外观的事件转发到这里。</summary>
     public EndpointEvents Events { get; }

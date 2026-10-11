@@ -12,7 +12,10 @@ public interface IWebApiEndpoint : IDisposable, IAsyncDisposable
     /// <summary>对端当前的可用性。</summary>
     WebApiAvailability Availability { get; }
 
-    /// <summary>可用性变化时触发（离线缓存补传的触发信号）。</summary>
+    /// <summary>
+    /// 可用性变化时触发（离线缓存补传的触发信号），由单独的消费者按发生顺序触发。
+    /// 配置了健康检查的客户端在构造后立即开始探测，第一次变化可能发生在调用方订阅之前：<b>先订阅，再读一次 <see cref="Availability"/></b> 取得当前状态，之后的变化都会收到事件。
+    /// </summary>
     event EventHandler<WebApiAvailabilityChangedEventArgs>? AvailabilityChanged;
 
     /// <summary>每次尝试发出之前触发（拦截器已处理完）。拦截器中止的尝试不会触发。</summary>

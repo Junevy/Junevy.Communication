@@ -13,6 +13,11 @@ public sealed class WebApiComponents
     /// </summary>
     public IList<IWebApiInterceptor> Interceptors { get; } = new List<IWebApiInterceptor>();
 
+    /// <summary>
+    /// 替换默认的 JSON 序列化器（仅 REST；设计 Q8）。SOAP 客户端用 XML，设置了它在构造时抛出 <see cref="ArgumentException"/>。
+    /// </summary>
+    public IWebApiSerializer? Serializer { get; set; }
+
     /// <summary>覆盖 <see cref="WebApiRetryOptions.RetryDelay"/> 的退避策略（例如指数退避）；null 表示使用固定间隔。</summary>
     public IBackoffPolicy? RetryBackoff { get; set; }
 

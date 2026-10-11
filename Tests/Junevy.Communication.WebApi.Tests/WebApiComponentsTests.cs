@@ -16,6 +16,7 @@ public sealed class WebApiComponentsTests
         Assert.Empty(components.Interceptors);
         Assert.Null(components.RetryBackoff);
         Assert.Null(components.HttpHandler);
+        Assert.Null(components.Serializer);
     }
 
     [Fact]
