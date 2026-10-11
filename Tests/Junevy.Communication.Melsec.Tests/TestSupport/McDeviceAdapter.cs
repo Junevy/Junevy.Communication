@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Globalization;
 using System.Text;
 using Junevy.Communication.Melsec.Protocol;
@@ -111,7 +112,7 @@ internal sealed class McDeviceAdapter
     // 格式 5：DLE STX、附加码转义的（字节数、帧识别号、访问路径、请求数据）、DLE ETX、和校验；字节数与和校验都不含附加码。
     private byte[]? Handle4CFormat5(byte[] raw)
     {
-        if (McDleFrame.Scan(raw, out _, out byte[] payload) != McDleFrame.ScanResult.Complete)
+        if (McDleFrame.Scan(new ReadOnlySequence<byte>(raw), out _, out byte[] payload) != McDleFrame.ScanResult.Complete)
             return null;
 
         ReadOnlySpan<byte> rest = payload;

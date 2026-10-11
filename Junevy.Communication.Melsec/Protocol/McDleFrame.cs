@@ -1,3 +1,6 @@
+using System.Buffers;
+using Junevy.Communication.Core.Buffers;
+
 namespace Junevy.Communication.Melsec.Protocol;
 
 /// <summary>
@@ -24,39 +27,47 @@ internal static class McDleFrame
     /// <param name="end">DLE ETX 之后的位置（仅在 Complete 时有效）。</param>
     /// <param name="payload">去掉 DLE STX 与 DLE ETX，并把成对的 10H 10H 还原为 10H 的字节（仅在 Complete 时有效）。</param>
     /// <returns>扫描结果。</returns>
-    public static ScanResult Scan(ReadOnlySpan<byte> raw, out int end, out byte[] payload)
+    public static ScanResult Scan(ReadOnlySequence<byte> raw, out int end, out byte[] payload)
     {
         end = 0;
         payload = Array.Empty<byte>();
-        if ((raw.Length >= 1 && raw[0] != McSerialCodes.Dle) || (raw.Length >= 2 && raw[1] != McSerialCodes.Stx))
-            return ScanResult.Invalid;
-
-        if (raw.Length < 2)
+        var reader = new ByteSequenceReader(raw);
+        if (!reader.TryRead(out byte first))
             return ScanResult.Incomplete;
 
-        var bytes = new List<byte>(raw.Length);
-        for (int i = 2; i < raw.Length; i++)
+        if (first != McSerialCodes.Dle)
+            return ScanResult.Invalid;
+
+        if (!reader.TryRead(out byte second))
+            return ScanResult.Incomplete;
+
+        if (second != McSerialCodes.Stx)
+            return ScanResult.Invalid;
+
+        var bytes = new List<byte>();
+        while (reader.TryRead(out byte value))
         {
-            if (raw[i] != McSerialCodes.Dle)
+            if (value != McSerialCodes.Dle)
             {
-                bytes.Add(raw[i]);
+                bytes.Add(value);
                 continue;
             }
 
-            if (i + 1 == raw.Length)
+            if (!reader.TryPeek(out byte next))
                 return ScanResult.Incomplete;
 
-            if (raw[i + 1] == McSerialCodes.Dle)
+            if (next == McSerialCodes.Dle)
             {
+                reader.Advance(1);
                 bytes.Add(McSerialCodes.Dle);
-                i++;
                 continue;
             }
 
-            if (raw[i + 1] != McSerialCodes.Etx)
+            if (next != McSerialCodes.Etx)
                 return ScanResult.Invalid;
 
-            end = i + 2;
+            reader.Advance(1);
+            end = (int)reader.Consumed;
             payload = bytes.ToArray();
             return ScanResult.Complete;
         }

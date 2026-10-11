@@ -8,7 +8,7 @@ namespace Junevy.Communication.Melsec.Framing;
 /// <summary>
 /// 格式 5 的分帧器：从 DLE STX 切到未转义的 DLE ETX，开启和校验时再取 2 个字节。交出的帧保留附加码，由协议层还原。
 /// 缓冲开头不是 DLE STX，或 DLE 后出现非法字节时抛出 <see cref="FrameDecodeException"/>；超过 MaxFrameLength 仍未结束时同样抛出。
-/// 扫描只看长度不超过 MaxFrameLength 的窗口，因此不会为超长的数据复制整个缓冲。
+/// 扫描只看长度不超过 MaxFrameLength 的窗口，窗口直接在缓冲的各段上扫描，不复制数据。
 /// </summary>
 internal sealed class Mc4CBinaryFrameDecoder : IFrameDecoder
 {
@@ -28,7 +28,7 @@ internal sealed class Mc4CBinaryFrameDecoder : IFrameDecoder
     public bool TryDecode(ref ReadOnlySequence<byte> buffer, out ReadOnlySequence<byte> frame)
     {
         frame = default;
-        byte[] window = buffer.Slice(0, Math.Min(buffer.Length, maxFrameLength)).ToArray();
+        ReadOnlySequence<byte> window = buffer.Slice(0, Math.Min(buffer.Length, maxFrameLength));
         McDleFrame.ScanResult result = McDleFrame.Scan(window, out int end, out _);
         if (result == McDleFrame.ScanResult.Invalid)
             throw new FrameDecodeException("The format 5 frame must start with DLE STX and contain only DLE pairs before DLE ETX.");

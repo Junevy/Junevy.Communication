@@ -137,7 +137,9 @@ internal sealed class Mc4CFrame
 
     private CommResult<McResponse> ReadResponseFormat5(ReadOnlySpan<byte> frame, McDataKind kind, int count)
     {
-        if (McDleFrame.Scan(frame, out int end, out byte[] payload) != McDleFrame.ScanResult.Complete)
+        // ReadOnlySpan 无法包成 ReadOnlySequence，整帧复制一次后交给扫描器。
+        var sequence = new ReadOnlySequence<byte>(frame.ToArray());
+        if (McDleFrame.Scan(sequence, out int end, out byte[] payload) != McDleFrame.ScanResult.Complete)
             return McResponse.Violation("The format 5 response is not a complete DLE STX ... DLE ETX frame.");
 
         if (!SumMatches(payload, frame.Slice(end)))
