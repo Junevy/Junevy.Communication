@@ -22,7 +22,7 @@
 
 ## 定位
 
-`Junevy.Communication.WebApi`（net472 + net8.0，版本 `1.0.0-preview.1`，只依赖 Core）是**主动上报 MES** 的 REST 与 SOAP 客户端。HTTP 服务端（MES 下发给设备）是 3.2，不在本包。设计修订对照见设计文档第 20.4 节。
+`Junevy.Communication.WebApi`（net472 + net8.0，版本 `1.0.0-preview.1`，只依赖 Core）是**主动上报 MES** 的 REST 与 SOAP 客户端。HTTP 服务端（MES 下发给设备）是 P3.2，尚未实现，见 [[WebApi/P3.2 HTTP 服务端（待办）]]。设计修订对照见设计文档第 20.4 节。
 
 ## 结构：单程序集，按命名空间分层
 
