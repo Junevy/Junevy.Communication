@@ -47,7 +47,7 @@ internal sealed class RestResponseDecoder
 
     private WebApiResult<T> DecodeFailure<T>(HttpExchangeResponse response, CommErrorKind kind, bool raw)
     {
-        string statusMessage = StatusMessage(response);
+        string statusMessage = HttpStatusClassifier.Describe(response);
         if (raw || !envelope.Enabled || response.Body.Length == 0)
             return WebApiResult<T>.Fail(statusMessage, kind, response.StatusCode);
 
@@ -96,7 +96,4 @@ internal sealed class RestResponseDecoder
             return WebApiResult<T>.Fail($"The response body could not be deserialized as {typeof(T).Name}: {ex.Message}", CommErrorKind.ProtocolViolation, statusCode, null, ex);
         }
     }
-
-    private static string StatusMessage(HttpExchangeResponse response)
-        => string.IsNullOrEmpty(response.ReasonPhrase) ? $"HTTP {response.StatusCode}." : $"HTTP {response.StatusCode} {response.ReasonPhrase}.";
 }

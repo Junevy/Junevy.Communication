@@ -36,7 +36,7 @@ internal static class RestConfigRules
     {
         if (string.IsNullOrWhiteSpace(baseUrl))
             throw new ArgumentException("BaseUrl must not be empty.", BaseUrlField);
-        if (!Uri.TryCreate(baseUrl!.Trim(), UriKind.Absolute, out Uri? uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        if (!HttpUrl.TryParseAbsolute(baseUrl, out Uri uri))
             throw new ArgumentException($"BaseUrl '{baseUrl}' must be an absolute http or https URL.", BaseUrlField);
         if (uri.Query.Length > 0 || uri.Fragment.Length > 0)
             throw new ArgumentException($"BaseUrl '{baseUrl}' must not contain a query or a fragment.", BaseUrlField);

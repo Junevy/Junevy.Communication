@@ -40,6 +40,14 @@ internal static class HttpStatusClassifier
     }
 
     /// <summary>
+    /// 非 2xx 响应的固定格式英文信息：有原因短语时是 <c>HTTP 400 Bad Request.</c>，否则是 <c>HTTP 400.</c>。REST 与 SOAP 的解码共用。
+    /// </summary>
+    /// <param name="response">收到的响应。</param>
+    /// <returns>信息文本。</returns>
+    public static string Describe(HttpExchangeResponse response)
+        => string.IsNullOrEmpty(response.ReasonPhrase) ? $"HTTP {response.StatusCode}." : $"HTTP {response.StatusCode} {response.ReasonPhrase}.";
+
+    /// <summary>
     /// 把一次尝试中抛出的异常归类。作用域先判断：超时已触发为 <see cref="CommErrorKind.Timeout"/>，用户取消为 <see cref="CommErrorKind.Cancelled"/>
     /// （无论异常是什么，因为超时 / 取消会让正在进行的 I/O 以各种异常失败）；否则网络层异常为 <see cref="CommErrorKind.ConnectionClosed"/>，
     /// HTTP 栈自己报告的取消（作用域并未触发）视为超时，其余为 <see cref="CommErrorKind.Unspecified"/>。

@@ -83,11 +83,9 @@ internal sealed class AttemptRunner
 
     // 拦截器可以改路径与查询，但 scheme 与 authority 不能变，否则带着认证头的请求可能被发往别的主机（P3-D17）。
     private static CallFailure? CheckOrigin(Uri original, Uri modified)
-    {
-        const UriComponents origin = UriComponents.SchemeAndServer;
-        bool sameOrigin = modified.IsAbsoluteUri && Uri.Compare(original, modified, origin, UriFormat.UriEscaped, StringComparison.OrdinalIgnoreCase) == 0;
-        return sameOrigin ? null : CallFailure.Create("An interceptor changed the scheme, host or port of the request URI.", CommErrorKind.InvalidRequest);
-    }
+        => UriOrigin.AreSame(original, modified)
+            ? null
+            : CallFailure.Create("An interceptor changed the scheme, host or port of the request URI.", CommErrorKind.InvalidRequest);
 
     private WebApiSendingEventArgs CreateSendingArgs(CallState call, WebApiSendingContext context)
         => new WebApiSendingEventArgs(identity.Name, call.CallId, context.Method, call.RedactedUri, call.Attempts,
