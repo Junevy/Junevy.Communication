@@ -12,6 +12,16 @@ namespace Junevy.Communication.Plc;
 /// <remarks>
 /// 公开操作不抛出运行期异常：参数错误返回 <c>InvalidRequest</c>，调用方取消返回 <c>Cancelled</c>，协议钩子的异常转换为 <c>Unspecified</c> 并记录。
 /// 同一实例上的公开操作串行执行（包括拆包的全部分包与读-改-写）。
+/// 钩子契约（P4-D5），实现协议时按它决定要覆写哪些钩子：
+/// • 字访问与位写入：<see cref="TryParseAddress"/>、<see cref="GetMaxReadPoints"/>、<see cref="GetMaxWritePoints"/>、
+/// <see cref="BuildReadWordsRequest"/>、<see cref="ParseReadWordsResponse"/>、<see cref="BuildWriteWordsRequest"/>、
+/// <see cref="ParseWriteResponse"/>、<see cref="BuildWriteBitsRequest"/> 都是抽象的，所有协议都要实现。
+/// • 位读取：<see cref="BuildReadBitsRequest"/> 与 <see cref="ParseReadBitsResponse"/> 是虚方法，默认抛异常；软元件表含位软元件的协议必须覆写。
+/// • 字节访问：<see cref="BuildReadBytesRequest"/>、<see cref="ParseReadBytesResponse"/>、<see cref="BuildWriteBytesRequest"/> 同上，
+/// 软元件表含字节软元件的协议必须覆写。
+/// • 位写入的路由：<see cref="CanWriteBitsNatively"/> 是虚方法，默认等于"地址的软元件单位是位"；返回 false 时字软元件按读-改-写规则处理，
+/// 字节软元件返回 <c>NotSupported</c>。
+/// 未覆写的默认实现抛出的异常由流水线收口为 <c>Unspecified</c> 并记录 Error。
 /// </remarks>
 /// <typeparam name="TAddress">协议的地址类型。</typeparam>
 public abstract partial class PlcClientBase<TAddress> : IPlcClient where TAddress : PlcAddress

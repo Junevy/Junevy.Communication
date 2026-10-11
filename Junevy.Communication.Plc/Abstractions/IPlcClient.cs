@@ -32,18 +32,21 @@ public interface IPlcClient : IConnectable, IDisposable, IAsyncDisposable
     Task<CommResult> WriteAsync(string address, ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 读取 <paramref name="count"/> 个位。位软元件按点访问；字软元件（可带位号，未带视为 0）读取覆盖这些点的字，再从低位起取位。
+    /// 读取 <paramref name="count"/> 个位。位软元件按点访问；字软元件（可带位号，未带视为 0）读取覆盖这些点的字，再从低位起取位；
+    /// 字节软元件读取覆盖这些点的字节，按字节的位序取位（点 p 在第 p / 8 个字节的第 p % 8 位）。
     /// </summary>
-    /// <param name="address">地址，例如 "M0" 或 "D100.5"。</param>
+    /// <param name="address">地址，例如 "M0"、"D100.5" 或 "B100.3"。</param>
     /// <param name="count">点数，必须 ≥ 1。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>读取结果；失败时 Data 为 null。</returns>
     Task<CommResult<bool[]>> ReadBitsAsync(string address, int count, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 写入位。位软元件按点写入；字软元件的位写入默认返回 <c>NotSupported</c>，开启 <see cref="PlcClientOptions.AllowReadModifyWriteBits"/> 后以读-改-写完成。
+    /// 写入位。位软元件按点写入；协议声明能原生写入该地址的位时也按点写入，不读回原值。其余情况：字软元件默认返回 <c>NotSupported</c>，
+    /// 开启 <see cref="PlcClientOptions.AllowReadModifyWriteBits"/> 后以读-改-写完成；字节软元件始终返回 <c>NotSupported</c>，
+    /// 写整个字节请用 <see cref="WriteBytesAsync"/>。
     /// </summary>
-    /// <param name="address">地址，例如 "M0" 或 "D100.5"。</param>
+    /// <param name="address">地址，例如 "M0"、"D100.5" 或 "B100.3"。</param>
     /// <param name="values">要写入的位，不能为空。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>写入结果。</returns>

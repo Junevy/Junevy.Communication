@@ -63,18 +63,26 @@ public abstract partial class PlcClientBase<TAddress> where TAddress : PlcAddres
     /// <param name="output">请求字节的写入目标。</param>
     protected internal abstract void BuildWriteWordsRequest(TAddress address, int offset, ReadOnlySpan<byte> words, IBufferWriter<byte> output);
 
-    /// <summary>写入读位请求，含义同 <see cref="BuildReadWordsRequest"/>；位访问的 <paramref name="count"/> 按点计。</summary>
+    /// <summary>
+    /// 写入读位请求，含义同 <see cref="BuildReadWordsRequest"/>；位访问的 <paramref name="count"/> 按点计。
+    /// 只有软元件表含位软元件的协议需要覆写；默认抛出 <see cref="InvalidOperationException"/>，由流水线收口为 <c>Unspecified</c> 并记录 Error。
+    /// </summary>
     /// <param name="address">已解析的地址。</param>
     /// <param name="offset">本包相对于操作起点的偏移（点）。</param>
     /// <param name="count">本包的点数。</param>
     /// <param name="output">请求字节的写入目标。</param>
-    protected internal abstract void BuildReadBitsRequest(TAddress address, int offset, int count, IBufferWriter<byte> output);
+    protected internal virtual void BuildReadBitsRequest(TAddress address, int offset, int count, IBufferWriter<byte> output)
+        => throw HookNotImplemented(nameof(BuildReadBitsRequest));
 
-    /// <summary>解析读位应答。成功时返回 <paramref name="count"/> 个点的值。</summary>
+    /// <summary>
+    /// 解析读位应答。成功时返回 <paramref name="count"/> 个点的值。默认抛出 <see cref="InvalidOperationException"/>，
+    /// 由流水线收口为 <c>Unspecified</c> 并记录 Error（覆写条件同 <see cref="BuildReadBitsRequest"/>）。
+    /// </summary>
     /// <param name="count">本包请求的点数。</param>
     /// <param name="frame">应答帧。</param>
     /// <returns>解析结果。</returns>
-    protected internal abstract CommResult<bool[]> ParseReadBitsResponse(int count, ReadOnlySpan<byte> frame);
+    protected internal virtual CommResult<bool[]> ParseReadBitsResponse(int count, ReadOnlySpan<byte> frame)
+        => throw HookNotImplemented(nameof(ParseReadBitsResponse));
 
     /// <summary>写入写位请求，含义同 <see cref="BuildWriteWordsRequest"/>。</summary>
     /// <param name="address">已解析的地址。</param>
@@ -123,6 +131,15 @@ public abstract partial class PlcClientBase<TAddress> where TAddress : PlcAddres
         => throw HookNotImplemented(nameof(BuildWriteBytesRequest));
 
     // —— 协议按需覆写 ——
+
+    /// <summary>
+    /// 写位是否直接走 <see cref="BuildWriteBitsRequest"/>，偏移按点计。返回 <c>true</c> 时套件不读回原值，也不看
+    /// <see cref="PlcClientOptions.AllowReadModifyWriteBits"/>；返回 <c>false</c> 时字软元件按读-改-写规则处理，
+    /// 字节软元件返回 <c>NotSupported</c>。默认等于"地址的软元件单位是位"（P4-D5、P4-D6）。
+    /// </summary>
+    /// <param name="address">已解析的地址。</param>
+    /// <returns>协议能原生写入该地址的位时返回 true。</returns>
+    protected internal virtual bool CanWriteBitsNatively(TAddress address) => address.Unit == PlcAddressUnit.Bit;
 
     /// <summary>
     /// 协议对地址与点数的额外限制（例如某个软元件的访问范围）。在任何请求发出之前调用；返回失败时操作直接返回该失败。

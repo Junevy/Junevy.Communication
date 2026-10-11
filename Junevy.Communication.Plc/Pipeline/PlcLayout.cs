@@ -11,6 +11,9 @@ internal static class PlcLayout
     /// <summary>一个字的位数。位软元件以 16 点为一字访问。</summary>
     public const int BitsPerWord = 16;
 
+    /// <summary>一个字节的位数。字节软元件上的位访问以 8 点为一字节（P4-D6）。</summary>
+    public const int BitsPerByte = 8;
+
     /// <summary>一次操作允许的最大字数，保证字节数不会溢出 <see cref="int"/>。</summary>
     public const int MaxWordCount = int.MaxValue / WordBytes;
 
