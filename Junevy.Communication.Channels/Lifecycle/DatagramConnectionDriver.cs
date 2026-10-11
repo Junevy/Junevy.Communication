@@ -9,6 +9,7 @@ namespace Junevy.Communication.Channels.Lifecycle;
 /// 数据报连接的驱动（计划 15.2，仿照 <see cref="StreamConnectionDriver"/>）。打开 = 绑定传输（由 openTransport 完成）→ 握手时限内执行初始化器
 /// （关联表先进入握手状态，积压 D8；接收循环在它之后启动）→ 结束握手 → 启动心跳。握手失败或超时则本次打开失败。
 /// 与字节流驱动的差异：没有流包装（TLS）与优雅关闭动作；接收循环与发送由 <see cref="DatagramChannel"/> 管理。
+/// 握手与探测由 <see cref="HandshakeRunner"/> 与 <see cref="ClientProbeSource"/> 共用。
 /// </summary>
 internal sealed class DatagramConnectionDriver : IConnectionDriver
 {
@@ -19,11 +20,10 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
     private readonly Func<string> describeEndpoint;
     private readonly ConnectionStatistics statistics;
     private readonly ILogger logger;
+    private readonly HandshakeRunner handshakeRunner;
+    private readonly ClientProbeSource probeSource;
     private ConnectionSupervisor? supervisor;
     private volatile LiveConnection? current;
-
-    // 工厂探测：在第一次成功打开、启动心跳之前由 owner 调用工厂得到，之后的重连复用它（仅由 OpenAsync 访问，OpenAsync 由生命周期锁串行化）。
-    private IHealthProbe? factoryProbe;
 
     /// <summary>
     /// 创建驱动（未绑定监督器，需随后调用 <see cref="Attach"/>）。
@@ -48,6 +48,9 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
         this.describeEndpoint = describeEndpoint ?? throw new ArgumentNullException(nameof(describeEndpoint));
         this.statistics = statistics ?? throw new ArgumentNullException(nameof(statistics));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        handshakeRunner = new HandshakeRunner(options.Core.Initializer, CancellationToken.None, TimeoutResult,
+                                              cause => logger.LogWarning(cause, "The connection initializer threw an exception."));
+        probeSource = new ClientProbeSource(options.Core, owner, statistics, logger, describeEndpoint);
     }
 
     /// <summary>当前已建立连接的数据报通道；没有连接时为 null。</summary>
@@ -58,15 +61,7 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
     /// </summary>
     /// <param name="owner">监督器。</param>
     /// <exception cref="InvalidOperationException">已经绑定。</exception>
-    public void Attach(ConnectionSupervisor owner)
-    {
-        if (owner == null)
-            throw new ArgumentNullException(nameof(owner));
-        if (supervisor != null)
-            throw new InvalidOperationException("The connection driver is already attached to a supervisor.");
-
-        supervisor = owner;
-    }
+    public void Attach(ConnectionSupervisor owner) => SupervisorBinding.Attach(ref supervisor, owner);
 
     /// <inheritdoc />
     public async Task<CommResult> OpenAsync(CancellationToken cancellationToken)
@@ -87,28 +82,7 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
         {
             live = CreateConnection(transport, new ConnectionAttempt(owner, generation));
             live.Channel.Start();
-
-            CommResult handshake = await HandshakeAsync(live, window, cancellationToken).ConfigureAwait(false);
-            if (!handshake.IsSuccess)
-            {
-                await StopConnectionAsync(live, 0).ConfigureAwait(false);
-                return handshake;
-            }
-
-            window.Dispose();
-
-            // 工厂探测在启动心跳之前解析；失败使本次打开失败，连接随即关闭（与握手失败一致）。
-            CommResult probing = ResolveFactoryProbe();
-            if (!probing.IsSuccess)
-            {
-                await StopConnectionAsync(live, 0).ConfigureAwait(false);
-                return probing;
-            }
-
-            StartHeartbeat(live);
-            current = live;
-            logger.LogInformation("Datagram connection opened to {Endpoint}.", describeEndpoint());
-            return CommResult.Success();
+            return await CompleteOpenAsync(live, window, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -143,6 +117,34 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
         await StopConnectionAsync(live, drainTimeout).ConfigureAwait(false);
     }
 
+    // 握手、工厂探测与心跳。握手或探测失败时停止连接（本次打开失败）；成功后连接才成为当前连接。
+    private async Task<CommResult> CompleteOpenAsync(LiveConnection live, TimeoutScope window, CancellationToken cancellationToken)
+    {
+        CommResult handshake = await handshakeRunner.CompleteClientHandshakeAsync(new DatagramHandshakeView(live.Channel), live.Router,
+                                                                                  live.Attempt, window, cancellationToken).ConfigureAwait(false);
+        if (!handshake.IsSuccess)
+        {
+            await StopConnectionAsync(live, 0).ConfigureAwait(false);
+            return handshake;
+        }
+
+        window.Dispose();
+
+        // 工厂探测在启动心跳之前解析；失败使本次打开失败，连接随即关闭（与握手失败一致）。
+        CommResult probing = probeSource.Resolve();
+        if (!probing.IsSuccess)
+        {
+            await StopConnectionAsync(live, 0).ConfigureAwait(false);
+            return probing;
+        }
+
+        live.Heartbeat = probeSource.CreateHeartbeat(live.Attempt);
+        live.Heartbeat?.Start();
+        current = live;
+        logger.LogInformation("Datagram connection opened to {Endpoint}.", describeEndpoint());
+        return CommResult.Success();
+    }
+
     // 创建一条连接的全部内部对象。关联表先进入握手状态（D8），之后才由 OpenAsync 启动接收循环，保证连上即发的数据报进入积压。
     private LiveConnection CreateConnection(IDatagramTransport transport, ConnectionAttempt attempt)
     {
@@ -154,122 +156,8 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
         return new LiveConnection(transport, channel, router, attempt);
     }
 
-    // 握手：执行初始化器（与握手时限共享窗口），结束握手并把积压转入派发队列，最后确认握手期间没有发生故障。
-    private async Task<CommResult> HandshakeAsync(LiveConnection live, TimeoutScope window, CancellationToken cancellationToken)
-    {
-        if (options.Core.Initializer != null)
-        {
-            CommResult initialized = await RunInitializerAsync(live.Channel, window, cancellationToken).ConfigureAwait(false);
-            if (!initialized.IsSuccess)
-                return initialized;
-        }
-
-        await live.Router.EndHandshakeAsync(cancellationToken).ConfigureAwait(false);
-
-        // 握手期间的故障先记在尝试上（监督器此时仍处于 Connecting），这里转换为打开失败，避免把已断开的连接报告为 Connected。
-        if (live.Attempt.Faulted)
-            return CommResult.Fail("The connection was lost during the handshake.", CommErrorKind.ConnectionClosed);
-
-        return CommResult.Success();
-    }
-
-    // 在握手时限内执行初始化器。时限耗尽或取消后不再等待初始化器（它可能忽略取消令牌），但会观察它的异常。
-    private async Task<CommResult> RunInitializerAsync(DatagramChannel channel, TimeoutScope window, CancellationToken cancellationToken)
-    {
-        Task<CommResult> work = StartInitializer(new DatagramHandshakeView(channel), window.Token);
-        if (!await WaitForStepAsync(work, window.Token).ConfigureAwait(false))
-        {
-            ObserveAbandoned(work);
-            cancellationToken.ThrowIfCancellationRequested();
-            return TimeoutResult();
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        if (work.IsCanceled || window.IsTimedOut)
-            return TimeoutResult();
-
-        if (work.IsFaulted)
-        {
-            Exception? cause = work.Exception?.InnerException ?? work.Exception;
-            logger.LogWarning(cause, "The connection initializer threw an exception.");
-            return CommResult.Fail("The connection initializer threw an exception.", CommErrorKind.Unspecified, null, cause);
-        }
-
-        return work.Result;
-    }
-
-    // 等待一个握手步骤完成，或握手时限耗尽、用户取消。返回 true 表示步骤已完成（成功、失败或取消均可），false 表示步骤被放弃。
-    private static async Task<bool> WaitForStepAsync(Task work, CancellationToken windowToken)
-    {
-        var interrupted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (windowToken.Register(() => interrupted.TrySetResult(true)))
-        {
-            Task finished = await Task.WhenAny(work, interrupted.Task).ConfigureAwait(false);
-            return ReferenceEquals(finished, work);
-        }
-    }
-
     private CommResult TimeoutResult()
         => CommResult.Fail($"The connection handshake did not complete within {options.Core.HandshakeTimeout} ms.", CommErrorKind.Timeout);
-
-    // 同步抛出的异常转换为已完成的故障任务，统一由 RunInitializerAsync 处理。
-    private Task<CommResult> StartInitializer(IByteChannel view, CancellationToken token)
-    {
-        try
-        {
-            return options.Core.Initializer!.InitializeAsync(view, token);
-        }
-        catch (Exception ex)
-        {
-            return Task.FromException<CommResult>(ex);
-        }
-    }
-
-    private static void ObserveAbandoned(Task work)
-    {
-        work.ContinueWith(task => { _ = task.Exception; }, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
-    }
-
-    // 解析工厂探测（仅启用心跳且配置了工厂时）：工厂以通道自身为参数调用一次，结果保留到通道释放，之后的重连复用它。
-    // 工厂抛出异常或返回 null 时返回失败（Unspecified）；此时尚未取得探测，下一次打开会再次调用工厂。
-    private CommResult ResolveFactoryProbe()
-    {
-        if (!options.Core.Heartbeat.Enabled || options.Core.HealthProbeFactory == null || factoryProbe != null)
-            return CommResult.Success();
-
-        IHealthProbe? created;
-        try
-        {
-            created = options.Core.HealthProbeFactory(owner);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "HealthProbeFactory threw an exception; the connection to {Endpoint} was not opened.", describeEndpoint());
-            return CommResult.Fail("HealthProbeFactory threw an exception; the connection was not opened.", CommErrorKind.Unspecified, null, ex);
-        }
-
-        if (created == null)
-        {
-            logger.LogWarning("HealthProbeFactory returned null; the connection to {Endpoint} was not opened.", describeEndpoint());
-            return CommResult.Fail("HealthProbeFactory returned null; the connection was not opened.", CommErrorKind.Unspecified);
-        }
-
-        factoryProbe = created;
-        return CommResult.Success();
-    }
-
-    // 心跳与空闲监视只在握手完成后启动；使用同一个尝试对象报告死亡。探测来源：代码级探测、工厂探测（已解析）；启用心跳时必有其一。
-    private void StartHeartbeat(LiveConnection live)
-    {
-        if (!options.Core.Heartbeat.Enabled && options.Core.IdleTimeout <= 0)
-            return;
-
-        ConnectionAttempt attempt = live.Attempt;
-        var monitor = new HeartbeatMonitor(options.Core.HealthProbe ?? factoryProbe, options.Core.Heartbeat, options.Core.IdleTimeout, statistics,
-                                           reason => attempt.Report(reason, null), logger);
-        live.Heartbeat = monitor;
-        monitor.Start();
-    }
 
     // 停止一条连接。先分离尝试（之后的故障不再报告），再停止心跳，最后停止数据报通道（它会中止传输）。
     private async Task StopConnectionAsync(LiveConnection live, int drainTimeout)

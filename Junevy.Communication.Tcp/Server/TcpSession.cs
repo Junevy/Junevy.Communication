@@ -29,7 +29,7 @@ internal sealed class TcpSession : ITcpSession
     private volatile bool tlsActive;
     private volatile StreamChannel? channel;
     private volatile FrameRouter? router;
-    private volatile SessionChannelView? view;
+    private volatile StreamChannelView? view;
     private bool joined;
     private HeartbeatMonitor? heartbeat;
     private SslStream? tls;
@@ -123,7 +123,7 @@ internal sealed class TcpSession : ITcpSession
     internal FrameRouter? Router => router;
 
     /// <summary>握手与心跳使用的字节通道视图（不派发 FrameReceived）。</summary>
-    internal SessionChannelView? View => view;
+    internal StreamChannelView? View => view;
 
     /// <summary>会话是否已加入会话表（服务端锁）。</summary>
     internal bool Joined => joined;
@@ -152,7 +152,7 @@ internal sealed class TcpSession : ITcpSession
     {
         router = frameRouter;
         channel = streamChannel;
-        view = new SessionChannelView(streamChannel);
+        view = new StreamChannelView(streamChannel);
     }
 
     /// <summary>标记为已加入会话表并进入可用状态（服务端锁）。</summary>
@@ -234,44 +234,4 @@ internal sealed class TcpSession : ITcpSession
         => FrameRouter.RaiseToSubscribers(FrameReceived, this, args, logger);
 
     private StreamChannel? ConnectedChannel() => connected ? channel : null;
-
-    /// <summary>
-    /// 握手与心跳使用的字节通道视图：绑定到这一条连接，不派发 <c>FrameReceived</c>（握手期间未认领的帧进入积压，握手后才派发）。
-    /// </summary>
-    internal sealed class SessionChannelView : IByteChannel
-    {
-        private readonly StreamChannel channel;
-
-        /// <summary>创建视图。</summary>
-        /// <param name="channel">会话的字节通道。</param>
-        public SessionChannelView(StreamChannel channel)
-        {
-            this.channel = channel;
-        }
-
-        /// <inheritdoc />
-        public Task<CommResult> SendAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
-            => channel.SendAsync(payload, cancellationToken);
-
-        /// <inheritdoc />
-        public Task<CommResult<byte[]>> RequestAsync(ReadOnlyMemory<byte> payload, RequestOptions? options = null,
-                                                     CancellationToken cancellationToken = default)
-            => channel.RequestAsync(payload, options, null, cancellationToken);
-
-        /// <inheritdoc />
-        public Task<CommResult<byte[]>> ReceiveAsync(RequestOptions? options = null, CancellationToken cancellationToken = default)
-            => channel.ReceiveAsync(options, cancellationToken);
-
-        /// <summary>握手与心跳期间不派发事件：订阅被忽略。</summary>
-        public event EventHandler<FrameReceivedEventArgs>? FrameReceived
-        {
-            add
-            {
-            }
-
-            remove
-            {
-            }
-        }
-    }
 }

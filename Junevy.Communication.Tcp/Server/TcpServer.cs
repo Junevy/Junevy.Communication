@@ -653,19 +653,18 @@ public sealed class TcpServer : ITcpServer
         if (!OpenChannel(session, secured.Data!))
             return CommResult.Fail("The session was closed during its handshake.", CommErrorKind.ConnectionClosed);
 
-        if (options.Initializer == null)
-            return CommResult.Success();
-
-        return await RunInitializerAsync(session, scope).ConfigureAwait(false);
+        var handshake = new HandshakeRunner(options.Initializer, session.ClosingToken, () => HandshakeAbandoned(session),
+                                            cause => logger.LogWarning(cause, "The connection initializer of session {SessionId} threw an exception.", session.Id));
+        return await handshake.RunInitializerAsync(session.View!, scope, CancellationToken.None).ConfigureAwait(false);
     }
 
     // 服务端 TLS 认证。时限耗尽或会话开始拆除时不再等待（认证可能忽略取消令牌），但观察它的结果：之后成功的流会因传输已中止而被会话拒绝并释放。
     private async Task<CommResult<Stream>> SecureSessionAsync(TcpSession session, Stream raw, TimeoutScope scope)
     {
         Task<CommResult<Stream>> work = AuthenticateSessionAsync(session, raw, scope.Token);
-        if (!await WaitForHandshakeStepAsync(work, session, scope.Token).ConfigureAwait(false))
+        if (!await HandshakeRunner.WaitForStepAsync(work, scope.Token, session.ClosingToken).ConfigureAwait(false))
         {
-            ObserveAbandoned(work);
+            HandshakeRunner.ObserveAbandoned(work);
             return HandshakeAbandoned(session).As<Stream>();
         }
 
@@ -709,41 +708,6 @@ public sealed class TcpServer : ITcpServer
         }
     }
 
-    // 在 SessionHandshakeTimeout 内执行初始化器（与 TLS 共享时限）。超时或拆除后不再等待初始化器，但观察它的异常。
-    private async Task<CommResult> RunInitializerAsync(TcpSession session, TimeoutScope scope)
-    {
-        Task<CommResult> work = StartInitializer(session.View!, scope.Token);
-        if (!await WaitForHandshakeStepAsync(work, session, scope.Token).ConfigureAwait(false))
-        {
-            ObserveAbandoned(work);
-            return HandshakeAbandoned(session);
-        }
-
-        if (work.IsCanceled || scope.IsTimedOut)
-            return HandshakeAbandoned(session);
-
-        if (work.IsFaulted)
-        {
-            Exception? cause = work.Exception?.InnerException ?? work.Exception;
-            logger.LogWarning(cause, "The connection initializer of session {SessionId} threw an exception.", session.Id);
-            return CommResult.Fail("The connection initializer threw an exception.", CommErrorKind.Unspecified, null, cause);
-        }
-
-        return work.Result;
-    }
-
-    // 等待一个握手步骤完成，或握手时限耗尽、会话开始拆除。返回 true 表示步骤已完成。
-    private static async Task<bool> WaitForHandshakeStepAsync(Task work, TcpSession session, CancellationToken windowToken)
-    {
-        var interrupted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using (windowToken.Register(() => interrupted.TrySetResult(true)))
-        using (session.ClosingToken.Register(() => interrupted.TrySetResult(true)))
-        {
-            Task finished = await Task.WhenAny(work, interrupted.Task).ConfigureAwait(false);
-            return ReferenceEquals(finished, work);
-        }
-    }
-
     // 握手步骤未正常完成：会话已在拆除则为"拆除中"，否则为超时（时限到期或步骤被取消）。
     private CommResult HandshakeAbandoned(TcpSession session)
     {
@@ -763,19 +727,6 @@ public sealed class TcpServer : ITcpServer
             return !options.ClientCertificateRequired;
 
         return errors == SslPolicyErrors.None;
-    }
-
-    // 同步抛出的异常转换为已完成的故障任务，统一由 RunInitializerAsync 处理。
-    private Task<CommResult> StartInitializer(IByteChannel view, CancellationToken token)
-    {
-        try
-        {
-            return options.Initializer!.InitializeAsync(view, token);
-        }
-        catch (Exception ex)
-        {
-            return Task.FromException<CommResult>(ex);
-        }
     }
 
     // 加入会话表并排队 SessionConnected（同一临界区，保证拆除只能在加入之后排队 SessionClosed）。
@@ -1186,9 +1137,6 @@ public sealed class TcpServer : ITcpServer
             return false;
         }
     }
-
-    private static void ObserveAbandoned(Task work)
-        => work.ContinueWith(task => { _ = task.Exception; }, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
 
     // 一次派发的上下文标记。随 AsyncLocal 流入处理器派生的续延；处理器返回后失效。
     private sealed class DispatchScope
