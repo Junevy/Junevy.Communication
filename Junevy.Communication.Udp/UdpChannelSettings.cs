@@ -1,19 +1,19 @@
 using System.Net;
-using System.Net.Sockets;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Channels.Lifecycle;
+using static Junevy.Communication.Udp.UdpConfigRules;
 
 namespace Junevy.Communication.Udp;
 
 /// <summary>
 /// UDP 通道的已校验运行参数（D5）。构造时从 <see cref="UdpChannelConfig"/> 与 <see cref="ChannelComponents"/> 解析并复制，之后不再读取调用方的对象。
-/// 套接字参数保存在本类（打开每个连接时使用）；数据报的通用参数交给 <see cref="DatagramClientSettings"/>，由 <see cref="DatagramClientOptions"/> 进一步校验。
+/// 套接字参数保存在本类（打开每个连接时使用）；数据报的通用参数交给 <see cref="ClientCoreSettings"/>，由 <see cref="DatagramClientOptions"/> 进一步校验。
 /// </summary>
 internal sealed class UdpChannelSettings
 {
     private const int MaxPort = 65535;
-    private static readonly UdpChannelConfig DefaultConfig = new UdpChannelConfig();
     private const int MaxDatagramPayload = 65507;
+    private static readonly UdpChannelConfig DefaultConfig = new UdpChannelConfig();
 
     private UdpChannelSettings()
     {
@@ -50,15 +50,29 @@ internal sealed class UdpChannelSettings
     public int ReceiveBufferSize { get; private set; }
 
     /// <summary>数据报通道的通用参数。</summary>
-    public DatagramClientSettings Client { get; private set; } = new DatagramClientSettings();
+    public ClientCoreSettings Client { get; private set; } = new ClientCoreSettings();
 
     /// <summary>
     /// 校验配置并生成运行参数（D5）。非法时抛出 <see cref="ArgumentException"/> 族；调用方的配置对象不会被修改。
+    /// 校验顺序：通用规则 → 本地与远端地址 → 组播与套接字限制 → 超时与重试 → 心跳规则。
     /// </summary>
     /// <param name="config">UDP 配置；不能为 null。</param>
     /// <param name="components">代码级覆盖；可为 null。</param>
     /// <returns>校验后的运行参数。</returns>
     public static UdpChannelSettings From(UdpChannelConfig config, ChannelComponents? components)
+    {
+        RequireCommon(config, components);
+        IPAddress localAddress = ParseAddress(config.LocalAddress, nameof(UdpChannelConfig.LocalAddress));
+        InRange(config.LocalPort, 0, MaxPort, nameof(UdpChannelConfig.LocalPort));
+        bool hasRemoteHost = RequireRemote(config);
+        IPAddress[] groups = RequireSocketLimits(config);
+        RequireTimeouts(config);
+        RequireHeartbeat(config, components, hasRemoteHost);
+
+        return Build(config, localAddress, hasRemoteHost, groups);
+    }
+
+    private static void RequireCommon(UdpChannelConfig config, ChannelComponents? components)
     {
         if (config == null)
             throw new ArgumentNullException(nameof(config));
@@ -69,11 +83,11 @@ internal sealed class UdpChannelSettings
             throw new ArgumentException("Reconnect must not be null.", nameof(config));
         if (components?.FrameCodec != null)
             throw new ArgumentException("UDP channels do not frame datagrams; ChannelComponents.FrameCodec must be null.", nameof(components));
+    }
 
-        IPAddress localAddress = ParseAddress(config.LocalAddress, nameof(UdpChannelConfig.LocalAddress));
-        InRange(config.LocalPort, 0, MaxPort, nameof(UdpChannelConfig.LocalPort));
-
-        // RemoteHost 与 RemotePort 必须同时设置（定向模式）或同时不设置（非定向模式）。
+    // RemoteHost 与 RemotePort 必须同时设置（定向模式）或同时不设置（非定向模式）。
+    private static bool RequireRemote(UdpChannelConfig config)
+    {
         bool hasRemoteHost = !string.IsNullOrWhiteSpace(config.RemoteHost);
         bool hasRemotePort = config.RemotePort != 0;
         if (hasRemoteHost != hasRemotePort)
@@ -85,10 +99,20 @@ internal sealed class UdpChannelSettings
             InRange(config.RemotePort, 1, MaxPort, nameof(UdpChannelConfig.RemotePort));
         }
 
+        return hasRemoteHost;
+    }
+
+    private static IPAddress[] RequireSocketLimits(UdpChannelConfig config)
+    {
         IPAddress[] groups = ParseGroups(config.MulticastGroups);
         InRange(config.MulticastTimeToLive, 0, 255, nameof(UdpChannelConfig.MulticastTimeToLive));
         Positive(config.ReceiveBufferSize, nameof(UdpChannelConfig.ReceiveBufferSize));
         InRange(config.MaxDatagramSize, 1, MaxDatagramPayload, nameof(UdpChannelConfig.MaxDatagramSize));
+        return groups;
+    }
+
+    private static void RequireTimeouts(UdpChannelConfig config)
+    {
         Positive(config.HandshakeTimeout, nameof(UdpChannelConfig.HandshakeTimeout));
         Positive(config.SendTimeout, nameof(UdpChannelConfig.SendTimeout));
         Positive(config.RequestTimeout, nameof(UdpChannelConfig.RequestTimeout));
@@ -98,8 +122,11 @@ internal sealed class UdpChannelSettings
         if (config.LateReplyWindow < -1)
             throw new ArgumentOutOfRangeException(nameof(UdpChannelConfig.LateReplyWindow), config.LateReplyWindow,
                 "The late reply window must be -1 or a non-negative value.");
+    }
 
-        // 代码级探测（HealthProbe 或 HealthProbeFactory）替代内置探测，此时下面两条要求都不适用。
+    // 代码级探测（HealthProbe 或 HealthProbeFactory）替代内置探测，此时下面两条要求都不适用。
+    private static void RequireHeartbeat(UdpChannelConfig config, ChannelComponents? components, bool hasRemoteHost)
+    {
         bool suppliedProbe = components?.HealthProbe != null || components?.HealthProbeFactory != null;
 
         // 内置心跳探测发往远端，因此非定向模式必须由协议包提供探测（HealthProbe 或 HealthProbeFactory）。
@@ -111,8 +138,10 @@ internal sealed class UdpChannelSettings
         if (config.Heartbeat.Enabled && !suppliedProbe && string.IsNullOrEmpty(config.Heartbeat.ExpectedReply))
             throw new ArgumentException("The built-in heartbeat of a UDP channel must set Heartbeat.ExpectedReply: a UDP send almost always succeeds, "
                                         + "so the probe could not detect a silent peer. Set ExpectedReply or supply ChannelComponents.HealthProbe or ChannelComponents.HealthProbeFactory.");
+    }
 
-        return new UdpChannelSettings
+    private static UdpChannelSettings Build(UdpChannelConfig config, IPAddress localAddress, bool hasRemoteHost, IPAddress[] groups)
+        => new UdpChannelSettings
         {
             LocalAddress = localAddress,
             LocalPort = config.LocalPort,
@@ -124,7 +153,7 @@ internal sealed class UdpChannelSettings
             MulticastLoopback = config.MulticastLoopback,
             ReuseAddress = config.ReuseAddress,
             ReceiveBufferSize = config.ReceiveBufferSize,
-            Client = new DatagramClientSettings
+            Client = new ClientCoreSettings
             {
                 HandshakeTimeout = config.HandshakeTimeout,
                 SendTimeout = config.SendTimeout,
@@ -141,63 +170,4 @@ internal sealed class UdpChannelSettings
                 Reconnect = config.Reconnect,
             },
         };
-    }
-
-    // 主机名可以是 IP 字面量或语法合法的 DNS 名称；不在此解析 DNS（构造期间不做网络 I/O，解析在打开时进行）。
-    private static bool IsValidHost(string host)
-        => IPAddress.TryParse(host, out _) || Uri.CheckHostName(host) == UriHostNameType.Dns;
-
-    private static IPAddress[] ParseGroups(string[]? texts)
-    {
-        if (texts == null)
-            return Array.Empty<IPAddress>();
-
-        var groups = new IPAddress[texts.Length];
-        for (int i = 0; i < texts.Length; i++)
-        {
-            IPAddress address = ParseAddress(texts[i], nameof(UdpChannelConfig.MulticastGroups));
-            if (!IsMulticast(address))
-                throw new ArgumentException($"MulticastGroups entry '{texts[i]}' is not a multicast address.");
-
-            groups[i] = address;
-        }
-
-        return groups;
-    }
-
-    private static IPAddress ParseAddress(string? text, string property)
-    {
-        if (string.IsNullOrWhiteSpace(text) || !IPAddress.TryParse(text, out IPAddress? address))
-            throw new ArgumentException($"{property} must be an IP address literal, not '{text}'.");
-
-        return address!;
-    }
-
-    // IPv4 组播为 224.0.0.0/4，IPv6 组播为 ff00::/8。
-    private static bool IsMulticast(IPAddress address)
-    {
-        if (address.AddressFamily == AddressFamily.InterNetworkV6)
-            return address.IsIPv6Multicast;
-
-        byte[] bytes = address.GetAddressBytes();
-        return bytes[0] >= 224 && bytes[0] <= 239;
-    }
-
-    private static void InRange(int value, int min, int max, string property)
-    {
-        if (value < min || value > max)
-            throw new ArgumentOutOfRangeException(property, value, $"{property} must be within [{min}, {max}].");
-    }
-
-    private static void Positive(int value, string property)
-    {
-        if (value <= 0)
-            throw new ArgumentOutOfRangeException(property, value, $"{property} must be positive.");
-    }
-
-    private static void NonNegative(int value, string property)
-    {
-        if (value < 0)
-            throw new ArgumentOutOfRangeException(property, value, $"{property} must not be negative.");
-    }
 }

@@ -62,7 +62,7 @@ public sealed class UdpChannel : IUdpChannel
         resolved = new DatagramClientOptions(settings.Client, components, this);
         driver = new DatagramConnectionDriver(resolved, this, token => UdpDatagramTransport.OpenAsync(settings, token), RaiseFrameReceived,
                                               () => name, statistics, this.logger);
-        supervisor = new ConnectionSupervisor(name, driver, resolved.ReconnectPolicy, resolved.ReconnectOnInitialFailure, statistics, this.logger);
+        supervisor = new ConnectionSupervisor(name, driver, resolved.Core.ReconnectPolicy, resolved.Core.ReconnectOnInitialFailure, statistics, this.logger);
         driver.Attach(supervisor);
         supervisor.StateChanged += OnSupervisorStateChanged;
     }
@@ -104,7 +104,7 @@ public sealed class UdpChannel : IUdpChannel
         if (IsDisposed)
             return Task.CompletedTask;
 
-        return supervisor.DisconnectAsync(resolved.DisconnectTimeout, cancellationToken);
+        return supervisor.DisconnectAsync(resolved.Core.DisconnectTimeout, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -213,7 +213,7 @@ public sealed class UdpChannel : IUdpChannel
     /// </summary>
     public void Dispose()
     {
-        int limit = resolved.DisconnectTimeout + 1000;
+        int limit = resolved.Core.DisconnectTimeout + 1000;
         Task disposing = DisposeAsync().AsTask();
         if (!disposing.Wait(limit))
             logger.LogWarning("Disposing the channel {Name} did not finish within {Timeout} ms; the release continues in the background.", name, limit);

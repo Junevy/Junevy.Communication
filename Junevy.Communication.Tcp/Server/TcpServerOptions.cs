@@ -71,44 +71,13 @@ internal sealed class TcpServerOptions
         ConnectionFilter = components?.ConnectionFilter;
         HealthProbeFactory = components?.HealthProbeFactory;
 
-        Heartbeat = CopyHeartbeat(config.Heartbeat);
-        if (Heartbeat.Enabled && HealthProbeFactory == null)
-        {
-            HeartbeatPayload = ParseBytes(RequirePayload(Heartbeat.Payload), "Heartbeat.Payload");
-            HeartbeatExpectedReply = string.IsNullOrEmpty(Heartbeat.ExpectedReply)
-                ? null
-                : ParseBytes(Heartbeat.ExpectedReply!, "Heartbeat.ExpectedReply");
-        }
+        Heartbeat = HeartbeatSettings.Copy(config.Heartbeat);
+        ResolveBuiltInProbe();
 
         Socket = TcpSocketConfigurator.ValidateAndCopy(config.Socket, nameof(config));
         RestartPolicy = BackoffPolicyFactory.Create(config.RestartOnFault);
 
-        TlsEnabled = config.Tls.Enabled;
-        if (TlsEnabled)
-        {
-            // 服务端证书：组件提供的优先（由调用方持有）；否则使用配置来源（构造时只校验结构，加载由 TcpServer 在构造时完成）。
-            ComponentServerCertificate = components?.ServerCertificate;
-            if (ComponentServerCertificate != null)
-            {
-                if (!ComponentServerCertificate.HasPrivateKey)
-                    throw new ArgumentException("TcpChannelComponents.ServerCertificate must include its private key.", nameof(components));
-            }
-            else if (config.Tls.ServerCertificate != null)
-            {
-                CertificateLoader.Validate(config.Tls.ServerCertificate, "Tls.ServerCertificate");
-                ServerCertificateSource = CertificateLoader.Copy(config.Tls.ServerCertificate);
-            }
-            else
-            {
-                throw new ArgumentException("TLS is enabled but no server certificate is configured (Tls.ServerCertificate or TcpChannelComponents.ServerCertificate).",
-                                            nameof(config));
-            }
-
-            TlsProtocols = config.Tls.Protocols;
-            TlsCheckRevocation = config.Tls.CheckCertificateRevocation;
-            ClientCertificateRequired = config.Tls.ClientCertificateRequired;
-        }
-
+        ResolveTls(config, components);
         RemoteCertificateValidation = components?.RemoteCertificateValidation;
     }
 
@@ -176,10 +145,10 @@ internal sealed class TcpServerOptions
     public HeartbeatOptions Heartbeat { get; }
 
     /// <summary>内置探测的心跳负载（已解析）；未启用或使用工厂探测时为 null。</summary>
-    public byte[]? HeartbeatPayload { get; }
+    public byte[]? HeartbeatPayload { get; private set; }
 
     /// <summary>内置探测的期望应答（已解析，精确匹配）；为 null 时只要求发送成功。</summary>
-    public byte[]? HeartbeatExpectedReply { get; }
+    public byte[]? HeartbeatExpectedReply { get; private set; }
 
     /// <summary>套接字选项的副本。</summary>
     public TcpSocketOptions Socket { get; }
@@ -188,25 +157,66 @@ internal sealed class TcpServerOptions
     public IBackoffPolicy? RestartPolicy { get; }
 
     /// <summary>是否启用 TLS。</summary>
-    public bool TlsEnabled { get; }
+    public bool TlsEnabled { get; private set; }
 
     /// <summary>组件提供的服务端证书（由调用方持有）；为 null 时使用 <see cref="ServerCertificateSource"/>。仅在启用 TLS 时有效。</summary>
-    public X509Certificate2? ComponentServerCertificate { get; }
+    public X509Certificate2? ComponentServerCertificate { get; private set; }
 
     /// <summary>配置中的服务端证书来源（构造时复制）；启用 TLS 且没有组件证书时非 null。</summary>
-    public CertificateSource? ServerCertificateSource { get; }
+    public CertificateSource? ServerCertificateSource { get; private set; }
 
     /// <summary>TLS 协议版本；<see cref="SslProtocols.None"/> 表示交给操作系统。</summary>
-    public SslProtocols TlsProtocols { get; }
+    public SslProtocols TlsProtocols { get; private set; }
 
     /// <summary>是否检查证书吊销。</summary>
-    public bool TlsCheckRevocation { get; }
+    public bool TlsCheckRevocation { get; private set; }
 
     /// <summary>是否要求客户端证书（双向认证）。</summary>
-    public bool ClientCertificateRequired { get; }
+    public bool ClientCertificateRequired { get; private set; }
 
     /// <summary>远端证书校验回调（组件提供，用于校验客户端证书）；为 null 时使用默认规则。</summary>
     public RemoteCertificateValidationCallback? RemoteCertificateValidation { get; }
+
+    // 内置探测的负载与期望应答：仅在启用心跳且没有 HealthProbeFactory 时解析。负载缺失的消息与参数名属于服务端自己的文本。
+    private void ResolveBuiltInProbe()
+    {
+        if (Heartbeat.Enabled && HealthProbeFactory == null)
+        {
+            HeartbeatPayload = HeartbeatSettings.ParseBytes(RequirePayload(Heartbeat.Payload), "Heartbeat.Payload", nameof(TcpServerConfig.Heartbeat));
+            HeartbeatExpectedReply = string.IsNullOrEmpty(Heartbeat.ExpectedReply)
+                ? null
+                : HeartbeatSettings.ParseBytes(Heartbeat.ExpectedReply!, "Heartbeat.ExpectedReply", nameof(TcpServerConfig.Heartbeat));
+        }
+    }
+
+    // TLS：组件提供的服务端证书优先（由调用方持有）；否则使用配置来源（构造时只校验结构，加载由 TcpServer 在构造时完成）。
+    private void ResolveTls(TcpServerConfig config, TcpChannelComponents? components)
+    {
+        TlsEnabled = config.Tls.Enabled;
+        if (!TlsEnabled)
+            return;
+
+        ComponentServerCertificate = components?.ServerCertificate;
+        if (ComponentServerCertificate != null)
+        {
+            if (!ComponentServerCertificate.HasPrivateKey)
+                throw new ArgumentException("TcpChannelComponents.ServerCertificate must include its private key.", nameof(components));
+        }
+        else if (config.Tls.ServerCertificate != null)
+        {
+            CertificateLoader.Validate(config.Tls.ServerCertificate, "Tls.ServerCertificate");
+            ServerCertificateSource = CertificateLoader.Copy(config.Tls.ServerCertificate);
+        }
+        else
+        {
+            throw new ArgumentException("TLS is enabled but no server certificate is configured (Tls.ServerCertificate or TcpChannelComponents.ServerCertificate).",
+                                        nameof(config));
+        }
+
+        TlsProtocols = config.Tls.Protocols;
+        TlsCheckRevocation = config.Tls.CheckCertificateRevocation;
+        ClientCertificateRequired = config.Tls.ClientCertificateRequired;
+    }
 
     private static IPAddress ParseListenAddress(string? text)
     {
@@ -233,51 +243,12 @@ internal sealed class TcpServerOptions
         return addresses;
     }
 
-    // 心跳配置的复制与校验（与客户端的 StreamClientOptions 规则一致）。探测负载在使用内置探测时另行检查。
-    private static HeartbeatOptions CopyHeartbeat(HeartbeatOptions source)
-    {
-        var copy = new HeartbeatOptions
-        {
-            Enabled = source.Enabled,
-            Interval = source.Interval,
-            Timeout = source.Timeout,
-            MaxFailures = source.MaxFailures,
-            OnlyWhenIdle = source.OnlyWhenIdle,
-            Payload = source.Payload,
-            ExpectedReply = source.ExpectedReply,
-        };
-
-        if (copy.Enabled)
-        {
-            if (copy.Interval <= 0)
-                throw new ArgumentOutOfRangeException("Heartbeat.Interval", copy.Interval, "The heartbeat interval must be positive.");
-            if (copy.Timeout <= 0)
-                throw new ArgumentOutOfRangeException("Heartbeat.Timeout", copy.Timeout, "The heartbeat timeout must be positive.");
-            if (copy.MaxFailures < 1)
-                throw new ArgumentOutOfRangeException("Heartbeat.MaxFailures", copy.MaxFailures, "The heartbeat failure threshold must be at least 1.");
-        }
-
-        return copy;
-    }
-
     private static string RequirePayload(string? payload)
     {
         if (string.IsNullOrEmpty(payload))
             throw new ArgumentException("Heartbeat.Payload is required when no HealthProbeFactory is supplied.", nameof(TcpServerConfig.Heartbeat));
 
         return payload!;
-    }
-
-    private static byte[] ParseBytes(string text, string propertyName)
-    {
-        try
-        {
-            return ByteSequenceParser.Parse(text);
-        }
-        catch (FormatException ex)
-        {
-            throw new ArgumentException($"{propertyName} is not a valid byte sequence: {ex.Message}", nameof(TcpServerConfig.Heartbeat), ex);
-        }
     }
 
     private static int RequireRange(int value, int min, int max, string name)

@@ -43,7 +43,7 @@ public abstract class StreamClientChannel : IClientChannel
         resolved = new StreamClientOptions(settings, components, this);
         driver = new StreamConnectionDriver(resolved, this, OpenStreamAsync, SecureStreamAsync, AbortTransport, OnClosingAsync, () => PartialFrameAction,
                                             RaiseFrameReceived, () => DescribeEndpoint(), statistics, logger);
-        supervisor = new ConnectionSupervisor(name, driver, resolved.ReconnectPolicy, resolved.ReconnectOnInitialFailure, statistics, logger);
+        supervisor = new ConnectionSupervisor(name, driver, resolved.Core.ReconnectPolicy, resolved.Core.ReconnectOnInitialFailure, statistics, logger);
         driver.Attach(supervisor);
         supervisor.StateChanged += OnSupervisorStateChanged;
     }
@@ -122,7 +122,7 @@ public abstract class StreamClientChannel : IClientChannel
         if (IsDisposed)
             return Task.CompletedTask;
 
-        return supervisor.DisconnectAsync(resolved.DisconnectTimeout, cancellationToken);
+        return supervisor.DisconnectAsync(resolved.Core.DisconnectTimeout, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -172,7 +172,7 @@ public abstract class StreamClientChannel : IClientChannel
     /// </summary>
     public void Dispose()
     {
-        int limit = resolved.DisconnectTimeout + 1000;
+        int limit = resolved.Core.DisconnectTimeout + 1000;
         Task disposing = DisposeAsync().AsTask();
         if (!disposing.Wait(limit))
             logger.LogWarning("Disposing the channel {Name} did not finish within {Timeout} ms; the release continues in the background.", name, limit);

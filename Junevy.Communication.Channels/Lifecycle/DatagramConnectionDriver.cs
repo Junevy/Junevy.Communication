@@ -81,7 +81,7 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
         IDatagramTransport transport = opened.Data!;
 
         // 握手时限从绑定之后开始计时。时限耗尽时中止传输，使挂起的初始化器结束。握手成功后释放窗口，之后不再中止连接。
-        using TimeoutScope window = TimeoutScope.Start(options.HandshakeTimeout, cancellationToken, () => SafeAbort(transport));
+        using TimeoutScope window = TimeoutScope.Start(options.Core.HandshakeTimeout, cancellationToken, () => SafeAbort(transport));
         LiveConnection? live = null;
         try
         {
@@ -146,10 +146,10 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
     // 创建一条连接的全部内部对象。关联表先进入握手状态（D8），之后才由 OpenAsync 启动接收循环，保证连上即发的数据报进入积压。
     private LiveConnection CreateConnection(IDatagramTransport transport, ConnectionAttempt attempt)
     {
-        var table = new PendingRequestTable(options.Correlation, options.KeyExtractor, options.LateReplyWindow, logger);
+        var table = new PendingRequestTable(options.Core.Correlation, options.Core.KeyExtractor, options.Core.LateReplyWindow, logger);
         table.BeginHandshake();
 
-        var router = new FrameRouter(table, options.QueueCapacity, options.QueueFullMode, raise, statistics, logger);
+        var router = new FrameRouter(table, options.Core.QueueCapacity, options.Core.QueueFullMode, raise, statistics, logger);
         var channel = new DatagramChannel(transport, options.CreateChannelSettings(), table, router, statistics, logger, attempt.Report);
         return new LiveConnection(transport, channel, router, attempt);
     }
@@ -157,7 +157,7 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
     // 握手：执行初始化器（与握手时限共享窗口），结束握手并把积压转入派发队列，最后确认握手期间没有发生故障。
     private async Task<CommResult> HandshakeAsync(LiveConnection live, TimeoutScope window, CancellationToken cancellationToken)
     {
-        if (options.Initializer != null)
+        if (options.Core.Initializer != null)
         {
             CommResult initialized = await RunInitializerAsync(live.Channel, window, cancellationToken).ConfigureAwait(false);
             if (!initialized.IsSuccess)
@@ -210,14 +210,14 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
     }
 
     private CommResult TimeoutResult()
-        => CommResult.Fail($"The connection handshake did not complete within {options.HandshakeTimeout} ms.", CommErrorKind.Timeout);
+        => CommResult.Fail($"The connection handshake did not complete within {options.Core.HandshakeTimeout} ms.", CommErrorKind.Timeout);
 
     // 同步抛出的异常转换为已完成的故障任务，统一由 RunInitializerAsync 处理。
     private Task<CommResult> StartInitializer(IByteChannel view, CancellationToken token)
     {
         try
         {
-            return options.Initializer!.InitializeAsync(view, token);
+            return options.Core.Initializer!.InitializeAsync(view, token);
         }
         catch (Exception ex)
         {
@@ -234,13 +234,13 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
     // 工厂抛出异常或返回 null 时返回失败（Unspecified）；此时尚未取得探测，下一次打开会再次调用工厂。
     private CommResult ResolveFactoryProbe()
     {
-        if (!options.Heartbeat.Enabled || options.HealthProbeFactory == null || factoryProbe != null)
+        if (!options.Core.Heartbeat.Enabled || options.Core.HealthProbeFactory == null || factoryProbe != null)
             return CommResult.Success();
 
         IHealthProbe? created;
         try
         {
-            created = options.HealthProbeFactory(owner);
+            created = options.Core.HealthProbeFactory(owner);
         }
         catch (Exception ex)
         {
@@ -261,11 +261,11 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
     // 心跳与空闲监视只在握手完成后启动；使用同一个尝试对象报告死亡。探测来源：代码级探测、工厂探测（已解析）；启用心跳时必有其一。
     private void StartHeartbeat(LiveConnection live)
     {
-        if (!options.Heartbeat.Enabled && options.IdleTimeout <= 0)
+        if (!options.Core.Heartbeat.Enabled && options.Core.IdleTimeout <= 0)
             return;
 
         ConnectionAttempt attempt = live.Attempt;
-        var monitor = new HeartbeatMonitor(options.HealthProbe ?? factoryProbe, options.Heartbeat, options.IdleTimeout, statistics,
+        var monitor = new HeartbeatMonitor(options.Core.HealthProbe ?? factoryProbe, options.Core.Heartbeat, options.Core.IdleTimeout, statistics,
                                            reason => attempt.Report(reason, null), logger);
         live.Heartbeat = monitor;
         monitor.Start();

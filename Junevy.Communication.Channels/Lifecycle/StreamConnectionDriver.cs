@@ -92,7 +92,7 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
             return opened.ToResult();
 
         // 握手时限从传输打开之后开始计时：流包装（TLS）与初始化器共享这一个窗口（设计文档第 10 节）。握手成功后立即释放窗口，之后不再中止连接。
-        using TimeoutScope window = TimeoutScope.Start(options.HandshakeTimeout, cancellationToken, abortTransport);
+        using TimeoutScope window = TimeoutScope.Start(options.Core.HandshakeTimeout, cancellationToken, abortTransport);
         LiveConnection? live = null;
         try
         {
@@ -164,10 +164,10 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
     // 创建一条连接的全部内部对象。关联表先进入握手状态（D8），之后才由调用方启动解析循环，保证连上即发的帧进入积压。
     private LiveConnection CreateConnection(Stream stream, ConnectionAttempt attempt)
     {
-        var table = new PendingRequestTable(options.Correlation, options.KeyExtractor, options.LateReplyWindow, logger);
+        var table = new PendingRequestTable(options.Core.Correlation, options.Core.KeyExtractor, options.Core.LateReplyWindow, logger);
         table.BeginHandshake();
 
-        var router = new FrameRouter(table, options.QueueCapacity, options.QueueFullMode, raise, statistics, logger);
+        var router = new FrameRouter(table, options.Core.QueueCapacity, options.Core.QueueFullMode, raise, statistics, logger);
         var channel = new StreamChannel(stream, options.CreateStreamSettings(partialFrameAction()), options.Codec.CreateDecoder(),
                                         options.Codec.CreateEncoder(), table, router, statistics, logger, attempt.Report, abortTransport);
         return new LiveConnection(channel, router, attempt);
@@ -210,7 +210,7 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
     // 握手：执行初始化器（与 TLS 共享同一握手时限），结束握手并把积压转入派发队列，最后确认握手期间没有发生故障。
     private async Task<CommResult> HandshakeAsync(LiveConnection live, TimeoutScope window, CancellationToken cancellationToken)
     {
-        if (options.Initializer != null)
+        if (options.Core.Initializer != null)
         {
             CommResult initialized = await RunInitializerAsync(live.Channel, window, cancellationToken).ConfigureAwait(false);
             if (!initialized.IsSuccess)
@@ -263,10 +263,10 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
     }
 
     private CommResult TimeoutResult()
-        => CommResult.Fail($"The connection handshake did not complete within {options.HandshakeTimeout} ms.", CommErrorKind.Timeout);
+        => CommResult.Fail($"The connection handshake did not complete within {options.Core.HandshakeTimeout} ms.", CommErrorKind.Timeout);
 
     private CommResult<T> TimeoutFailure<T>()
-        => CommResult<T>.Fail($"The connection handshake did not complete within {options.HandshakeTimeout} ms.", CommErrorKind.Timeout);
+        => CommResult<T>.Fail($"The connection handshake did not complete within {options.Core.HandshakeTimeout} ms.", CommErrorKind.Timeout);
 
     // 同步抛出的异常转换为已完成的故障任务，统一由 SecureWithinWindowAsync 处理。
     private Task<CommResult<Stream>> StartSecure(Stream stream, CancellationToken token)
@@ -286,7 +286,7 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
     {
         try
         {
-            return options.Initializer!.InitializeAsync(view, token);
+            return options.Core.Initializer!.InitializeAsync(view, token);
         }
         catch (Exception ex)
         {
@@ -315,13 +315,13 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
     // 工厂抛出异常或返回 null 时返回失败（Unspecified）；此时尚未取得探测，下一次打开会再次调用工厂。
     private CommResult ResolveFactoryProbe()
     {
-        if (!options.Heartbeat.Enabled || options.HealthProbeFactory == null || factoryProbe != null)
+        if (!options.Core.Heartbeat.Enabled || options.Core.HealthProbeFactory == null || factoryProbe != null)
             return CommResult.Success();
 
         IHealthProbe? created;
         try
         {
-            created = options.HealthProbeFactory(owner);
+            created = options.Core.HealthProbeFactory(owner);
         }
         catch (Exception ex)
         {
@@ -342,11 +342,11 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
     // 心跳与空闲监视只在握手完成后启动；使用同一个尝试对象报告死亡。探测来源：代码级探测、工厂探测（已解析）；启用心跳时必有其一。
     private void StartHeartbeat(LiveConnection live)
     {
-        if (!options.Heartbeat.Enabled && options.IdleTimeout <= 0)
+        if (!options.Core.Heartbeat.Enabled && options.Core.IdleTimeout <= 0)
             return;
 
         ConnectionAttempt attempt = live.Attempt;
-        var monitor = new HeartbeatMonitor(options.HealthProbe ?? factoryProbe, options.Heartbeat, options.IdleTimeout, statistics,
+        var monitor = new HeartbeatMonitor(options.Core.HealthProbe ?? factoryProbe, options.Core.Heartbeat, options.Core.IdleTimeout, statistics,
                                            reason => attempt.Report(reason, null), logger);
         live.Heartbeat = monitor;
         monitor.Start();

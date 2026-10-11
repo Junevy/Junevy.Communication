@@ -27,6 +27,7 @@
 - 2026-10-11 [Melsec] 删除仅供测试使用的内部方法 `McEthernetFrame.WriteRequest` 与 `Mc4CFrame.WriteRequest`，测试辅助改为直接调用 `BuildRequest`；编码结果不变。
 - 2026-10-11 [Channels, Plc] `ChannelFactory` 与 `PlcClientFactory` 改为派生 `NamedFactory<TItem>`；创建、异常消息与释放行为不变。`IChannelCreator`、`IPlcClientCreator` 改为继承 `IConfigTypedCreator`（`ConfigType` 的声明移到基接口，实现方无需修改）。
 - 2026-10-11 [Melsec] `McClient` 的内部创建改为经 `PlcChannelBinding` 与内置的 `CreatorCatalog<IChannelCreator>`（TCP、UDP、串口三个创建器）完成；`McClientCreator` 的 `McClientConfig` 与 `McTransport` 形状不变，依赖注入的行为不变。帧类型与介质不匹配仍抛出 `ArgumentException`，消息文本按介质与交付方式重新表述（例如 UDP 使用 4C 时现在报告数据报的规则）。
+- 2026-10-11 [Channels, Tcp, Udp] 客户端与服务端选项的共享部件（计划 Task 9，补审第 1、4、6 节）：心跳配置的复制、校验与内置探测的创建抽为 internal 的 `HeartbeatSettings`，`StreamClientOptions`、`DatagramClientOptions` 与 `TcpServerOptions` 共用，删除各自的副本；字节流与数据报的公共运行参数抽为 internal 的 `ClientOptionsCore`，输入为 internal 的 `ClientCoreSettings`（替代 `DatagramClientSettings`），两个选项类只保留各自传输独有的设置。`TcpServerOptions` 构造函数与 `UdpChannelSettings.From` 拆分为按配置分组的私有方法，地址与范围规则移到 `UdpConfigRules`。校验顺序、异常类型、消息与参数名不变，已有测试未修改。行为不变。
 
 ### 破坏性变更（Breaking）
 
