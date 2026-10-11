@@ -1376,6 +1376,29 @@ P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份
 | 12 | 4（架构） | 项目之间的内部可见性未限制 | 新增架构测试：生产程序集之间的 `InternalsVisibleTo` 只允许登记的两处（Channels → Tcp、Channels → Udp），引用只能指向低层；去掉这两处的 IVT 留到有外部传输作者需求时再评估 | P25-D2（Task 1） |
 | 13 | 12.7 | 协议客户端的创建顺序未规定 | 固定为"校验协议选项 → 创建器建通道（校验传输配置）→ 构造客户端"；构造失败时释放已建的通道，不留下半成品 | P25-D7、里程碑 2 审阅 G1 |
 
+### 20.4 实施修订（P3.1）
+
+WebApi 客户端（计划 `docs/superpowers/plans/2026-10-11-p31-webapi-client.md`，Task 0–12）与第 15 节有下列差异。"原设计"列为本文件原文的要点；"原因"列指向计划第 0 节的决策编号（P3-D 编号）或执行中的审阅裁决。HTTP 服务端（15.5）不在 3.1，由 3.2 另写计划。
+
+| # | 章节 | 原设计 | 实际实现 | 原因 |
+|---|---|---|---|---|
+| 1 | 15.2 | 认证抽象为 `IAuthenticationProvider`（客户端）与内置 Basic / Bearer / ApiKey | 不设认证抽象：认证、签名、换 token 都是拦截器。内置三种由 `WebApiAuthentication` 的静态工厂创建；`WebApiAuthOptions` 只保存环境变量名，构造时读取（变量缺失抛 `ArgumentException`，消息只含变量名）。配置生成的认证拦截器排在用户拦截器之前 | P3-D4（Task 4） |
+| 2 | 15.6 | 预留 `IOutboxStore` / `OutboxItem` 两个公开接口 | 本期不公开离线缓存接口。预留的是使以后能非破坏性加入的前提：`WebApiRequest.IdempotencyKey`、可重放的内部请求快照 `HttpRequestSnapshot`、拦截器在每次尝试前执行（补发时重新签名）、`AvailabilityChanged` 事件（补传的触发信号） | P3-D5（Task 5–7） |
+| 3 | 15.2 | `Http/`、`Client/`、`Soap/`、`Serialization/`、`Auth/`、`Availability/` 等目录 | 单程序集，按命名空间分层：根（公共契约）、`Serialization`、`Auth`、`Http`（全部 internal，含可用性与健康检查）、`Rest`、`Soap`、`Factory`、`DependencyInjection`；依赖方向由架构测试（NetArchTest.Rules，仅测试项目引用）强制，含方法体中的引用。REST 与 SOAP 共用内部核心 `EndpointCore`，两个外观各不超过 200 行 | P3-D2、D6、D7、D18（Task 2、7） |
+| 4 | 15.3 | 重试遵循"默认不重试 POST，声明幂等键或显式允许才重试" | 规则固定：可重试的结果是网络层失败、尝试超时、HTTP 408 / 429 / 500 / 502 / 503 / 504，且没有业务码（业务失败与 SOAP Fault 永不重试）；GET / HEAD / OPTIONS 自动可重试，POST / PUT / PATCH / DELETE 需要幂等键或 `RetryUnsafeMethods`；429 / 503 的 `Retry-After` 只拉长退避，超过 30 s 不重试；拦截器请求的重放每次调用最多 1 次，不计入 `RetryCount` | P3-D10（Task 6） |
+| 5 | 15.3 | 超时未规定范围 | 超时按每次尝试计算，覆盖发送前拦截器、HTTP 收发（含读完响应体）与接收后拦截器；`HttpClient.Timeout` 为无限，用 `TimeoutScope` 区分超时与用户取消；没有整体超时 | P3-D11（Task 5、6） |
+| 6 | 15.3 | 每个端点一个 HttpClient，net8 用 `PooledConnectionLifetime`，net472 用 `ConnectionLeaseTimeout` | 同上；另：不自动重定向（会把 POST 改成 GET 并丢掉正文），自动解压 GZip / Deflate，每个请求关闭 `Expect: 100-continue`，net472 只设置本端点的 `ServicePoint`、不修改任何 `ServicePointManager` 静态设置；`WebApiComponents.HttpHandler` 注入的处理器不由客户端释放；响应体上限 `MaxResponseBodySize`（默认 4 MiB） | P3-D12（Task 5） |
+| 7 | 15.3 | `WebApiClientConfig` 是一个独立的配置类，字段平铺 | 配置继承：`WebApiEndpointConfig`（REST 与 SOAP 共有字段，含 `Retry`、`Logging`、`Auth` 等嵌套选项）← `WebApiClientConfig` / `SoapClientConfig`；构造时校验一次并拍快照，之后修改配置对象不生效 | P3-D16（Task 3、8、9） |
+| 8 | 15.3、Q3、Q8 | JSON 序列化未规定细节 | `System.Text.Json`（net472 引用 8.0.5）：camelCase、读取不区分大小写、中文不转义；`IWebApiSerializer` 可替换（`WebApiComponents.Serializer`，仅 REST）；业务包络字段的定位始终用 `JsonDocument`，与替换的序列化器无关 | P3-D15（Task 8） |
+| 9 | 15.1 | `WebApiResult<T>` 不含诊断字段 | 增加只供诊断的 `Exception`；`ToString()` 在 `CommResult` 的格式后附 `(HTTP 503, remote code X)`；释放之后的调用返回 `NotConnected`，释放时在途的返回 `ConnectionClosed` | P3-D13（Task 2） |
+| 10 | 15.3 | 未规定钩子 | 阶段钩子 = 事件（`RequestSending`、`ResponseReceived`、`RequestCompleted`、`AvailabilityChanged`，旁观）+ 拦截器（`IWebApiInterceptor`，干预）；每次调用恰好一个 `RequestCompleted`；`AvailabilityChanged` 经单消费者队列按顺序触发。Core 新增 `EventSubscribers.InvokeEach`，Channels 改用它 | P3-D3、D8、D9、D14（Task 1、4、6、7） |
+| 11 | 15.3 | `IWebApiSerializer` 在 `Serialization/` 目录 | `IWebApiSerializer` 放在根命名空间（`WebApiComponents.Serializer` 引用它，而根命名空间不得依赖其他内部命名空间）；默认实现 `SystemTextJsonWebApiSerializer` 留在 `Serialization` | 里程碑 2 审阅裁决 |
+| 12 | 15.4 | SOAP 健康检查地址未规定 | `SoapClientConfig.HealthCheckUrl` 必须与 `Url` 同一个 scheme、主机与端口（探测也经过认证拦截器，凭据不能被带到别的主机）；拦截器修改请求地址时同样要求同源 | P3-D17、里程碑 3 审阅裁决 |
+| 13 | 15.3 | 空响应体未规定 | `byte[]` / `string` 的空正文是空数组 / 空串；其他类型：没有包络时空正文是成功（`Data = default`），启用包络时只有 204 是成功，其他 2xx 的空正文是 `ProtocolViolation` | 里程碑 3 审阅裁决 |
+| 14 | 15.3 | 请求路径未规定 | `Path` 必须是相对路径，开头的 `/` 不会回到主机根（`http://host/api` + `/orders` = `http://host/api/orders`）；绝对地址、`//host/x`、UNC 与第一段含冒号的路径一律 `InvalidRequest` | P3-D17、里程碑 3 审阅裁决 |
+| 15 | 15.3 | 释放行为未规定 | 释放结束的在途尝试，其 `ResponseReceived.ErrorKind`、调用结果与 `RequestCompleted` 都是 `ConnectionClosed`（可用性跟踪不把它算作失败）；`DisposeAsync` 等待可用性事件派发完最多 2000 ms，剩余的丢弃并记 Warning；注入的处理器不释放 | 里程碑 2 审阅裁决（Task 7） |
+| 16 | 15.4 | 强类型 SOAP 正文用 `XmlSerializer` | 只用 `new XmlSerializer(Type)` 与 `new XmlSerializer(Type, string)`（其他重载每次生成新程序集会泄漏），按类型缓存；序列化时给出显式命名空间表（空前缀绑定到正文根元素的命名空间），QName 值属性（`xsi:type="xsd:int"`）的前缀声明保持有效；响应解析 `DtdProcessing.Prohibit`、`XmlResolver = null`；Fault 先于状态码解析且永不重试 | P3-D17、Task 9、最终里程碑修订 |
+
 ## 21. 决策记录
 
 ### 21.1 已确认（2026-10-10）

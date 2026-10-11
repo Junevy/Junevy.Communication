@@ -431,3 +431,36 @@ CommResult written = await plc.WriteFloatAsync("D200", 3.14f);
 - Addresses are `D100`, `M0`, `X1A`, `ZR0`, and `D100.F` for bit F of a word. The bit index and the device numbers of hexadecimal devices are hexadecimal.
 
 The package READMEs (`Junevy.Communication.Plc/README.md` and `Junevy.Communication.Melsec/README.md`) have the defaults, limits and the device table. The skill `Skills/using-junevy-plc/SKILL.md` covers usage, errors, DI, and how to add a protocol.
+
+## WebApi Clients (preview)
+
+`Junevy.Communication.WebApi` reports production data to a MES over HTTP: a REST client (`WebApiClient`) and a SOAP 1.1 / 1.2 client (`SoapClient`). Both are asynchronous, never throw at run time (every call returns a `WebApiResult<T>`), and share one pipeline: per-attempt timeouts, retries that respect idempotency, availability tracking with an optional health check, events to observe and interceptors to change requests (signing, token refresh), and log redaction.
+
+> **Preview**: the package ships as `1.0.0-preview.1`. The HTTP server side (the MES calling the device) is planned as a later step.
+
+### Packages
+
+| Package | Purpose | Depends on |
+|---|---|---|
+| `Junevy.Communication.WebApi` | REST and SOAP clients, interceptors and events, availability, factory, DI | Core |
+
+```text
+dotnet add package Junevy.Communication.WebApi --prerelease
+```
+
+```csharp
+using Junevy.Communication.WebApi;
+using Junevy.Communication.WebApi.Rest;
+
+await using var client = new WebApiClient(new WebApiClientConfig { BaseUrl = "https://mes.example.com/api" });
+
+WebApiResult<string> result = await client.PostAsync<string>("reports", new { OrderNo = "A-1", Quantity = 12 }, idempotencyKey: "report-1");
+```
+
+### Behaviour at a glance
+
+- Retries are off by default, and `POST` / `PUT` / `PATCH` / `DELETE` are only retried with an idempotency key (or `RetryUnsafeMethods`). A business failure or a SOAP Fault is never retried.
+- `RequestCompleted` is raised exactly once per call; `AvailabilityChanged` is raised in order. Subscribe first, then read `Availability` once.
+- Credentials come from environment variables or code, never from configuration values, and `Authorization` and token query parameters are masked in logs and events.
+
+The package README (`Junevy.Communication.WebApi/README.md`) has the full contract, the hook sequence, the retry table and two working interceptor examples. The skill `Skills/using-junevy-webapi/SKILL.md` covers usage, errors, DI and common mistakes.

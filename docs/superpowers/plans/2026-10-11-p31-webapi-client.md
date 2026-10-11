@@ -670,6 +670,13 @@ public static class WebApiServiceCollectionExtensions
 12. **Task 10：未观察任务异常的检查只统计异常文本含 `Junevy.Communication.WebApi` 的项，** 避免同一进程里其他测试的任务异常误伤；`RawHttpServer.Dispose` 同步等待内部循环最多 5 秒。
 13. **Task 11：工厂在创建前先检查释放与 config 是否为 null，** 名称为 null / 空由 `NamedFactory` 抛 `ArgumentException`；配置非法时抛出且不注册任何东西。类型不符的 `InvalidOperationException` 消息格式：`The name 'x' is already registered with a SoapClient, which is not a IWebApiClient.`
 
+最终里程碑（修订 A / B 与 Task 12，执行日 2026-10-12）：
+
+1. **修订 A（`75581cd`）：空正文规则按审阅裁决收紧，取代里程碑 3 第 4 条。** `byte[]` / `string` 的空正文是空数组 / 空串（有没有包络都一样，空正文时不检查 charset）；其他类型：没有包络时成功（`default`），启用包络时 204 成功、其他 2xx 为 `ProtocolViolation`（无 `RemoteCode`，不重试）。旧代码上 8 个新用例失败。**事件顺序**按裁决恢复为与 `WebApiClient` 相同（`IWebApiEndpoint` 的声明顺序），取代里程碑 3 第 11 条；重复窗口因此为 33（8 组，其中 `WebApiClient` ↔ `SoapClient` 9 个窗口，是公开类无法共享的转发样板），已在 19.3 记录。
+2. **修订 B（`6aecd44`）：`XmlBodyCodec` 不再去掉命名空间声明，取代里程碑 3 第 10 条。** 去掉全部声明会让 `object` 成员的 `xsi:type="xsd:int"` 失去前缀绑定，反序列化抛 `InvalidOperationException`（先以 `ObjectTypedMember_SurvivesTheEnvelopeRoundTrip` 在两个目标上复现）。现在序列化时给 `XmlSerializer` 一张显式的命名空间表（空前缀绑定到 `XmlReflectionImporter` 得到的正文根元素命名空间，与序列化器一起按类型缓存）；`XmlSerializer` 仍只用两个会缓存的构造函数。net8.0 与 net472 输出逐字相同，已有的黄金信封未改动，在两个目标上字节一致；`xsi` / `xsd` 在用到的地方就近声明（`p3:type="q1:int"`、`xmlns:q1` / `xmlns:p3` 均就地绑定）。
+3. **Task 12：`ReadmeSampleTests` 读取仓库里的源文件。** 它从测试输出目录向上找到 `Junevy.Communication.slnx`，读 `Junevy.Communication.WebApi/README.md` 与 `Tests/…/ReadmeSamples.cs`，逐字比较两个示例拦截器（忽略换行风格与行尾空白）；找不到仓库根时测试失败而不是跳过。示例里的注释是英文（README 面向英文读者），其余测试注释仍是中文。
+4. **Task 12：知识库已写入但按约定不提交；** 新增 `zh/content/WebApi/` 下两篇，更新首页与"开发约定与验收基线"。
+
 ### 19.3 基线与度量
 
 #### Task 0 基线（2026-10-11，`7c6f0ec`，Debug，`dotnet test Junevy.Communication.slnx -c Debug`）
