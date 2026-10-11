@@ -6,6 +6,7 @@ using Junevy.Communication.Melsec;
 using Junevy.Communication.Modbus.Tcp;
 using Junevy.Communication.Plc;
 using Junevy.Communication.Serial;
+using Junevy.Communication.Siemens;
 using Junevy.Communication.Tcp;
 using Junevy.Communication.Udp;
 using Junevy.Communication.WebApi;
@@ -24,7 +25,6 @@ public sealed class ArchitectureTests
     private const string UdpName = "Junevy.Communication.Udp";
     private const string SerialName = "Junevy.Communication.Serial";
     private const string PlcName = "Junevy.Communication.Plc";
-    private const string SiemensName = "Junevy.Communication.Siemens";
     private const string LibraryPrefix = "Junevy.Communication.";
     private const string TestsSuffix = ".Tests";
 
@@ -47,8 +47,8 @@ public sealed class ArchitectureTests
         (typeof(SerialChannel).Assembly, new[] { ChannelsName, CoreName }),
         (typeof(PlcClientBase<>).Assembly, new[] { ChannelsName, CoreName }),
         (typeof(McClient).Assembly, new[] { PlcName, ChannelsName, CoreName, TcpName, UdpName, SerialName }),
-        // Siemens 只有 S7overTCP，因此允许表里没有 Udp 与 Serial（P4-D2）。骨架程序集还没有公开类型可作 typeof 锚点，按名称加载；本项目已引用它，两个目标都能解析到输出目录中的 dll。
-        (Assembly.Load(SiemensName), new[] { PlcName, ChannelsName, CoreName, TcpName }),
+        // Siemens 只有 S7overTCP，因此允许表里没有 Udp 与 Serial（P4-D2）。
+        (typeof(S7Address).Assembly, new[] { PlcName, ChannelsName, CoreName, TcpName }),
         (typeof(WebApiResult<>).Assembly, new[] { CoreName }),
     };
 
