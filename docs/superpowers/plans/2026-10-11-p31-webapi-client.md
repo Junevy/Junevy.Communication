@@ -649,6 +649,22 @@ public static class WebApiServiceCollectionExtensions
 16. **Task 7：同步 `Dispose()` 沿用 `SupervisedChannelCore` 的先例**（`DisposeAsync().AsTask().Wait(limit)`，上限 `DisposeDrainMilliseconds + 1000`，超时记 Warning），不使用 `GetAwaiter().GetResult()`。
 17. **测试耗时：** `Dispose_WithAStuckSubscriber_GivesUpAfterTheDrainLimitAndLogsAWarning` 需要真实等待约 2 秒（排空上限是具名常量，没有为测试做可注入的时钟）。
 
+里程碑 3（Task 8–11，执行日 2026-10-11）：
+
+1. **审阅修改第 5、6 条已在提交 `755404a` 完成。** 释放造成的取消由 `AttemptLoop.MapDisposal` 一个辅助方法改判为 `ConnectionClosed`，用在每次尝试的结果（`ResponseReceived` 之前）和"等待重试时被取消"的路径上，改判后不再重试；可用性跟踪读传输层结果（`Cancelled`），仍不计入。`OrderedEventQueue` 的消费回调用 try/finally 复位派发标志；该标志是 `AsyncLocal`，只在消费循环自己的执行流里可见，测试线程观察不到，所以没有对应的直接测试（防御性代码）。
+2. **Task 8：`System.Text.Json` 首次使用，net472 测试宿主没有出现 `FileLoadException`，`build/Junevy.Communication.Tests.app.config` 未修改。**
+3. **Task 8：路径语义。** `WebApiRequest.Path` 与 `HealthCheckPath` 去掉开头的 `/` 后以 BaseUrl（规范化为以 `/` 结尾）为基准拼接，因此 `http://host/api` + `/orders` = `http://host/api/orders`，不会替换基地址的路径。第一段带冒号的相对路径（`orders:1`）与 `scheme:x` 无法区分，一并按绝对引用拒绝（需要时写成 `./orders:1`）。
+4. **Task 8：空正文按计划原文处理为"成功，Data = default"，对 `byte[]` / `string` 也是 null（不是空数组 / 空串）；启用包络时，2xx 的空正文同样是成功。** 若希望 2xx 空正文在启用包络时是协议违规，需要审阅者裁决。
+5. **Task 8：未知 charset（net8.0 默认没有 GBK 等代码页）的字符串响应是 `ProtocolViolation`，不静默回退到 UTF-8；** 宿主需要时自行注册 `CodePagesEncodingProvider`，库不修改全局设置。请求的字符串正文也按 `ContentType` 的 charset 编码。
+6. **Task 8：包络路径按名称精确匹配（区分大小写）；`ResponseEnvelopeOptions` 只在 `Enabled` 时校验路径与成功码。** 非 2xx 且包络可读时，`RemoteCode` 与消息取自包络但状态码分类不变（401 仍是 `AuthenticationFailed`）。
+7. **Task 8：共享部分放在 Http 一处。** `EndpointArguments`（名称与调用超时规则）、`EndpointCore` 的名称可空（默认基地址的 authority）。**Task 9 追加** `HttpUrl`（绝对 http / https URL）、`UriOrigin`（同源比较，拦截器改地址的检查改用它）、`HttpStatusClassifier.Describe`（`HTTP 400 Bad Request.` 格式，REST 解码改用它）。
+8. **Task 9：`HealthCheckUrl` 必须与 `Url` 同源（计划未写，新增）。** 探测也经过认证拦截器，不同主机会把凭据带出去（P3-D17 的同一理由）。
+9. **Task 9：Fault 没有代码时 `RemoteCode` 为空串而不是 null，** 这样永远满足"带 `RemoteCode` 不重试"。信封版本按响应根元素自己的命名空间判定，不依赖配置的版本（1.1 客户端也能读懂 1.2 的 Fault）。
+10. **Task 9：强类型正文序列化后去掉所有命名空间声明，由写信封的 `XmlWriter` 统一生成。** 原因：net472 的 `XmlSerializer` 给有命名空间的元素选 `q1` 之类的前缀，net8.0 用默认命名空间，黄金信封在两个目标上才能字节一致。`XmlSerializer` 只用两个会缓存生成程序集的构造函数，按类型缓存（每个客户端一份，默认命名空间对一个客户端固定，所以键里不含命名空间）。
+11. **Task 9：`SoapClient` 的事件声明顺序与 `WebApiClient` 不同。** `add`/`remove` 转发是公开类型无法共享的样板（公开类不能继承内部基类，新增公开基类不在固定的公开 API 里）；相同顺序会让重复扫描多出 4 个窗口（24→28），换顺序后回到 24。
+12. **Task 10：未观察任务异常的检查只统计异常文本含 `Junevy.Communication.WebApi` 的项，** 避免同一进程里其他测试的任务异常误伤；`RawHttpServer.Dispose` 同步等待内部循环最多 5 秒。
+13. **Task 11：工厂在创建前先检查释放与 config 是否为 null，** 名称为 null / 空由 `NamedFactory` 抛 `ArgumentException`；配置非法时抛出且不注册任何东西。类型不符的 `InvalidOperationException` 消息格式：`The name 'x' is already registered with a SoapClient, which is not a IWebApiClient.`
+
 ### 19.3 基线与度量
 
 #### Task 0 基线（2026-10-11，`7c6f0ec`，Debug，`dotnet test Junevy.Communication.slnx -c Debug`）
@@ -687,3 +703,15 @@ public static class WebApiServiceCollectionExtensions
 | 生产 → 生产 IVT | 2（架构测试通过） |
 | WebApi 有效行 | 1677（Task 7 结束，里程碑 3–4 还会增加 REST / SOAP / 工厂） |
 | WebApi.Tests | net8.0 378、net472 379（通过 / 0 失败 / 0 跳过） |
+
+#### 里程碑 3 结束时（Task 11，2026-10-11）
+
+| 指标 | 值 |
+|---|---|
+| 重复窗口（6 行，含 WebApi） | 24（7 组，与基线相同；WebApi 内部与跨程序集均为 0） |
+| 超过 60 行的方法 | 0 |
+| 超过 300 行的文件 | 9（不增加；WebApi 最大文件 `AttemptLoop.cs` 180 行） |
+| 生产 → 生产 IVT | 2（架构测试通过） |
+| `WebApiClient.cs` / `SoapClient.cs` | 108 / 121 行（Q22 要求各 ≤ 200） |
+| WebApi 有效行 | 2713 |
+| WebApi.Tests | net8.0 709、net472 710（通过 / 0 失败 / 0 跳过） |
