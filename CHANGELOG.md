@@ -29,6 +29,7 @@
 - 2026-10-11 [Melsec] `McClient` 的内部创建改为经 `PlcChannelBinding` 与内置的 `CreatorCatalog<IChannelCreator>`（TCP、UDP、串口三个创建器）完成；`McClientCreator` 的 `McClientConfig` 与 `McTransport` 形状不变，依赖注入的行为不变。帧类型与介质不匹配仍抛出 `ArgumentException`，消息文本按介质与交付方式重新表述（例如 UDP 使用 4C 时现在报告数据报的规则）。
 - 2026-10-11 [Channels, Tcp, Udp] 客户端与服务端选项的共享部件（计划 Task 9，补审第 1、4、6 节）：心跳配置的复制、校验与内置探测的创建抽为 internal 的 `HeartbeatSettings`，`StreamClientOptions`、`DatagramClientOptions` 与 `TcpServerOptions` 共用，删除各自的副本；字节流与数据报的公共运行参数抽为 internal 的 `ClientOptionsCore`，输入为 internal 的 `ClientCoreSettings`（替代 `DatagramClientSettings`），两个选项类只保留各自传输独有的设置。`TcpServerOptions` 构造函数与 `UdpChannelSettings.From` 拆分为按配置分组的私有方法，地址与范围规则移到 `UdpConfigRules`。校验顺序、异常类型、消息与参数名不变，已有测试未修改。行为不变。
 - 2026-10-11 [Channels] 字节流与数据报通道的共享部件（计划 Task 10，补审第 1、6 节）：请求的编排（Sequential 请求锁、关闭检查、注册等待者、交换、超时或取消后持锁过迟到窗口、finally 释放）与接收等待者抽为 internal 的 `RequestCoordinator`；停止序列、连接丢失与写出失败的报告抽为 internal 的 `ChannelStopSequence`；半帧计时器 `IdleTimer` 移到独立文件。两个通道只保留各自的传输差异（字节流的填充与解析循环，数据报的接收循环与重试式交换）。`StreamChannel.ParseLoopAsync` 拆分为静默检查、结束处理与失败报告，每个方法不超过 60 行。关闭、停止与日志消息的文本不变。行为不变。
+- 2026-10-11 [Channels] 里程碑 3 检查点的小修（CA2254）：停止序列的三条日志改为常量消息模板，占位符为 `{Kind}`、`{Reason}`、`{Loops}`、`{Timeout}`，渲染文本不变；内部的 `ClientCoreSettings` 去掉默认值（其中 `QueueFullMode` 的默认 `DropOldest` 与公开的 `Wait` 不一致），两个映射方已设置全部成员，心跳与重连为 null 时由 `ClientOptionsCore` 的校验报错。行为不变。
 
 ### 破坏性变更（Breaking）
 

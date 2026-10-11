@@ -5,8 +5,8 @@ namespace Junevy.Communication.Channels.Pipeline;
 
 /// <summary>
 /// 字节流与数据报通道共用的停止与故障状态（P25 Task 10，补审第 1 节）：停止标志与停止序列、连接丢失的报告、
-/// 写出失败的报告，以及"已关闭"的判定。两种通道的差异只有通道类型名与循环的描述（用于消息），以及字节流在停止时解除管道读写者的阻塞
-/// （<c>unblockReaders</c>）。消息文本与拆分前逐字相同。
+/// 写出失败的报告，以及"已关闭"的判定。两种通道的差异只有通道类型名与循环的描述（用于消息与日志），以及字节流在停止时解除管道读写者的阻塞
+/// （<c>unblockReaders</c>）。消息文本与拆分前逐字相同。日志模板为常量，通道类型与循环描述作为命名占位符传入（CA2254）。
 /// </summary>
 internal sealed class ChannelStopSequence
 {
@@ -18,9 +18,8 @@ internal sealed class ChannelStopSequence
     private readonly Action? unblockReaders;
     private readonly string closedMessage;
     private readonly string stoppedMessage;
-    private readonly string lostConnectionTemplate;
-    private readonly string callbackFailedMessage;
-    private readonly string loopsTemplate;
+    private readonly string kind;
+    private readonly string loopsKind;
     private readonly CancellationTokenSource stopSource = new CancellationTokenSource();
     private readonly TaskCompletionSource<bool> stopCompletion =
         new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -38,7 +37,7 @@ internal sealed class ChannelStopSequence
     /// <param name="logger">日志记录器。</param>
     /// <param name="onFault">连接丢失时的回调。</param>
     /// <param name="abortTransport">中止底层传输；必须可以重复调用。</param>
-    /// <param name="kind">通道的种类名（<c>stream</c> 或 <c>datagram</c>），用于消息。</param>
+    /// <param name="kind">通道的种类名（<c>stream</c> 或 <c>datagram</c>），用于消息与日志。</param>
     /// <param name="loopsKind">循环的描述（<c>stream loops</c> 或 <c>receive loop</c>），用于超时日志。</param>
     /// <param name="unblockReaders">停止时在取消之后、等待循环之前执行的解除阻塞；不需要时为 null。</param>
     /// <exception cref="ArgumentNullException">日志记录器、回调或中止委托为 null。</exception>
@@ -58,11 +57,10 @@ internal sealed class ChannelStopSequence
         this.onFault = onFault;
         this.abortTransport = abortTransport;
         this.unblockReaders = unblockReaders;
+        this.kind = kind;
+        this.loopsKind = loopsKind;
         closedMessage = $"The {kind} channel is closed.";
         stoppedMessage = $"The {kind} channel was stopped before the operation completed.";
-        lostConnectionTemplate = $"The {kind} channel lost its connection: {{Reason}}.";
-        callbackFailedMessage = $"The fault callback of the {kind} channel threw an exception.";
-        loopsTemplate = $"The {loopsKind} did not exit within {{Timeout}} ms after the stop request.";
     }
 
     /// <summary>是否已请求停止。</summary>
@@ -116,7 +114,7 @@ internal sealed class ChannelStopSequence
         if (IsStopping || Interlocked.Exchange(ref faultReported, 1) != 0)
             return;
 
-        logger.LogWarning(exception, lostConnectionTemplate, reason);
+        logger.LogWarning(exception, "The {Kind} channel lost its connection: {Reason}.", kind, reason);
         table.FailAll(CommResult.Fail("The connection was lost.", CommErrorKind.ConnectionClosed, null, exception));
         try
         {
@@ -124,7 +122,7 @@ internal sealed class ChannelStopSequence
         }
         catch (Exception callbackFailure)
         {
-            logger.LogError(callbackFailure, callbackFailedMessage);
+            logger.LogError(callbackFailure, "The fault callback of the {Kind} channel threw an exception.", kind);
         }
     }
 
@@ -183,7 +181,7 @@ internal sealed class ChannelStopSequence
         Task all = Task.WhenAll(running);
         Task finished = await Task.WhenAny(all, Task.Delay(Math.Max(drainTimeout, 0))).ConfigureAwait(false);
         if (!ReferenceEquals(finished, all) && drainTimeout > 0)
-            logger.LogWarning(loopsTemplate, drainTimeout);
+            logger.LogWarning("The {Loops} did not exit within {Timeout} ms after the stop request.", loopsKind, drainTimeout);
     }
 
     private void SafeAbortTransport()
