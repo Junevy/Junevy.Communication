@@ -42,13 +42,27 @@ internal sealed class InterceptorChain
     /// <param name="context">本次尝试的请求上下文。</param>
     /// <param name="cancellationToken">本次尝试的令牌。</param>
     /// <returns>中止本次调用的失败（<c>Fail</c> 或异常）；全部正常为 null。</returns>
-    public async Task<CallFailure?> RunSendingAsync(WebApiSendingContext context, CancellationToken cancellationToken)
+    public Task<CallFailure?> RunSendingAsync(WebApiSendingContext context, CancellationToken cancellationToken)
+        => RunAsync(Interceptors, interceptor => interceptor.OnSendingAsync(context, cancellationToken), () => context.Failure, cancellationToken);
+
+    /// <summary>
+    /// 按注册的逆序执行 <see cref="IWebApiInterceptor.OnReceivedAsync"/>。
+    /// </summary>
+    /// <param name="context">本次尝试的响应上下文。</param>
+    /// <param name="cancellationToken">本次尝试的令牌。</param>
+    /// <returns>改判本次结果的失败（<c>Fail</c> 或异常）；全部正常为 null。</returns>
+    public Task<CallFailure?> RunReceivedAsync(WebApiReceivedContext context, CancellationToken cancellationToken)
+        => RunAsync(Interceptors.Reverse(), interceptor => interceptor.OnReceivedAsync(context, cancellationToken), () => context.Failure, cancellationToken);
+
+    // 两个阶段只有"顺序、调用哪个方法、从哪个上下文读 Fail"不同，执行与异常处理共用这一份。
+    private async Task<CallFailure?> RunAsync(IEnumerable<IWebApiInterceptor> ordered, Func<IWebApiInterceptor, Task> invoke,
+                                              Func<CallFailure?> recordedFailure, CancellationToken cancellationToken)
     {
-        foreach (IWebApiInterceptor interceptor in Interceptors)
+        foreach (IWebApiInterceptor interceptor in ordered)
         {
             try
             {
-                await interceptor.OnSendingAsync(context, cancellationToken).ConfigureAwait(false);
+                await invoke(interceptor).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -60,39 +74,9 @@ internal sealed class InterceptorChain
                 return Faulted(interceptor, ex);
             }
 
-            if (context.Failure != null)
-                return context.Failure;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// 按注册的逆序执行 <see cref="IWebApiInterceptor.OnReceivedAsync"/>。
-    /// </summary>
-    /// <param name="context">本次尝试的响应上下文。</param>
-    /// <param name="cancellationToken">本次尝试的令牌。</param>
-    /// <returns>改判本次结果的失败（<c>Fail</c> 或异常）；全部正常为 null。</returns>
-    public async Task<CallFailure?> RunReceivedAsync(WebApiReceivedContext context, CancellationToken cancellationToken)
-    {
-        for (int i = Interceptors.Count - 1; i >= 0; i--)
-        {
-            IWebApiInterceptor interceptor = Interceptors[i];
-            try
-            {
-                await interceptor.OnReceivedAsync(context, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                return Faulted(interceptor, ex);
-            }
-
-            if (context.Failure != null)
-                return context.Failure;
+            CallFailure? failure = recordedFailure();
+            if (failure != null)
+                return failure;
         }
 
         return null;
