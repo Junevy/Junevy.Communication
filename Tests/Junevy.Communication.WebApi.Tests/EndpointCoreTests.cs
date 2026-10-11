@@ -189,6 +189,53 @@ public sealed class EndpointCoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Dispose_WithARequestInFlight_ReportsConnectionClosedOnEveryEvent_AndAvailabilityIsUntouched()
+    {
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var rig = new CoreRig(c => c.OfflineThreshold = 1, script: handler => handler.EnqueueAsync(async (request, token) =>
+        {
+            started.TrySetResult(true);
+            await Task.Delay(Timeout.Infinite, token);
+            return new HttpResponseMessage();
+        }));
+        Task<WebApiResult<string>> call = rig.SendAsync();
+        await started.Task.WaitAsyncCompat(WaitLimit);
+
+        await rig.DisposeAsync();
+        await call.WaitAsyncCompat(WaitLimit);
+
+        Assert.Equal(CommErrorKind.ConnectionClosed, Assert.Single(rig.Responses).ErrorKind);
+        Assert.False(rig.Responses.Single().WillRetry);
+        Assert.Equal(CommErrorKind.ConnectionClosed, Assert.Single(rig.Completed).ErrorKind);
+        Assert.Equal(WebApiAvailability.Unknown, rig.Core.Availability);
+        Assert.Empty(rig.Changes);
+    }
+
+    [Fact]
+    public async Task Dispose_WhileWaitingToRetry_EndsTheCallAsConnectionClosedWithoutAnotherAttempt()
+    {
+        var firstResponse = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var rig = new CoreRig(c =>
+        {
+            c.Retry.RetryCount = 3;
+            c.Retry.RetryDelay = 600000;
+        }, script: handler => handler.Enqueue(503).Enqueue(200));
+        rig.Core.Events.ResponseReceived += (sender, args) => firstResponse.TrySetResult(true);
+        Task<WebApiResult<string>> call = rig.SendAsync();
+        await firstResponse.Task.WaitAsyncCompat(WaitLimit);
+
+        await rig.DisposeAsync();
+        WebApiResult<string> result = await call.WaitAsyncCompat(WaitLimit);
+
+        Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
+        Assert.Equal(CommErrorKind.ConnectionClosed, Assert.Single(rig.Completed).ErrorKind);
+        Assert.Single(rig.Handler.Requests);
+        WebApiResponseEventArgs response = Assert.Single(rig.Responses);
+        Assert.Equal(CommErrorKind.RemoteError, response.ErrorKind);
+        Assert.True(response.WillRetry);
+    }
+
+    [Fact]
     public async Task CallerCancellation_StaysCancelled_AndDoesNotDisposeTheCore()
     {
         var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -206,6 +253,7 @@ public sealed class EndpointCoreTests : IDisposable
         WebApiResult<string> result = await call.WaitAsyncCompat(WaitLimit);
 
         Assert.Equal(CommErrorKind.Cancelled, result.ErrorKind);
+        Assert.Equal(CommErrorKind.Cancelled, rig.Responses.Single().ErrorKind);
         Assert.True((await rig.SendAsync()).IsSuccess);
     }
 

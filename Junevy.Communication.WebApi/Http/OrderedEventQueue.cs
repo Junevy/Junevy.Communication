@@ -65,8 +65,14 @@ internal sealed class OrderedEventQueue<T>
             if (items.TryDequeue(out T? item))
             {
                 dispatching.Value = true;
-                consumer(item);
-                dispatching.Value = false;
+                try
+                {
+                    consumer(item);
+                }
+                finally
+                {
+                    dispatching.Value = false;
+                }
             }
             else if (completed)
             {

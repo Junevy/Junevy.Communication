@@ -37,6 +37,7 @@ internal sealed class CoreRig : IAsyncDisposable
         };
         Core.Events.RequestCompleted += (sender, args) => Completed.Enqueue(args);
         Core.Events.RequestSending += (sender, args) => Sending.Enqueue(args);
+        Core.Events.ResponseReceived += (sender, args) => Responses.Enqueue(args);
     }
 
     public StubHttpHandler Handler { get; } = new StubHttpHandler();
@@ -52,6 +53,8 @@ internal sealed class CoreRig : IAsyncDisposable
     public ConcurrentQueue<WebApiAvailabilityChangedEventArgs> Changes { get; } = new ConcurrentQueue<WebApiAvailabilityChangedEventArgs>();
 
     public ConcurrentQueue<WebApiCompletedEventArgs> Completed { get; } = new ConcurrentQueue<WebApiCompletedEventArgs>();
+
+    public ConcurrentQueue<WebApiResponseEventArgs> Responses { get; } = new ConcurrentQueue<WebApiResponseEventArgs>();
 
     public ConcurrentQueue<WebApiSendingEventArgs> Sending { get; } = new ConcurrentQueue<WebApiSendingEventArgs>();
 

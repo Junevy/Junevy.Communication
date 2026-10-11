@@ -65,15 +65,7 @@ internal sealed class AttemptLoop
             return Reject<T>(snapshot.Method, "The request path is not a valid URI.", CommErrorKind.InvalidRequest);
 
         var call = new CallState(NextCallId(), snapshot, requestUri, redactor.RedactUri(requestUri));
-        WebApiResult<T> result;
-        using (CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, closingToken))
-        {
-            result = await RunAttemptsAsync(call, timeout ?? settings.Timeout, interpret, linked.Token).ConfigureAwait(false);
-        }
-
-        if (result.ErrorKind == CommErrorKind.Cancelled && closingToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-            result = WebApiResult<T>.Fail(ClosedMessage, CommErrorKind.ConnectionClosed);
-
+        WebApiResult<T> result = await RunAttemptsAsync(call, timeout ?? settings.Timeout, interpret, cancellationToken, closingToken).ConfigureAwait(false);
         Complete(call.CallId, snapshot.Method, call.RedactedUri, call.SentAttempts, call.Clock.Elapsed, result);
         return result;
     }
@@ -96,22 +88,35 @@ internal sealed class AttemptLoop
 
     private long NextCallId() => Interlocked.Increment(ref lastCallId);
 
-    private async Task<WebApiResult<T>> RunAttemptsAsync<T>(CallState call, int timeout, ResponseInterpreter<T> interpret, CancellationToken cancellationToken)
+    private async Task<WebApiResult<T>> RunAttemptsAsync<T>(CallState call, int timeout, ResponseInterpreter<T> interpret,
+                                                            CancellationToken callerToken, CancellationToken closingToken)
     {
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(callerToken, closingToken);
         while (true)
         {
             call.Attempts++;
-            AttemptOutcome<T> outcome = await runner.RunAsync(call, timeout, interpret, cancellationToken).ConfigureAwait(false);
-            int? delay = PlanNext(call, outcome);
+            AttemptOutcome<T> attempt = await runner.RunAsync(call, timeout, interpret, linked.Token).ConfigureAwait(false);
+            AttemptOutcome<T> outcome = attempt.WithResult(MapDisposal(attempt.Result, callerToken, closingToken));
+
+            // 释放造成的结束是终局：不再重试（否则会对已释放的端点再发起被立即取消的尝试）。
+            bool endedByDisposal = !ReferenceEquals(outcome.Result, attempt.Result);
+            int? delay = endedByDisposal ? null : PlanNext(call, outcome);
             if (outcome.Sent)
                 Report(call, outcome, delay);
 
             if (delay == null)
                 return outcome.Result;
-            if (delay > 0 && !await WaitAsync(delay.Value, cancellationToken).ConfigureAwait(false))
-                return WebApiResult<T>.Fail("The call was cancelled while waiting to retry.", CommErrorKind.Cancelled);
+            if (delay > 0 && !await WaitAsync(delay.Value, linked.Token).ConfigureAwait(false))
+                return MapDisposal(WebApiResult<T>.Fail("The call was cancelled while waiting to retry.", CommErrorKind.Cancelled), callerToken, closingToken);
         }
     }
+
+    // 释放端点而结束的尝试（取消，但取消来自端点的释放信号而不是调用方）对外一律是 ConnectionClosed：
+    // 尝试的 ResponseReceived、最终结果与 RequestCompleted 因此一致。可用性跟踪读的是传输层结果（Cancelled），不会把它算作失败。
+    private static WebApiResult<T> MapDisposal<T>(WebApiResult<T> result, CancellationToken callerToken, CancellationToken closingToken)
+        => result.ErrorKind == CommErrorKind.Cancelled && closingToken.IsCancellationRequested && !callerToken.IsCancellationRequested
+            ? WebApiResult<T>.Fail(ClosedMessage, CommErrorKind.ConnectionClosed, result.StatusCode, null, result.Exception)
+            : result;
 
     // 返回再试之前的等待毫秒数；null 表示结束。重放优先于重试规则。
     private int? PlanNext<T>(CallState call, AttemptOutcome<T> outcome)

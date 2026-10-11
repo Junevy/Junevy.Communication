@@ -37,6 +37,12 @@ internal sealed class AttemptOutcome<T>
     /// <summary>本次尝试从开始（含拦截器）到得出结果的耗时。</summary>
     public TimeSpan Elapsed { get; }
 
+    /// <summary>返回一个仅结果不同的副本（释放造成的取消改判为连接关闭）。</summary>
+    /// <param name="result">新的结果。</param>
+    /// <returns>副本；结果相同时返回自身。</returns>
+    public AttemptOutcome<T> WithResult(WebApiResult<T> result)
+        => ReferenceEquals(result, Result) ? this : new AttemptOutcome<T>(result, Exchange, ResponseBody, ReplayRequested, NoRetry, Elapsed);
+
     /// <summary>创建"请求没有发出"的结果。</summary>
     /// <param name="result">失败结果。</param>
     /// <param name="noRetry">是否无论分类都不重试。</param>
