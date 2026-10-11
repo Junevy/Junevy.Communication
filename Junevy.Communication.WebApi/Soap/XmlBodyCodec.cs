@@ -52,8 +52,6 @@ internal sealed class XmlBodyCodec
     /// <summary>取（必要时创建）某个类型的序列化器；同一类型总是同一个实例，并发时只创建一次。</summary>
     /// <param name="type">类型。</param>
     /// <returns>序列化器。</returns>
-    internal XmlSerializer GetSerializer(Type type) => Get(type).Serializer;
-
     private TypeCodec Get(Type type)
         => codecs.GetOrAdd(type, key => new Lazy<TypeCodec>(() => Create(key))).Value;
 

@@ -102,9 +102,11 @@ internal sealed class RetryPlanner
         if (remoteCode != null)
             return false;
 
+        // 状态码规则只适用于按状态码归类的结果；正文超限等协议违规说明响应本身有问题，即使带着 503 也不重试。
+        bool classifiedByStatus = kind == CommErrorKind.RemoteError || kind == CommErrorKind.ResourceExhausted;
         return kind == CommErrorKind.ConnectionClosed
                || kind == CommErrorKind.Timeout
-               || (statusCode.HasValue && RetryableStatusCodes.Contains(statusCode.Value));
+               || (classifiedByStatus && statusCode.HasValue && RetryableStatusCodes.Contains(statusCode.Value));
     }
 
     private static int ClampToInt(long value) => value > int.MaxValue ? int.MaxValue : (int)value;

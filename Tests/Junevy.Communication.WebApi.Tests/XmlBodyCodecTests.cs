@@ -108,34 +108,11 @@ public sealed class XmlBodyCodecTests
         Assert.Equal(4, codec.Deserialize<Ping>(element).Seq);
     }
 
-    [Fact]
-    public void Serializers_AreCachedPerTypeAndNamespace()
-    {
-        var codec = new XmlBodyCodec("urn:a");
-
-        var first = codec.GetSerializer(typeof(GetOrder));
-        var second = codec.GetSerializer(typeof(GetOrder));
-        var other = codec.GetSerializer(typeof(Ping));
-
-        Assert.Same(first, second);
-        Assert.NotSame(first, other);
-    }
-
     private static T RoundTripThroughAnEnvelope<T>(XmlBodyCodec codec, T body)
     {
         byte[] envelope = SoapEnvelopeWriter.Write(SoapVersion.Soap11, codec.Serialize(body), Enumerable.Empty<XElement>());
         SoapMessage message = SoapMessage.Parse(envelope);
         Assert.True(message.IsEnvelope);
         return codec.Deserialize<T>(message.Content!);
-    }
-
-    [Fact]
-    public async Task ConcurrentUse_CreatesEachSerializerOnce()
-    {
-        var codec = new XmlBodyCodec(null);
-
-        var serializers = await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => Task.Run(() => codec.GetSerializer(typeof(GetOrder)))));
-
-        Assert.All(serializers, serializer => Assert.Same(serializers[0], serializer));
     }
 }

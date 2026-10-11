@@ -65,6 +65,7 @@ public sealed class RetryPlannerTests
     [InlineData(CommErrorKind.RemoteError, 500, "E42", false)]
     [InlineData(CommErrorKind.RemoteError, 200, "E42", false)]
     [InlineData(CommErrorKind.ProtocolViolation, 200, null, false)]
+    [InlineData(CommErrorKind.ProtocolViolation, 503, null, false)]
     [InlineData(CommErrorKind.InvalidRequest, null, null, false)]
     [InlineData(CommErrorKind.Cancelled, null, null, false)]
     [InlineData(CommErrorKind.Unspecified, null, null, false)]

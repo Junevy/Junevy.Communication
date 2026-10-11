@@ -27,6 +27,7 @@
 - 2026-10-11 [Channels, Tcp, Udp] 事件的逐订阅者派发改用 Core 的 `EventSubscribers.InvokeEach`（计划 Task 1，P3-D14）：删除 `LifecycleSupport.InvokeEach` 与 `FrameRouter.RaiseToSubscribers`，共 10 处调用点（Channels 3、Tcp 5、Udp 2）改为调用 Core 版本，`FrameReceived` 的 `eventName` 为 `"FrameReceived"`。订阅者与事件顺序、隔离异常的行为不变；`FrameReceived` 订阅者异常的日志文本统一为通用文本（`A FrameReceived subscriber threw an exception; the remaining subscribers still receive the event.`，原为 `...still receive the frame.`）。唯一的测试改动：`FrameRouterTests.HandlerException_DoesNotStopDispatch` 的一处调用点改为 `EventSubscribers.InvokeEach`（该测试直接调用了被删除的内部方法）。
 - 2026-10-11 [WebApi] 端点配置快照 `EndpointSettings` 不再暴露脱敏名单，改为 `IsRedactedHeader(name)` 与 `IsRedactedQueryParameter(name)`（内部用不区分大小写的 `HashSet`，大小写规则只在快照里定一次）；公开 API 不变。
 - 2026-10-11 [WebApi] 释放端点而结束的在途尝试，其 `ResponseReceived.ErrorKind` 现在也是 `ConnectionClosed`（原为 `Cancelled`），与最终结果和 `RequestCompleted` 一致；取消来自端点的释放信号而不是调用方时才改判，退避等待期间被释放同样如此，且不再重试；可用性跟踪仍读传输层结果，不把它算作失败（计划 Task 6 的审阅修订）。`OrderedEventQueue` 的消费回调用 try/finally 保证派发标志总会复位。
+- 2026-10-12 [WebApi] 重试的状态码规则只适用于按状态码归类的结果（`RemoteError` / `ResourceExhausted`）：正文超限等协议违规（`ProtocolViolation`）即使带着 503 也不重试，与 README 的重试表一致；删除 `XmlBodyCodec` 中只供测试使用的内部成员（审阅者最终验收修订）。
 
 ## [Unreleased] — 接缝整理 P2.5（Core / Channels / Tcp / Udp / Serial / Plc / Melsec）
 
