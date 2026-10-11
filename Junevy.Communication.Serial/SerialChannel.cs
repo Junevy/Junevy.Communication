@@ -17,7 +17,7 @@ namespace Junevy.Communication.Serial;
 /// 握手受 <see cref="SerialChannelConfig.HandshakeTimeout"/> 约束（超时关闭端口并返回 <c>Timeout</c>）；断开时在 <see cref="SerialChannelConfig.DisconnectTimeout"/> 内
 /// 排空已收到的帧。请求超时不重新打开端口（<c>ResetOnRequestTimeout</c> 为 false），迟到应答由 <c>LateReplyWindow</c> 处理。
 /// </remarks>
-public sealed class SerialChannel : StreamClientChannel, ISerialChannel
+public sealed partial class SerialChannel : StreamClientChannel, ISerialChannel
 {
     // 拒绝访问时两次打开之间的等待（毫秒）：驱动释放端口通常在数十毫秒内完成。
     private const int OpenRetryIntervalMilliseconds = 20;
@@ -75,77 +75,6 @@ public sealed class SerialChannel : StreamClientChannel, ISerialChannel
     /// 串口没有连接级的半帧语义：未成帧的残余字节在超过 <c>PartialFrameTimeout</c> 后丢弃，连接保持（设计文档第 8 节）。
     /// </summary>
     protected override PartialFrameAction PartialFrameAction => PartialFrameAction.Discard;
-
-    /// <summary>
-    /// 打开端口（受 <c>OpenTimeout</c> 约束）。拒绝访问（<see cref="UnauthorizedAccessException"/>）可能是瞬时状态（驱动释放端口是异步的），
-    /// 在 <c>OpenTimeout</c> 总时限内每 20 ms 重试一次；时限用尽仍被拒绝访问则返回 <c>ConnectionClosed</c>，消息说明已经重试。
-    /// 其他打开失败（端口不存在、被占用）立即返回 <c>ConnectionClosed</c>，消息包含端口名与原始异常消息；
-    /// 超时返回 <c>Timeout</c>，端口在驱动最终返回时释放；用户取消抛出 <see cref="OperationCanceledException"/>。
-    /// 成功时清空接收缓冲（<c>DiscardInBuffer</c>）后返回数据流。
-    /// </summary>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>成功时为已打开端口的数据流。</returns>
-    protected override async Task<CommResult<Stream>> OpenStreamAsync(CancellationToken cancellationToken)
-    {
-        using TimeoutScope window = TimeoutScope.Start(portSettings.OpenTimeout, cancellationToken);
-        int attempts = 0;
-        UnauthorizedAccessException? denied = null;
-        while (true)
-        {
-            // 拒绝访问之后时限用尽：报告 ConnectionClosed 并说明已经重试（而不是超时）。
-            if (denied != null && window.Token.IsCancellationRequested)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                return OpenFailedAfterRetries(denied, attempts);
-            }
-
-            attempts++;
-            ISerialPortHandle handle;
-            try
-            {
-                handle = handleFactory.Create(portSettings);
-            }
-            catch (Exception ex)
-            {
-                return OpenFailed(ex);
-            }
-
-            Task opening = Task.Run(handle.Open);
-            bool completed = await WaitForOpenAsync(opening, window.Token).ConfigureAwait(false);
-            Exception? failure = completed && opening.IsFaulted ? opening.Exception!.GetBaseException() : null;
-
-            // 拒绝访问即使在时限到达之后才返回，也按拒绝访问处理（已经重试过），而不是超时。其余情况下时限到达即超时。
-            bool timedOut = !completed || (window.Token.IsCancellationRequested && failure is not UnauthorizedAccessException);
-            if (timedOut)
-            {
-                // 驱动可能在之后才返回：由后台在它完成时释放端口，不让端口没有所有者（计划 14.2）。
-                ReleaseWhenOpened(opening, handle);
-                cancellationToken.ThrowIfCancellationRequested();
-
-                // 之前的尝试已被拒绝访问，时限到达时本次尝试仍未返回：时限用尽仍被拒绝访问，报告 ConnectionClosed（已重试）。
-                return !completed && denied != null ? OpenFailedAfterRetries(denied, attempts) : OpenTimedOut();
-            }
-
-            if (failure == null)
-                return ActivateHandle(handle);
-
-            DisposeQuietly(handle);
-            if (failure is not UnauthorizedAccessException access)
-                return OpenFailed(failure);
-
-            // 拒绝访问可能是瞬时状态：驱动释放端口是异步的，刚关闭的端口可能在短时间内仍被占用。在 OpenTimeout 总时限内重试。
-            denied = access;
-            try
-            {
-                await Task.Delay(OpenRetryIntervalMilliseconds, window.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // 用户取消立即结束；时限用尽则由循环开头报告。
-                cancellationToken.ThrowIfCancellationRequested();
-            }
-        }
-    }
 
     /// <inheritdoc />
     protected override void AbortTransport()

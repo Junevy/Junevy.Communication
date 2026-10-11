@@ -17,13 +17,8 @@ namespace Junevy.Communication.Channels;
 /// </remarks>
 public abstract class StreamClientChannel : IClientChannel
 {
-    private readonly string name;
     private readonly ILogger logger;
-    private readonly ConnectionStatistics statistics = new ConnectionStatistics();
-    private readonly StreamClientOptions resolved;
-    private readonly StreamConnectionDriver driver;
-    private readonly ConnectionSupervisor supervisor;
-    private int disposed;
+    private readonly SupervisedChannelCore<StreamChannel> core;
 
     /// <summary>
     /// 创建字节流客户端通道（尚未连接）。构造时校验并复制配置（D5）：非法值抛出 <see cref="ArgumentException"/> 族，
@@ -37,15 +32,20 @@ public abstract class StreamClientChannel : IClientChannel
     /// <exception cref="ArgumentException">配置非法，例如启用心跳却没有探测的负载。</exception>
     protected StreamClientChannel(string name, ClientChannelSettings settings, ChannelComponents? components, ILogger logger)
     {
-        this.name = name ?? throw new ArgumentNullException(nameof(name));
-        this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        if (name == null)
+            throw new ArgumentNullException(nameof(name));
+        if (logger == null)
+            throw new ArgumentNullException(nameof(logger));
 
-        resolved = new StreamClientOptions(settings, components, this);
-        driver = new StreamConnectionDriver(resolved, this, OpenStreamAsync, SecureStreamAsync, AbortTransport, OnClosingAsync, () => PartialFrameAction,
-                                            RaiseFrameReceived, () => DescribeEndpoint(), statistics, logger);
-        supervisor = new ConnectionSupervisor(name, driver, resolved.Core.ReconnectPolicy, resolved.Core.ReconnectOnInitialFailure, statistics, logger);
+        this.logger = logger;
+        var statistics = new ConnectionStatistics();
+        var resolved = new StreamClientOptions(settings, components, this);
+        var driver = new StreamConnectionDriver(resolved, this, OpenStreamAsync, SecureStreamAsync, AbortTransport, OnClosingAsync,
+                                                () => PartialFrameAction, RaiseFrameReceived, () => DescribeEndpoint(), statistics, logger);
+        var supervisor = new ConnectionSupervisor(name, driver, resolved.Core.ReconnectPolicy, resolved.Core.ReconnectOnInitialFailure, statistics, logger);
         driver.Attach(supervisor);
         supervisor.StateChanged += OnSupervisorStateChanged;
+        core = new SupervisedChannelCore<StreamChannel>(this, name, resolved.Core, supervisor, () => driver.CurrentChannel, statistics, logger);
     }
 
     /// <summary>
@@ -92,16 +92,16 @@ public abstract class StreamClientChannel : IClientChannel
     protected abstract string DescribeEndpoint();
 
     /// <inheritdoc />
-    public string Name => name;
+    public string Name => core.Name;
 
     /// <inheritdoc />
-    public ConnectionState State => supervisor.State;
+    public ConnectionState State => core.State;
 
     /// <inheritdoc />
-    public bool IsConnected => State == ConnectionState.Connected;
+    public bool IsConnected => core.IsConnected;
 
     /// <inheritdoc />
-    public ConnectionStatistics Statistics => statistics;
+    public ConnectionStatistics Statistics => core.Statistics;
 
     /// <inheritdoc />
     public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
@@ -110,33 +110,20 @@ public abstract class StreamClientChannel : IClientChannel
     public event EventHandler<FrameReceivedEventArgs>? FrameReceived;
 
     /// <inheritdoc />
-    public async Task<CommResult> ConnectAsync(CancellationToken cancellationToken = default)
-    {
-        ThrowIfDisposed();
-        return await supervisor.ConnectAsync(cancellationToken).ConfigureAwait(false);
-    }
+    public Task<CommResult> ConnectAsync(CancellationToken cancellationToken = default) => core.ConnectAsync(cancellationToken);
 
     /// <inheritdoc />
-    public Task DisconnectAsync(CancellationToken cancellationToken = default)
-    {
-        if (IsDisposed)
-            return Task.CompletedTask;
-
-        return supervisor.DisconnectAsync(resolved.Core.DisconnectTimeout, cancellationToken);
-    }
+    public Task DisconnectAsync(CancellationToken cancellationToken = default) => core.DisconnectAsync(cancellationToken);
 
     /// <inheritdoc />
-    public async Task<bool> WaitForConnectedAsync(int timeout, CancellationToken cancellationToken = default)
-    {
-        ThrowIfDisposed();
-        return await supervisor.WaitForConnectedAsync(timeout, cancellationToken).ConfigureAwait(false);
-    }
+    public Task<bool> WaitForConnectedAsync(int timeout, CancellationToken cancellationToken = default)
+        => core.WaitForConnectedAsync(timeout, cancellationToken);
 
     /// <inheritdoc />
     public async Task<CommResult> SendAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
     {
-        ThrowIfDisposed();
-        StreamChannel? channel = ConnectedChannel();
+        core.ThrowIfDisposed();
+        StreamChannel? channel = core.ConnectedChannel();
         if (channel == null)
             return CommResult.Fail("The channel is not connected.", CommErrorKind.NotConnected);
 
@@ -147,8 +134,8 @@ public abstract class StreamClientChannel : IClientChannel
     public async Task<CommResult<byte[]>> RequestAsync(ReadOnlyMemory<byte> payload, RequestOptions? options = null,
                                                        CancellationToken cancellationToken = default)
     {
-        ThrowIfDisposed();
-        StreamChannel? channel = ConnectedChannel();
+        core.ThrowIfDisposed();
+        StreamChannel? channel = core.ConnectedChannel();
         if (channel == null)
             return CommResult<byte[]>.Fail("The channel is not connected.", CommErrorKind.NotConnected);
 
@@ -158,8 +145,8 @@ public abstract class StreamClientChannel : IClientChannel
     /// <inheritdoc />
     public async Task<CommResult<byte[]>> ReceiveAsync(RequestOptions? options = null, CancellationToken cancellationToken = default)
     {
-        ThrowIfDisposed();
-        StreamChannel? channel = ConnectedChannel();
+        core.ThrowIfDisposed();
+        StreamChannel? channel = core.ConnectedChannel();
         if (channel == null)
             return CommResult<byte[]>.Fail("The channel is not connected.", CommErrorKind.NotConnected);
 
@@ -170,36 +157,14 @@ public abstract class StreamClientChannel : IClientChannel
     /// 同步释放：等待 <see cref="DisposeAsync"/> 完成，最长 <c>DisconnectTimeout + 1000</c> 毫秒（D16）。
     /// 超时后返回，释放在后台继续。在事件处理器内调用时不会死锁。
     /// </summary>
-    public void Dispose()
-    {
-        int limit = resolved.Core.DisconnectTimeout + 1000;
-        Task disposing = DisposeAsync().AsTask();
-        if (!disposing.Wait(limit))
-            logger.LogWarning("Disposing the channel {Name} did not finish within {Timeout} ms; the release continues in the background.", name, limit);
-    }
+    public void Dispose() => core.Dispose();
 
     /// <summary>
     /// 异步释放：关闭连接、停止重连与心跳、结束状态事件派发。幂等。
     /// 在状态事件处理器内调用时只发出停止信号，不等待状态事件派发结束，因此不会死锁。
     /// </summary>
     /// <returns>释放完成的任务。</returns>
-    public ValueTask DisposeAsync()
-    {
-        Interlocked.Exchange(ref disposed, 1);
-        return supervisor.DisposeAsync();
-    }
-
-    private bool IsDisposed => Volatile.Read(ref disposed) != 0;
-
-    private void ThrowIfDisposed()
-    {
-        if (IsDisposed)
-            throw new ObjectDisposedException(GetType().Name);
-    }
-
-    // 只有 Connected 时才返回字节通道；连接正在关闭或重建时即使有旧的通道对象也返回 null。
-    private StreamChannel? ConnectedChannel()
-        => supervisor.State == ConnectionState.Connected ? driver.CurrentChannel : null;
+    public ValueTask DisposeAsync() => core.DisposeAsync();
 
     // 监督器的状态事件经此转发：发送者为通道本身，订阅者逐个隔离异常。
     private void OnSupervisorStateChanged(object? sender, ConnectionStateChangedEventArgs args)

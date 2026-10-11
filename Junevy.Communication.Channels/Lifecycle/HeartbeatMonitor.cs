@@ -17,10 +17,9 @@ internal sealed class HeartbeatMonitor : IAsyncDisposable
     // 循环的最长唤醒间隔：空闲超时与探测间隔都以此为粒度判定，避免长时间休眠后错过截止时间。
     private const int MaxWakeMilliseconds = 250;
 
-    private readonly IHealthProbe? probe;
+    private readonly HeartbeatProbeRunner probeRunner;
     private readonly bool probingEnabled;
     private readonly int probeInterval;
-    private readonly int probeTimeout;
     private readonly int maxFailures;
     private readonly bool onlyWhenIdle;
     private readonly int idleTimeout;
@@ -70,15 +69,14 @@ internal sealed class HeartbeatMonitor : IAsyncDisposable
                 throw new ArgumentOutOfRangeException(nameof(options), options.MaxFailures, "The heartbeat failure threshold must be at least 1.");
         }
 
-        this.probe = probe;
         probeInterval = options.Interval;
-        probeTimeout = options.Timeout;
         maxFailures = options.MaxFailures;
         onlyWhenIdle = options.OnlyWhenIdle;
         this.idleTimeout = idleTimeout;
         this.statistics = statistics;
         this.onDead = onDead;
         this.logger = logger;
+        probeRunner = new HeartbeatProbeRunner(probe, options.Timeout, logger);
     }
 
     /// <summary>
@@ -130,21 +128,8 @@ internal sealed class HeartbeatMonitor : IAsyncDisposable
                 await Task.Delay(MillisecondsUntil(wakeAt), stopToken).ConfigureAwait(false);
                 long now = Stopwatch.GetTimestamp();
 
-                if (idleTimeout > 0)
-                {
-                    long inbound = statistics.FramesReceived;
-                    if (inbound != lastInbound)
-                    {
-                        lastInbound = inbound;
-                        inboundAt = now;
-                    }
-                    else if (now - inboundAt >= ToTicks(idleTimeout))
-                    {
-                        logger.LogWarning("No inbound frame arrived within {Timeout} ms; the connection is considered dead.", idleTimeout);
-                        Report(DisconnectReason.IdleTimeout);
-                        return;
-                    }
-                }
+                if (idleTimeout > 0 && IdleExpired(now, ref inboundAt, ref lastInbound))
+                    return;
 
                 if (!probingEnabled || now < nextProbeAt)
                     continue;
@@ -158,37 +143,13 @@ internal sealed class HeartbeatMonitor : IAsyncDisposable
                     continue;
                 }
 
-                ProbeOutcome outcome = await ProbeOnceAsync(stopToken).ConfigureAwait(false);
+                HeartbeatProbeRunner.ProbeOutcome outcome = await probeRunner.ProbeOnceAsync(stopToken).ConfigureAwait(false);
                 stopToken.ThrowIfCancellationRequested();
 
                 // 探测自身的收发不计为业务流量，因此在探测结束后重新取样。
                 lastTraffic = Traffic();
-
-                CommResult result = outcome.Result;
-                if (result.IsSuccess)
-                {
-                    statistics.ResetConsecutiveHeartbeatFailures();
-                    continue;
-                }
-
-                // 尚未连接的探测说明连接正在被关闭或重建，由生命周期处理，不计入心跳失败。
-                if (result.ErrorKind == CommErrorKind.NotConnected)
-                    continue;
-
-                // 通道忙：探测排在请求锁或发送锁上直到超时，没有写出任何帧。这不是对端沉默的证据，不计入心跳失败，也不影响连续失败计数。
-                if (outcome.ChannelBusy)
-                {
-                    logger.LogDebug("Heartbeat probe skipped: channel busy ({Result}).", result);
-                    continue;
-                }
-
-                int failures = statistics.IncrementConsecutiveHeartbeatFailures();
-                logger.LogWarning("Heartbeat probe failed ({Failures} of {MaxFailures}): {Result}", failures, maxFailures, result);
-                if (failures >= maxFailures)
-                {
-                    Report(DisconnectReason.HeartbeatFailed);
+                if (JudgeProbe(outcome))
                     return;
-                }
             }
         }
         catch (OperationCanceledException) when (stopToken.IsCancellationRequested)
@@ -197,70 +158,53 @@ internal sealed class HeartbeatMonitor : IAsyncDisposable
         }
     }
 
-    // 单次探测：探测在超时后被放弃（取消）；探测本身忽略取消令牌时，也不会让循环无限等待。
-    // 结果同时带回探测上下文的登记：探测是否因通道忙而未写出任何帧（见 HeartbeatProbeScope.ChannelBusy）。
-    private async Task<ProbeOutcome> ProbeOnceAsync(CancellationToken stopToken)
+    // 空闲判定：有入站帧则重新计时；超过空闲超时则报告 IdleTimeout 并返回 true（监视结束）。
+    private bool IdleExpired(long now, ref long inboundAt, ref long lastInbound)
     {
-        using (CancellationTokenSource probeSource = CancellationTokenSource.CreateLinkedTokenSource(stopToken))
+        long inbound = statistics.FramesReceived;
+        if (inbound != lastInbound)
         {
-            (Task<CommResult> probeTask, HeartbeatProbeScope scope) = StartProbe(probeSource.Token);
-            Task timeout = Task.Delay(probeTimeout, stopToken);
-            Task finished = await Task.WhenAny(probeTask, timeout).ConfigureAwait(false);
-            if (ReferenceEquals(finished, probeTask))
-            {
-                CommResult completed = await probeTask.ConfigureAwait(false);
-                return new ProbeOutcome(completed, scope.ChannelBusy);
-            }
-
-            probeSource.Cancel();
-            var timedOut = CommResult.Fail($"No heartbeat reply was received within {probeTimeout} ms.", CommErrorKind.Timeout);
-            return new ProbeOutcome(timedOut, scope.ChannelBusy);
+            lastInbound = inbound;
+            inboundAt = now;
+            return false;
         }
+
+        if (now - inboundAt < ToTicks(idleTimeout))
+            return false;
+
+        logger.LogWarning("No inbound frame arrived within {Timeout} ms; the connection is considered dead.", idleTimeout);
+        Report(DisconnectReason.IdleTimeout);
+        return true;
     }
 
-    // 在心跳探测上下文中启动探测（见 HeartbeatProbeScope）：上下文只在探测启动的同步部分内挂到监视循环的执行流上，
-    // 返回后恢复原有上下文；探测自身的续延已捕获该上下文，直到探测返回为止都享有豁免。调用方凭返回的上下文读取探测的登记。
-    private (Task<CommResult> Probe, HeartbeatProbeScope Scope) StartProbe(CancellationToken probeToken)
+    // 判定一次探测结果：成功则重置连续失败；未连接与通道忙不计入失败；失败次数达到阈值时报告 HeartbeatFailed 并返回 true（监视结束）。
+    private bool JudgeProbe(HeartbeatProbeRunner.ProbeOutcome outcome)
     {
-        using (HeartbeatProbeScope scope = HeartbeatProbeScope.Enter())
+        CommResult result = outcome.Result;
+        if (result.IsSuccess)
         {
-            return (ProbeSafelyAsync(probeToken, scope), scope);
-        }
-    }
-
-    // 单次探测的结果，以及探测是否因通道忙而未写出任何帧（见 HeartbeatProbeScope.ChannelBusy）。
-    private readonly struct ProbeOutcome
-    {
-        public ProbeOutcome(CommResult result, bool channelBusy)
-        {
-            Result = result;
-            ChannelBusy = channelBusy;
+            statistics.ResetConsecutiveHeartbeatFailures();
+            return false;
         }
 
-        public CommResult Result { get; }
+        // 尚未连接的探测说明连接正在被关闭或重建，由生命周期处理，不计入心跳失败。
+        if (result.ErrorKind == CommErrorKind.NotConnected)
+            return false;
 
-        public bool ChannelBusy { get; }
-    }
+        // 通道忙：探测排在请求锁或发送锁上直到超时，没有写出任何帧。这不是对端沉默的证据，不计入心跳失败，也不影响连续失败计数。
+        if (outcome.ChannelBusy)
+        {
+            logger.LogDebug("Heartbeat probe skipped: channel busy ({Result}).", result);
+            return false;
+        }
 
-    private async Task<CommResult> ProbeSafelyAsync(CancellationToken probeToken, HeartbeatProbeScope scope)
-    {
-        try
-        {
-            return await probe!.ProbeAsync(probeToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (probeToken.IsCancellationRequested)
-        {
-            return CommResult.Fail("The heartbeat probe was cancelled.", CommErrorKind.Cancelled);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "The heartbeat probe threw an exception.");
-            return CommResult.Fail("The heartbeat probe threw an exception.", CommErrorKind.Unspecified, null, ex);
-        }
-        finally
-        {
-            scope.Close();
-        }
+        int failures = statistics.IncrementConsecutiveHeartbeatFailures();
+        logger.LogWarning("Heartbeat probe failed ({Failures} of {MaxFailures}): {Result}", failures, maxFailures, result);
+        if (failures < maxFailures)
+            return false;
+
+        Report(DisconnectReason.HeartbeatFailed);
+        return true;
     }
 
     private void Report(DisconnectReason reason)
