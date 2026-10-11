@@ -21,6 +21,23 @@ public sealed class GetOrderResponse
     public int Quantity { get; set; }
 }
 
+/// <summary>
+/// 带 <c>object</c> 成员和可空成员的类型：<c>object</c> 成员序列化时会写 <c>xsi:type="xsd:int"</c> 这样的 QName 值属性，
+/// 可空成员为 null 时会写 <c>xsi:nil</c>，它们依赖对应的命名空间前缀声明仍然有效。
+/// </summary>
+[XmlRoot("Variant", Namespace = SoapTestNamespaces.Mes)]
+public sealed class VariantBody
+{
+    [XmlElement(Namespace = SoapTestNamespaces.Mes)]
+    public object? Value { get; set; }
+
+    [XmlElement(Namespace = SoapTestNamespaces.Mes, IsNullable = true)]
+    public string? Note { get; set; }
+
+    [XmlElement(Namespace = SoapTestNamespaces.Mes, IsNullable = true)]
+    public int? Count { get; set; }
+}
+
 /// <summary>没有命名空间特性的请求类型：命名空间来自配置的 <c>DefaultNamespace</c>。</summary>
 public sealed class Ping
 {

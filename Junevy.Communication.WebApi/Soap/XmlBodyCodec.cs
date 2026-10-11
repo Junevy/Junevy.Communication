@@ -12,7 +12,7 @@ namespace Junevy.Communication.WebApi.Soap;
 internal sealed class XmlBodyCodec
 {
     private readonly string? defaultNamespace;
-    private readonly ConcurrentDictionary<Type, Lazy<XmlSerializer>> serializers = new ConcurrentDictionary<Type, Lazy<XmlSerializer>>();
+    private readonly ConcurrentDictionary<Type, Lazy<TypeCodec>> codecs = new ConcurrentDictionary<Type, Lazy<TypeCodec>>();
 
     /// <summary>创建编解码器。</summary>
     /// <param name="defaultNamespace">没有命名空间特性的类型使用的默认命名空间；null 表示不设置。</param>
@@ -24,17 +24,18 @@ internal sealed class XmlBodyCodec
     /// <summary>把对象序列化为 XML 元素。</summary>
     /// <typeparam name="T">对象的声明类型。</typeparam>
     /// <param name="body">对象。</param>
-    /// <returns>根元素。</returns>
+    /// <returns>根元素；它保留 <see cref="XmlSerializer"/> 写出的命名空间声明，<c>xsi:type="xsd:int"</c> 这样的 QName 值属性才能在信封里继续成立。</returns>
     /// <exception cref="InvalidOperationException">类型不能被 <see cref="XmlSerializer"/> 处理。</exception>
     public XElement Serialize<T>(T body)
     {
+        TypeCodec codec = Get(typeof(T));
         var document = new XDocument();
         using (XmlWriter writer = document.CreateWriter())
         {
-            GetSerializer(typeof(T)).Serialize(writer, body);
+            codec.Serializer.Serialize(writer, body, codec.Namespaces);
         }
 
-        return WithoutNamespaceDeclarations(document.Root!);
+        return document.Root!;
     }
 
     /// <summary>把 XML 元素反序列化为对象。</summary>
@@ -45,22 +46,41 @@ internal sealed class XmlBodyCodec
     public T Deserialize<T>(XElement element)
     {
         using XmlReader reader = element.CreateReader();
-        return (T)GetSerializer(typeof(T)).Deserialize(reader)!;
+        return (T)Get(typeof(T)).Serializer.Deserialize(reader)!;
     }
 
     /// <summary>取（必要时创建）某个类型的序列化器；同一类型总是同一个实例，并发时只创建一次。</summary>
     /// <param name="type">类型。</param>
     /// <returns>序列化器。</returns>
-    internal XmlSerializer GetSerializer(Type type)
-        => serializers.GetOrAdd(type, key => new Lazy<XmlSerializer>(() => Create(key))).Value;
+    internal XmlSerializer GetSerializer(Type type) => Get(type).Serializer;
 
-    // XmlSerializer 在根元素上写 xmlns:xsi / xmlns:xsd，net472 还会给有命名空间的元素选 q1 之类的前缀，net8.0 则用默认命名空间。
-    // 去掉所有命名空间声明后，由写信封时的 XmlWriter 统一生成声明（元素用默认命名空间）：两个目标的输出一致，信封稳定、可读，语义不变。
-    private static XElement WithoutNamespaceDeclarations(XElement element)
-        => new XElement(element.Name,
-                        element.Attributes().Where(attribute => !attribute.IsNamespaceDeclaration),
-                        element.Nodes().Select(node => node is XElement child ? WithoutNamespaceDeclarations(child) : node));
+    private TypeCodec Get(Type type)
+        => codecs.GetOrAdd(type, key => new Lazy<TypeCodec>(() => Create(key))).Value;
 
-    private XmlSerializer Create(Type type)
-        => defaultNamespace == null ? new XmlSerializer(type) : new XmlSerializer(type, defaultNamespace);
+    private TypeCodec Create(Type type)
+        => new TypeCodec(defaultNamespace == null ? new XmlSerializer(type) : new XmlSerializer(type, defaultNamespace), BodyNamespaces(type));
+
+    // 显式的命名空间表：空前缀绑定到正文根元素自己的命名空间。给了显式表，XmlSerializer 只声明表里的前缀，
+    // 根元素用默认命名空间（net472 否则会给有命名空间的元素选 q1 之类的前缀，两个目标的输出才一致，黄金信封才稳定），
+    // 需要 xsi:type / xsi:nil 时仍会在用到的地方就近声明 xsi / xsd。XmlReflectionImporter 只读元数据，不生成程序集。
+    private XmlSerializerNamespaces BodyNamespaces(Type type)
+    {
+        string bodyNamespace = new XmlReflectionImporter(defaultNamespace).ImportTypeMapping(type).Namespace ?? string.Empty;
+        var namespaces = new XmlSerializerNamespaces();
+        namespaces.Add(string.Empty, bodyNamespace);
+        return namespaces;
+    }
+
+    private sealed class TypeCodec
+    {
+        public TypeCodec(XmlSerializer serializer, XmlSerializerNamespaces namespaces)
+        {
+            Serializer = serializer;
+            Namespaces = namespaces;
+        }
+
+        public XmlSerializer Serializer { get; }
+
+        public XmlSerializerNamespaces Namespaces { get; }
+    }
 }
