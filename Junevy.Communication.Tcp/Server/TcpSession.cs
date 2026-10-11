@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Channels.Lifecycle;
 using Junevy.Communication.Channels.Pipeline;
+using Junevy.Communication.Core.Diagnostics;
 using Junevy.Communication.Core.Results;
 using Microsoft.Extensions.Logging;
 
@@ -231,7 +232,7 @@ internal sealed class TcpSession : ITcpSession
 
     /// <summary>把一帧派发给会话自己的订阅者（逐个隔离异常）。</summary>
     internal void RaiseFrame(FrameReceivedEventArgs args, ILogger logger)
-        => FrameRouter.RaiseToSubscribers(FrameReceived, this, args, logger);
+        => EventSubscribers.InvokeEach(FrameReceived, this, args, logger, "FrameReceived");
 
     private StreamChannel? ConnectedChannel() => connected ? channel : null;
 }

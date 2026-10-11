@@ -3,6 +3,7 @@ using System.Net;
 using System.Security.Cryptography.X509Certificates;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Channels.Lifecycle;
+using Junevy.Communication.Core.Diagnostics;
 using Junevy.Communication.Core.Resilience;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Tcp.Server;
@@ -421,13 +422,13 @@ public sealed class TcpServer : ITcpServer
 
     // 以下触发器由共享状态与会话生命周期回调（发送者为服务端）。
     private void RaiseStateChanged(ServerStateChangedEventArgs args)
-        => LifecycleSupport.InvokeEach(StateChanged, this, args, logger, "StateChanged");
+        => EventSubscribers.InvokeEach(StateChanged, this, args, logger, "StateChanged");
 
     private void RaiseSessionConnected(TcpSessionEventArgs args)
-        => LifecycleSupport.InvokeEach(SessionConnected, this, args, logger, "SessionConnected");
+        => EventSubscribers.InvokeEach(SessionConnected, this, args, logger, "SessionConnected");
 
     private void RaiseSessionClosed(TcpSessionClosedEventArgs args)
-        => LifecycleSupport.InvokeEach(SessionClosed, this, args, logger, "SessionClosed");
+        => EventSubscribers.InvokeEach(SessionClosed, this, args, logger, "SessionClosed");
 
     // 会话的 FrameReceived 在路由的派发循环中触发：先会话级（sender 为会话），再服务端级（sender 为服务端）。两级都处于派发上下文中。
     private void RaiseSessionFrame(TcpSession session, FrameReceivedEventArgs args)
@@ -436,7 +437,7 @@ public sealed class TcpServer : ITcpServer
         {
             session.RaiseFrame(args, logger);
             var frame = new TcpSessionFrameEventArgs(session, args);
-            LifecycleSupport.InvokeEach(FrameReceived, this, frame, logger, "FrameReceived");
+            EventSubscribers.InvokeEach(FrameReceived, this, frame, logger, "FrameReceived");
         });
     }
 

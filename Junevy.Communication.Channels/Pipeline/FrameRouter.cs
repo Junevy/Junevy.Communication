@@ -240,32 +240,6 @@ internal sealed class FrameRouter : IAsyncDisposable
         DropUndispatched();
     }
 
-    /// <summary>
-    /// 把一个事件派发给每个订阅者：单个订阅者抛出的异常只记 Error 日志，其余订阅者照常收到。
-    /// 供 <c>raise</c> 回调使用（计划 7.2 规则 7）。
-    /// </summary>
-    /// <param name="handler">事件的多播委托；为 null 时无操作。</param>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="args">事件参数。</param>
-    /// <param name="logger">用于记录订阅者异常的日志记录器。</param>
-    internal static void RaiseToSubscribers(EventHandler<FrameReceivedEventArgs>? handler, object sender, FrameReceivedEventArgs args, ILogger logger)
-    {
-        if (handler == null)
-            return;
-
-        foreach (Delegate subscriber in handler.GetInvocationList())
-        {
-            try
-            {
-                ((EventHandler<FrameReceivedEventArgs>)subscriber)(sender, args);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "A FrameReceived subscriber threw an exception; the remaining subscribers still receive the frame.");
-            }
-        }
-    }
-
     private async Task RunDispatchAsync()
     {
         CancellationToken stopToken = stopSource.Token;

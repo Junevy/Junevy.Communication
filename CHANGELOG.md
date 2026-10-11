@@ -2,6 +2,16 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — WebApi P3.1（WebApi 1.0.0-preview.1；Core 新增 EventSubscribers）
+
+### 新增（Added）
+
+- 2026-10-11 [Core] 新增公开静态类 `Junevy.Communication.Core.Diagnostics.EventSubscribers`（计划 Task 1，P3-D14）：`InvokeEach<TArgs>(handler, sender, args, logger, eventName)` 逐个调用事件订阅者，单个订阅者抛出的异常只记 Error 日志，其余订阅者照常收到事件。WebApi 只依赖 Core，通过它派发事件。
+
+### 变更（Changed）
+
+- 2026-10-11 [Channels, Tcp, Udp] 事件的逐订阅者派发改用 Core 的 `EventSubscribers.InvokeEach`（计划 Task 1，P3-D14）：删除 `LifecycleSupport.InvokeEach` 与 `FrameRouter.RaiseToSubscribers`，共 10 处调用点（Channels 3、Tcp 5、Udp 2）改为调用 Core 版本，`FrameReceived` 的 `eventName` 为 `"FrameReceived"`。订阅者与事件顺序、隔离异常的行为不变；`FrameReceived` 订阅者异常的日志文本统一为通用文本（`A FrameReceived subscriber threw an exception; the remaining subscribers still receive the event.`，原为 `...still receive the frame.`）。唯一的测试改动：`FrameRouterTests.HandlerException_DoesNotStopDispatch` 的一处调用点改为 `EventSubscribers.InvokeEach`（该测试直接调用了被删除的内部方法）。
+
 ## [Unreleased] — 接缝整理 P2.5（Core / Channels / Tcp / Udp / Serial / Plc / Melsec）
 
 ### 新增（Added）

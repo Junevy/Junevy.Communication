@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using Junevy.Communication.Channels.Framing;
 using Junevy.Communication.Channels.Pipeline;
+using Junevy.Communication.Core.Diagnostics;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Testing;
 using Microsoft.Extensions.Logging;
@@ -409,7 +410,7 @@ public sealed class FrameRouterTests
         EventHandler<FrameReceivedEventArgs>? handlers = null;
         Func<FrameReceivedEventArgs, Task> raise = args =>
         {
-            FrameRouter.RaiseToSubscribers(handlers, this, args, logger);
+            EventSubscribers.InvokeEach(handlers, this, args, logger, "FrameReceived");
             return Task.CompletedTask;
         };
 

@@ -1,5 +1,6 @@
 using Junevy.Communication.Channels.Lifecycle;
 using Junevy.Communication.Channels.Pipeline;
+using Junevy.Communication.Core.Diagnostics;
 using Junevy.Communication.Core.Results;
 using Microsoft.Extensions.Logging;
 
@@ -168,12 +169,12 @@ public abstract class StreamClientChannel : IClientChannel
 
     // 监督器的状态事件经此转发：发送者为通道本身，订阅者逐个隔离异常。
     private void OnSupervisorStateChanged(object? sender, ConnectionStateChangedEventArgs args)
-        => LifecycleSupport.InvokeEach(StateChanged, this, args, logger, "StateChanged");
+        => EventSubscribers.InvokeEach(StateChanged, this, args, logger, "StateChanged");
 
     // 连接的帧经路由派发给订阅者：发送者为通道本身，订阅者逐个隔离异常（计划 9.3）。
     private Task RaiseFrameReceived(FrameReceivedEventArgs args)
     {
-        FrameRouter.RaiseToSubscribers(FrameReceived, this, args, logger);
+        EventSubscribers.InvokeEach(FrameReceived, this, args, logger, "FrameReceived");
         return Task.CompletedTask;
     }
 }

@@ -1,9 +1,7 @@
-using Microsoft.Extensions.Logging;
-
 namespace Junevy.Communication.Channels.Lifecycle;
 
 /// <summary>
-/// 生命周期组件共用的辅助方法：后台任务的启动与事件的逐订阅者派发。
+/// 生命周期组件共用的辅助方法：后台任务的启动与心跳探测来源的校验。
 /// </summary>
 internal static class LifecycleSupport
 {
@@ -32,33 +30,5 @@ internal static class LifecycleSupport
         if (components?.HealthProbe != null && components.HealthProbeFactory != null)
             throw new ArgumentException("ChannelComponents.HealthProbe and ChannelComponents.HealthProbeFactory are mutually exclusive; set only one of them.",
                                         nameof(components));
-    }
-
-    /// <summary>
-    /// 逐个调用事件的订阅者：单个订阅者抛出的异常只记录 Error 日志，其余订阅者照常收到事件（计划 9.2 的"每个订阅者单独 try/catch"）。
-    /// </summary>
-    /// <typeparam name="TArgs">事件参数类型。</typeparam>
-    /// <param name="handler">事件的多播委托；为 null 时无操作。</param>
-    /// <param name="sender">事件发送者。</param>
-    /// <param name="args">事件参数。</param>
-    /// <param name="logger">用于记录订阅者异常的日志记录器。</param>
-    /// <param name="eventName">事件名称，仅用于日志。</param>
-    public static void InvokeEach<TArgs>(EventHandler<TArgs>? handler, object sender, TArgs args, ILogger logger, string eventName)
-        where TArgs : EventArgs
-    {
-        if (handler == null)
-            return;
-
-        foreach (Delegate subscriber in handler.GetInvocationList())
-        {
-            try
-            {
-                ((EventHandler<TArgs>)subscriber)(sender, args);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "A {Event} subscriber threw an exception; the remaining subscribers still receive the event.", eventName);
-            }
-        }
     }
 }

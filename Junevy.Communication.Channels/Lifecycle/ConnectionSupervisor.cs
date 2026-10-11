@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using Junevy.Communication.Core.Diagnostics;
 using Junevy.Communication.Core.Resilience;
 using Junevy.Communication.Core.Results;
 using Microsoft.Extensions.Logging;
@@ -639,7 +640,7 @@ internal sealed class ConnectionSupervisor : IAsyncDisposable
         stateDispatchScope.Value = scope;
         try
         {
-            LifecycleSupport.InvokeEach(StateChanged, this, args, logger, "StateChanged");
+            EventSubscribers.InvokeEach(StateChanged, this, args, logger, "StateChanged");
         }
         finally
         {
