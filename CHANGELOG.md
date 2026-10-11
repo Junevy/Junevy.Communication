@@ -2,6 +2,18 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — 接缝整理 P2.5（Core / Channels / Tcp / Udp / Serial / Plc / Melsec）
+
+### 新增（Added）
+
+- 2026-10-11 [构建] 新增代码度量脚本 `build/metrics/`：`dupscan.py`（重复窗口）、`methodlen.py`（超过 60 行的方法）与 `effective_lines.py`（有效行，去掉空行与 `//` 注释行）；用法与生产代码范围见目录内的 README.md。P2.5 基线记录在计划第 21.3 节（重复窗口 177、超长方法 10、`TcpServer.cs` 1216 行、Melsec 1304 / Plc 1054 有效行）。
+
+### 变更（Changed）
+
+### 破坏性变更（Breaking）
+
+### 移除（Removed）
+
 ## [Unreleased] — PLC 套件 P2（Plc / Melsec 1.0.0-preview.1；Core 新增 Buffers）
 
 ### 新增（Added）
