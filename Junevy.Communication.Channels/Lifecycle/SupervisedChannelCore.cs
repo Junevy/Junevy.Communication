@@ -12,7 +12,10 @@ namespace Junevy.Communication.Channels.Lifecycle;
 internal sealed class SupervisedChannelCore<TChannel>
     where TChannel : class
 {
-    private readonly object channel;
+    // D16：同步释放在 DisconnectTimeout 之外额外等待的毫秒数（见 Dispose）。
+    private const int DisposeGraceMilliseconds = 1000;
+
+    private readonly string ownerTypeName;
     private readonly string name;
     private readonly ClientOptionsCore options;
     private readonly ConnectionSupervisor supervisor;
@@ -34,7 +37,7 @@ internal sealed class SupervisedChannelCore<TChannel>
     public SupervisedChannelCore(object channel, string name, ClientOptionsCore options, ConnectionSupervisor supervisor,
                                  Func<TChannel?> currentChannel, ConnectionStatistics statistics, ILogger logger)
     {
-        this.channel = channel;
+        ownerTypeName = channel.GetType().Name;
         this.name = name;
         this.options = options;
         this.supervisor = supervisor;
@@ -98,7 +101,7 @@ internal sealed class SupervisedChannelCore<TChannel>
     public void ThrowIfDisposed()
     {
         if (IsDisposed)
-            throw new ObjectDisposedException(channel.GetType().Name);
+            throw new ObjectDisposedException(ownerTypeName);
     }
 
     /// <summary>
@@ -107,7 +110,7 @@ internal sealed class SupervisedChannelCore<TChannel>
     /// </summary>
     public void Dispose()
     {
-        int limit = options.DisconnectTimeout + 1000;
+        int limit = options.DisconnectTimeout + DisposeGraceMilliseconds;
         Task disposing = DisposeAsync().AsTask();
         if (!disposing.Wait(limit))
             logger.LogWarning("Disposing the channel {Name} did not finish within {Timeout} ms; the release continues in the background.", name, limit);
