@@ -7,4 +7,9 @@
     <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
   </ItemGroup>
 
+  <!-- 测试直接使用 System.Net.Http 的类型；net8.0 自带，net472 需要引用框架程序集。 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
 </Project>
