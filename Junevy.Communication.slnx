@@ -10,6 +10,7 @@
     <Project Path="Tests/Junevy.Communication.Serial.Tests/Junevy.Communication.Serial.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.Plc.Tests/Junevy.Communication.Plc.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.Melsec.Tests/Junevy.Communication.Melsec.Tests.csproj" />
+    <Project Path="Tests/Junevy.Communication.Siemens.Tests/Junevy.Communication.Siemens.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.WebApi.Tests/Junevy.Communication.WebApi.Tests.csproj" />
   </Folder>
   <Project Path="Junevy.Communication.Modbus/Junevy.Communication.Modbus.csproj" DisplayName="Junevy.Communication.Modbus" />
@@ -21,5 +22,6 @@
   <Project Path="Junevy.Communication.Serial/Junevy.Communication.Serial.csproj" />
   <Project Path="Junevy.Communication.Plc/Junevy.Communication.Plc.csproj" />
   <Project Path="Junevy.Communication.Melsec/Junevy.Communication.Melsec.csproj" />
+  <Project Path="Junevy.Communication.Siemens/Junevy.Communication.Siemens.csproj" />
   <Project Path="Junevy.Communication.WebApi/Junevy.Communication.WebApi.csproj" />
 </Solution>

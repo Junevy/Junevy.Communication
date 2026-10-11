@@ -11,6 +11,7 @@
     <ProjectReference Include="..\..\Junevy.Communication.Serial\Junevy.Communication.Serial.csproj" />
     <ProjectReference Include="..\..\Junevy.Communication.Plc\Junevy.Communication.Plc.csproj" />
     <ProjectReference Include="..\..\Junevy.Communication.Melsec\Junevy.Communication.Melsec.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Siemens\Junevy.Communication.Siemens.csproj" />
     <ProjectReference Include="..\..\Junevy.Communication.WebApi\Junevy.Communication.WebApi.csproj" />
     <ProjectReference Include="..\..\Junevy.Communication.Modbus\Junevy.Communication.Modbus.csproj" />
   </ItemGroup>
