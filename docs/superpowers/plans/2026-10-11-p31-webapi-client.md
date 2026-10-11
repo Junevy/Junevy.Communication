@@ -610,3 +610,29 @@ public static class WebApiServiceCollectionExtensions
 ### 19.2 执行中的偏差与发现（执行者填写：现象 / 处理 / 是否需要审阅者决定）
 
 ### 19.3 基线与度量
+
+#### Task 0 基线（2026-10-11，`7c6f0ec`，Debug，`dotnet test Junevy.Communication.slnx -c Debug`）
+
+测试（通过 / 失败 / 跳过；net8.0 与 net472 相同，Modbus 只有 net8.0）：
+
+| 项目 | net8.0 | net472 |
+|---|---|---|
+| Core.Tests | 112 / 0 / 0 | 112 / 0 / 0 |
+| Channels.Tests | 278 / 0 / 0 | 278 / 0 / 0 |
+| Tcp.Tests | 129 / 0 / 0 | 129 / 0 / 0 |
+| Udp.Tests | 38 / 0 / 0 | 38 / 0 / 0 |
+| Serial.Tests | 63 / 0 / 2 | 63 / 0 / 2 |
+| Plc.Tests | 152 / 0 / 0 | 152 / 0 / 0 |
+| Melsec.Tests | 184 / 0 / 1 | 184 / 0 / 1 |
+| Architecture.Tests | 2 / 0 / 0 | 2 / 0 / 0 |
+| Modbus.Tests | 405 / 0 / 0 | — |
+
+度量（生产范围：Core、Channels、Tcp、Udp、Serial、Plc、Melsec，共 205 个 `.cs`）：
+
+| 指标 | 基线 |
+|---|---|
+| 重复窗口（6 行） | 24（7 组：Serial↔TcpClient 7、Datagram↔StreamChannel 6、DatagramDriver↔StreamDriver 5、StreamClientChannel↔UdpChannel 3，其余三组各 1） |
+| 超过 60 行的方法 | 0 |
+| 超过 300 行的文件 | 9（NamedRegistry 461、ConnectionSupervisor 690、StreamConnectionDriver 314、DatagramChannel 352、FrameRouter 394、PendingRequestTable 537、StreamChannel 621、TcpClientChannel 372、TcpServer 448） |
+| 生产 → 生产 IVT | 2（架构测试） |
+| 有效行 | Core 957、Channels 4811、Tcp 2416、Udp 560、Serial 386、Plc 968、Melsec 1275 |
