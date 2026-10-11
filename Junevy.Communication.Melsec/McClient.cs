@@ -37,7 +37,7 @@ public sealed partial class McClient : PlcClientBase<McAddress>
     }
 
     /// <summary>创建 TCP 客户端（3E 或 4E）。</summary>
-    /// <param name="transport">TCP 传输配置（TLS 等仍由它配置）；其分帧与关联必须保持默认值。</param>
+    /// <param name="transport">TCP 传输配置（TLS 等仍由它配置）；其分帧必须保持默认值，关联必须保持默认值或与协议所用的值相同。</param>
     /// <param name="options">MELSEC 选项。</param>
     /// <param name="loggerFactory">日志工厂；为 null 时不输出日志。</param>
     /// <returns>尚未连接的客户端。</returns>
@@ -46,7 +46,7 @@ public sealed partial class McClient : PlcClientBase<McAddress>
         => CreateTcp(null, transport, options, loggerFactory);
 
     /// <summary>创建 UDP 客户端（3E 或 4E；数据报不分帧）。</summary>
-    /// <param name="transport">UDP 传输配置；其关联必须保持默认值。</param>
+    /// <param name="transport">UDP 传输配置；其关联必须保持默认值或与协议所用的值相同。</param>
     /// <param name="options">MELSEC 选项。</param>
     /// <param name="loggerFactory">日志工厂；为 null 时不输出日志。</param>
     /// <returns>尚未连接的客户端。</returns>
@@ -55,7 +55,7 @@ public sealed partial class McClient : PlcClientBase<McAddress>
         => CreateUdp(null, transport, options, loggerFactory);
 
     /// <summary>创建串口客户端（4C，格式 4 或格式 5）。</summary>
-    /// <param name="transport">串口传输配置；其分帧与关联必须保持默认值。</param>
+    /// <param name="transport">串口传输配置；其分帧必须保持默认值，关联必须保持默认值或与协议所用的值相同。</param>
     /// <param name="options">MELSEC 选项。</param>
     /// <param name="loggerFactory">日志工厂；为 null 时不输出日志。</param>
     /// <returns>尚未连接的客户端。</returns>
@@ -71,8 +71,6 @@ public sealed partial class McClient : PlcClientBase<McAddress>
 
         McProtocolSettings snapshot = McProtocolSettings.From(options);
         RequireEthernet(snapshot);
-        RequireDefault(transport.Framing.Mode, new TcpClientChannelConfig().Framing.Mode, "TcpClientChannelConfig.Framing");
-        RequireDefault(transport.Correlation, new TcpClientChannelConfig().Correlation, "TcpClientChannelConfig.Correlation");
 
         TcpChannelComponents components = McProtocolProfile.ConfigureStream(new TcpChannelComponents(), snapshot);
         ILogger<TcpClientChannel>? channelLogger = loggerFactory?.CreateLogger<TcpClientChannel>();
@@ -90,7 +88,6 @@ public sealed partial class McClient : PlcClientBase<McAddress>
 
         McProtocolSettings snapshot = McProtocolSettings.From(options);
         RequireEthernet(snapshot);
-        RequireDefault(transport.Correlation, new UdpChannelConfig().Correlation, "UdpChannelConfig.Correlation");
 
         ChannelComponents components = McProtocolProfile.ConfigureDatagram(new ChannelComponents(), snapshot, nameof(options));
         ILogger<UdpChannel>? channelLogger = loggerFactory?.CreateLogger<UdpChannel>();
@@ -108,8 +105,6 @@ public sealed partial class McClient : PlcClientBase<McAddress>
 
         McProtocolSettings snapshot = McProtocolSettings.From(options);
         RequireSerial(snapshot);
-        RequireDefault(transport.Framing.Mode, new SerialChannelConfig().Framing.Mode, "SerialChannelConfig.Framing");
-        RequireDefault(transport.Correlation, new SerialChannelConfig().Correlation, "SerialChannelConfig.Correlation");
 
         ChannelComponents components = McProtocolProfile.ConfigureStream(new ChannelComponents(), snapshot);
         ILogger<SerialChannel>? channelLogger = loggerFactory?.CreateLogger<SerialChannel>();
@@ -129,13 +124,5 @@ public sealed partial class McClient : PlcClientBase<McAddress>
     {
         if (!snapshot.Is4C)
             throw new ArgumentException("CreateSerial carries 4C frames only; set FrameType to Frame4C.", "options");
-    }
-
-    // 传输配置中的同名设置会被 McProtocolProfile 的组件覆盖；为避免静默覆盖，不允许与默认值不同。
-    private static void RequireDefault<T>(T actual, T defaultValue, string property)
-    {
-        if (!EqualityComparer<T>.Default.Equals(actual, defaultValue))
-            throw new ArgumentException(
-                $"{property} is defined by McClientOptions; leave it at its default on the transport configuration.", "transport");
     }
 }

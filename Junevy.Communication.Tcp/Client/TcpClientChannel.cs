@@ -23,6 +23,7 @@ namespace Junevy.Communication.Tcp;
 public sealed class TcpClientChannel : StreamClientChannel, ITcpClientChannel
 {
     private const int MaxPort = 65535;
+    private static readonly TcpClientChannelConfig DefaultConfig = new TcpClientChannelConfig();
 
     private readonly TcpClientChannelConfig config;
     private readonly TcpConnector connector;
@@ -66,7 +67,7 @@ public sealed class TcpClientChannel : StreamClientChannel, ITcpClientChannel
     /// <exception cref="ArgumentException">配置非法。</exception>
     public TcpClientChannel(string name, TcpClientChannelConfig config, ILogger<TcpClientChannel>? logger = null,
                             TcpChannelComponents? components = null)
-        : base(name, BuildSettings(config), components, logger ?? NullLogger<TcpClientChannel>.Instance)
+        : base(name, BuildSettings(config, components), components, logger ?? NullLogger<TcpClientChannel>.Instance)
     {
         this.config = config;
         endpointText = $"{config.Host}:{config.Port}";
@@ -288,9 +289,9 @@ public sealed class TcpClientChannel : StreamClientChannel, ITcpClientChannel
         => text is { Length: > 0 } ? IPAddress.Parse(text) : null;
 
     // 校验配置并生成基类的运行参数（D5）。派生的子对象由基类在构造期间读取并复制，不保留对调用方对象的引用。
-    private static ClientChannelSettings BuildSettings(TcpClientChannelConfig config)
+    private static ClientChannelSettings BuildSettings(TcpClientChannelConfig config, TcpChannelComponents? components)
     {
-        Validate(config);
+        Validate(config, components);
         return new ClientChannelSettings
         {
             HandshakeTimeout = config.HandshakeTimeout,
@@ -310,10 +311,11 @@ public sealed class TcpClientChannel : StreamClientChannel, ITcpClientChannel
         };
     }
 
-    private static void Validate(TcpClientChannelConfig config)
+    private static void Validate(TcpClientChannelConfig config, TcpChannelComponents? components)
     {
         if (config == null)
             throw new ArgumentNullException(nameof(config));
+        ComponentPrecedence.Validate(components, config.Framing, DefaultConfig.Framing, config.Correlation, DefaultConfig.Correlation);
         if (string.IsNullOrWhiteSpace(config.Host))
             throw new ArgumentException("Host must not be empty.", nameof(config));
         if (config.Port < 1 || config.Port > MaxPort)

@@ -21,6 +21,7 @@ public sealed class SerialChannel : StreamClientChannel, ISerialChannel
 {
     // 拒绝访问时两次打开之间的等待（毫秒）：驱动释放端口通常在数十毫秒内完成。
     private const int OpenRetryIntervalMilliseconds = 20;
+    private static readonly SerialChannelConfig DefaultConfig = new SerialChannelConfig();
 
     private readonly SerialChannelConfig config;
     private readonly SerialChannelConfig portSettings;
@@ -281,6 +282,7 @@ public sealed class SerialChannel : StreamClientChannel, ISerialChannel
     {
         if (config == null)
             throw new ArgumentNullException(nameof(config));
+        ComponentPrecedence.Validate(components, config.Framing, DefaultConfig.Framing, config.Correlation, DefaultConfig.Correlation);
         if (string.IsNullOrWhiteSpace(config.PortName))
             throw new ArgumentException("PortName must not be empty.", nameof(config));
 

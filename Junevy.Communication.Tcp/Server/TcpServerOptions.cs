@@ -16,6 +16,7 @@ namespace Junevy.Communication.Tcp.Server;
 internal sealed class TcpServerOptions
 {
     private const int MaxPort = 65535;
+    private static readonly TcpServerConfig DefaultConfig = new TcpServerConfig();
 
     /// <summary>
     /// 校验并解析配置。
@@ -28,6 +29,7 @@ internal sealed class TcpServerOptions
     {
         if (config == null)
             throw new ArgumentNullException(nameof(config));
+        ComponentPrecedence.Validate(components, config.Framing, DefaultConfig.Framing, config.Correlation, DefaultConfig.Correlation);
         if (config.Framing == null)
             throw new ArgumentException("Framing must not be null.", nameof(config));
         if (config.Heartbeat == null)

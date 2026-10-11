@@ -3,15 +3,15 @@ using Junevy.Communication.Core.Resilience;
 namespace Junevy.Communication.Channels;
 
 /// <summary>
-/// 代码级覆盖：协议包通过它把自己的分帧、关联、握手、心跳交给通道；优先级高于配置中的同类设置。
+/// 代码级覆盖：协议包通过它把自己的分帧、关联、握手、心跳交给通道。分帧与关联和配置中的同名设置冲突时构造即抛出，不静默覆盖（P25-D3）。
 /// 协议声明"我这样分帧、这样匹配应答、连上后这样握手、这样探活"，通道照做。
 /// </summary>
 public class ChannelComponents
 {
-    /// <summary>分帧编解码工厂；非 null 时覆盖配置中的 Framing。</summary>
+    /// <summary>分帧编解码工厂；非 null 时由它分帧，配置中的 Framing 必须保持传输的默认值，否则构造时抛出 <see cref="ArgumentException"/>。</summary>
     public IFrameCodecFactory? FrameCodec { get; set; }
 
-    /// <summary>关联模式；非 null 时覆盖配置中的 Correlation。</summary>
+    /// <summary>关联模式；非 null 时配置中的 Correlation 必须保持默认值或与它相同，否则构造时抛出 <see cref="ArgumentException"/>。</summary>
     public CorrelationMode? Correlation { get; set; }
 
     /// <summary>关联键提取器，<see cref="CorrelationMode.Keyed"/> 模式使用。</summary>

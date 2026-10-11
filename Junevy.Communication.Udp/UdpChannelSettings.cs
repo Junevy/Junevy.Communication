@@ -12,6 +12,7 @@ namespace Junevy.Communication.Udp;
 internal sealed class UdpChannelSettings
 {
     private const int MaxPort = 65535;
+    private static readonly UdpChannelConfig DefaultConfig = new UdpChannelConfig();
     private const int MaxDatagramPayload = 65507;
 
     private UdpChannelSettings()
@@ -61,6 +62,7 @@ internal sealed class UdpChannelSettings
     {
         if (config == null)
             throw new ArgumentNullException(nameof(config));
+        ComponentPrecedence.Validate(components, null, null, config.Correlation, DefaultConfig.Correlation);
         if (config.Heartbeat == null)
             throw new ArgumentException("Heartbeat must not be null.", nameof(config));
         if (config.Reconnect == null)

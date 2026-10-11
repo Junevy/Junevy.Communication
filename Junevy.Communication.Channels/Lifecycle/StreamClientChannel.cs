@@ -31,7 +31,7 @@ public abstract class StreamClientChannel : IClientChannel
     /// </summary>
     /// <param name="name">通道名称。</param>
     /// <param name="settings">运行参数。</param>
-    /// <param name="components">代码级覆盖（分帧、关联、握手、心跳、重连）；可为 null。</param>
+    /// <param name="components">代码级覆盖（分帧、关联、握手、心跳、重连）；可为 null。派生的传输在映射配置时应调用 <see cref="ComponentPrecedence.Validate"/>，使同名设置的冲突在构造时抛出。</param>
     /// <param name="logger">日志记录器。</param>
     /// <exception cref="ArgumentNullException">名称、配置或日志记录器为 null。</exception>
     /// <exception cref="ArgumentException">配置非法，例如启用心跳却没有探测的负载。</exception>

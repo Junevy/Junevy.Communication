@@ -54,4 +54,32 @@ public sealed class FramingOptions
 
     /// <summary>静默判定时间（毫秒），默认 20；<see cref="FramingMode.IdleGap"/> 模式使用。</summary>
     public int GapTimeout { get; set; } = 20;
+
+    /// <summary>判断两个分帧配置的全部属性是否相同（<see cref="Delimiters"/> 按元素比较）；用于校验协议组件与配置的优先级（P25-D3）。</summary>
+    /// <param name="other">要比较的配置；为 null 时返回 false。</param>
+    /// <returns>全部属性相同返回 true。</returns>
+    internal bool HasSameValues(FramingOptions? other)
+    {
+        if (other == null)
+            return false;
+
+        return Mode == other.Mode
+            && MaxFrameLength == other.MaxFrameLength
+            && SameDelimiters(Delimiters, other.Delimiters)
+            && KeepDelimiter == other.KeepDelimiter
+            && AppendDelimiterOnSend == other.AppendDelimiterOnSend
+            && FrameLength == other.FrameLength
+            && LengthFieldOffset == other.LengthFieldOffset
+            && LengthFieldSize == other.LengthFieldSize
+            && LengthFieldEncoding == other.LengthFieldEncoding
+            && LengthAdjustment == other.LengthAdjustment
+            && InitialBytesToStrip == other.InitialBytesToStrip
+            && StartMarker == other.StartMarker
+            && EndMarker == other.EndMarker
+            && KeepMarkers == other.KeepMarkers
+            && GapTimeout == other.GapTimeout;
+    }
+
+    private static bool SameDelimiters(string[]? left, string[]? right)
+        => left == null || right == null ? left == right : left.SequenceEqual(right);
 }
