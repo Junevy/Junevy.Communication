@@ -1,4 +1,5 @@
 using Junevy.Communication.Core.Results;
+using static Junevy.Communication.Testing.HexVector;
 
 namespace Junevy.Communication.Siemens.Tests;
 
@@ -78,11 +79,17 @@ internal static class S7TestSupport
     /// <summary>V-S7-4 派生：协商值改为 960。</summary>
     public const string Setup_Ack_960 = "03 00 00 1B 02 F0 80 32 03 00 00 00 01 00 08 00 00 00 00 F0 00 00 01 00 01 03 C0";
 
+    /// <summary>V-S7-4 派生：协商值为 32，低于 P4-D13 的下限 64。</summary>
+    public const string Setup_Ack_PduTooSmall = "03 00 00 1B 02 F0 80 32 03 00 00 00 01 00 08 00 00 00 00 F0 00 00 01 00 01 00 20";
+
     /// <summary>V-S7-4 派生：参数只有 4 字节。</summary>
     public const string Setup_Ack_ShortParameters = "03 00 00 17 02 F0 80 32 03 00 00 00 01 00 04 00 00 00 00 F0 00 00 01";
 
     /// <summary>V-S7-4 派生：参数号改为 0x04（不是 0xF0）。</summary>
     public const string Setup_Ack_OtherParameter = "03 00 00 1B 02 F0 80 32 03 00 00 00 01 00 08 00 00 00 00 04 00 00 01 00 01 00 F0";
+
+    /// <summary>V-S7-10 派生：24 位地址 0x000050 改为 0x000000，即读 MB0 的 1 字节（P4-D15 的心跳探测）。</summary>
+    public const string Probe_ReadM0 = "03 00 00 1F 02 F0 80 32 01 00 00 00 05 00 0E 00 00 04 01 12 0A 10 02 00 01 00 00 83 00 00 00";
 
     /// <summary>V-S7-7 派生：写 4 字节（两字），传输尺寸仍为 0x04、长度按位计（计划第 11 节第 1 条）。</summary>
     public const string Write_2Words = "03 00 00 27 02 F0 80 32 01 00 00 00 03 00 0E 00 08 05 01 12 0A 10 02 00 04 00 01 84 00 00 10 00 04 00 20 12 34 56 78";
@@ -137,6 +144,9 @@ internal static class S7TestSupport
     /// <summary>ROSCTR 的位置。</summary>
     public const int Rosctr = 8;
 
+    /// <summary>PDU 引用号高位字节的位置（TPKT 4 + COTP DT 3 + 协议号 + ROSCTR + 保留字）。</summary>
+    public const int PduReferenceHigh = 11;
+
     /// <summary>应答头参数长度低位字节的位置。</summary>
     public const int ParameterLengthLow = 14;
 
@@ -169,6 +179,41 @@ internal static class S7TestSupport
 
     /// <summary>V-S7-2 的最后一个字节：远端 TSAP 参数的低位，属于 CC 不解析的参数区。</summary>
     public const int ConfirmParameterTail = 21;
+
+    /// <summary>COTP CR 的 PDU 类型（0xE0）：替身据此区分握手的第一步与 S7 请求。</summary>
+    public const byte ConnectionRequestCode = 0xE0;
+
+    // ———— 替身应答辅助 ————
+
+    /// <summary>取请求帧的 PDU 引用号，供替身应答时回显（引用号来自进程级计数器，测试无法预知）。</summary>
+    /// <param name="frame">请求帧。</param>
+    /// <returns>PDU 引用号。</returns>
+    public static ushort ReferenceOf(byte[] frame)
+        => (ushort)(frame[PduReferenceHigh] << 8 | frame[PduReferenceHigh + 1]);
+
+    /// <summary>把向量的 PDU 引用号替换为实际值，其余字节不动（17.1 节的向量都写死了引用号）。</summary>
+    /// <param name="vector">17.1 节或其派生的向量。</param>
+    /// <param name="reference">要写入的引用号。</param>
+    /// <returns>替换后的帧。</returns>
+    public static byte[] WithReference(string vector, ushort reference)
+    {
+        byte[] frame = ToBytes(vector);
+        frame[PduReferenceHigh] = (byte)(reference >> 8);
+        frame[PduReferenceHigh + 1] = (byte)reference;
+        return frame;
+    }
+
+    /// <summary>把若干向量首尾相接，模拟字节流上连续到达的多帧。</summary>
+    /// <param name="vectors">向量文本。</param>
+    /// <returns>拼接后的字节。</returns>
+    public static byte[] Concat(params string[] vectors)
+    {
+        var buffer = new List<byte>();
+        foreach (string vector in vectors)
+            buffer.AddRange(ToBytes(vector));
+
+        return buffer.ToArray();
+    }
 
     // ———— 断言辅助 ————
 
