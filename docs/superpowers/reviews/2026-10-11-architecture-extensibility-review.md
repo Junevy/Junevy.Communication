@@ -94,3 +94,7 @@
 - "共享代码零修改"：`git diff --stat d43e9f5^ HEAD` 对 Core / Channels / Plc / Tcp / Udp / Serial 只有 `Junevy.Communication.Plc/README.md`；`git diff --stat 9efa3f1 HEAD` 对 Channels / Tcp / Udp / Serial 为空。
 - 钩子：`McClient.Hooks.cs`，11 个覆写（10 个抽象钩子 + `ValidateRange`）。
 - 摩擦：计划第 20.2 节（里程碑 1 复核 1 条、Task 8–13 共 12 条）。
+
+## 6. 执行结果（2026-10-11 补记）
+
+A1–A6 已在 P2.5 完成（计划 `docs/superpowers/plans/2026-10-11-p25-seams.md`，验收记录见其第 21 节）：重复窗口 177 → 24，超过 60 行的方法 10 → 0，`TcpServer.cs` 1216 → 448 行，13 条摩擦全部关闭。本文的三处判断在执行中被更正：BCL 已提供 `IBufferWriter<byte>.Write`；net472 没有 `SequenceReader<T>`；"创建器无法预检、异常类型不一致"一条前提不成立（`ArgumentOutOfRangeException` 派生自 `ArgumentException`），因此没有增加公开的 `Validate()`。A7 仍留到 P4。
