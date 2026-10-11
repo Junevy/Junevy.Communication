@@ -14,6 +14,17 @@ internal static class PlcLayout
     /// <summary>一次操作允许的最大字数，保证字节数不会溢出 <see cref="int"/>。</summary>
     public const int MaxWordCount = int.MaxValue / WordBytes;
 
+    /// <summary>一次操作允许的最大字节数，与 <see cref="MaxWordCount"/> 同理：由字节数推导出的字数与偏移都不会溢出 <see cref="int"/>。</summary>
+    public const int MaxByteCount = MaxWordCount * WordBytes;
+
+    /// <summary>
+    /// <paramref name="bytes"/> 个字节换算成覆盖它们所需的字数（向上取整）。
+    /// </summary>
+    /// <param name="bytes">字节数。</param>
+    /// <returns>字数。</returns>
+    // 写成两项之和而不是 (bytes + 1) / 2：字节数接近 int 上限时加法会溢出。
+    public static int WordsFor(int bytes) => bytes / WordBytes + bytes % WordBytes;
+
     /// <summary>
     /// 检查协议钩子返回的单包点数。小于 1 是协议实现错误，抛出 <see cref="InvalidOperationException"/>，由流水线转换为 Unspecified。
     /// </summary>

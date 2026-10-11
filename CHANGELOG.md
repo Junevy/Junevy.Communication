@@ -8,13 +8,16 @@
 
 - 2026-10-12 [Plc] 新增枚举值 `PlcAddressUnit.Byte` 与 `PlcAccess.Bytes`（计划 Task 1，P4-D3 的 S1；设计 P2-D4 预告的字节寻址）：`Byte` 表示一个地址对应一个字节，按字访问时一个字等于从该地址起的连续 2 个字节，带位号时位号为 0–7；`Bytes` 是按字节的访问粒度，`GetMaxReadPoints` / `GetMaxWritePoints` 在字节路径上按字节计（Task 2 起使用）。两者的值都追加在枚举末尾，已有值的编号不变，`PlcAddressUnit` 的既有取值（`Bit`、`Word`）语义不变。
 - 2026-10-12 [Plc] `PlcAddressParser{TDevice, TAddress}` 的位号上限改为按软元件单位决定（计划 Task 1，P4-D3 的 S2）：字软元件仍为 0–15，字节软元件为 0–7，位软元件仍不允许带位号；两个上限写成具名常量 `MaxWordBitIndex` 与 `MaxByteBitIndex`。超限时消息沿用既有格式，例如 `The bit index in address 'DB1.DBB0.8' must be between 0 and 7.`。已有规则（最长前缀不回退、进制、饱和解析、消息含原文本）不变。
+- 2026-10-12 [Plc] `PlcClientBase<TAddress>` 新增三个按字节的协议钩子（计划 Task 2，P4-D3 的 S4）：`BuildReadBytesRequest(TAddress, int offset, int count, IBufferWriter<byte>)`、`ParseReadBytesResponse(int count, ReadOnlySpan<byte>)`、`BuildWriteBytesRequest(TAddress, int offset, ReadOnlySpan<byte>, IBufferWriter<byte>)`，`offset` 与 `count` 都按字节计。三者都是 `protected internal virtual`，默认实现抛出 `InvalidOperationException`，由流水线收口为 `Unspecified` 并记录一条 Error，所以软元件表里没有字节软元件的协议（含本库的 MELSEC）不必实现；含字节软元件的协议必须覆写。`GetMaxReadPoints` / `GetMaxWritePoints` 在字节软元件的字节访问上收到新的 `PlcAccess.Bytes`，返回值按字节计。
 
 ### 变更（Changed）
 
+- 2026-10-12 [Plc] 内部文件按访问粒度拆分（计划 Task 2，为了在加入字节路径后仍满足"单文件不超过 300 行"）：`PlcRequestPipeline<TAddress>` 由一个 268 行的文件拆为 4 个 partial 文件（入口与守卫 `PlcRequestPipeline.cs`、字 `PlcRequestPipeline.Words.cs`、字节 `PlcRequestPipeline.Bytes.cs`、位 `PlcRequestPipeline.Bits.cs`）；`PlcClientBase<TAddress>` 的协议钩子拆到 `PlcClientBase.Hooks.cs`。**类型与成员签名不变、行为不变**（已有测试未修改且全绿）。`PlcTransfer<TAddress>` 的字与位收集方法改为共用一个 `CollectPayload<T>` 复制辅助方法，不再有第二份复制逻辑。
 - 2026-10-12 [Plc] `PlcAddress.BitIndex`、`PlcAddress` 构造函数与 `IPlcDeviceDefinition.Unit` 的 XML 注释从"位或字""0–15"改为按三种单位说明，与新增值一致；无行为变化。
 
 ### 破坏性变更（Breaking）
 
+- 2026-10-12 [Plc] `IPlcClient` 新增成员 `Task<CommResult<byte[]>> ReadBytesAsync(string address, int count, CancellationToken)` 与 `Task<CommResult> WriteBytesAsync(string address, ReadOnlyMemory<byte> data, CancellationToken)`（计划 Task 2，P4-D3 的 S3、P4-D4）：**对外部实现者是破坏性变更**（预览版允许）。语义：字节软元件按字节精确读写（走新的字节钩子，按 `GetMaxReadPoints` / `GetMaxWritePoints` 传入 `PlcAccess.Bytes` 的字节上限拆包）；字与位软元件按字访问——读取覆盖这些字节的整字（`ceil(count / 2)` 个）后返回规范化布局的前 `count` 个字节，写入要求长度为正偶数，否则返回 `InvalidRequest`（`Byte access on a word or bit device can only write whole words; the data length must be a positive even number.`）。带位号的地址、`count < 1`、空数据都返回 `InvalidRequest`；字节数超过 `PlcLayout.MaxByteCount`（= `MaxWordCount × 2`）同样返回 `InvalidRequest`，与字数上限同理，防止推导出的字数与偏移溢出 `int`。逐包重试规则与字访问完全一致（只重试 `Timeout`、`ConnectionClosed`、`ProtocolViolation`）。`PlcClientBase<TAddress>` 已实现两者，本库与 MELSEC 的派生客户端无需改动。
 - 2026-10-12 [Plc] `IPlcClient` 新增成员 `CommResult<PlcAddress> ParseAddress(string address)`（计划 Task 1，P4-D4）：**对外部实现者是破坏性变更**（预览版允许）。语义为同步、不产生 I/O、线程安全、释放后仍可调用，供宿主在加载配置时校验地址；`address` 为 null 时按空串处理，文本非法时返回 `InvalidRequest` 且 `Data` 为 null，错误消息取协议解析器的英文消息。`PlcClientBase<TAddress>` 已实现（复用协议钩子 `TryParseAddress`），因此本库与 MELSEC 的派生客户端无需改动；在套件之外自行实现 `IPlcClient` 的代码必须补上该成员。
 
 ## [Unreleased] — WebApi P3.1（WebApi 1.0.0-preview.1；Core 新增 EventSubscribers）

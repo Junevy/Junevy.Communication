@@ -6,7 +6,7 @@ namespace Junevy.Communication.Plc.Tests;
 
 /// <summary>
 /// 测试协议的帧格式（自定义，只用于套件测试，不对应任何真实协议）。
-/// 请求：[操作 1][符号 1][编号 4，大端][点数或字数 2，大端][负载]。应答：[状态 1][负载]；状态 0 表示成功，其余为对端错误码。
+/// 请求：[操作 1][符号 1][编号 4，大端][点数、字数或字节数 2，大端][负载]。应答：[状态 1][负载]；状态 0 表示成功，其余为对端错误码。
 /// </summary>
 internal static class FakeFrame
 {
@@ -14,6 +14,8 @@ internal static class FakeFrame
     public const byte WriteWordsOp = 0x02;
     public const byte ReadBitsOp = 0x03;
     public const byte WriteBitsOp = 0x04;
+    public const byte ReadBytesOp = 0x05;
+    public const byte WriteBytesOp = 0x06;
     public const byte StatusOk = 0x00;
     public const int HeaderLength = 8;
     public const int StatusLength = 1;
@@ -40,7 +42,7 @@ internal static class FakeFrame
         output.Write(bytes);
     }
 
-    /// <summary>读取请求头：操作、符号、编号与点数或字数。</summary>
+    /// <summary>读取请求头：操作、符号、编号与点数、字数或字节数。</summary>
     public static (byte Op, char Symbol, int Number, int Count) ReadHeader(ReadOnlySpan<byte> request)
     {
         return (request[0],

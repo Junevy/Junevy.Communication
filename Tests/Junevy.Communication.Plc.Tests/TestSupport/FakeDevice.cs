@@ -3,13 +3,14 @@ using System.Buffers.Binary;
 namespace Junevy.Communication.Plc.Tests;
 
 /// <summary>
-/// 测试设备：在内存中保存字与位，按 <see cref="FakeFrame"/> 的格式处理请求并生成应答。
-/// 字的应答使用小端布局（与 <c>PlcDataFormat</c> 默认的 DCBA 字序一致）。
+/// 测试设备：在内存中保存字、位与字节，按 <see cref="FakeFrame"/> 的格式处理请求并生成应答。
+/// 字的应答使用小端布局（与 <c>PlcDataFormat</c> 默认的 DCBA 字序一致）；字节的应答按设备内存顺序原样返回。
 /// </summary>
 internal sealed class FakeDevice
 {
     private readonly Dictionary<(char Symbol, int Number), ushort> words = new Dictionary<(char Symbol, int Number), ushort>();
     private readonly Dictionary<(char Symbol, int Number), bool> bits = new Dictionary<(char Symbol, int Number), bool>();
+    private readonly Dictionary<(char Symbol, int Number), byte> bytes = new Dictionary<(char Symbol, int Number), byte>();
 
     /// <summary>设置字的值（测试用）。</summary>
     public void SetWord(char symbol, int number, ushort value) => words[(symbol, number)] = value;
@@ -22,6 +23,12 @@ internal sealed class FakeDevice
 
     /// <summary>读取位的值；未写过的位为 false。</summary>
     public bool GetBit(char symbol, int number) => bits.TryGetValue((symbol, number), out bool value) && value;
+
+    /// <summary>设置字节的值（测试用）。</summary>
+    public void SetByte(char symbol, int number, byte value) => bytes[(symbol, number)] = value;
+
+    /// <summary>读取字节的值；未写过的字节为 0。</summary>
+    public byte GetByte(char symbol, int number) => bytes.TryGetValue((symbol, number), out byte value) ? value : (byte)0;
 
     /// <summary>处理一个请求并返回应答帧。</summary>
     /// <param name="request">请求帧。</param>
@@ -41,6 +48,11 @@ internal sealed class FakeDevice
                 return ReadBits(symbol, number, count);
             case FakeFrame.WriteBitsOp:
                 WriteBits(symbol, number, payload);
+                return Acknowledge();
+            case FakeFrame.ReadBytesOp:
+                return ReadBytes(symbol, number, count);
+            case FakeFrame.WriteBytesOp:
+                WriteBytes(symbol, number, payload);
                 return Acknowledge();
             default:
                 throw new InvalidOperationException($"The test device does not support operation 0x{op:X2}.");
@@ -80,6 +92,22 @@ internal sealed class FakeDevice
     {
         for (int i = 0; i < payload.Length; i++)
             SetBit(symbol, number + i, payload[i] != 0);
+    }
+
+    private byte[] ReadBytes(char symbol, int number, int count)
+    {
+        byte[] response = new byte[FakeFrame.StatusLength + count];
+        response[0] = FakeFrame.StatusOk;
+        for (int i = 0; i < count; i++)
+            response[FakeFrame.StatusLength + i] = GetByte(symbol, number + i);
+
+        return response;
+    }
+
+    private void WriteBytes(char symbol, int number, ReadOnlySpan<byte> payload)
+    {
+        for (int i = 0; i < payload.Length; i++)
+            SetByte(symbol, number + i, payload[i]);
     }
 
     private static byte[] Acknowledge() => new[] { FakeFrame.StatusOk };

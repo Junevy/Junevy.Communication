@@ -50,6 +50,26 @@ public interface IPlcClient : IConnectable, IDisposable, IAsyncDisposable
     Task<CommResult> WriteBitsAsync(string address, ReadOnlyMemory<bool> values, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 按字节精确读取 <paramref name="count"/> 个字节。字节软元件走按字节的协议访问；字与位软元件读取覆盖这些字节的整字
+    /// （<c>ceil(count / 2)</c> 个），返回规范化布局的前 <paramref name="count"/> 个字节。超过单包上限时自动拆包，任一包失败则整体失败。
+    /// </summary>
+    /// <param name="address">地址，例如 "DB1.DBB0"；不能带位号。</param>
+    /// <param name="count">字节数，必须 ≥ 1。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>读取结果；失败时 Data 为 null。</returns>
+    Task<CommResult<byte[]>> ReadBytesAsync(string address, int count, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 按字节写入。<paramref name="data"/> 不能为空；字节软元件精确写入这些字节，字与位软元件要求长度为正偶数（只能整字写入）。
+    /// 超过单包上限时自动拆包。
+    /// </summary>
+    /// <param name="address">地址，例如 "DB1.DBB0"；不能带位号。</param>
+    /// <param name="data">要写入的字节；字与位软元件上长度为正偶数。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>写入结果。</returns>
+    Task<CommResult> WriteBytesAsync(string address, ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 用本协议的地址语法解析文本，供宿主在加载配置时校验地址。同步、不产生 I/O、线程安全，释放之后仍可调用。
     /// </summary>
     /// <param name="address">地址文本，例如 "D100" 或 "DB1.DBB0"；为 null 时按空串处理。</param>

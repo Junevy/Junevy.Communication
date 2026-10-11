@@ -3,7 +3,7 @@ using Junevy.Communication.Core.Results;
 namespace Junevy.Communication.Plc.Pipeline;
 
 /// <summary>
-/// 设备级传输：把一次字或位访问拆成多包，并把协议的请求与应答钩子接到包交换上。
+/// 设备级传输：把一次字、位或字节访问拆成多包，并把协议的请求与应答钩子接到包交换上。
 /// 本类型不校验地址与数量（由流水线在入口完成），只负责拆包与收集结果。
 /// </summary>
 internal sealed class PlcTransfer<TAddress> where TAddress : PlcAddress
@@ -104,25 +104,64 @@ internal sealed class PlcTransfer<TAddress> where TAddress : PlcAddress
             cancellationToken);
     }
 
-    // 把一包的应答数据复制到结果缓冲区的对应位置；数据长度不符是协议实现错误。
-    private static CommResult CollectWords(CommResult<byte[]> packet, byte[] destination, int offset, int chunk)
+    /// <summary>
+    /// 按字节访问读取 <paramref name="count"/> 个字节（字节软元件）。
+    /// </summary>
+    /// <param name="operation">操作名称，用于日志。</param>
+    /// <param name="target">已解析的字节软元件地址。</param>
+    /// <param name="count">字节数。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>设备内存顺序的字节。</returns>
+    public async Task<CommResult<byte[]>> ReadBytesAsync(string operation, TAddress target, int count, CancellationToken cancellationToken)
+    {
+        int maxPoints = PlcLayout.RequirePositive(client.GetMaxReadPoints(target, PlcAccess.Bytes), "GetMaxReadPoints");
+        byte[] bytes = new byte[count];
+        CommResult result = await exchange.RunPacketsAsync(operation, target.Text, count, maxPoints,
+            (offset, chunk, token) => exchange.ExchangeAsync(
+                request => client.BuildReadBytesRequest(target, offset, chunk, request),
+                frame => CollectBytes(client.ParseReadBytesResponse(chunk, frame), bytes, offset, chunk),
+                token),
+            cancellationToken).ConfigureAwait(false);
+
+        return result.IsSuccess ? CommResult<byte[]>.Success(bytes) : result.As<byte[]>();
+    }
+
+    /// <summary>
+    /// 按字节访问写入 <paramref name="bytes"/>（字节软元件）。
+    /// </summary>
+    /// <param name="operation">操作名称，用于日志。</param>
+    /// <param name="target">已解析的字节软元件地址。</param>
+    /// <param name="bytes">要写入的字节。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>写入结果。</returns>
+    public Task<CommResult> WriteBytesAsync(string operation, TAddress target, ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken)
+    {
+        int maxPoints = PlcLayout.RequirePositive(client.GetMaxWritePoints(target, PlcAccess.Bytes), "GetMaxWritePoints");
+        return exchange.RunPacketsAsync(operation, target.Text, bytes.Length, maxPoints,
+            (offset, chunk, token) => exchange.ExchangeAsync(
+                request => client.BuildWriteBytesRequest(target, offset, bytes.Span.Slice(offset, chunk), request),
+                frame => client.ParseWriteResponse(frame),
+                token),
+            cancellationToken);
+    }
+
+    // 把一包的应答数据复制到结果缓冲区的对应位置；数据长度不符是协议实现错误（三种访问粒度共用同一段复制逻辑）。
+    private static CommResult CollectPayload<T>(CommResult<T[]> packet, T[] destination, int offset, int length, string hook)
     {
         if (!packet.IsSuccess)
             return packet.ToResult();
 
-        int length = chunk * PlcLayout.WordBytes;
-        PlcLayout.RequireLength(packet.Data!.Length, length, "ParseReadWordsResponse");
-        Array.Copy(packet.Data, 0, destination, offset * PlcLayout.WordBytes, length);
+        PlcLayout.RequireLength(packet.Data!.Length, length, hook);
+        Array.Copy(packet.Data, 0, destination, offset, length);
         return CommResult.Success();
     }
 
-    private static CommResult CollectBits(CommResult<bool[]> packet, bool[] destination, int offset, int chunk)
-    {
-        if (!packet.IsSuccess)
-            return packet.ToResult();
+    private static CommResult CollectWords(CommResult<byte[]> packet, byte[] destination, int wordOffset, int wordCount)
+        => CollectPayload(packet, destination, wordOffset * PlcLayout.WordBytes, wordCount * PlcLayout.WordBytes, "ParseReadWordsResponse");
 
-        PlcLayout.RequireLength(packet.Data!.Length, chunk, "ParseReadBitsResponse");
-        Array.Copy(packet.Data, 0, destination, offset, chunk);
-        return CommResult.Success();
-    }
+    private static CommResult CollectBits(CommResult<bool[]> packet, bool[] destination, int offset, int count)
+        => CollectPayload(packet, destination, offset, count, "ParseReadBitsResponse");
+
+    private static CommResult CollectBytes(CommResult<byte[]> packet, byte[] destination, int offset, int count)
+        => CollectPayload(packet, destination, offset, count, "ParseReadBytesResponse");
 }
