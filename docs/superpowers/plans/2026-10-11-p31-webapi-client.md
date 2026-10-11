@@ -727,3 +727,30 @@ public static class WebApiServiceCollectionExtensions
 | `WebApiClient.cs` / `SoapClient.cs` | 108 / 121 行（Q22 要求各 ≤ 200） |
 | WebApi 有效行 | 2713 |
 | WebApi.Tests | net8.0 709、net472 710（通过 / 0 失败 / 0 跳过） |
+
+#### 最终度量（P3.1 结束，2026-10-12，`dotnet test Junevy.Communication.slnx -c Debug`，通过 / 失败 / 跳过）
+
+| 项目 | net8.0 | net472 | 基线（Task 0） |
+|---|---|---|---|
+| Core.Tests | 116 / 0 / 0 | 116 / 0 / 0 | 112 |
+| Channels.Tests | 278 / 0 / 0 | 278 / 0 / 0 | 278 |
+| Tcp.Tests | 129 / 0 / 0 | 129 / 0 / 0 | 129 |
+| Udp.Tests | 38 / 0 / 0 | 38 / 0 / 0 | 38 |
+| Serial.Tests | 63 / 0 / 2 | 63 / 0 / 2 | 63 + 2 跳过 |
+| Plc.Tests | 152 / 0 / 0 | 152 / 0 / 0 | 152 |
+| Melsec.Tests | 184 / 0 / 1 | 184 / 0 / 1 | 184 + 1 跳过 |
+| Architecture.Tests | 11 / 0 / 0 | 11 / 0 / 0 | 2 |
+| WebApi.Tests（新增） | 733 / 0 / 0 | 734 / 0 / 0 | — |
+| Modbus.Tests | 405 / 0 / 0 | — | 405 |
+
+第 4 节度量：
+
+| 指标 | 基线 | P3.1 目标 | 最终 |
+|---|---|---|---|
+| 重复窗口（6 行） | 24（7 组） | 不增加；WebApi 内部与跨程序集为 0 | **33（8 组）**：新增的 9 个窗口全部是 `WebApiClient.cs` ↔ `SoapClient.cs` 的事件 `add` / `remove` 转发样板（公开类不能继承内部基类，新增公开基类不在固定的公开 API 里），审阅者已接受；其余 7 组与基线相同，WebApi 内部与对其他程序集为 0 |
+| 超过 60 行的方法 | 0 | 0 | 0 |
+| 超过 300 行的文件 | 9 | 不增加；WebApi 全部 ≤ 300 | 9；WebApi 84 个文件，最大 `AttemptLoop.cs` 180 行 |
+| 生产 → 生产 IVT | 2 | 2 | 2（架构测试通过） |
+| WebApi 有效行 | — | 记录 | 2735 |
+| `WebApiClient.cs` / `SoapClient.cs` | — | 各 ≤ 200 | 108 / 121 行 |
+
