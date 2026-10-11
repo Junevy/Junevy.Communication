@@ -26,17 +26,10 @@ internal sealed class Mc4CFrame
 
     private bool IsFormat4 => encoding == McEncoding.Ascii;
 
-    /// <summary>写入请求帧：格式 4 以 ENQ 开头，格式 5 以 DLE STX 开头。格式 4 不含 CR LF，由通道分隔符追加。</summary>
-    /// <param name="output">输出缓冲。</param>
+    /// <summary>编码请求帧并返回字节（客户端与心跳探测直接使用）。格式 4 以 ENQ 开头，格式 5 以 DLE STX 开头。</summary>
     /// <param name="route">访问路径。</param>
     /// <param name="body">请求数据（命令、子命令与参数，已按编码写好）。</param>
-    public void WriteRequest(IBufferWriter<byte> output, Mc4CAccessRoute route, ReadOnlySpan<byte> body)
-        => output.Write(BuildRequest(route, body));
-
-    /// <summary>编码请求帧并返回字节（客户端与心跳探测直接使用）。</summary>
-    /// <param name="route">访问路径。</param>
-    /// <param name="body">请求数据。</param>
-    /// <returns>完整的请求帧（格式 4 不含 CR LF）。</returns>
+    /// <returns>完整的请求帧（格式 4 不含 CR LF，由通道分隔符追加）。</returns>
     public byte[] BuildRequest(Mc4CAccessRoute route, ReadOnlySpan<byte> body)
     {
         using var frame = new MemoryStream();

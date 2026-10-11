@@ -27,7 +27,7 @@ public sealed class UdpComponentPrecedenceTests
         var config = new UdpChannelConfig();
         var components = new ChannelComponents { Correlation = CorrelationMode.Sequential };
 
-        var channel = new UdpChannel(config, components: components);
+        using var channel = new UdpChannel(config, components: components);
 
         Assert.False(channel.IsConnected);
     }

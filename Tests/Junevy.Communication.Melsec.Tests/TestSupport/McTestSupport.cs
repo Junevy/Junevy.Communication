@@ -1,5 +1,4 @@
 using System.Text;
-using Junevy.Communication.Core.Buffers;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Melsec.Protocol;
 using Junevy.Communication.Testing;
@@ -77,11 +76,7 @@ internal static class McTestSupport
 
     /// <summary>用默认的 3E / 4E 访问路径与 <see cref="MonitoringTimer"/> 编码请求帧。</summary>
     public static byte[] Encode(McFrameType frameType, McEncoding encoding, ushort serial, byte[] body)
-    {
-        var output = new ByteBufferWriter();
-        new McEthernetFrame(frameType, encoding).WriteRequest(output, serial, MonitoringTimer, DefaultEthernetRoute, body);
-        return output.ToArray();
-    }
+        => new McEthernetFrame(frameType, encoding).BuildRequest(serial, MonitoringTimer, DefaultEthernetRoute, body);
 
     /// <summary>解码 3E / 4E 应答帧。</summary>
     public static CommResult<McResponse> Decode(McFrameType frameType, McEncoding encoding, ushort serial, byte[] frame,
@@ -104,11 +99,7 @@ internal static class McTestSupport
 
     /// <summary>用 4C 帧编码请求（格式 4 为 ASCII，格式 5 为二进制）。</summary>
     public static byte[] Encode4C(McEncoding encoding, bool sumCheck, Mc4CAccessRoute route, byte[] body)
-    {
-        var output = new ByteBufferWriter();
-        new Mc4CFrame(encoding, sumCheck).WriteRequest(output, route, body);
-        return output.ToArray();
-    }
+        => new Mc4CFrame(encoding, sumCheck).BuildRequest(route, body);
 
     /// <summary>解码 4C 应答帧。</summary>
     public static CommResult<McResponse> Decode4C(McEncoding encoding, bool sumCheck, byte[] frame,

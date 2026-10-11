@@ -44,7 +44,8 @@ internal static class McDleFrame
         if (second != McSerialCodes.Stx)
             return ScanResult.Invalid;
 
-        var bytes = new List<byte>();
+        // 输入是一帧（分帧器先按 MaxFrameLength 截取），长度必然在 int 范围内。
+        var bytes = new List<byte>((int)raw.Length);
         while (reader.TryRead(out byte value))
         {
             if (value != McSerialCodes.Dle)

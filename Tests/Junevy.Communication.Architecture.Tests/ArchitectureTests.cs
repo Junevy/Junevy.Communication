@@ -35,19 +35,6 @@ public sealed class ArchitectureTests
         (ChannelsName, UdpName),
     };
 
-    // 参与检查的生产程序集。Modbus 为旧库，只参与 InternalsVisibleTo 检查，不在分层表中。
-    private static readonly Assembly[] ProductionAssemblies =
-    {
-        typeof(CommResult).Assembly,
-        typeof(StreamClientChannel).Assembly,
-        typeof(TcpServer).Assembly,
-        typeof(UdpChannel).Assembly,
-        typeof(SerialChannel).Assembly,
-        typeof(PlcClientBase<>).Assembly,
-        typeof(McClient).Assembly,
-        typeof(ModbusTcpClient).Assembly,
-    };
-
     // 分层表（计划 Task 1）：每个生产程序集允许引用的 Junevy.Communication.* 程序集。Plc 不得引用任何传输包。
     private static readonly (Assembly Assembly, string[] AllowedReferences)[] LayerTable =
     {
@@ -59,6 +46,10 @@ public sealed class ArchitectureTests
         (typeof(PlcClientBase<>).Assembly, new[] { ChannelsName, CoreName }),
         (typeof(McClient).Assembly, new[] { PlcName, ChannelsName, CoreName, TcpName, UdpName, SerialName }),
     };
+
+    // 参与 InternalsVisibleTo 检查的程序集：分层表中的全部程序集，加上不在分层表中的 Modbus。Modbus 为旧库，只检查 InternalsVisibleTo，不检查引用。
+    private static readonly Assembly[] ProductionAssemblies =
+        LayerTable.Select(row => row.Assembly).Concat(new[] { typeof(ModbusTcpClient).Assembly }).ToArray();
 
     [Fact]
     public void ProductionAssemblies_GrantInternalsOnlyToTheirTestsAndTheRegisteredExceptions()

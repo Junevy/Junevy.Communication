@@ -11,7 +11,7 @@ public sealed class PlcClientStateChangedTests
     public void StateChanged_HandlersReceiveTheChannelsOwnEventArgs()
     {
         var channel = new ScriptedClientChannel();
-        var client = new FakePlcClient(channel);
+        using var client = new FakePlcClient(channel);
         ConnectionStateChangedEventArgs? received = null;
         client.StateChanged += (_, args) => received = args;
         var raised = new ConnectionStateChangedEventArgs(ConnectionState.Connected, ConnectionState.Disconnected,

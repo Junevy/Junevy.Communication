@@ -33,7 +33,7 @@ public sealed class SerialComponentPrecedenceTests
         var config = new SerialChannelConfig { PortName = "COM20" };
         var components = new ChannelComponents { FrameCodec = FrameCodecFactory.Create(new FramingOptions()) };
 
-        var channel = new SerialChannel(config, components: components);
+        using var channel = new SerialChannel(config, components: components);
 
         Assert.False(channel.IsConnected);
     }

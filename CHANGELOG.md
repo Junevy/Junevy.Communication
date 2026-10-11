@@ -19,6 +19,7 @@
 - 2026-10-11 [Channels, Plc, Melsec] 手写的 `GetSpan` + `CopyTo` + `Advance` 改用 BCL 的 `IBufferWriter<byte>.Write(ReadOnlySpan<byte>)`：`PassthroughFrameEncoder.Encode`、MELSEC 的 3E / 4E 与 4C 请求写入、`McClient` 的四个构建钩子；行为不变。
 - 2026-10-11 [Melsec] 4C 格式 5 的编码器改为 `PassthroughFrameEncoder.Instance`，不再借用 Raw 工厂；`McProtocolProfile` 使用 `FramingOptions.DefaultMaxFrameLength`。行为不变。
 - 2026-10-11 [Melsec] `McClient` 删除自行检查传输配置的 `RequireDefault`，分帧与关联的冲突改由通道统一拒绝（异常类型仍为 `ArgumentException`）；`CreateTcp` / `CreateUdp` / `CreateSerial` 的参数文档同步更新。
+- 2026-10-11 [Melsec] 删除仅供测试使用的内部方法 `McEthernetFrame.WriteRequest` 与 `Mc4CFrame.WriteRequest`，测试辅助改为直接调用 `BuildRequest`；编码结果不变。
 
 ### 破坏性变更（Breaking）
 

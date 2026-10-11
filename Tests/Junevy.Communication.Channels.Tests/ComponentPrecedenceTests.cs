@@ -1,3 +1,4 @@
+using System.Reflection;
 using Junevy.Communication.Channels.Framing;
 
 namespace Junevy.Communication.Channels.Tests;
@@ -127,6 +128,25 @@ public sealed class ComponentPrecedenceTests
 
         Assert.StartsWith(CorrelationMessage, exception.Message);
         Assert.Equal("config", exception.ParamName);
+    }
+
+    [Fact]
+    public void ChangesByProperty_CoversExactlyTheDeclaredFramingOptionsProperties()
+    {
+        string[] declared = typeof(FramingOptions)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(property => property.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        string[] covered = ChangesByProperty.Keys.OrderBy(name => name, StringComparer.Ordinal).ToArray();
+
+        string[] missing = declared.Except(covered).ToArray();
+        string[] extra = covered.Except(declared).ToArray();
+
+        Assert.True(missing.Length == 0 && extra.Length == 0,
+            "HasSameValues and the precedence Theory must cover every public FramingOptions property. "
+            + $"Missing from ChangesByProperty: [{string.Join(", ", missing)}]. "
+            + $"Not declared on FramingOptions: [{string.Join(", ", extra)}].");
     }
 
     // 返回只把一个属性改为非默认值的分帧配置。

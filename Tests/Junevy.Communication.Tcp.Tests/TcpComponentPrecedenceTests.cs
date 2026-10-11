@@ -33,7 +33,7 @@ public sealed class TcpComponentPrecedenceTests
         var config = new TcpClientChannelConfig { Host = "127.0.0.1", Port = 5000 };
         var components = new TcpChannelComponents { FrameCodec = FrameCodecFactory.Create(new FramingOptions()) };
 
-        var channel = new TcpClientChannel(config, components: components);
+        using var channel = new TcpClientChannel(config, components: components);
 
         Assert.False(channel.IsConnected);
     }
@@ -59,7 +59,7 @@ public sealed class TcpComponentPrecedenceTests
         var config = new TcpServerConfig { Port = 5001 };
         var components = new TcpChannelComponents { FrameCodec = FrameCodecFactory.Create(new FramingOptions()) };
 
-        var server = new TcpServer(config, components: components);
+        using var server = new TcpServer(config, components: components);
 
         Assert.NotNull(server);
     }

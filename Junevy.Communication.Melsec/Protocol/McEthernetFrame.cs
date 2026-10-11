@@ -1,4 +1,3 @@
-using System.Buffers;
 using Junevy.Communication.Core.Results;
 
 namespace Junevy.Communication.Melsec.Protocol;
@@ -30,15 +29,6 @@ internal sealed class McEthernetFrame
 
     /// <summary>访问路径的字段宽度（手册 p.42）。</summary>
     private int RouteSize => McAccessRoute.FieldSize(codec);
-
-    /// <summary>写入请求帧。</summary>
-    /// <param name="output">输出缓冲。</param>
-    /// <param name="serial">4E 的序列号（3E 忽略）。</param>
-    /// <param name="monitoringTimer">监视定时器（250 ms 为单位）。</param>
-    /// <param name="route">访问路径。</param>
-    /// <param name="body">请求数据（命令、子命令与参数，已按编码写好）。</param>
-    public void WriteRequest(IBufferWriter<byte> output, ushort serial, ushort monitoringTimer, McAccessRoute route, ReadOnlySpan<byte> body)
-        => output.Write(BuildRequest(serial, monitoringTimer, route, body));
 
     /// <summary>编码请求帧并返回字节（客户端与心跳探测直接使用）。</summary>
     /// <param name="serial">4E 的序列号（3E 忽略）。</param>
