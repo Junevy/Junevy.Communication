@@ -92,7 +92,7 @@ P2 计划第 2 节 Q1–Q15 与 P2.5 计划第 2 节 Q16–Q20 全部适用（�
 
 | 指标 | 命令 | 基线 | P3.1 目标 |
 |---|---|---|---|
-| 重复窗口（6 行） | `python build/metrics/dupscan.py 6 <文件>` | Task 0 实测（P2.5 结束时 24） | 不增加；WebApi 内部为 0，WebApi 与其他程序集之间为 0 |
+| 重复窗口（6 行） | `python build/metrics/dupscan.py 6 <文件>` | Task 0 实测（P2.5 结束时 24） | 不增加；WebApi 内部只允许两个外观的公开事件转发样板（4 个窗口，里程碑 3 审阅裁决：公开类无法共享 add / remove 转发，不为度量调整代码顺序），WebApi 与其他程序集之间为 0 |
 | 超过 60 行的方法 | `python build/metrics/methodlen.py 61 <文件>` | 0 | 0 |
 | 超过 300 行的文件 | `wc -l` | 9 | 不增加（WebApi 的文件全部 ≤ 300 行） |
 | 生产 → 生产 IVT | 架构测试 | 2 | 2 |
@@ -615,6 +615,11 @@ public static class WebApiServiceCollectionExtensions
 | 5 | 通过 | 第 5、6 条接受。Q24 有测试证据（`ServicePointManager` 静态值前后不变） |
 | 6 | 通过，附一项修改 | 审阅者做了两次变异：方法规则改成恒真 → 8 个测试失败；每次尝试不再从快照重建 → `EachAttempt_StartsFromTheSnapshot_SoModificationsDoNotAccumulate` 失败。第 7、8、9、12 条接受（第 7 条写进 Task 12 README 的事件一节：被中止或在发送前拦截器阶段超时的尝试不触发 `RequestSending` / `ResponseReceived`）。第 10 条追加提交接受。**修改（第 11 条）**：端点释放导致的在途尝试，`ResponseReceived.ErrorKind` 也必须是 `ConnectionClosed`，与最终结果一致；在 `AttemptLoop` 里用一个辅助方法同时映射尝试结果与最终结果，可用性仍不计入 |
 | 7 | 通过，附一项修改 | 第 13 条接受：`IWebApiEndpoint.AvailabilityChanged` 的 XML 注释与 README 写明"订阅后先读一次 `Availability`"。第 14–17 条接受。**修改**：`OrderedEventQueue.RunAsync` 中 `consumer(item)` 与 `dispatching` 标记改为 try/finally（防御：消费者以后若抛出，派发循环不能就此停止） |
+| 修订（755404a） | 通过 | 释放一致性与队列防御已按裁决完成；try/finally 无直接测试接受（`AsyncLocal` 标志在测试线程不可见） |
+| 8 | 通过，附一项修改 | 第 3、5、6、7 条接受（第 5 条写进 README：GBK 等代码页需宿主注册 `CodePagesEncodingProvider`）。**修改（第 4 条）**：① 启用包络时，2xx 且正文为空：204 → 成功、`Data = default`；其他 2xx → `ProtocolViolation`（无法判断业务成败，不能当作成功）；② `TResponse` 为 `byte[]` / `string` 时，空正文返回 `Array.Empty<byte>()` / `""`，不是 null（原始类型就是原样的正文） |
+| 9 | 通过，附一项缺陷修复 | 第 8、9 条接受。**缺陷（第 10 条）**：`XmlBodyCodec` 删除全部命名空间声明后，`xsi:type="xsd:int"` 这类 QName 属性值失去前缀绑定。审阅者复现：`object` 类型的成员写入信封后反序列化报 `Namespace prefix 'xsd' is not defined`。修复见下一里程碑。**修改（第 11 条）**：不为度量调整代码顺序，`SoapClient` 的事件声明恢复与 `WebApiClient` 相同的顺序，接受 4 个样板窗口（第 4 节目标已改） |
+| 10 | 通过 | 审阅者复跑三遍全绿（每遍 19 个测试程序集），套接字用例稳定。第 12 条接受 |
+| 11 | 通过 | 第 13 条接受 |
 
 ### 19.2 执行中的偏差与发现（执行者填写：现象 / 处理 / 是否需要审阅者决定）
 
