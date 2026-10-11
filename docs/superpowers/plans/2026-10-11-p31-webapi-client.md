@@ -606,6 +606,10 @@ public static class WebApiServiceCollectionExtensions
 
 | Task | 结论 | 说明 |
 |---|---|---|
+| 0 | 通过 | 基线与预期一致；审阅者复跑三条命令全绿，度量相同（重复 24、超长方法 0、超 300 行文件 9、IVT 2） |
+| 1 | 通过 | 19.2 第 1 条：`FrameRouterTests` 的调用点是计划第 6 节第 3 条漏列（计划错误，不是执行偏差），接受这处两行改动；断言未变。第 2 条（5 个文件各 +1 行 using）接受：调用点所需，审阅者逐个核对过 using 仍被使用 |
+| 2 | 通过 | 审阅者复做故意违规：`Soap` 方法体内引用 `Rest` 的类型 → 只有 Soap 行失败。19.2 第 3 条：两行参数检查的重复保留，不为它新增 Core 公开 API；第 4 条 `ToString` 格式接受 |
+| 3 | 通过，附一项修改 | 第 6 条补充的校验全部保留。修改（在 Task 5 开始时做）：`EndpointSettings` 不再暴露 `RedactedHeaders` / `RedactedQueryParameters` 列表，改为 `IsRedactedHeader(string)` / `IsRedactedQueryParameter(string)` 方法，内部用 `StringComparer.OrdinalIgnoreCase` 的 `HashSet<string>`，大小写规则只在快照里定一次（Q12） |
 
 ### 19.2 执行中的偏差与发现（执行者填写：现象 / 处理 / 是否需要审阅者决定）
 
