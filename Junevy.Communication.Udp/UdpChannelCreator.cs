@@ -11,17 +11,23 @@ public sealed class UdpChannelCreator : IChannelCreator
     /// <inheritdoc />
     public Type ConfigType => typeof(UdpChannelConfig);
 
+    /// <inheritdoc />
+    public ChannelDelivery Delivery => ChannelDelivery.Datagram;
+
+    /// <inheritdoc />
+    public ChannelMedium Medium => ChannelMedium.Network;
+
     /// <summary>
     /// 创建 UDP 通道（尚未连接）。配置的校验由 <see cref="UdpChannel"/> 的构造函数完成（D5），本方法不修改调用方的配置对象。
     /// </summary>
-    /// <param name="name">通道名称。</param>
+    /// <param name="name">通道名称；为 null 时使用 UDP 通道的默认名称。</param>
     /// <param name="config">必须是 <see cref="UdpChannelConfig"/>。</param>
     /// <param name="components">代码级覆盖；为 null 时只使用配置。</param>
     /// <param name="loggerFactory">日志工厂。</param>
     /// <returns>新建的 <see cref="UdpChannel"/>。</returns>
-    /// <exception cref="ArgumentNullException">配置、名称或日志工厂为 null。</exception>
+    /// <exception cref="ArgumentNullException">配置或日志工厂为 null。</exception>
     /// <exception cref="ArgumentException">配置不是 <see cref="UdpChannelConfig"/>，或配置非法。</exception>
-    public IClientChannel Create(string name, IChannelConfig config, ChannelComponents? components, ILoggerFactory loggerFactory)
+    public IClientChannel Create(string? name, IChannelConfig config, ChannelComponents? components, ILoggerFactory loggerFactory)
     {
         if (config == null)
             throw new ArgumentNullException(nameof(config));
@@ -32,6 +38,9 @@ public sealed class UdpChannelCreator : IChannelCreator
                 $"UdpChannelCreator requires '{typeof(UdpChannelConfig).FullName}' but received '{config.GetType().FullName}'.",
                 nameof(config));
 
-        return new UdpChannel(name, udpConfig, loggerFactory.CreateLogger<UdpChannel>(), components);
+        ILogger<UdpChannel> logger = loggerFactory.CreateLogger<UdpChannel>();
+        return name == null
+            ? new UdpChannel(udpConfig, logger, components)
+            : new UdpChannel(name, udpConfig, logger, components);
     }
 }

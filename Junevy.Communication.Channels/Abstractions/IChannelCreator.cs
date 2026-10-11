@@ -8,13 +8,19 @@ namespace Junevy.Communication.Channels;
 /// </summary>
 public interface IChannelCreator : IConfigTypedCreator
 {
+    /// <summary>通道向上层交付数据的方式；协议据此配置组件。</summary>
+    ChannelDelivery Delivery { get; }
+
+    /// <summary>通道的物理介质；协议据此选择帧格式。</summary>
+    ChannelMedium Medium { get; }
+
     /// <summary>
     /// 创建通道。实现内部必须校验配置（非法时抛出 <see cref="ArgumentException"/>），且不得修改调用方的配置对象。
     /// </summary>
-    /// <param name="name">通道名称。</param>
+    /// <param name="name">通道名称；为 null 时使用传输的默认名称（与该通道不带名称的构造函数一致）。</param>
     /// <param name="config">配置对象，类型必须为 <see cref="IConfigTypedCreator.ConfigType"/>。</param>
     /// <param name="components">协议包的代码级覆盖；为 null 时只使用配置。</param>
     /// <param name="loggerFactory">日志工厂。</param>
     /// <returns>新建的客户端通道。</returns>
-    IClientChannel Create(string name, IChannelConfig config, ChannelComponents? components, ILoggerFactory loggerFactory);
+    IClientChannel Create(string? name, IChannelConfig config, ChannelComponents? components, ILoggerFactory loggerFactory);
 }

@@ -13,6 +13,7 @@
 - 2026-10-11 [Channels] 扩展公开面（计划 Task 4，P25-D10）：新增公开的 `ConnectionStatisticsRecorder`，记录方法转发到统计对象；实现类把记录器保持为私有字段，只把 `Statistics` 交给使用者。`ConnectionStateChangedEventArgs` 与 `FrameReceivedEventArgs` 的构造函数改为 public，后者拒绝 null 数据。`PassthroughFrameEncoder` 改为 public（`Instance` 原样输出，空负载不写入）。新增 `FramingOptions.DefaultMaxFrameLength`（65536），`MaxFrameLength` 的默认值改为引用它。
 - 2026-10-11 [Channels] 新增 `ComponentPrecedence.Validate`（计划 Task 5，P25-D3）：校验协议组件与传输配置的同名设置（分帧与关联）。内置的 TCP 客户端、TCP 服务端、UDP 与串口在校验配置时调用；派生 `StreamClientChannel` 的第三方传输也应在映射配置时调用。心跳、重连等补充型组件不在此列。
 - 2026-10-11 [Core] 新增工厂外壳的公共部分（计划 Task 6，P25-D12）：`IConfigTypedCreator`（只有 `ConfigType`）、`CreatorCatalog<TCreator>`（按配置的精确类型选择创建器）与抽象基类 `NamedFactory<TItem>`（名称、别名、释放与释放后的检查；派生类型只提供创建逻辑）。
+- 2026-10-11 [Channels] 新增传输特征的枚举 `ChannelDelivery`（`Stream` / `Datagram`）与 `ChannelMedium`（`Network` / `Serial`）（计划 Task 7，P25-D4）：通道创建器通过 `Delivery` 与 `Medium` 声明自己的传输特征，协议据此配置组件。
 
 ### 变更（Changed）
 
@@ -27,6 +28,17 @@
 
 - 2026-10-11 [Channels, Tcp, Udp, Serial, Melsec] 协议组件与传输配置的同名设置不再静默以组件为准：`ChannelComponents.FrameCodec` 非 null 时，传输配置的 `Framing` 必须与该传输的默认值相同；`ChannelComponents.Correlation` 非 null 时，配置的 `Correlation` 必须是默认值或与组件的值相同。违反时构造通道抛出 `ArgumentException`（参数名 `config`）。迁移：同时设置配置与组件的同名项时，删除配置中的那一项（或改为默认值），以组件为准。例如 `new TcpClientChannel(new TcpClientChannelConfig { Framing = delimiters }, components: new TcpChannelComponents { FrameCodec = codec })` 原先静默忽略 `delimiters`，现在抛出异常，应去掉 `Framing = delimiters`。
 - 2026-10-11 [Channels, Plc] 工厂的 `TryGet` 输出参数名由 `channel` / `client` 变为 `item`（继承自 `NamedFactory<TItem>`）；仅影响使用命名实参 `channel:` / `client:` 的调用，类型与行为不变。
+- 2026-10-11 [Channels, Tcp, Udp, Serial] `IChannelCreator` 新增 `Delivery`、`Medium` 两个只读属性，`Create` 的 `name` 改为可空（null 时使用传输的默认名称），以上为计划 Task 7 的破坏性变更（P25-D5）。自定义创建器的迁移：实现两个属性，并在 `name` 为 null 时调用不带名称的通道构造函数，例如：
+
+  ```csharp
+  public ChannelDelivery Delivery => ChannelDelivery.Stream;
+  public ChannelMedium Medium => ChannelMedium.Network;
+
+  public IClientChannel Create(string? name, IChannelConfig config, ChannelComponents? components, ILoggerFactory loggerFactory)
+      => name == null
+          ? new MyChannel((MyConfig)config, components)
+          : new MyChannel(name, (MyConfig)config, components);
+  ```
 
 ### 移除（Removed）
 

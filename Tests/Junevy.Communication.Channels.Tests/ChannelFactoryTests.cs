@@ -62,7 +62,11 @@ public sealed class ChannelFactoryTests
     {
         public Type ConfigType => typeof(StubConfig);
 
-        public IClientChannel Create(string name, IChannelConfig config, ChannelComponents? components, ILoggerFactory loggerFactory)
+        public ChannelDelivery Delivery => ChannelDelivery.Stream;
+
+        public ChannelMedium Medium => ChannelMedium.Network;
+
+        public IClientChannel Create(string? name, IChannelConfig config, ChannelComponents? components, ILoggerFactory loggerFactory)
             => new DuplexClientChannel(new ClientChannelSettings { SendTimeout = 2000, RequestTimeout = 2000 }, components);
     }
 }

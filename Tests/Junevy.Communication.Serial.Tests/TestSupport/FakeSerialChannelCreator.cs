@@ -23,6 +23,15 @@ internal sealed class FakeSerialChannelCreator : IChannelCreator
     public Type ConfigType => typeof(SerialChannelConfig);
 
     /// <inheritdoc />
-    public IClientChannel Create(string name, IChannelConfig config, ChannelComponents? components, ILoggerFactory loggerFactory)
-        => new SerialChannel(name, (SerialChannelConfig)config, loggerFactory.CreateLogger<SerialChannel>(), components, handleFactory);
+    public ChannelDelivery Delivery => ChannelDelivery.Stream;
+
+    /// <inheritdoc />
+    public ChannelMedium Medium => ChannelMedium.Serial;
+
+    /// <inheritdoc />
+    public IClientChannel Create(string? name, IChannelConfig config, ChannelComponents? components, ILoggerFactory loggerFactory)
+    {
+        var serialConfig = (SerialChannelConfig)config;
+        return new SerialChannel(name ?? serialConfig.PortName, serialConfig, loggerFactory.CreateLogger<SerialChannel>(), components, handleFactory);
+    }
 }
