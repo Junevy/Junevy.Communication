@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Net;
 using System.Runtime.InteropServices;
-using System.Threading.Channels;
 using Junevy.Communication.Channels.Framing;
 using Junevy.Communication.Channels.Lifecycle;
 using Junevy.Communication.Core.Buffers;
@@ -22,7 +21,8 @@ namespace Junevy.Communication.Channels.Pipeline;
 /// </summary>
 /// <remarks>
 /// 对外方法不抛出 I/O 异常，失败以 <see cref="CommResult"/> 返回。<see cref="Start"/> 同时启动 <see cref="FrameRouter"/> 的派发循环，
-/// 路由的生命周期由本类管理（停止时由本类停止路由）。
+/// 路由的生命周期由本类管理（停止时由本类停止路由）。请求编排、停止序列与故障报告与 <see cref="DatagramChannel"/> 共用
+/// （<see cref="RequestCoordinator"/>、<see cref="ChannelStopSequence"/>），本类只保留字节流的填充、解析与写出。
 /// </remarks>
 internal sealed class StreamChannel : IAsyncDisposable
 {
@@ -39,26 +39,16 @@ internal sealed class StreamChannel : IAsyncDisposable
     private readonly IFrameDecoder decoder;
     private readonly IFlushableFrameDecoder? flushable;
     private readonly IFrameEncoder encoder;
-    private readonly PendingRequestTable table;
     private readonly FrameRouter router;
     private readonly ConnectionStatistics statistics;
     private readonly ILogger logger;
-    private readonly Action<DisconnectReason, Exception?> onFault;
-    private readonly Action abortTransport;
+    private readonly ChannelStopSequence stop;
+    private readonly RequestCoordinator requests;
     private readonly Pipe pipe;
     private readonly SemaphoreSlim sendLock = new SemaphoreSlim(1, 1);
-    private readonly SemaphoreSlim requestLock = new SemaphoreSlim(1, 1);
-    private readonly CancellationTokenSource stopSource = new CancellationTokenSource();
-    private readonly TaskCompletionSource<bool> stopCompletion =
-        new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private int started;
-    private int stopRequested;
-    private int faultReported;
-    private int sendFailureHandled;
     private volatile InboundEnd? inboundEnd;
-    private Task? fillLoop;
-    private Task? parseLoop;
 
     /// <summary>
     /// 创建流通道（未启动）。构造时复制并校验 <paramref name="settings"/>（D5），之后修改调用方的对象不影响本实例。
@@ -93,24 +83,18 @@ internal sealed class StreamChannel : IAsyncDisposable
             throw new ArgumentNullException(nameof(router));
         if (statistics == null)
             throw new ArgumentNullException(nameof(statistics));
-        if (logger == null)
-            throw new ArgumentNullException(nameof(logger));
-        if (onFault == null)
-            throw new ArgumentNullException(nameof(onFault));
-        if (abortTransport == null)
-            throw new ArgumentNullException(nameof(abortTransport));
 
+        stop = new ChannelStopSequence(table, router, logger, onFault, abortTransport, "stream", "stream loops", UnblockPipeReaders);
         this.settings = CopyAndValidate(settings);
         this.stream = stream;
         this.decoder = decoder;
         this.encoder = encoder;
-        this.table = table;
         this.router = router;
         this.statistics = statistics;
         this.logger = logger;
-        this.onFault = onFault;
-        this.abortTransport = abortTransport;
         flushable = decoder as IFlushableFrameDecoder;
+        requests = new RequestCoordinator(stop, table, this.settings.Correlation == CorrelationMode.Sequential,
+            this.settings.RequestTimeout, this.settings.LateReplyWindow, ResetAfterExpiry);
 
         pipe = new Pipe(new PipeOptions(
             pauseWriterThreshold: PauseWriterThreshold,
@@ -123,14 +107,14 @@ internal sealed class StreamChannel : IAsyncDisposable
     /// <exception cref="ObjectDisposedException">已经停止。</exception>
     public void Start()
     {
-        if (IsStopping)
+        if (stop.IsStopping)
             throw new ObjectDisposedException(nameof(StreamChannel));
         if (Interlocked.Exchange(ref started, 1) != 0)
             throw new InvalidOperationException("The stream channel has already been started.");
 
         router.Start();
-        fillLoop = Task.Run(FillLoopAsync);
-        parseLoop = Task.Run(ParseLoopAsync);
+        stop.AddLoop(Task.Run(FillLoopAsync));
+        stop.AddLoop(Task.Run(ParseLoopAsync));
     }
 
     /// <summary>
@@ -158,51 +142,9 @@ internal sealed class StreamChannel : IAsyncDisposable
         HeartbeatProbeScope.NoteChannelOperation();
         if (payload.IsEmpty)
             return CommResult<byte[]>.Fail(EmptyRequestMessage, CommErrorKind.InvalidRequest);
-        if (IsClosed)
-            return ClosedFailureTyped();
 
-        int timeout = options?.Timeout ?? settings.RequestTimeout;
-        bool sequential = settings.Correlation == CorrelationMode.Sequential;
-        bool holdsRequestLock = false;
-        PendingRequest? waiter = null;
-        try
-        {
-            if (sequential)
-            {
-                if (!await WaitForLockAsync(requestLock, cancellationToken).ConfigureAwait(false))
-                    return CommResult<byte[]>.Fail("The request was cancelled while waiting for the request lock.", CommErrorKind.Cancelled);
-
-                holdsRequestLock = true;
-            }
-
-            if (IsClosed)
-                return ClosedFailureTyped();
-
-            waiter = table.Register(payload, options?.Matcher, timeout, expectedRemote, cancellationToken);
-            if (waiter.Completion.IsCompleted)
-                return await waiter.Completion.ConfigureAwait(false);
-
-            // 登记之后再检查：登记与报告故障（FailAll）并发时，等待者可能错过 FailAll，此时由这里返回。
-            if (IsClosed)
-                return ClosedFailureTyped();
-
-            CommResult sent = await WriteFrameAsync(payload, cancellationToken).ConfigureAwait(false);
-            if (!sent.IsSuccess)
-                return sent.As<byte[]>();
-
-            waiter.StartTimer();
-            CommResult<byte[]> reply = await waiter.Completion.ConfigureAwait(false);
-            if (sequential && (reply.ErrorKind == CommErrorKind.Timeout || reply.ErrorKind == CommErrorKind.Cancelled))
-                await HoldRequestLockAfterExpiryAsync(timeout).ConfigureAwait(false);
-
-            return reply;
-        }
-        finally
-        {
-            waiter?.Dispose();
-            if (holdsRequestLock)
-                requestLock.Release();
-        }
+        return await requests.RequestAsync(payload, options, expectedRemote,
+            (waiter, _, token) => ExchangeAsync(payload, waiter, token), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -211,57 +153,23 @@ internal sealed class StreamChannel : IAsyncDisposable
     /// <param name="options">超时与匹配器；为 null 时使用默认值。</param>
     /// <param name="cancellationToken">用户取消令牌。</param>
     /// <returns>匹配的帧或失败结果。</returns>
-    public async Task<CommResult<byte[]>> ReceiveAsync(RequestOptions? options, CancellationToken cancellationToken)
-    {
-        if (IsClosed)
-            return ClosedFailureTyped();
-
-        int timeout = options?.Timeout ?? settings.RequestTimeout;
-        PendingRequest waiter = table.Register(ReadOnlyMemory<byte>.Empty, options?.Matcher, timeout, null, cancellationToken);
-        try
-        {
-            // 与 RequestAsync 相同：登记之后再检查，避免错过 FailAll。
-            if (IsClosed)
-                return ClosedFailureTyped();
-
-            return await waiter.Completion.ConfigureAwait(false);
-        }
-        finally
-        {
-            waiter.Dispose();
-        }
-    }
+    public Task<CommResult<byte[]>> ReceiveAsync(RequestOptions? options, CancellationToken cancellationToken)
+        => requests.ReceiveAsync(options, cancellationToken);
 
     /// <summary>
-    /// 停止通道（计划 8.2 停止流程）。顺序固定，防止与派发上下文互相等待（审阅者确定）：
-    /// 设置停止标志 → 中止传输 → 完成内部管道并唤醒解析循环 → 启动路由停止 → 在 <paramref name="drainTimeout"/> 内等待两个循环退出
+    /// 停止通道（计划 8.2 停止流程）。停止序列由 <see cref="ChannelStopSequence"/> 执行（与数据报通道共用）：
+    /// 设置停止标志 → 中止传输 → 取消并解除管道阻塞 → 启动路由停止 → 在 <paramref name="drainTimeout"/> 内等待两个循环退出
     /// → 以 <c>ConnectionClosed</c> 失败所有在途等待者 → 等待路由停止完成。
     /// 第二次及之后的调用等待同一次停止完成；停止不调用 <c>onFault</c>。
     /// </summary>
     /// <param name="drainTimeout">路由排空已收到帧的最长毫秒数（转交给 <see cref="FrameRouter.StopAsync"/>）；≤ 0 表示不排空。</param>
     /// <returns>停止完成的任务。</returns>
-    public Task StopAsync(int drainTimeout)
-    {
-        if (Interlocked.Exchange(ref stopRequested, 1) == 0)
-            _ = CompleteStopAsync(drainTimeout);
-
-        return stopCompletion.Task;
-    }
+    public Task StopAsync(int drainTimeout) => stop.Stop(drainTimeout);
 
     /// <summary>等同于 <c>StopAsync(0)</c>。</summary>
     public ValueTask DisposeAsync() => new ValueTask(StopAsync(0));
 
-    private bool IsStopping => Volatile.Read(ref stopRequested) != 0;
-
-    private bool IsClosed => IsStopping || Volatile.Read(ref faultReported) != 0;
-
     private int IdleTimeoutMs => flushable != null ? flushable.FlushTimeout : settings.PartialFrameTimeout;
-
-    private static CommResult ClosedFailure()
-        => CommResult.Fail("The stream channel is closed.", CommErrorKind.ConnectionClosed);
-
-    private static CommResult<byte[]> ClosedFailureTyped()
-        => CommResult<byte[]>.Fail("The stream channel is closed.", CommErrorKind.ConnectionClosed);
 
     // 复制配置并校验（D5）：超时 ≤ 0 表示不限时，不在此拒绝。
     private static StreamChannelSettings CopyAndValidate(StreamChannelSettings source)
@@ -292,54 +200,50 @@ internal sealed class StreamChannel : IAsyncDisposable
         return copy;
     }
 
-    // 计划 8.2 请求第 4 条：Sequential 超时或取消等待后，重建连接，或在迟到窗口期内继续持有请求锁。
-    // 心跳探测期间发出的请求不重建连接：探测失败由监视器按 MaxFailures 计数（见 HeartbeatProbeScope）。
-    private async Task HoldRequestLockAfterExpiryAsync(int timeout)
+    // 字节流的请求超时后重建连接（ResetOnRequestTimeout）。心跳探测期间发出的请求不重建连接：探测失败由监视器按 MaxFailures 计数（见 HeartbeatProbeScope）。
+    // 返回 true 表示已重建连接，请求编排不再持锁等待迟到窗口。
+    private bool ResetAfterExpiry()
     {
-        if (settings.ResetOnRequestTimeout && !HeartbeatProbeScope.IsActive)
-        {
-            Fault(DisconnectReason.RequestTimeout, null);
-            return;
-        }
+        if (!settings.ResetOnRequestTimeout || HeartbeatProbeScope.IsActive)
+            return false;
 
-        int window = ResolveLateReplyWindow(timeout);
-        if (window <= 0)
-            return;
-
-        try
-        {
-            // 这段等待不受用户令牌约束；通道停止时立即结束。
-            await Task.Delay(window, stopSource.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // 通道正在停止：窗口提前结束。
-        }
+        stop.Fault(DisconnectReason.RequestTimeout, null);
+        return true;
     }
 
-    // 与 PendingRequestTable 的窗口规则一致：-1 表示等于本次请求超时，超时无限时窗口为 0。
-    private int ResolveLateReplyWindow(int timeout)
+    // 请求的交换步骤（字节流）：写出一帧；写出失败立即返回（不进入迟到窗口）；写出成功后启动计时并等待应答。
+    private async Task<RequestCoordinator.ExchangeOutcome> ExchangeAsync(ReadOnlyMemory<byte> payload, PendingRequest waiter, CancellationToken token)
     {
-        if (settings.LateReplyWindow >= 0)
-            return settings.LateReplyWindow;
+        CommResult sent = await WriteFrameAsync(payload, token).ConfigureAwait(false);
+        if (!sent.IsSuccess)
+            return RequestCoordinator.ExchangeOutcome.SendFailure(sent.As<byte[]>());
 
-        return timeout > 0 ? timeout : 0;
+        waiter.StartTimer();
+        return RequestCoordinator.ExchangeOutcome.AfterWait(await waiter.Completion.ConfigureAwait(false));
+    }
+
+    // 停止时解除管道读写者的阻塞：在取消之后、等待循环之前执行，使解析循环与填充循环能够退出。
+    private void UnblockPipeReaders()
+    {
+        pipe.Writer.CancelPendingFlush();
+        pipe.Writer.Complete();
+        pipe.Reader.CancelPendingRead();
     }
 
     // 写出一帧（计划 8.2 发送流程）。发送锁串行化所有写出；等待锁期间取消不影响连接。
     private async Task<CommResult> WriteFrameAsync(ReadOnlyMemory<byte> payload, CancellationToken userToken)
     {
         HeartbeatProbeScope.NoteChannelOperation();
-        if (IsClosed)
-            return ClosedFailure();
+        if (stop.IsClosed)
+            return stop.ClosedResult();
 
-        if (!await WaitForLockAsync(sendLock, userToken).ConfigureAwait(false))
+        if (!await RequestCoordinator.WaitForLockAsync(sendLock, userToken).ConfigureAwait(false))
             return CommResult.Fail("The send was cancelled while waiting for the send lock.", CommErrorKind.Cancelled);
 
         try
         {
-            if (IsClosed)
-                return ClosedFailure();
+            if (stop.IsClosed)
+                return stop.ClosedResult();
 
             // 锁获取之后、写出之前取消：尚未写出任何字节，不中止传输。
             if (userToken.IsCancellationRequested)
@@ -378,8 +282,7 @@ internal sealed class StreamChannel : IAsyncDisposable
     // 整帧写出，受 SendTimeout 约束。超时、取消写出与 I/O 错误都中止传输并报告 SendFailed（D10）。
     private async Task<CommResult> WriteBytesAsync(ReadOnlyMemory<byte> bytes, CancellationToken userToken)
     {
-        // 写出在发送锁下串行进行，因此这里的标记只属于本次写出。
-        Volatile.Write(ref sendFailureHandled, 0);
+        stop.BeginWrite();
         using TimeoutScope scope = TimeoutScope.Start(settings.SendTimeout, userToken, OnWriteAborted);
         try
         {
@@ -396,7 +299,7 @@ internal sealed class StreamChannel : IAsyncDisposable
                 failure = CommResult.Fail("The connection was closed while writing a frame.", CommErrorKind.ConnectionClosed, null, ex);
 
             // 不依赖 TimeoutScope 的回调：取消写出时，写出异常可能先于回调到达，而 scope 释放会注销尚未执行的回调。
-            AbortAfterSendFailure(ex);
+            stop.ReportSendFailure(ex);
             return failure;
         }
 
@@ -410,19 +313,7 @@ internal sealed class StreamChannel : IAsyncDisposable
     }
 
     // 写出超时或被取消时由 TimeoutScope 调用。
-    private void OnWriteAborted() => AbortAfterSendFailure(null);
-
-    // 写出失败（超时、取消或 I/O 错误）：每次写出至多处理一次。先报告 SendFailed，再中止传输：
-    // 中止会让读取端抛出，若先中止，读取端会抢先以 RemoteClosed 报告，掩盖真正的原因。
-    // 停止过程中由停止流程负责中止，这里不再重复中止（停止不报告故障）。
-    private void AbortAfterSendFailure(Exception? cause)
-    {
-        if (IsStopping || Interlocked.Exchange(ref sendFailureHandled, 1) != 0)
-            return;
-
-        Fault(DisconnectReason.SendFailed, cause);
-        SafeAbortTransport();
-    }
+    private void OnWriteAborted() => stop.ReportSendFailure(null);
 
     private async Task WriteToStreamAsync(ReadOnlyMemory<byte> bytes, CancellationToken token)
     {
@@ -449,13 +340,13 @@ internal sealed class StreamChannel : IAsyncDisposable
             {
                 Memory<byte> memory = writer.GetMemory(settings.ReceiveBufferSize);
 #if NET8_0_OR_GREATER
-                int read = await stream.ReadAsync(memory, stopSource.Token).ConfigureAwait(false);
+                int read = await stream.ReadAsync(memory, stop.StopToken).ConfigureAwait(false);
 #else
                 // net472：流的 Memory 重载不存在，使用数组重载（D7）。管道的缓冲由数组支持。
                 if (!MemoryMarshal.TryGetArray(memory, out ArraySegment<byte> segment))
                     throw new InvalidOperationException("The pipe buffer is not backed by an array.");
 
-                int read = await stream.ReadAsync(segment.Array!, segment.Offset, segment.Count, stopSource.Token).ConfigureAwait(false);
+                int read = await stream.ReadAsync(segment.Array!, segment.Offset, segment.Count, stop.StopToken).ConfigureAwait(false);
 #endif
                 if (read == 0)
                 {
@@ -485,7 +376,7 @@ internal sealed class StreamChannel : IAsyncDisposable
     // 记录入站端结束的原因（由填充循环调用）。停止过程中的结束由停止流程发起，不记录。
     private void RecordInboundEnd(DisconnectReason reason, Exception? exception)
     {
-        if (!IsStopping)
+        if (!stop.IsStopping)
             inboundEnd = new InboundEnd(reason, exception);
     }
 
@@ -500,43 +391,23 @@ internal sealed class StreamChannel : IAsyncDisposable
             while (true)
             {
                 ReadResult result = await reader.ReadAsync().ConfigureAwait(false);
-                if (IsStopping)
+                if (stop.IsStopping)
                     return;
 
                 ReadOnlySequence<byte> buffer = result.Buffer;
-                long seenLength = buffer.Length;
                 bool flushDue = false;
 
                 // 对端已结束时不再等待计时器：残留数据直接按结束处理。
-                if (!result.IsCompleted && idle.IsArmed && seenLength == idle.ArmedLength)
+                if (!result.IsCompleted && idle.IsArmed && buffer.Length == idle.ArmedLength)
                 {
-                    // 自计时开始没有新数据：要么计时器尚未到期（提前唤醒或残留取消，按剩余时间继续等待），要么已到期。
-                    long now = Stopwatch.GetTimestamp();
-                    if (!idle.IsDue(now))
-                    {
-                        idle.Resume(now);
-                        reader.AdvanceTo(buffer.Start, buffer.End);
+                    SilenceOutcome silence = HandleSilence(reader, idle, ref buffer);
+                    if (silence == SilenceOutcome.NotDue)
                         continue;
-                    }
 
-                    idle.Disarm();
-                    if (flushable != null)
-                    {
-                        flushDue = true;
-                    }
-                    else if (settings.PartialFrameAction == PartialFrameAction.Disconnect)
-                    {
-                        statistics.IncrementProtocolErrors();
-                        Fault(DisconnectReason.PartialFrameTimeout, null);
+                    if (silence == SilenceOutcome.Disconnected)
                         return;
-                    }
-                    else
-                    {
-                        statistics.IncrementProtocolErrors();
-                        logger.LogWarning("Discarded {Length} byte(s) of an incomplete frame after {Timeout} ms without new data.",
-                            buffer.Length, settings.PartialFrameTimeout);
-                        buffer = buffer.Slice(buffer.End);
-                    }
+
+                    flushDue = silence == SilenceOutcome.Flush;
                 }
 
                 DecodeResult decoded = await DecodeAndRouteAsync(buffer, flushDue).ConfigureAwait(false);
@@ -546,25 +417,7 @@ internal sealed class StreamChannel : IAsyncDisposable
                 buffer = decoded.Remaining;
                 if (result.IsCompleted)
                 {
-                    // 对端已结束：残留数据不能丢失。可刷新分帧器整段交出；其余分帧器的残留半帧丢弃并记录。
-                    if (!buffer.IsEmpty && flushable != null)
-                    {
-                        decoded = await DecodeAndRouteAsync(buffer, flush: true).ConfigureAwait(false);
-                        if (decoded.Disconnected)
-                            return;
-
-                        buffer = decoded.Remaining;
-                    }
-
-                    if (!buffer.IsEmpty)
-                    {
-                        statistics.IncrementProtocolErrors();
-                        logger.LogWarning("The remote endpoint closed with {Length} byte(s) of an incomplete frame; the bytes were discarded.",
-                            buffer.Length);
-                    }
-
-                    reader.AdvanceTo(buffer.End);
-                    ReportInboundEnd();
+                    await FinishInboundAsync(reader, buffer).ConfigureAwait(false);
                     return;
                 }
 
@@ -577,17 +430,75 @@ internal sealed class StreamChannel : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            // 停止期间路由被关闭（ObjectDisposedException / ChannelClosedException）是正常退出，不报告。
-            if (!IsStopping)
-            {
-                logger.LogError(ex, "The parse loop of the stream channel failed.");
-                Fault(DisconnectReason.Error, ex);
-            }
+            ReportParseFailure(ex);
         }
         finally
         {
             idle.Dispose();
         }
+    }
+
+    // 解析循环失败：停止期间路由被关闭（ObjectDisposedException / ChannelClosedException）是正常退出，不报告。
+    private void ReportParseFailure(Exception ex)
+    {
+        if (stop.IsStopping)
+            return;
+
+        logger.LogError(ex, "The parse loop of the stream channel failed.");
+        Fault(DisconnectReason.Error, ex);
+    }
+
+    // 自计时开始没有新数据：计时器尚未到期（提前唤醒或残留取消）时按剩余时间继续等待；已到期时，可刷新的分帧器整段交出，
+    // 否则按 PartialFrameAction 断开或丢弃未成帧的数据。
+    private SilenceOutcome HandleSilence(PipeReader reader, IdleTimer idle, ref ReadOnlySequence<byte> buffer)
+    {
+        long now = Stopwatch.GetTimestamp();
+        if (!idle.IsDue(now))
+        {
+            idle.Resume(now);
+            reader.AdvanceTo(buffer.Start, buffer.End);
+            return SilenceOutcome.NotDue;
+        }
+
+        idle.Disarm();
+        if (flushable != null)
+            return SilenceOutcome.Flush;
+
+        if (settings.PartialFrameAction == PartialFrameAction.Disconnect)
+        {
+            statistics.IncrementProtocolErrors();
+            Fault(DisconnectReason.PartialFrameTimeout, null);
+            return SilenceOutcome.Disconnected;
+        }
+
+        statistics.IncrementProtocolErrors();
+        logger.LogWarning("Discarded {Length} byte(s) of an incomplete frame after {Timeout} ms without new data.",
+            buffer.Length, settings.PartialFrameTimeout);
+        buffer = buffer.Slice(buffer.End);
+        return SilenceOutcome.Discard;
+    }
+
+    // 对端已结束：残留数据不能丢失。可刷新分帧器整段交出；其余分帧器的残留半帧丢弃并记录。
+    // 协议错误导致断开时直接返回（故障已报告）；否则处理完毕后报告记录的原因。
+    private async Task FinishInboundAsync(PipeReader reader, ReadOnlySequence<byte> buffer)
+    {
+        if (!buffer.IsEmpty && flushable != null)
+        {
+            DecodeResult decoded = await DecodeAndRouteAsync(buffer, flush: true).ConfigureAwait(false);
+            if (decoded.Disconnected)
+                return;
+
+            buffer = decoded.Remaining;
+        }
+
+        if (!buffer.IsEmpty)
+        {
+            statistics.IncrementProtocolErrors();
+            logger.LogWarning("The remote endpoint closed with {Length} byte(s) of an incomplete frame; the bytes were discarded.", buffer.Length);
+        }
+
+        reader.AdvanceTo(buffer.End);
+        ReportInboundEnd();
     }
 
     // 对端结束时报告记录的原因。未记录原因表示结束由停止导致，不报告。
@@ -654,6 +565,9 @@ internal sealed class StreamChannel : IAsyncDisposable
         return produced;
     }
 
+    // 连接丢失的报告与停止由 ChannelStopSequence 执行（与数据报通道共用）。
+    private void Fault(DisconnectReason reason, Exception? exception) => stop.Fault(reason, exception);
+
     // 入站端结束的原因（填充循环记录，解析循环在处理完数据后报告）。
     private sealed class InboundEnd
     {
@@ -682,6 +596,15 @@ internal sealed class StreamChannel : IAsyncDisposable
         public bool Disconnected { get; }
     }
 
+    // 解析循环的静默检查结果：NotDue 继续等待；Flush 整段刷新；Discard 已丢弃未成帧数据；Disconnected 已断开。
+    private enum SilenceOutcome
+    {
+        NotDue,
+        Flush,
+        Discard,
+        Disconnected,
+    }
+
     // 协议错误（计划 8.2 解析第 6 条）：Disconnect 报告 ProtocolViolation 并返回 true；Discard 返回 false，调用方丢弃缓冲。
     private bool HandleProtocolError(FrameDecodeException exception)
     {
@@ -694,159 +617,5 @@ internal sealed class StreamChannel : IAsyncDisposable
 
         logger.LogWarning(exception, "A protocol violation was discarded; the buffered bytes are dropped.");
         return false;
-    }
-
-    // 连接丢失（计划 8.2）：同一实例至多报告一次。先以 ConnectionClosed 失败在途等待者，再调用 onFault。
-    // 停止过程中的任何故障都不报告（停止由所有者发起）。
-    private void Fault(DisconnectReason reason, Exception? exception)
-    {
-        if (IsStopping || Interlocked.Exchange(ref faultReported, 1) != 0)
-            return;
-
-        logger.LogWarning(exception, "The stream channel lost its connection: {Reason}.", reason);
-        table.FailAll(CommResult.Fail("The connection was lost.", CommErrorKind.ConnectionClosed, null, exception));
-        try
-        {
-            onFault(reason, exception);
-        }
-        catch (Exception callbackFailure)
-        {
-            logger.LogError(callbackFailure, "The fault callback of the stream channel threw an exception.");
-        }
-    }
-
-    private async Task CompleteStopAsync(int drainTimeout)
-    {
-        try
-        {
-            await PerformStopAsync(drainTimeout).ConfigureAwait(false);
-            stopCompletion.TrySetResult(true);
-        }
-        catch (Exception ex)
-        {
-            stopCompletion.TrySetException(ex);
-        }
-    }
-
-    // 停止顺序见 StopAsync 的文档。路由停止必须在等待循环之前启动：解析循环可能挂起在满队列上，
-    // 而停止可能从 FrameReceived 处理器内发起，此时只有路由停止（完成派发队列写端）才能让解析循环退出。
-    private async Task PerformStopAsync(int drainTimeout)
-    {
-        SafeAbortTransport();
-        stopSource.Cancel();
-        pipe.Writer.CancelPendingFlush();
-        pipe.Writer.Complete();
-        pipe.Reader.CancelPendingRead();
-
-        Task routerStop = router.StopAsync(drainTimeout).AsTask();
-        await WaitForLoopsAsync(drainTimeout).ConfigureAwait(false);
-
-        table.FailAll(CommResult.Fail("The stream channel was stopped before the operation completed.", CommErrorKind.ConnectionClosed));
-        await routerStop.ConfigureAwait(false);
-    }
-
-    private async Task WaitForLoopsAsync(int drainTimeout)
-    {
-        var loops = new List<Task>(2);
-        if (fillLoop != null)
-            loops.Add(fillLoop);
-        if (parseLoop != null)
-            loops.Add(parseLoop);
-
-        if (loops.Count == 0)
-            return;
-
-        Task all = Task.WhenAll(loops);
-        Task finished = await Task.WhenAny(all, Task.Delay(Math.Max(drainTimeout, 0))).ConfigureAwait(false);
-        if (!ReferenceEquals(finished, all) && drainTimeout > 0)
-            logger.LogWarning("The stream loops did not exit within {Timeout} ms after the stop request.", drainTimeout);
-    }
-
-    private void SafeAbortTransport()
-    {
-        try
-        {
-            abortTransport();
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Aborting the transport failed; the stop continues.");
-        }
-    }
-
-    // 等待发送锁或请求锁；取消返回 false（不影响连接）。
-    private static async Task<bool> WaitForLockAsync(SemaphoreSlim gate, CancellationToken token)
-    {
-        try
-        {
-            await gate.WaitAsync(token).ConfigureAwait(false);
-            return true;
-        }
-        catch (OperationCanceledException)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// 解析循环使用的半帧 / 静默计时。计时器只负责唤醒解析循环（<see cref="PipeReader.CancelPendingRead"/>）；
-    /// 是否到期由截止时间戳判定，因此计时器的提前或残留唤醒不会误判。
-    /// 仅由解析循环访问。
-    /// </summary>
-    private sealed class IdleTimer : IDisposable
-    {
-        private readonly System.Threading.Timer timer;
-        private readonly int timeoutMs;
-        private long deadline;
-        private long armedLength = -1;
-
-        public IdleTimer(PipeReader reader, int timeoutMs)
-        {
-            this.timeoutMs = timeoutMs;
-            timer = new System.Threading.Timer(static state => ((PipeReader)state!).CancelPendingRead(), reader,
-                System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
-        }
-
-        /// <summary>是否启用（超时 > 0）。</summary>
-        public bool IsEnabled => timeoutMs > 0;
-
-        /// <summary>是否已武装（缓冲中有未成帧数据）。</summary>
-        public bool IsArmed => armedLength >= 0;
-
-        /// <summary>武装时缓冲中的字节数；没有新数据时缓冲长度与之相等。</summary>
-        public long ArmedLength => armedLength;
-
-        /// <summary>截止时间是否已到。</summary>
-        public bool IsDue(long now) => now >= deadline;
-
-        /// <summary>以当前时刻重新武装：截止时间 = 现在 + 超时（有新数据时调用）。</summary>
-        public void Arm(long length)
-        {
-            deadline = Stopwatch.GetTimestamp() + ToTicks(timeoutMs);
-            armedLength = length;
-            timer.Change(timeoutMs, System.Threading.Timeout.Infinite);
-        }
-
-        /// <summary>按剩余时间重新安排唤醒，不改变截止时间（计时器提前唤醒时调用）。</summary>
-        public void Resume(long now)
-            => timer.Change(ToMilliseconds(deadline - now), System.Threading.Timeout.Infinite);
-
-        /// <summary>撤销计时。</summary>
-        public void Disarm()
-        {
-            armedLength = -1;
-            timer.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
-        }
-
-        public void Dispose() => timer.Dispose();
-
-        private static long ToTicks(int milliseconds)
-            => (long)(milliseconds * (Stopwatch.Frequency / 1000.0));
-
-        private static int ToMilliseconds(long ticks)
-        {
-            int milliseconds = (int)Math.Ceiling(ticks * 1000.0 / Stopwatch.Frequency);
-            return Math.Max(1, milliseconds);
-        }
     }
 }
