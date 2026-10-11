@@ -12,6 +12,7 @@
 - 2026-10-11 [Core] 新增前进式字节读取器 `ByteSequenceReader`（`Buffers/`，计划 Task 3，P25-D6）：`ref struct`，成员名与 `SequenceReader<T>` 一致（`Sequence`、`Position`、`Consumed`、`Remaining`、`End`、`TryRead`、`TryPeek`、`Advance`），在 `ReadOnlySequence<byte>` 上跨段读取、只在段边界取下一段，不复制数据。net472 没有 `SequenceReader<T>`，以后去掉 net472 时可直接替换。
 - 2026-10-11 [Channels] 扩展公开面（计划 Task 4，P25-D10）：新增公开的 `ConnectionStatisticsRecorder`，记录方法转发到统计对象；实现类把记录器保持为私有字段，只把 `Statistics` 交给使用者。`ConnectionStateChangedEventArgs` 与 `FrameReceivedEventArgs` 的构造函数改为 public，后者拒绝 null 数据。`PassthroughFrameEncoder` 改为 public（`Instance` 原样输出，空负载不写入）。新增 `FramingOptions.DefaultMaxFrameLength`（65536），`MaxFrameLength` 的默认值改为引用它。
 - 2026-10-11 [Channels] 新增 `ComponentPrecedence.Validate`（计划 Task 5，P25-D3）：校验协议组件与传输配置的同名设置（分帧与关联）。内置的 TCP 客户端、TCP 服务端、UDP 与串口在校验配置时调用；派生 `StreamClientChannel` 的第三方传输也应在映射配置时调用。心跳、重连等补充型组件不在此列。
+- 2026-10-11 [Core] 新增工厂外壳的公共部分（计划 Task 6，P25-D12）：`IConfigTypedCreator`（只有 `ConfigType`）、`CreatorCatalog<TCreator>`（按配置的精确类型选择创建器）与抽象基类 `NamedFactory<TItem>`（名称、别名、释放与释放后的检查；派生类型只提供创建逻辑）。
 
 ### 变更（Changed）
 
@@ -20,10 +21,12 @@
 - 2026-10-11 [Melsec] 4C 格式 5 的编码器改为 `PassthroughFrameEncoder.Instance`，不再借用 Raw 工厂；`McProtocolProfile` 使用 `FramingOptions.DefaultMaxFrameLength`。行为不变。
 - 2026-10-11 [Melsec] `McClient` 删除自行检查传输配置的 `RequireDefault`，分帧与关联的冲突改由通道统一拒绝（异常类型仍为 `ArgumentException`）；`CreateTcp` / `CreateUdp` / `CreateSerial` 的参数文档同步更新。
 - 2026-10-11 [Melsec] 删除仅供测试使用的内部方法 `McEthernetFrame.WriteRequest` 与 `Mc4CFrame.WriteRequest`，测试辅助改为直接调用 `BuildRequest`；编码结果不变。
+- 2026-10-11 [Channels, Plc] `ChannelFactory` 与 `PlcClientFactory` 改为派生 `NamedFactory<TItem>`；创建、异常消息与释放行为不变。`IChannelCreator`、`IPlcClientCreator` 改为继承 `IConfigTypedCreator`（`ConfigType` 的声明移到基接口，实现方无需修改）。
 
 ### 破坏性变更（Breaking）
 
 - 2026-10-11 [Channels, Tcp, Udp, Serial, Melsec] 协议组件与传输配置的同名设置不再静默以组件为准：`ChannelComponents.FrameCodec` 非 null 时，传输配置的 `Framing` 必须与该传输的默认值相同；`ChannelComponents.Correlation` 非 null 时，配置的 `Correlation` 必须是默认值或与组件的值相同。违反时构造通道抛出 `ArgumentException`（参数名 `config`）。迁移：同时设置配置与组件的同名项时，删除配置中的那一项（或改为默认值），以组件为准。例如 `new TcpClientChannel(new TcpClientChannelConfig { Framing = delimiters }, components: new TcpChannelComponents { FrameCodec = codec })` 原先静默忽略 `delimiters`，现在抛出异常，应去掉 `Framing = delimiters`。
+- 2026-10-11 [Channels, Plc] 工厂的 `TryGet` 输出参数名由 `channel` / `client` 变为 `item`（继承自 `NamedFactory<TItem>`）；仅影响使用命名实参 `channel:` / `client:` 的调用，类型与行为不变。
 
 ### 移除（Removed）
 
