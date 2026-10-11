@@ -147,8 +147,6 @@ public sealed class S7HandshakeTests
             : WithReference(setupAck, ReferenceOf(frame));
     }
 
-    private static bool IsConnectionRequest(byte[] frame) => frame[CotpPduType] == ConnectionRequestCode;
-
     private static ScriptedByteChannel Cpu(string setupAck)
         => new ScriptedByteChannel(request => CommResult<byte[]>.Success(IsConnectionRequest(request)
             ? ToBytes(V_S7_2)

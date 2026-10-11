@@ -129,6 +129,9 @@ internal static class S7TestSupport
     /// <summary>TPKT 版本号的位置。</summary>
     public const int TpktVersion = 0;
 
+    /// <summary>TPKT 长度字段高位字节的位置。</summary>
+    public const int TpktLengthHigh = 2;
+
     /// <summary>TPKT 长度字段低位字节的位置。</summary>
     public const int TpktLengthLow = 3;
 
@@ -149,6 +152,9 @@ internal static class S7TestSupport
 
     /// <summary>应答头参数长度低位字节的位置。</summary>
     public const int ParameterLengthLow = 14;
+
+    /// <summary>应答头数据长度高位字节的位置。</summary>
+    public const int DataLengthHigh = 15;
 
     /// <summary>应答头数据长度低位字节的位置。</summary>
     public const int DataLengthLow = 16;
@@ -171,8 +177,14 @@ internal static class S7TestSupport
     /// <summary>数据项传输尺寸的位置。</summary>
     public const int TransportSize = 22;
 
+    /// <summary>数据项长度高位字节的位置（单位由传输尺寸决定，17.3 节）。</summary>
+    public const int UnitLengthHigh = 23;
+
     /// <summary>数据项长度低位字节的位置。</summary>
     public const int UnitLengthLow = 24;
+
+    /// <summary>数据项负载的起始位置：应答头 12 + 参数 2 + 数据项头 4，从 V-S7-6 逐字节核对。</summary>
+    public const int ItemPayload = 25;
 
     /// <summary>Setup 应答中协商 PDU 长度低位字节的位置（参数为 8 字节）。</summary>
     public const int NegotiatedPduLow = 26;
@@ -185,6 +197,11 @@ internal static class S7TestSupport
 
     // ———— 替身应答辅助 ————
 
+    /// <summary>是否为 COTP 连接请求：CR 的类型是 0xE0（V-S7-1），S7 数据走 DT（0xF0，V-S7-5），一位即可区分。</summary>
+    /// <param name="frame">帧。</param>
+    /// <returns>是 CR 返回 true。</returns>
+    public static bool IsConnectionRequest(byte[] frame) => frame[CotpPduType] == ConnectionRequestCode;
+
     /// <summary>取请求帧的 PDU 引用号，供替身应答时回显（引用号来自进程级计数器，测试无法预知）。</summary>
     /// <param name="frame">请求帧。</param>
     /// <returns>PDU 引用号。</returns>
@@ -195,9 +212,14 @@ internal static class S7TestSupport
     /// <param name="vector">17.1 节或其派生的向量。</param>
     /// <param name="reference">要写入的引用号。</param>
     /// <returns>替换后的帧。</returns>
-    public static byte[] WithReference(string vector, ushort reference)
+    public static byte[] WithReference(string vector, ushort reference) => WithReference(ToBytes(vector), reference);
+
+    /// <summary>就地替换一帧的 PDU 引用号，供按模板改写长度后的应答使用。</summary>
+    /// <param name="frame">帧。</param>
+    /// <param name="reference">要写入的引用号。</param>
+    /// <returns>同一帧实例。</returns>
+    public static byte[] WithReference(byte[] frame, ushort reference)
     {
-        byte[] frame = ToBytes(vector);
         frame[PduReferenceHigh] = (byte)(reference >> 8);
         frame[PduReferenceHigh + 1] = (byte)reference;
         return frame;

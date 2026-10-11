@@ -4,6 +4,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Junevy.Communication.Siemens\Junevy.Communication.Siemens.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Udp\Junevy.Communication.Udp.csproj" />
     <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
   </ItemGroup>
 
