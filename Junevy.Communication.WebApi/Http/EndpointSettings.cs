@@ -6,6 +6,9 @@ namespace Junevy.Communication.WebApi.Http;
 /// </summary>
 internal sealed class EndpointSettings
 {
+    private readonly HashSet<string> redactedHeaders;
+    private readonly HashSet<string> redactedQueryParameters;
+
     /// <summary>
     /// 复制已校验的配置。只应由 <see cref="EndpointConfigRules"/> 在校验通过后调用。
     /// </summary>
@@ -25,8 +28,8 @@ internal sealed class EndpointSettings
         RetryUnsafeMethods = config.Retry.RetryUnsafeMethods;
         LogBodies = config.Logging.LogBodies;
         MaxLoggedBodyLength = config.Logging.MaxLoggedBodyLength;
-        RedactedHeaders = (string[])config.Logging.RedactedHeaders.Clone();
-        RedactedQueryParameters = (string[])config.Logging.RedactedQueryParameters.Clone();
+        redactedHeaders = new HashSet<string>(config.Logging.RedactedHeaders, StringComparer.OrdinalIgnoreCase);
+        redactedQueryParameters = new HashSet<string>(config.Logging.RedactedQueryParameters, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>每次尝试的超时（毫秒）。</summary>
@@ -68,11 +71,15 @@ internal sealed class EndpointSettings
     /// <summary>记录正文时最多输出的字符数。</summary>
     public int MaxLoggedBodyLength { get; }
 
-    /// <summary>需要脱敏的请求头名（比较时不区分大小写）。</summary>
-    public IReadOnlyList<string> RedactedHeaders { get; }
+    /// <summary>该请求头的值是否需要脱敏（头名不区分大小写，规则只在快照里定一次）。</summary>
+    /// <param name="name">头名。</param>
+    /// <returns>需要脱敏时为 true。</returns>
+    public bool IsRedactedHeader(string name) => redactedHeaders.Contains(name);
 
-    /// <summary>需要脱敏的查询参数名（比较时不区分大小写）。</summary>
-    public IReadOnlyList<string> RedactedQueryParameters { get; }
+    /// <summary>该查询参数的值是否需要脱敏（参数名不区分大小写）。</summary>
+    /// <param name="name">参数名。</param>
+    /// <returns>需要脱敏时为 true。</returns>
+    public bool IsRedactedQueryParameter(string name) => redactedQueryParameters.Contains(name);
 
     private static WebApiAuthOptions CopyAuth(WebApiAuthOptions source)
         => new WebApiAuthOptions

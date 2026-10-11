@@ -82,8 +82,24 @@ public sealed class EndpointConfigRulesTests
         Assert.False(settings.RetryUnsafeMethods);
         Assert.False(settings.LogBodies);
         Assert.Equal(2048, settings.MaxLoggedBodyLength);
-        Assert.Equal(new[] { "Authorization", "Proxy-Authorization" }, settings.RedactedHeaders);
-        Assert.Equal(new[] { "access_token", "token", "api_key", "apikey" }, settings.RedactedQueryParameters);
+        Assert.True(settings.IsRedactedHeader("Authorization"));
+        Assert.True(settings.IsRedactedHeader("Proxy-Authorization"));
+        Assert.True(settings.IsRedactedQueryParameter("access_token"));
+        Assert.True(settings.IsRedactedQueryParameter("token"));
+        Assert.True(settings.IsRedactedQueryParameter("api_key"));
+        Assert.True(settings.IsRedactedQueryParameter("apikey"));
+    }
+
+    [Fact]
+    public void CreateSettings_RedactionNames_AreMatchedCaseInsensitively()
+    {
+        EndpointSettings settings = EndpointConfigRules.CreateSettings(new TestEndpointConfig());
+
+        Assert.True(settings.IsRedactedHeader("AUTHORIZATION"));
+        Assert.True(settings.IsRedactedHeader("proxy-authorization"));
+        Assert.True(settings.IsRedactedQueryParameter("Access_Token"));
+        Assert.False(settings.IsRedactedHeader("Accept"));
+        Assert.False(settings.IsRedactedQueryParameter("page"));
     }
 
     [Theory]
@@ -182,8 +198,10 @@ public sealed class EndpointConfigRulesTests
         Assert.True(settings.RetryUnsafeMethods);
         Assert.True(settings.LogBodies);
         Assert.Equal(10, settings.MaxLoggedBodyLength);
-        Assert.Equal("Authorization", settings.RedactedHeaders[0]);
-        Assert.Equal("access_token", settings.RedactedQueryParameters[0]);
+        Assert.True(settings.IsRedactedHeader("Authorization"));
+        Assert.False(settings.IsRedactedHeader("Changed"));
+        Assert.True(settings.IsRedactedQueryParameter("access_token"));
+        Assert.False(settings.IsRedactedQueryParameter("changed"));
     }
 
     private static object[] Case(string field, Action<TestEndpointConfig> mutate) => new object[] { field, mutate };
