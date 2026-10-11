@@ -65,10 +65,10 @@ public sealed class SoapClient : ISoapClient
     public WebApiAvailability Availability => core.Availability;
 
     /// <inheritdoc />
-    public event EventHandler<WebApiCompletedEventArgs>? RequestCompleted
+    public event EventHandler<WebApiAvailabilityChangedEventArgs>? AvailabilityChanged
     {
-        add => core.Events.RequestCompleted += value;
-        remove => core.Events.RequestCompleted -= value;
+        add => core.Events.AvailabilityChanged += value;
+        remove => core.Events.AvailabilityChanged -= value;
     }
 
     /// <inheritdoc />
@@ -79,17 +79,17 @@ public sealed class SoapClient : ISoapClient
     }
 
     /// <inheritdoc />
-    public event EventHandler<WebApiAvailabilityChangedEventArgs>? AvailabilityChanged
-    {
-        add => core.Events.AvailabilityChanged += value;
-        remove => core.Events.AvailabilityChanged -= value;
-    }
-
-    /// <inheritdoc />
     public event EventHandler<WebApiResponseEventArgs>? ResponseReceived
     {
         add => core.Events.ResponseReceived += value;
         remove => core.Events.ResponseReceived -= value;
+    }
+
+    /// <inheritdoc />
+    public event EventHandler<WebApiCompletedEventArgs>? RequestCompleted
+    {
+        add => core.Events.RequestCompleted += value;
+        remove => core.Events.RequestCompleted -= value;
     }
 
     /// <inheritdoc />

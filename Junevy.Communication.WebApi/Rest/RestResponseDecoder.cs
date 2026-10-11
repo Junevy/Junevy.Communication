@@ -12,6 +12,8 @@ namespace Junevy.Communication.WebApi.Rest;
 /// </summary>
 internal sealed class RestResponseDecoder
 {
+    private const int NoContent = 204;
+
     private readonly IWebApiSerializer serializer;
     private readonly EnvelopeSettings envelope;
 
@@ -36,11 +38,10 @@ internal sealed class RestResponseDecoder
         CommErrorKind kind = HttpStatusClassifier.Classify(response.StatusCode);
         if (kind != CommErrorKind.None)
             return DecodeFailure<T>(response, kind, raw);
-        if (response.Body.Length == 0)
-            return WebApiResult<T>.Success(default, response.StatusCode);
-
         if (raw)
             return DecodeRaw<T>(response);
+        if (response.Body.Length == 0)
+            return DecodeEmpty<T>(response);
 
         return envelope.Enabled ? DecodeEnvelope<T>(response) : Deserialize<T>(response.Body, response.StatusCode);
     }
@@ -57,10 +58,20 @@ internal sealed class RestResponseDecoder
             : WebApiResult<T>.Fail(statusMessage, kind, response.StatusCode);
     }
 
+    // 空正文：没有包络时是成功，数据为默认值；启用包络时只有 204（本来就不该有正文）是成功，
+    // 其他 2xx 无法判断业务是否成功，不能算成功，按协议违规处理。
+    private WebApiResult<T> DecodeEmpty<T>(HttpExchangeResponse response)
+        => envelope.Enabled && response.StatusCode != NoContent
+            ? WebApiResult<T>.Fail("The response body is empty but a business envelope was expected.", CommErrorKind.ProtocolViolation, response.StatusCode)
+            : WebApiResult<T>.Success(default, response.StatusCode);
+
+    // 原始类型就是"正文原样"：空正文是空数组 / 空字符串（不是 null），有没有包络都一样。
     private static WebApiResult<T> DecodeRaw<T>(HttpExchangeResponse response)
     {
         if (typeof(T) == typeof(byte[]))
             return WebApiResult<T>.Success((T)(object)response.Body, response.StatusCode);
+        if (response.Body.Length == 0)
+            return WebApiResult<T>.Success((T)(object)string.Empty, response.StatusCode);
 
         if (!RestCharset.TryResolve(response.ContentType, out Encoding encoding, out string? charset))
             return WebApiResult<T>.Fail($"The charset '{charset}' of the response is not supported.", CommErrorKind.ProtocolViolation, response.StatusCode);

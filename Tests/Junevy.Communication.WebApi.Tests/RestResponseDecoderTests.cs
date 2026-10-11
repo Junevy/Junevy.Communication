@@ -63,11 +63,12 @@ public sealed class RestResponseDecoderTests
     }
 
     [Theory]
-    [InlineData(204, "")]
-    [InlineData(200, "")]
-    public void Decode_EmptyBody_IsSuccessWithDefaultData(int status, string body)
+    [InlineData(204)]
+    [InlineData(200)]
+    [InlineData(202)]
+    public void Decode_EmptyBody_WithoutAnEnvelope_IsSuccessWithDefaultData(int status)
     {
-        WebApiResult<Order> result = Decoder().Decode<Order>(Response(status, body));
+        WebApiResult<Order> result = Decoder().Decode<Order>(Response(status, ""));
 
         Assert.True(result.IsSuccess);
         Assert.Null(result.Data);
@@ -75,12 +76,79 @@ public sealed class RestResponseDecoderTests
     }
 
     [Fact]
+    public void Decode_EmptyBody_WithAnEnvelope_On204_IsSuccessWithDefaultData()
+    {
+        WebApiResult<Order> result = Decoder(Envelope()).Decode<Order>(Response(204, ""));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(result.Data);
+        Assert.Equal(204, result.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(200)]
+    [InlineData(201)]
+    [InlineData(202)]
+    public void Decode_EmptyBody_WithAnEnvelope_OnOtherSuccessStatuses_IsAProtocolViolation(int status)
+    {
+        WebApiResult<Order> result = Decoder(Envelope()).Decode<Order>(Response(status, ""));
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(CommErrorKind.ProtocolViolation, result.ErrorKind);
+        Assert.Equal(status, result.StatusCode);
+        Assert.Null(result.RemoteCode);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Decode_EmptyBody_ForRawBytes_IsAnEmptyArrayNotNull(bool withEnvelope)
+    {
+        RestResponseDecoder decoder = withEnvelope ? Decoder(Envelope()) : Decoder();
+
+        WebApiResult<byte[]> ok = decoder.Decode<byte[]>(Response(200, ""));
+        WebApiResult<byte[]> noContent = decoder.Decode<byte[]>(Response(204, ""));
+
+        Assert.True(ok.IsSuccess);
+        Assert.NotNull(ok.Data);
+        Assert.Empty(ok.Data!);
+        Assert.True(noContent.IsSuccess);
+        Assert.Empty(noContent.Data!);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Decode_EmptyBody_ForString_IsAnEmptyStringNotNull(bool withEnvelope)
+    {
+        RestResponseDecoder decoder = withEnvelope ? Decoder(Envelope()) : Decoder();
+
+        WebApiResult<string> ok = decoder.Decode<string>(Response(200, ""));
+        WebApiResult<string> noContent = decoder.Decode<string>(Response(204, ""));
+
+        Assert.Equal(string.Empty, ok.Data);
+        Assert.Equal(string.Empty, noContent.Data);
+    }
+
+    [Fact]
+    public void Decode_EmptyBody_ForString_IgnoresAnUnsupportedCharset()
+    {
+        WebApiResult<string> result = Decoder().Decode<string>(Response(204, Array.Empty<byte>(), "text/plain; charset=no-such-charset"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(string.Empty, result.Data);
+    }
+
+    [Fact]
     public void Decode_EmptyBody_ForAValueType_IsDefault()
     {
         WebApiResult<int> result = Decoder().Decode<int>(Response(204, ""));
+        WebApiResult<int> withEnvelope = Decoder(Envelope()).Decode<int>(Response(204, ""));
 
         Assert.True(result.IsSuccess);
         Assert.Equal(0, result.Data);
+        Assert.True(withEnvelope.IsSuccess);
+        Assert.Equal(0, withEnvelope.Data);
     }
 
     [Fact]
