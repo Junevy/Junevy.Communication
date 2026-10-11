@@ -23,9 +23,10 @@ internal class ByteFakePlcClient : FakePlcClient
     /// <param name="options">选项；为 null 时使用默认值。</param>
     /// <param name="logger">日志记录器；为 null 时使用新的测试日志器。</param>
     /// <param name="maxBytes">单包最大字节数。</param>
+    /// <param name="dataFormat">数据格式；为 null 时沿用基类默认（DCBA 字序与 ASCII 编码）。</param>
     public ByteFakePlcClient(IClientChannel channel, PlcClientOptions? options = null, ILogger? logger = null,
-                             int maxBytes = DefaultMaxBytes)
-        : base(channel, options, dataFormat: null, logger)
+                             int maxBytes = DefaultMaxBytes, PlcDataFormat? dataFormat = null)
+        : base(channel, options, dataFormat, logger)
     {
         this.maxBytes = maxBytes;
     }

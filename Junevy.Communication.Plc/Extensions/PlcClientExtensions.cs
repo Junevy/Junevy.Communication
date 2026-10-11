@@ -11,7 +11,8 @@ namespace Junevy.Communication.Plc;
 /// </summary>
 /// <remarks>
 /// 参数为 null 时抛出 <see cref="ArgumentNullException"/>；数量为零或数据为空时返回 <c>InvalidRequest</c>。
-/// 字符串与位的扩展位于同一个类的另一部分文件中。
+/// 字符串与位的扩展位于同一个类的另一部分文件中；字符串按 <see cref="PlcDataFormat.StringEncoding"/> 编码，
+/// 并按软元件单位决定是否必须整字（P4-D7）。
 /// </remarks>
 public static partial class PlcClientExtensions
 {
