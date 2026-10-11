@@ -72,8 +72,8 @@ P2 计划第 2 节 Q1–Q15 与 P2.5 计划第 2 节 Q16–Q20 全部适用（�
 
 | 命名空间 | 内容 | 允许依赖（WebApi 内部） |
 |---|---|---|
-| `Junevy.Communication.WebApi` | 公共契约：`WebApiResult<T>`、`WebApiAvailability`、`IWebApiEndpoint`、`WebApiEndpointConfig` 与嵌套选项、`ResponseEnvelopeOptions`、`WebApiComponents`、拦截器接口与上下文、事件参数 | 无 |
-| `….WebApi.Serialization` | `IWebApiSerializer`、`SystemTextJsonWebApiSerializer`；internal 业务包络读写器 | 根 |
+| `Junevy.Communication.WebApi` | 公共契约：`WebApiResult<T>`、`WebApiAvailability`、`IWebApiEndpoint`、`WebApiEndpointConfig` 与嵌套选项、`ResponseEnvelopeOptions`、`WebApiComponents`、`IWebApiSerializer`、拦截器接口与上下文、事件参数 | 无 |
+| `….WebApi.Serialization` | `SystemTextJsonWebApiSerializer`；internal 业务包络读写器 | 根 |
 | `….WebApi.Auth` | `WebApiAuthentication`；internal 的 Basic / Bearer / ApiKey 拦截器与"从配置创建"的逻辑 | 根 |
 | `….WebApi.Http` | 全部 internal：`EndpointCore`、请求快照、尝试循环、状态码归类、重试规则、日志脱敏、可用性、健康检查、处理器工厂 | 根、`Auth` |
 | `….WebApi.Rest` | `IWebApiClient`、`WebApiClient`、`WebApiClientConfig`、`WebApiRequest`、`WebApiClientExtensions`；internal 响应解码 | 根、`Serialization`、`Http` |
@@ -448,13 +448,14 @@ public static class WebApiClientExtensions
     public static Task<WebApiResult<TResponse>> DeleteAsync<TResponse>(this IWebApiClient client, string path, CancellationToken cancellationToken = default);
 }
 
-namespace Junevy.Communication.WebApi.Serialization;
+namespace Junevy.Communication.WebApi;   // 契约在根命名空间（里程碑 2 审阅裁决：WebApiComponents.Serializer 引用它）
 public interface IWebApiSerializer
 {
     string ContentType { get; }                                  // 例如 "application/json; charset=utf-8"
     byte[] Serialize(object value, Type type);
     object? Deserialize(byte[] data, Type type);                 // 失败抛异常，由调用方归类为 ProtocolViolation
 }
+namespace Junevy.Communication.WebApi.Serialization;
 public sealed class SystemTextJsonWebApiSerializer : IWebApiSerializer
 {
     public SystemTextJsonWebApiSerializer();                     // P3-D15 的默认选项
@@ -610,6 +611,10 @@ public static class WebApiServiceCollectionExtensions
 | 1 | 通过 | 19.2 第 1 条：`FrameRouterTests` 的调用点是计划第 6 节第 3 条漏列（计划错误，不是执行偏差），接受这处两行改动；断言未变。第 2 条（5 个文件各 +1 行 using）接受：调用点所需，审阅者逐个核对过 using 仍被使用 |
 | 2 | 通过 | 审阅者复做故意违规：`Soap` 方法体内引用 `Rest` 的类型 → 只有 Soap 行失败。19.2 第 3 条：两行参数检查的重复保留，不为它新增 Core 公开 API；第 4 条 `ToString` 格式接受 |
 | 3 | 通过，附一项修改 | 第 6 条补充的校验全部保留。修改（在 Task 5 开始时做）：`EndpointSettings` 不再暴露 `RedactedHeaders` / `RedactedQueryParameters` 列表，改为 `IsRedactedHeader(string)` / `IsRedactedQueryParameter(string)` 方法，内部用 `StringComparer.OrdinalIgnoreCase` 的 `HashSet<string>`，大小写规则只在快照里定一次（Q12） |
+| 4 | 通过 | 19.2 第 1 条是计划自相矛盾（审阅者的错误）：裁决 `IWebApiSerializer` 移到根命名空间，`SystemTextJsonWebApiSerializer` 留在 `Serialization`；第 3 节表格与 Task 8 的 API 已改。`WebApiComponents.Serializer` 在 Task 8 加入。第 2、3 条接受 |
+| 5 | 通过 | 第 5、6 条接受。Q24 有测试证据（`ServicePointManager` 静态值前后不变） |
+| 6 | 通过，附一项修改 | 审阅者做了两次变异：方法规则改成恒真 → 8 个测试失败；每次尝试不再从快照重建 → `EachAttempt_StartsFromTheSnapshot_SoModificationsDoNotAccumulate` 失败。第 7、8、9、12 条接受（第 7 条写进 Task 12 README 的事件一节：被中止或在发送前拦截器阶段超时的尝试不触发 `RequestSending` / `ResponseReceived`）。第 10 条追加提交接受。**修改（第 11 条）**：端点释放导致的在途尝试，`ResponseReceived.ErrorKind` 也必须是 `ConnectionClosed`，与最终结果一致；在 `AttemptLoop` 里用一个辅助方法同时映射尝试结果与最终结果，可用性仍不计入 |
+| 7 | 通过，附一项修改 | 第 13 条接受：`IWebApiEndpoint.AvailabilityChanged` 的 XML 注释与 README 写明"订阅后先读一次 `Availability`"。第 14–17 条接受。**修改**：`OrderedEventQueue.RunAsync` 中 `consumer(item)` 与 `dispatching` 标记改为 try/finally（防御：消费者以后若抛出，派发循环不能就此停止） |
 
 ### 19.2 执行中的偏差与发现（执行者填写：现象 / 处理 / 是否需要审阅者决定）
 
