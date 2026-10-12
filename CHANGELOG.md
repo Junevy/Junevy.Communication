@@ -27,6 +27,12 @@
   - **定位**：SECS-II 消息与 HSMS-SS 会话，库扮演设备端（Equipment）。直接坐在 Core + Channels + Tcp 之上，不实现 `IPlcClient`，不把 HSMS 状态压成通道的 `ConnectionState`（P51-D2）。
   - **本期不做**：SECS-I（RS-232 块传输）、GEM、主机端角色（2026-10-13 用户决定）。
   - **骨架阶段**：两个 csproj、解决方案条目、英文 README 占位、架构分层表新增一行（Secs 允许 Core、Channels、Tcp）。功能自 Task 2 起逐个里程碑落地。
+- 2026-10-13 [Secs] 新增 SECS-II 消息模型与 SML 文本（计划 Task 2，P51-D3、P51-D4）。
+  - **公开类型**：`SecsFormat`（14 个格式码，枚举值即线上格式字节的高 6 位）、`SecsItem`（`L` / `A` / `B` / `Boolean` / `I1`–`I8` / `U1`–`U8` / `F4` / `F8` 工厂，12 个取值访问器，`ToSml`）、`SecsMessage`（`Create`、`CreateReply`、`ToSml`）。
+  - **不可变**：工厂方法复制传入的数组；访问器在格式不符时抛 `InvalidOperationException` 并在消息里写明实际格式；`Create` 拒绝 Stream > 127 与"偶数 Function + W 位"；`CreateReply` 同一 Stream、Function + 1、不带 W 位，对偶数 Function 与 Function 255 抛 `InvalidOperationException`。
+  - **`A` 是单字节字符（P51-D4）**：编码只接受 U+0000–U+00FF，超出抛 `ArgumentException`；解码按 Latin-1 每个字节还原一个字符，无损往返。需要 GBK / UTF-8 文本的宿主自己转码后用 `B`。
+  - **数值一律大端**，复用 Core 的 `ByteTransform`（`WordOrder.ABCD`）——它已处理 net472 缺少 `BitConverter.SingleToInt32Bits` 的问题，本库不再抄一份浮点位模式视图。
+  - **SML 只输出不解析**：换行固定 `\n`（不跟平台走，保证跨目标逐字相同），单精度用 `G9`、双精度用 `G17`（.NET Framework 上 `"R"` 不保证往返），空列表写成 `<L [0]>`，引号与反斜杠转义、可打印 ASCII 之外的字节写成 `\xHH`。
 
 ### 变更（Changed）
 
