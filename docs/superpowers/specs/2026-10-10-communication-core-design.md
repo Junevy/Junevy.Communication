@@ -1250,7 +1250,7 @@ public sealed class OutboxItem
 | P3 | WebApi（MES）：REST 客户端、SOAP 客户端、HTTP 服务端；离线缓存只预留接口 |
 | P4 | S7、FINS（套件的第二、第三个使用者） |
 | P5 | SECS：HSMS → SECS-I → GEM |
-| P6 | SDK 协议（只做客户端，只面向 net8.0）：P6.1 MQTT → P6.2 OPC UA → P6.3 FTP |
+| P6 | SDK 协议（只做客户端，只面向 net8.0）：**P6.1 MQTT 已完成** → P6.2 OPC UA → P6.3 FTP |
 | P7（可选，破坏性） | Modbus 迁移到 Plc 套件（v3.0） |
 
 P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份"新增协议指南"的更新（Skill + 知识库），把这次接入中踩到的坑写进去。
@@ -1450,6 +1450,26 @@ P4.5（计划 `docs/superpowers/plans/2026-10-12-p45-shared-protocol-parts.md`�
 - **20.5 第 3 条标记为"本期只记录、未抽取"的四项**里，F3、F4/F9、F8 在本期完成抽取；F7、F10 转入 P5（测试基建整理）。
 - **`CommResult` 的可空性（第 4 行）是本期唯一的运行时行为变化**（消息文本与双重错误顺序见上），因此本期被 P45-D8 限定为"S7、FINS、MELSEC 的测试断言不改且全绿"——它们三者的 316 / 259 / 184 条用例全部原样通过，正是行为不变的证据。
 
+
+### 20.8 实施修订（P6.1）
+
+P6.1（计划 `docs/superpowers/plans/2026-10-12-p61-mqtt.md`，Task 0–10）是第一个 SDK 适配包：MQTT 客户端，依赖 Core + MQTTnet 5.2.0.1603，只面向 net8.0，只做客户端。第 14.3 节与第 3.1 节的设计在实现后基本成立，需要修订的是下面这些具体做法。**本节保留原设计文字以便追溯**；第 14.3 节正文按本表的结论就地改过。
+
+| # | 章节 | 原设计 | 实际实现 | 原因 |
+|---|---|---|---|---|
+| 1 | 14.3 第 1 条 | "重连是包内的后台循环，退避用 Core 的 `ExponentialBackoff`；重连成功后，若 Broker 没有保留会话，就按订阅表重新订阅。原设计写的是'用 Core 的 `RetryLoop`'，但 `RetryLoop` 按 P2-D3 没有加入 Core，这里也不加" | 与原设计一致，并补上三点实现细节：**①** `MqttClientOptions.AutoReconnect` 是本包自己的开关，**不映射给 SDK**——MQTTnet 5 的 `MqttClientOptions` 上已经没有 `AutoReconnect`（客户端自动重连被 SDK 移除），因此不存在"两套重连"互相打架的风险；**②** 每一次重连尝试都走与连接、断开同一把生命周期锁，取消令牌让"正在等锁的尝试"直接退出，因此"断开时停止循环并等待它退出"不会死锁；**③** 循环拆成 `MqttReconnectLoop`（带退避的后台重试驱动）与 `MqttReconnectController`（MQTT 特有的触发条件与成功后的动作）两个内部类型 | F9（计划 18.2）；P61-D9、P61-D10 |
+| 2 | 14.3 第 1 条 | "若 Broker 没有保留会话，就按订阅表重新订阅" | 两条实现约束：**顺序必须可复现**，因此订阅表自己维护首次订阅的顺序（`ConcurrentDictionary` 的枚举顺序没有保证）；**某个过滤器被 Broker 拒绝时把它移出订阅表**，否则每次重连都会重试同一个坏订阅。宿主看到 `Connected` 时订阅已经恢复完毕 | P61-D5、D9 |
+| 3 | 第 3.1 节与 14.3 未涉及 | —— | **超时的判定归本包，不归 SDK**：MQTTnet 在连接被中止时抛的是笼统的 `MqttCommunicationException`，异常类型里读不出是超时还是调用方取消。因此每次连接由本包开一个 `TimeoutScope`（`Timeout` 同时是连接超时与等待确认的时间）并把令牌交给 SDK，分类时先看作用域再看异常类型——与 WebApi 的 `HttpStatusClassifier` 同一做法。TLS 的认证异常被 SDK 包进 `MqttCommunicationException`，映射改为沿内层异常链找 `AuthenticationException` | F7、F8（计划 18.2）；P6-C8 |
+| 4 | 3.1 "SDK 适配包的公开 API 不出现 SDK 的类型" | 作为规则 | 由三条架构测试强制：程序集引用白名单（SDK 前缀登记在 `ArchitectureTests.SdkPrefixes`）、公开 API 逐成员扫描（`SdkPublicApiWalker` 展开数组 / 指针 / byref / 泛型实参）、以及 `Sdk` 命名空间以外的类型不依赖 SDK（NetArchTest 读 IL，因此方法体里的引用也算）。P6.2、P6.3 各加一行登记即可复用 | P6-C4、C5、C6 |
+| 5 | 14.3 第 2 条（FTP） | —— | 本期未涉及 FTP；P6.3 沿用同一套结构（`Sdk/` 隔离层 + 集中的错误映射 + SDK 行为钉住） | —— |
+
+**影响设计的三条 SDK 摩擦**（完整记录见计划第 18.2 节）：
+
+- **F8** 超时与取消必须由本包判定。若照搬"信任 SDK 的异常类型"，超时会被误分类成 `ConnectionClosed`，调用方无法区分"Broker 拒绝了"与"我没等到"。
+- **F9** MQTTnet 5 已移除客户端自动重连。重连与订阅恢复因此完全是本包的责任，也就不必担心 SDK 自己的重连与本包的重连同时发生。
+- **F10 / F11**（测试侧）MQTTnet 的服务端 builder 不会因为设了端口就启用默认端点；`InterceptingInboundPacketAsync` 在 CONNECT 上不触发。两者只影响测试替身，但"按文档直觉写测试替身"会直接写错。
+
+**度量结论**：Mqtt 包有效行 1419，其中 `Sdk/` 517（36.4%）——薄适配层里真正与 SDK 打交道的部分不到四成，其余是消息模型、选项校验、状态机与重连策略。生产重复窗口 34 个（与 P4.5 持平，Mqtt 贡献 0），生产 >60 行方法 0，>300 行文件 9（未增加），生产程序集之间的 InternalsVisibleTo 仍为 2。
 ## 21. 决策记录
 
 ### 21.1 已确认（2026-10-10）
