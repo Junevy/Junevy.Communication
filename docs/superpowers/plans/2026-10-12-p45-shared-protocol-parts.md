@@ -276,6 +276,10 @@ public static class PlcComponentWiring
 
 ### 14.2 执行汇报与偏差（执行者填写）
 
+#### Task 7：最终度量
+
+本 Task 只测量与记录，**没有改动任何生产代码**（只在本计划文件与 `CHANGELOG.md` 追加记录）。度量、三条命令连跑三次的逐项结果、以及"新增一个协议现在少写什么"的结论见 **14.3 的"最终度量"**。
+
 #### Task 6：文档与知识库
 
 **新增**：无。
@@ -563,4 +567,66 @@ Task 1 / 4 / 5 的 README 验证也用了同样的负控思路；其中 Task 1 �
 
 #### 最终度量（Task 7 复测）
 
-（Task 7 填写）
+提交 `dbc3622`（Task 6）之后、生产文件 343 个（基线 345 = 345 − 5 个已删除 + 3 个新增）。
+
+| 指标 | 基线（`d306543`） | P4.5 目标 | 实测 | 判定 |
+|---|---|---|---|---|
+| 重复窗口（6 行） | 54 | ≤ 34，新增窗口 0 | **34** | ✅ |
+| 超过 60 行的方法 | 0 | 0 | **0** | ✅ |
+| 超过 300 行的文件 | 9 | 9 | **9**（清单与基线逐条相同） | ✅ |
+| 生产程序集之间的 IVT | 2 | 2 | **2**（Architecture 11 用例全绿） | ✅ |
+| 有效行：Core | 979 | 增 | **1103（+124）** | ✅ |
+| 有效行：Plc | 1189 | 增 | **1231（+42）** | ✅ |
+| 有效行：Melsec | 1275 | 减 | **1247（−28）** | ✅ |
+| 有效行：Siemens | 1367 | 减 | **1271（−96）** | ✅ |
+| 有效行：Omron | 772 | 减 | **692（−80）** | ✅ |
+
+**重复窗口逐集群（34 = 各集群之和）**：
+
+| 窗口数 | 集群 | 与基线相比 |
+|---|---|---|
+| 9 | `WebApi/Rest/WebApiClient.cs ↔ WebApi/Soap/SoapClient.cs` | 不变（范围外） |
+| 7 | `Serial/SerialChannel.cs ↔ Tcp/Client/TcpClientChannel.cs` | 不变（P45-D7：只允许 `!` 清理） |
+| 6 | `Channels/Pipeline/DatagramChannel.cs ↔ StreamChannel.cs` | 不变 |
+| 5 | `Channels/Lifecycle/DatagramConnectionDriver.cs ↔ StreamConnectionDriver.cs` | 不变 |
+| 3 | `Channels/Lifecycle/StreamClientChannel.cs ↔ Udp/UdpChannel.cs` | 不变 |
+| 1 | `Core/Registry/NamedRegistry.cs`（文件内部） | 不变 |
+| 1 | `Omron/Framing/FinsFraming.cs ↔ Siemens/Framing/S7Framing.cs` | 不变——**本期唯一保留的跨协议窗口**（P45-D1 接受） |
+| 1 | `Tcp/Client/TcpClientChannelCreator.cs ↔ Udp/UdpChannelCreator.cs` | 不变 |
+| 1 | `Tcp/Client/TcpConnector.cs ↔ Udp/UdpDatagramTransport.cs` | 不变 |
+| — | `Omron/Protocol/FinsFields.cs ↔ Siemens/Protocol/S7Fields.cs` | **9 → 0**（Task 2） |
+| — | `Omron/FinsProtocolProfile.cs ↔ Siemens/S7ProtocolProfile.cs` | **8 → 0**（Task 4） |
+| — | `Melsec/McProtocolProfile.cs ↔ Omron/… ↔ Siemens/…` | **3 → 0**（Task 4） |
+
+消除 20 个（9 + 8 + 3），**新增窗口 0**，因此 54 − 20 = **34**，正好达到第 3 节的目标。
+
+**三条命令连续运行三次**（每次都跑完整的三条；`dotnet build -c Debug`、`-c Release`、`dotnet test -c Debug`）：
+
+- 6 次构建全部 **0 错误**（Release 仍是 31 条既有警告，全部来自 `Tests/Junevy.Communication.Modbus.Tests` 的 CS8600/CS8625/xUnit1031 与 `Junevy.Communication.Test` WPF 临时工程的 CS8618，与基线相同）。
+- 3 次测试各 **23 个项目 / 目标组合，0 失败**；按"项目 + 目标 + 失败 / 通过 / 跳过 / 总数"逐项比对，**三次完全一致**（`Compare-Object` 差异数 0）。
+
+| 项目 | net8.0 | net472 |
+|---|---|---|
+| Core | **160** 通过 | **160** 通过 |
+| Channels | 278 通过 | 278 通过 |
+| Tcp | 129 通过 | 129 通过 |
+| Udp | 38 通过 | 38 通过 |
+| Serial | 63 通过 + 2 跳过 | 63 通过 + 2 跳过 |
+| Plc | **262** 通过 | **262** 通过 |
+| Melsec | 184 通过 + 1 跳过 | 184 通过 + 1 跳过 |
+| Architecture | 11 通过 | 11 通过 |
+| WebApi | 732 通过 | 733 通过 |
+| Modbus | 405 通过 | （只有 net8.0） |
+| Siemens | 316 通过 | 316 通过 |
+| Omron | 259 通过 | 259 通过 |
+
+对照基线：**只有 Core（116 → 160，+44）与 Plc（245 → 262，+17）增加**，其余 10 个项目一字未变。Core 的 +44 = `BigEndianFields` 31 + `SequenceCounter` 10 + `CommResult` 3；Plc 的 +17 全部来自 `PlcComponentWiringTests`。**S7、FINS、MELSEC 一条用例都没删、断言一个字都没改**（P45-D8 / Q28′），因此第 3 节"原则上不应发生"的删测试情形没有发生，无需逐条说明。
+
+**"新增一个协议"现在少写什么**（对照 P4 计划第 20.2 节扩展性结论的第三部分）：
+
+- **不用写**大端字段工具——`BigEndianFields` 的 14 个成员覆盖 1/2/3/4 字节的写与读，以及原样字节；原先 `S7Fields` 133 行 + `FinsFields` 106 行，计 239 行，现在是一行调用。
+- **不用写**进程级序号计数器——`SequenceCounter` 两个方法；原先三份 13–14 行，计 40 行，现在是在报文头编码器上放一个字段 + 一行 `NextUInt16()` / `NextByte()`。
+- **不用写**组件守卫与六项接线——`PlcComponentWiring.Apply` 一次调用；原先三份 `RequireUnset` / `ThrowAlreadySet` 与 MELSEC 额外的 `RequireComponents` / `ApplyCorrelation`，计 8 个方法。
+- **仍然要写**：设备表与地址类型、协议钩子与帧编解码（外加黄金向量测试）、握手与会话快照、心跳探测、客户端工厂与 DI、以及测试侧的设备替身与端到端脚手架（F7、F10，转入 P5）。
+
+净效果：三个协议包的有效行从 3414（1275 + 1367 + 772）降到 **3210（−204，−6.0%）**，而套件的"新增协议"能力没有缩水——省下的正是三份会无限复制的样板。
