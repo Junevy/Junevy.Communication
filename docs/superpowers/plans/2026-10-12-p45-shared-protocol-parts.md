@@ -276,4 +276,68 @@ public static class PlcComponentWiring
 
 ### 14.2 执行汇报与偏差（执行者填写）
 
+#### Task 0：基线
+
+- **新增、修改、删除的文件**：无（只在本计划文件内记录基线）。
+- **测试先红后绿的证据**：不适用（纯记录）。
+- **第 2 节自查**：本 Task 不涉及生产代码。
+- **第 3 节度量**：见 14.3，与第 3 节表格的基线列逐项一致。
+- **三条命令的结果**：见 14.3 的测试表，与第 3 节表格的基线列逐项一致；无失败、无偶发失败（`HeartbeatTests.OnlyWhenIdle_SkipsWhenTraffic` 本次通过）。
+- **P45-D5 前提复核（Task 0 第 2 条）**：
+  - `grep -rnE "CommResult<[^>]+\?>"` 在生产与测试代码中**无结果**——`T` 没有可空引用类型的用法，`CommResult<T>.Success` 的 null 守卫不会与现有调用冲突。
+  - `grep -rn "Success(null|Success(default"` 只有 **WebApi** 的 5 处（`Junevy.Communication.WebApi/Rest/RestResponseDecoder.cs:66,93`、`Soap/SoapResponseDecoder.cs:26,37` 与 `Tests/Junevy.Communication.WebApi.Tests/WebApiResultTests.cs:27`），命中的是 `WebApiResult<T>.Success`，**不是** `CommResult<T>.Success`，本期不涉及（P45-D1 明确把 `WebApiResult<T>` 的同类标注排除在外）。
+  - 结论：`CommResult<T>.Success` 加 null 守卫是安全的，写入 CHANGELOG 的"破坏性变更"。
+
 ### 14.3 基线与度量（执行者填写）
+
+#### 基线（Task 0 实测，`d306543` + 计划文件提交 `b8ed387`）
+
+三条命令全部成功：`dotnet build -c Debug` 与 `-c Release` 均 **0 错误**（31 个警告，全部来自 `Tests/Junevy.Communication.Modbus.Tests` 的 CS8600/CS8625/xUnit1031 与 `Junevy.Communication.Test` WPF 临时工程的 CS8618，不在本期范围）；`dotnet test -c Debug` **全部通过**。
+
+| 测试项目 | net8.0 | net472 |
+|---|---|---|
+| Core | 116 通过 | 116 通过 |
+| Channels | 278 通过 | 278 通过 |
+| Tcp | 129 通过 | 129 通过 |
+| Udp | 38 通过 | 38 通过 |
+| Serial | 63 通过 + 2 跳过 | 63 通过 + 2 跳过 |
+| Plc | 245 通过 | 245 通过 |
+| Melsec | 184 通过 + 1 跳过 | 184 通过 + 1 跳过 |
+| Architecture | 11 通过 | 11 通过 |
+| WebApi | 732 通过 | 733 通过 |
+| Modbus | 405 通过 | （只有 net8.0） |
+| Siemens | 316 通过 | 316 通过 |
+| Omron | 259 通过 | 259 通过 |
+
+与第 3 节表格的基线列逐项一致。
+
+| 指标 | 实测 | 第 3 节基线 |
+|---|---|---|
+| 重复窗口（6 行） | 54 | 54 |
+| 超过 60 行的方法 | 0 | 0 |
+| 超过 300 行的文件 | 9（`Channels/Lifecycle/ConnectionSupervisor.cs` 691、`Channels/Pipeline/StreamChannel.cs` 621、`Channels/Pipeline/PendingRequestTable.cs` 537、`Core/Registry/NamedRegistry.cs` 461、`Tcp/Server/TcpServer.cs` 449、`Tcp/Client/TcpClientChannel.cs` 372、`Channels/Pipeline/FrameRouter.cs` 368、`Channels/Pipeline/DatagramChannel.cs` 352、`Channels/Lifecycle/StreamConnectionDriver.cs` 314） | 9 |
+| 生产程序集之间的 IVT | 2（Architecture 11 个用例全绿） | 2 |
+| 有效行 | Core 979、Plc 1189、Melsec 1275、Siemens 1367、Omron 772 | 一致 |
+
+**重复窗口的逐集群分布（54 = 各集群之和）**：
+
+| 窗口数 | 集群 | 处置 |
+|---|---|---|
+| 9 | `Omron/Protocol/FinsFields.cs ↔ Siemens/Protocol/S7Fields.cs` | Task 2 消除 |
+| 9 | `WebApi/Rest/WebApiClient.cs ↔ WebApi/Soap/SoapClient.cs` | 范围外（P45-D1 只处理三个 PLC 协议） |
+| 8 | `Omron/FinsProtocolProfile.cs ↔ Siemens/S7ProtocolProfile.cs` | Task 4 消除 |
+| 7 | `Serial/SerialChannel.cs ↔ Tcp/Client/TcpClientChannel.cs` | 范围外（P45-D7：Channels、Tcp、Udp 生产代码只允许 Task 5 的 `!` 清理） |
+| 6 | `Channels/Pipeline/DatagramChannel.cs ↔ Channels/Pipeline/StreamChannel.cs` | 范围外 |
+| 5 | `Channels/Lifecycle/DatagramConnectionDriver.cs ↔ StreamConnectionDriver.cs` | 范围外 |
+| 3 | `Channels/Lifecycle/StreamClientChannel.cs ↔ Udp/UdpChannel.cs` | 范围外 |
+| 3 | `Melsec/McProtocolProfile.cs ↔ Omron/FinsProtocolProfile.cs ↔ Siemens/S7ProtocolProfile.cs` | Task 4 消除 |
+| 1 | `Core/Registry/NamedRegistry.cs`（文件内部） | 范围外 |
+| 1 | `Omron/Framing/FinsFraming.cs ↔ Siemens/Framing/S7Framing.cs` | **接受保留**（P45-D1） |
+| 1 | `Tcp/Client/TcpClientChannelCreator.cs ↔ Udp/UdpChannelCreator.cs` | 范围外 |
+| 1 | `Tcp/Client/TcpConnector.cs ↔ Udp/UdpDatagramTransport.cs` | 范围外 |
+
+合计 54。Task 2 与 Task 4 合计消除 9 + 8 + 3 = **20**，目标 54 − 20 = **34**，与第 3 节的目标一致。
+
+#### 最终度量（Task 7 复测）
+
+（Task 7 填写）
