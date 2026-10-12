@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\build\Junevy.Communication.Common.props" />
+
+  <PropertyGroup>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- SECS 是自有模型协议，不走 Plc 套件（P51-D1、D2）：直接坐在 Core（BigEndianFields、SequenceCounter、CommResult、NamedFactory）、
+       Channels（分帧、关联、派发、握手积压、心跳）与 Tcp（服务端会话与客户端通道）之上。不做 SECS-I，因此不引用 Serial。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\Junevy.Communication.Channels\Junevy.Communication.Channels.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.Core\Junevy.Communication.Core.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.Tcp\Junevy.Communication.Tcp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Junevy.Communication.Secs.Tests" />
+  </ItemGroup>
+
+</Project>

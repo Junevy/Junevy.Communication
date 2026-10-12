@@ -15,6 +15,19 @@
   - **结果**：每遍汇总通过、失败、跳过数；任一测试宿主失败时退出码为 1，并打印该项目的完整输出。
   - **已验证**（在 `feat/sdk-p6` 上）：只改 Mqtt 时只选中 Architecture.Tests 与 Mqtt.Tests；只改 Plc 时选中 Plc、Melsec、Siemens、Omron 与 Architecture；改 Core 或 Channels 时选中除 Modbus 外的全部测试项目；临时加入一条必失败的用例时退出码为 1。
 
+### 修复（Fixed）
+
+- 2026-10-13 [Build] `build/test-affected.ps1` 在非 UTF-8 控制台代码页（如中文 Windows 的 cp936）上把每遍合计**静默报成 0**：PowerShell 按 `[Console]::OutputEncoding` 解码原生命令输出，`dotnet test` 发的是 UTF-8，于是匹配 `已通过!` / `Passed!` 的那几行全是乱码，一行都匹配不到。测试其实照跑照过，但汇总永远是 `passed 0, failed 0, skipped 0, 0 test hosts`。脚本开头改为 `[Console]::OutputEncoding = [Text.Encoding]::UTF8`；同一条命令在 `feat/secs-p5` 上修复前后分别是 0 与 `passed 22, failed 0, skipped 0, 2 test hosts`。
+
+## [Unreleased] — P5.1（Secs 1.0.0-preview.1：SECS-II 与 HSMS-SS 设备端）
+
+### 新增（Added）
+
+- 2026-10-13 [Secs] 新增库 `Junevy.Communication.Secs` 与测试项目 `Tests/Junevy.Communication.Secs.Tests`，加入解决方案（P51-D1，计划 Task 1）。
+  - **定位**：SECS-II 消息与 HSMS-SS 会话，库扮演设备端（Equipment）。直接坐在 Core + Channels + Tcp 之上，不实现 `IPlcClient`，不把 HSMS 状态压成通道的 `ConnectionState`（P51-D2）。
+  - **本期不做**：SECS-I（RS-232 块传输）、GEM、主机端角色（2026-10-13 用户决定）。
+  - **骨架阶段**：两个 csproj、解决方案条目、英文 README 占位、架构分层表新增一行（Secs 允许 Core、Channels、Tcp）。功能自 Task 2 起逐个里程碑落地。
+
 ### 变更（Changed）
 
 - 2026-10-13 [Docs] P5.1 计划的第三条命令改为 `pwsh build/test-affected.ps1 -Base <起点提交> -NoBuild`：

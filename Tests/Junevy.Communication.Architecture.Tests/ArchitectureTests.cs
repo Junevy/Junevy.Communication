@@ -26,6 +26,7 @@ public sealed class ArchitectureTests
     private const string UdpName = "Junevy.Communication.Udp";
     private const string SerialName = "Junevy.Communication.Serial";
     private const string PlcName = "Junevy.Communication.Plc";
+    private const string SecsName = "Junevy.Communication.Secs";
     private const string LibraryPrefix = "Junevy.Communication.";
     private const string TestsSuffix = ".Tests";
 
@@ -53,6 +54,9 @@ public sealed class ArchitectureTests
         // Omron 同样只有 FINS/TCP（端口 9600），因此允许表里没有 Udp 与 Serial（P4-D1）。
         (typeof(FinsAddress).Assembly, new[] { PlcName, ChannelsName, CoreName, TcpName }),
         (typeof(WebApiResult<>).Assembly, new[] { CoreName }),
+        // Secs 是自有模型协议，不走 Plc 套件，但与它们一样直接坐在 Channels 与 Tcp 之上（P51-D1、D2）。不做 SECS-I，因此没有 Serial。
+        // 项目骨架阶段还没有公开类型，只能按程序集名加载。
+        (Assembly.Load(SecsName), new[] { ChannelsName, CoreName, TcpName }),
     };
 
     // 参与 InternalsVisibleTo 检查的程序集：分层表中的全部程序集，加上不在分层表中的 Modbus。Modbus 为旧库，只检查 InternalsVisibleTo，不检查引用。

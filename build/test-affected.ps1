@@ -42,6 +42,10 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $solution = Join-Path $root 'Junevy.Communication.slnx'
 $separator = [IO.Path]::DirectorySeparatorChar
 
+# 原生命令的输出按 [Console]::OutputEncoding 解码，而它取自当前控制台代码页（中文系统上是 cp936）。
+# dotnet 输出 UTF-8，不改的话下面匹配 "已通过!" 的那几行全是乱码，每遍合计会安静地报成 0。
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+
 # 不属于任何项目、也不进入任何程序集的文件。
 $ignoredPatterns = @('*.md', 'docs/*', 'Junevy.Communication.Wiki/*', 'Skills/*', 'build/metrics/*', 'build/*.ps1', '*.slnx', '.gitignore', '.zcodeignore', '.superpowers/*')
 
