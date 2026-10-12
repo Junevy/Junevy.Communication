@@ -42,6 +42,23 @@ public sealed class MqttTlsTests
             entry.Level == LogLevel.Warning && entry.Message.Contains("AllowUntrustedCertificates", StringComparison.Ordinal));
     }
 
+    // P61-D4：AllowUntrustedCertificates 同时接受主机名不符（SDK 的行为由这条用例钉住，P6-C14）。
+    [Fact]
+    public async Task Connect_AllowingUntrustedCertificates_AlsoAcceptsAHostNameMismatch()
+    {
+        using TestCertificate certificate = TestCertificates.CreateSelfSignedFor("broker.invalid");
+        await using TestBroker broker = await TestBroker.StartTlsAsync(certificate);
+        MqttClientOptions options = MqttTestOptions.Valid(broker.Port);
+        options.Host = "localhost";
+        options.UseTls = true;
+        options.AllowUntrustedCertificates = true;
+        using var client = MqttClient.Create(options);
+
+        await client.ConnectAndAssertAsync();
+
+        Assert.Equal(MqttConnectionState.Connected, client.State);
+    }
+
     [Fact]
     public async Task Connect_TlsToAPlainBroker_Fails()
     {

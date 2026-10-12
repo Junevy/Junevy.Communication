@@ -32,9 +32,34 @@ internal sealed class MqttConnectionStateMachine
     public MqttConnectionState MoveTo(MqttConnectionState next, string? reason)
     {
         MqttConnectionState previous = (MqttConnectionState)Interlocked.Exchange(ref current, (int)next);
+        Notify(previous, next, reason);
+        return previous;
+    }
+
+    /// <summary>
+    /// 只有当前状态等于 <paramref name="expected"/> 时才改为 <paramref name="next"/> 并通知。
+    /// SDK 的断线事件用它：判断与修改是一步完成的，因此不会覆盖应用刚刚做出的断开。
+    /// </summary>
+    /// <param name="expected">期望的当前状态。</param>
+    /// <param name="next">目标状态。</param>
+    /// <param name="reason">变化原因；没有时为 null。</param>
+    /// <returns>状态确实从 <paramref name="expected"/> 改成了 <paramref name="next"/> 时为 true。</returns>
+    public bool TryMoveTo(MqttConnectionState expected, MqttConnectionState next, string? reason)
+    {
+        if (Interlocked.CompareExchange(ref current, (int)next, (int)expected) != (int)expected)
+        {
+            return false;
+        }
+
+        Notify(expected, next, reason);
+        return true;
+    }
+
+    private void Notify(MqttConnectionState previous, MqttConnectionState next, string? reason)
+    {
         if (previous == next)
         {
-            return previous;
+            return;
         }
 
         logger.LogInformation("MQTT state changed from {PreviousState} to {CurrentState}.", previous, next);
@@ -44,7 +69,5 @@ internal sealed class MqttConnectionStateMachine
             new MqttConnectionStateChangedEventArgs(previous, next, reason),
             logger,
             nameof(MqttClient.StateChanged));
-
-        return previous;
     }
 }

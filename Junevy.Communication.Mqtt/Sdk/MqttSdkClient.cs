@@ -26,13 +26,9 @@ internal sealed class MqttSdkClient : IAsyncDisposable
         this.options = options.Copy();
         logger = loggerFactory.CreateLogger<MqttClient>();
         client = new SdkClient.MqttClientFactory(new MqttSdkLogBridge(loggerFactory)).CreateMqttClient();
-        client.ConnectedAsync += OnConnectedAsync;
         client.DisconnectedAsync += OnDisconnectedAsync;
         client.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
     }
-
-    /// <summary>SDK 报告已连接（含重连成功）。</summary>
-    public event Func<Task>? Connected;
 
     /// <summary>SDK 报告断开。参数为"断开前是否已连接"与"原因"。</summary>
     public event Action<bool, string?>? Disconnected;
@@ -176,7 +172,6 @@ internal sealed class MqttSdkClient : IAsyncDisposable
         }
 
         disposed = true;
-        client.ConnectedAsync -= OnConnectedAsync;
         client.DisconnectedAsync -= OnDisconnectedAsync;
         client.ApplicationMessageReceivedAsync -= OnMessageReceivedAsync;
 
@@ -193,15 +188,9 @@ internal sealed class MqttSdkClient : IAsyncDisposable
         client.Dispose();
     }
 
-    private Task OnConnectedAsync(SdkClient.MqttClientConnectedEventArgs args)
-    {
-        // 事件回调里不能抛，也不能在这里重连（P61-D9）：重连由本包的后台循环负责。
-        Connected?.Invoke();
-        return Task.CompletedTask;
-    }
-
     private Task OnDisconnectedAsync(SdkClient.MqttClientDisconnectedEventArgs args)
     {
+        // 事件回调里不能抛，也不能在这里重连（P61-D9）：重连由本包的后台循环负责，这里只转告。
         // ReasonString 常常是 null（Broker 只给了原因码），回退到原因码本身，保证 StateChanged 的 Reason 非空。
         string? reason = args.ReasonString ?? args.Reason.ToString();
         Disconnected?.Invoke(args.ClientWasConnected, reason);

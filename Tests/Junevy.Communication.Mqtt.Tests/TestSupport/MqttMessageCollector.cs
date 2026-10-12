@@ -6,12 +6,10 @@ namespace Junevy.Communication.Mqtt.Tests.TestSupport;
 /// </summary>
 public sealed class MqttMessageCollector
 {
-    private readonly MqttClient client;
     private readonly List<MqttMessage> received = new();
 
     public MqttMessageCollector(MqttClient client)
     {
-        this.client = client;
         client.MessageReceived += (_, args) =>
         {
             lock (received)

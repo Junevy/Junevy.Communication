@@ -106,7 +106,7 @@ internal static class MqttSdkMessages
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        return new MqttMessage(message.Topic, CopyPayload(message))
+        return new MqttMessage(message.Topic, PayloadView(message))
         {
             Qos = MqttSdkQos.FromSdk(message.QualityOfServiceLevel),
             Retain = message.Retain,
@@ -121,11 +121,12 @@ internal static class MqttSdkMessages
     internal static SdkFormatter.MqttProtocolVersion SdkVersion(MqttProtocolVersion version) =>
         version == MqttProtocolVersion.V500 ? SdkFormatter.MqttProtocolVersion.V500 : SdkFormatter.MqttProtocolVersion.V311;
 
-    private static byte[] CopyPayload(SdkClient.MqttApplicationMessage message)
+    // MqttMessage 的构造函数会复制一次，这里不再先复制：单段时直接交出 SDK 缓冲区的视图，
+    // 跨多个分段时才拼成一个数组。
+    private static ReadOnlyMemory<byte> PayloadView(SdkClient.MqttApplicationMessage message)
     {
-        // Payload 是 ReadOnlySequence，可能跨多个分段，因此要整体取出来再复制。
         ReadOnlySequence<byte> payload = message.Payload;
-        return payload.IsSingleSegment ? payload.First.ToArray() : payload.ToArray();
+        return payload.IsSingleSegment ? payload.First : payload.ToArray();
     }
 
     private static IReadOnlyList<MqttUserProperty> UserProperties(List<SdkPackets.MqttUserProperty>? properties)

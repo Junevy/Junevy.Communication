@@ -57,7 +57,7 @@ public sealed class MqttClientOptions
     /// <summary>遗嘱消息的正文（UTF-8 文本）；null 表示空正文。</summary>
     public string? WillPayload { get; set; }
 
-    /// <summary>遗嘱消息的质量-of-服务级别；默认 <see cref="MqttQos.AtMostOnce"/>。</summary>
+    /// <summary>遗嘱消息的服务质量（QoS）级别；默认 <see cref="MqttQos.AtMostOnce"/>。</summary>
     public MqttQos WillQos { get; set; } = MqttQos.AtMostOnce;
 
     /// <summary>遗嘱消息是否为保留消息。</summary>

@@ -212,23 +212,6 @@ public sealed class MqttReconnectTests
     }
 
     [Fact]
-    public async Task Reconnect_DisconnectDuringReconnecting_StopsTheLoop()
-    {
-        await using TestBroker broker = await TestBroker.StartAsync();
-        MqttClientOptions options = MqttTestOptions.Valid(broker.Port, "reconnect-9").Reconnecting(40, 200);
-        using var client = MqttClient.Create(options);
-        await client.ConnectAndAssertAsync();
-
-        await broker.StopAsync();
-        await Polling.WaitUntilAsync(() => client.State == MqttConnectionState.Reconnecting);
-
-        await client.DisconnectAsync();
-
-        Assert.Equal(MqttConnectionState.Disconnected, client.State);
-        await Task.Delay(300);
-    }
-
-    [Fact]
     public async Task Reconnect_ConnectWhileReconnecting_ReportsInvalidRequest()
     {
         await using TestBroker broker = await TestBroker.StartAsync();

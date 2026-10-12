@@ -52,6 +52,17 @@ public sealed partial class TestBroker
         return this;
     }
 
+    /// <summary>把对某个主题的下一次 SUBSCRIBE 的应答延迟一段时间，用于制造"恢复订阅时超时"。仅下一次生效。</summary>
+    /// <param name="topicFilter">要延迟的主题过滤器。</param>
+    /// <param name="delay">延迟时长。</param>
+    /// <returns>同一个 Broker。</returns>
+    public TestBroker DelayNextSubscription(string topicFilter, TimeSpan delay)
+    {
+        delayedTopic = topicFilter;
+        subscriptionDelay = delay;
+        return this;
+    }
+
     /// <summary>从 Broker 侧向主题注入一条消息。</summary>
     /// <param name="topic">主题。</param>
     /// <param name="payload">正文。</param>

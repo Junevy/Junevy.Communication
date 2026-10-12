@@ -99,7 +99,6 @@ public sealed class MqttReconnectConcurrencyTests
         Assert.Equal("offline", collector.Messages[1].GetPayloadAsString());
     }
 
-
     // Q40：强制 GC 之后没有未观察的任务异常。
     private static async Task AssertNoUnobservedTaskExceptionAsync()
     {

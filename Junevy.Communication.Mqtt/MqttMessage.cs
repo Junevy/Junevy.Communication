@@ -41,7 +41,7 @@ public sealed class MqttMessage
     /// <summary>正文的只读视图，内容是构造时复制的副本。</summary>
     public ReadOnlyMemory<byte> Payload => payload;
 
-    /// <summary>质量-of-服务级别，默认 <see cref="MqttQos.AtMostOnce"/>。</summary>
+    /// <summary>服务质量（QoS）级别，默认 <see cref="MqttQos.AtMostOnce"/>。</summary>
     public MqttQos Qos { get; init; } = MqttQos.AtMostOnce;
 
     /// <summary>是否为保留消息。</summary>

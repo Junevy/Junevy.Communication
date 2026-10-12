@@ -2,12 +2,15 @@ namespace Junevy.Communication.Mqtt;
 
 /// <summary>
 /// 生命周期操作的异步互斥锁（P61-D10）。SDK 要求连接、断开不能与彼此并发，因此首次连接、断开、
-/// 以及每一次重连尝试都走这一把锁；发布、订阅、退订不经过它。
+/// 每一次重连尝试以及释放都走这一把锁；发布、订阅、退订不经过它。
 /// </summary>
-internal sealed class MqttLifecycleGate : IDisposable
+/// <remarks>
+/// 信号量不释放：它从不访问 <see cref="SemaphoreSlim.AvailableWaitHandle"/>，没有需要释放的非托管资源；
+/// 而客户端释放时仍可能有操作握着租约，释放了信号量，那次 <c>Release</c> 就会抛 <see cref="ObjectDisposedException"/>。
+/// </remarks>
+internal sealed class MqttLifecycleGate
 {
     private readonly SemaphoreSlim gate = new(1, 1);
-    private bool disposed;
 
     /// <summary>等待进入临界区。</summary>
     /// <param name="cancellationToken">取消令牌；取消时不会进入临界区。</param>
@@ -16,18 +19,6 @@ internal sealed class MqttLifecycleGate : IDisposable
     {
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         return new Lease(gate);
-    }
-
-    /// <summary>释放锁本身。</summary>
-    public void Dispose()
-    {
-        if (disposed)
-        {
-            return;
-        }
-
-        disposed = true;
-        gate.Dispose();
     }
 
     private sealed class Lease : IAsyncDisposable

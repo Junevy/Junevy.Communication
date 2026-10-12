@@ -20,7 +20,7 @@ internal sealed class MqttSdkLogBridge : SdkLogger.IMqttNetLogger
         logger = loggerFactory.CreateLogger("Junevy.Communication.Mqtt.Sdk");
     }
 
-    /// <summary>是否有该级别的输出；低于 Warning 的一律为 false。</summary>
+    /// <summary>记录器是否接收 Warning 及以上的日志（低于 Warning 的本来就不桥接）。</summary>
     public bool IsEnabled => logger.IsEnabled(LogLevel.Warning);
 
     /// <summary>转发一条 SDK 日志；低于 Warning 的直接丢弃。</summary>
@@ -33,22 +33,17 @@ internal sealed class MqttSdkLogBridge : SdkLogger.IMqttNetLogger
     {
         // 低于 Warning 的一律丢弃，不看记录器是不是开着：P6-C10 要求桥接前确认 SDK 的日志不含凭据与正文，
         // 而这一点无法逐条确认，因此宁可不桥接，也不冒泄漏的风险。
-        if (level < SdkLogger.MqttNetLogLevel.Warning || !logger.IsEnabled(Map(level)))
+        if (level < SdkLogger.MqttNetLogLevel.Warning)
         {
             return;
         }
 
-        logger.Log(Map(level), exception, "[{SdkSource}] {SdkMessage}", source, Format(message, args));
+        LogLevel mapped = level == SdkLogger.MqttNetLogLevel.Warning ? LogLevel.Warning : LogLevel.Error;
+        if (logger.IsEnabled(mapped))
+        {
+            logger.Log(mapped, exception, "[{SdkSource}] {SdkMessage}", source, Format(message, args));
+        }
     }
-
-    private static LogLevel Map(SdkLogger.MqttNetLogLevel level) => level switch
-    {
-        SdkLogger.MqttNetLogLevel.Verbose => LogLevel.Trace,
-        
-        SdkLogger.MqttNetLogLevel.Info => LogLevel.Information,
-        SdkLogger.MqttNetLogLevel.Warning => LogLevel.Warning,
-        _ => LogLevel.Error,
-    };
 
     private static string Format(string message, object[]? args)
     {

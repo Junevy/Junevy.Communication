@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Junevy.Communication.Core.Diagnostics;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Mqtt.Sdk;
@@ -12,45 +11,45 @@ namespace Junevy.Communication.Mqtt;
 /// </summary>
 /// <remarks>
 /// <para>错误一律走结果（<see cref="CommResult"/>），SDK 抛出的异常不会逃出公开方法。参数为 null 抛
-/// <see cref="ArgumentNullException"/>；释放之后 <see cref="ConnectAsync"/> 抛 <see cref="ObjectDisposedException"/>，
-/// 其余操作返回 <see cref="CommErrorKind.ConnectionClosed"/>。<see cref="Dispose"/> 与 <see cref="DisposeAsync"/>
-/// 可以重复调用。</para>
+/// <see cref="ArgumentNullException"/>；释放之后 <see cref="ConnectAsync"/> 与 <see cref="DisconnectAsync"/> 抛
+/// <see cref="ObjectDisposedException"/>，发布、订阅、退订返回 <see cref="CommErrorKind.ConnectionClosed"/>。
+/// <see cref="Dispose"/> 与 <see cref="DisposeAsync"/> 可以重复调用。</para>
 /// <para><see cref="DisconnectAsync"/> 没有返回值（与其它协议包一致），因此它遇到失败只记日志；
 /// 调用方的取消令牌被触发时按 .NET 惯例抛 <see cref="OperationCanceledException"/>。</para>
+/// <para>本类只是门面：连接、断开与释放在 <see cref="MqttLifecycle"/>，发布、订阅与退订在 <see cref="MqttMessaging"/>，
+/// 两者的并发规则不同（P61-D10）。</para>
 /// </remarks>
 public sealed class MqttClient : IDisposable, IAsyncDisposable
 {
-    private readonly MqttSdkClient sdk;
-    private readonly MqttMessaging messaging;
     private readonly MqttConnectionStateMachine state;
-    private readonly MqttLifecycleGate lifecycle = new();
+    private readonly MqttMessaging messaging;
     private readonly MqttReconnectController reconnect;
-    private readonly string endpoint;
+    private readonly MqttLifecycle lifecycle;
     private readonly ILogger logger;
-    private int disposed;
 
     private MqttClient(MqttClientOptions options, ILoggerFactory loggerFactory)
     {
         logger = loggerFactory.CreateLogger<MqttClient>();
         state = new MqttConnectionStateMachine(this, logger);
-        endpoint = $"{options.Host}:{options.Port}";
 
         if (options.AllowUntrustedCertificates)
         {
             logger.LogWarning("MqttClientOptions.AllowUntrustedCertificates is enabled: any server certificate will be accepted.");
         }
 
-        sdk = new MqttSdkClient(options, loggerFactory);
+        var sdk = new MqttSdkClient(options, loggerFactory);
+        var gate = new MqttLifecycleGate();
         messaging = new MqttMessaging(sdk, state, new MqttSubscriptionTable(), options.ProtocolVersion, logger);
         reconnect = new MqttReconnectController(
             sdk,
             state,
             messaging,
-            lifecycle,
+            gate,
             options.AutoReconnect,
             options.ReconnectInterval,
             options.MaxReconnectInterval,
             logger);
+        lifecycle = new MqttLifecycle(sdk, state, reconnect, gate, $"{options.Host}:{options.Port}", logger);
 
         sdk.MessageReceived += OnSdkMessageReceived;
         sdk.Disconnected += OnUnexpectedDisconnect;
@@ -85,47 +84,26 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
     public event EventHandler<MqttMessageReceivedEventArgs>? MessageReceived;
 
     /// <summary>连接 Broker。</summary>
-    /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="cancellationToken">取消令牌；被触发时返回 <see cref="CommErrorKind.Cancelled"/>。</param>
     /// <returns>已连接时成功。已是 <see cref="MqttConnectionState.Connected"/> 时直接返回成功；
-    /// 正在连接或重连时返回 <see cref="CommErrorKind.InvalidRequest"/>。</returns>
+    /// 正在连接或重连时返回 <see cref="CommErrorKind.InvalidRequest"/>；连接期间客户端被释放时返回
+    /// <see cref="CommErrorKind.ConnectionClosed"/>。</returns>
     /// <exception cref="ObjectDisposedException">客户端已释放。</exception>
     public async Task<CommResult> ConnectAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-
-        // 先看状态再看锁：已连接时不需要排队（P61-D4）。
-        if (State == MqttConnectionState.Connected)
-        {
-            return CommResult.Success();
-        }
-
-        if (State is MqttConnectionState.Connecting or MqttConnectionState.Reconnecting)
-        {
-            return InProgress();
-        }
-
-        await using IAsyncDisposable lease = await lifecycle.EnterAsync(cancellationToken).ConfigureAwait(false);
-        return await ConnectUnderLockAsync(cancellationToken).ConfigureAwait(false);
+        return await lifecycle.ConnectAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>主动断开（发送 DISCONNECT，Broker 因此丢弃遗嘱）。可以重复调用。</summary>
+    /// <remarks>只结束当前这一轮重连：之后再 <see cref="ConnectAsync"/>，下一次意外断线照样重连。</remarks>
     /// <param name="cancellationToken">取消令牌；被触发时抛 <see cref="OperationCanceledException"/>。</param>
+    /// <returns>断开完成。</returns>
+    /// <exception cref="ObjectDisposedException">客户端已释放。</exception>
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-
-        // 先停重连循环再拿锁：循环里正在等锁的那次尝试由取消令牌唤醒，
-        // 因此在锁内等待循环退出不会死锁（P61-D9、P61-D10）。
-        await reconnect.StopAsync().ConfigureAwait(false);
-
-        await using IAsyncDisposable lease = await lifecycle.EnterAsync(cancellationToken).ConfigureAwait(false);
-        state.MoveTo(MqttConnectionState.Disconnected, "The client was disconnected by the application.");
-
-        CommResult outcome = await sdk.DisconnectAsync(cancellationToken).ConfigureAwait(false);
-        if (!outcome.IsSuccess)
-        {
-            logger.LogWarning("The MQTT client was not disconnected cleanly: {Outcome}.", outcome);
-        }
+        await lifecycle.DisconnectAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>发布一条消息。</summary>
@@ -136,9 +114,9 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
     public async Task<CommResult> PublishAsync(MqttMessage message, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(message);
-        ThrowIfDisposed();
-
-        return await messaging.PublishAsync(message, cancellationToken).ConfigureAwait(false);
+        return lifecycle.IsDisposed
+            ? MqttLifecycle.Disposed()
+            : await messaging.PublishAsync(message, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>订阅一个主题过滤器。</summary>
@@ -153,9 +131,9 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(topicFilter);
-        ThrowIfDisposed();
-
-        return await messaging.SubscribeAsync(topicFilter, qos, cancellationToken).ConfigureAwait(false);
+        return lifecycle.IsDisposed
+            ? MqttLifecycle.Disposed().As<MqttQos>()
+            : await messaging.SubscribeAsync(topicFilter, qos, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>退订一个主题过滤器。</summary>
@@ -166,73 +144,17 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
     public async Task<CommResult> UnsubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(topicFilter);
-        ThrowIfDisposed();
-
-        return await messaging.UnsubscribeAsync(topicFilter, cancellationToken).ConfigureAwait(false);
+        return lifecycle.IsDisposed
+            ? MqttLifecycle.Disposed()
+            : await messaging.UnsubscribeAsync(topicFilter, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>释放客户端。可以重复调用。</summary>
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref disposed, 1) != 0)
-        {
-            return;
-        }
+    /// <summary>释放客户端。可以重复调用。正在进行的连接会被取消，释放等它退出之后才返回。</summary>
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
-        // 停止重连循环并等它退出：释放之后不留残留的后台任务（Q40、P61-D11）。
-        reconnect.StopAsync().GetAwaiter().GetResult();
-        state.MoveTo(MqttConnectionState.Disconnected, "The client was disposed.");
-        sdk.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        lifecycle.Dispose();
-    }
-
-    /// <summary>异步释放客户端。可以重复调用。</summary>
+    /// <summary>异步释放客户端。可以重复调用。正在进行的连接会被取消，释放等它退出之后才完成。</summary>
     /// <returns>释放完成。</returns>
-    public async ValueTask DisposeAsync()
-    {
-        if (Interlocked.Exchange(ref disposed, 1) != 0)
-        {
-            return;
-        }
-
-        await reconnect.DisposeAsync().ConfigureAwait(false);
-        state.MoveTo(MqttConnectionState.Disconnected, "The client was disposed.");
-        await sdk.DisposeAsync().ConfigureAwait(false);
-        lifecycle.Dispose();
-    }
-
-    private async Task<CommResult> ConnectUnderLockAsync(CancellationToken cancellationToken)
-    {
-        // 排队期间状态可能已经变了，因此进锁后再判一次（P61-D10）。
-        if (State == MqttConnectionState.Connected)
-        {
-            return CommResult.Success();
-        }
-
-        if (State is MqttConnectionState.Connecting or MqttConnectionState.Reconnecting)
-        {
-            return InProgress();
-        }
-
-        state.MoveTo(MqttConnectionState.Connecting, null);
-        Stopwatch timer = Stopwatch.StartNew();
-
-        // 首次连接失败不启动后台重连（P6-C11）；首次失败由调用方决定要不要重试。
-        (CommResult outcome, bool _) = await sdk.ConnectAsync(cancellationToken).ConfigureAwait(false);
-        timer.Stop();
-
-        state.MoveTo(outcome.IsSuccess ? MqttConnectionState.Connected : MqttConnectionState.Disconnected, outcome.ErrorMessage);
-        if (outcome.IsSuccess)
-        {
-            logger.LogInformation("Connected to the MQTT broker at {Endpoint} in {Elapsed} ms.", endpoint, timer.ElapsedMilliseconds);
-        }
-        else
-        {
-            logger.LogWarning("The MQTT connection attempt failed after {Elapsed} ms: {Outcome}.", timer.ElapsedMilliseconds, outcome);
-        }
-
-        return outcome;
-    }
+    public ValueTask DisposeAsync() => lifecycle.DisposeAsync();
 
     private void OnSdkMessageReceived(MqttMessage message) =>
         EventSubscribers.InvokeEach(
@@ -245,37 +167,15 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
     // 释放之后不再响应 SDK 的断线事件（P6-C8）。
     private void OnUnexpectedDisconnect(bool clientWasConnected, string? reason)
     {
-        if (Volatile.Read(ref disposed) != 0)
+        if (!lifecycle.IsDisposed)
         {
-            return;
+            reconnect.OnUnexpectedDisconnect(clientWasConnected, reason);
         }
-
-        reconnect.OnUnexpectedDisconnect(clientWasConnected, reason);
-    }
-
-    private static CommResult InProgress() => CommResult.Fail(
-        "A connection attempt is already in progress.",
-        CommErrorKind.InvalidRequest);
-
-    private static CommResult NotConnected(string pastTense) => CommResult.Fail(
-        $"The MQTT client is not connected, so the request cannot be {pastTense}.",
-        CommErrorKind.NotConnected);
-
-    // 状态变化记 Information，每次操作记 Debug（含主题、字节数或数量、耗时），失败记 Warning（P6-C10）。只记摘要，不记正文。
-    private void LogOperation(CommResult outcome, string operation, string subject, int count, long elapsedMilliseconds)
-    {
-        if (outcome.IsSuccess)
-        {
-            logger.LogDebug("{Operation} on {Subject} ({Count} unit(s)) completed in {Elapsed} ms.", operation, subject, count, elapsedMilliseconds);
-            return;
-        }
-
-        logger.LogWarning("{Operation} on {Subject} failed after {Elapsed} ms: {Outcome}.", operation, subject, elapsedMilliseconds, outcome);
     }
 
     private void ThrowIfDisposed()
     {
-        if (Volatile.Read(ref disposed) != 0)
+        if (lifecycle.IsDisposed)
         {
             throw new ObjectDisposedException(nameof(MqttClient));
         }

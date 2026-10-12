@@ -28,6 +28,8 @@ public sealed partial class TestBroker : IAsyncDisposable
     private MqttPubAckReasonCode? publishRejection;
     private MqttSubscribeReasonCode? subscriptionRejection;
     private string? rejectedTopic;
+    private string? delayedTopic;
+    private TimeSpan subscriptionDelay;
     private bool disposed;
 
     private TestBroker(MqttServerOptions options, int port, TestCertificate? certificate, bool ownsCertificate)
@@ -98,22 +100,22 @@ public sealed partial class TestBroker : IAsyncDisposable
     }
 
     /// <summary>起一个使用自签名证书的 TLS Broker。</summary>
-    /// <param name="persistentSessions">是否保留会话。</param>
+    /// <param name="certificate">服务端证书；为 null 时生成一张对 localhost 与 127.0.0.1 有效的自签名证书，并由 Broker 负责释放。</param>
     /// <returns>已启动的 Broker。</returns>
-    public static async Task<TestBroker> StartTlsAsync(bool persistentSessions = false)
+    public static async Task<TestBroker> StartTlsAsync(TestCertificate? certificate = null)
     {
         int port = FreePort();
-        TestCertificate certificate = TestCertificates.CreateSelfSigned();
+        bool ownsCertificate = certificate is null;
+        certificate ??= TestCertificates.CreateSelfSigned();
         MqttServerOptions options = new MqttServerOptionsBuilder()
             .WithoutDefaultEndpoint()
             .WithEncryptedEndpoint()
             .WithEncryptedEndpointBoundIPAddress(IPAddress.Loopback)
             .WithEncryptedEndpointPort(port)
             .WithEncryptionCertificate(certificate.Certificate)
-            .WithPersistentSessions(persistentSessions)
             .Build();
 
-        var broker = new TestBroker(options, port, certificate, ownsCertificate: true);
+        var broker = new TestBroker(options, port, certificate, ownsCertificate);
         await broker.server.StartAsync();
         return broker;
     }
@@ -128,9 +130,8 @@ public sealed partial class TestBroker : IAsyncDisposable
         return port;
     }
 
-    /// <summary>要求 CONNECT 带上给定的凭据；不符时以 <c>BadUserNameOrPassword</c> 拒绝。</summary>
-    /// <param name="userName">期望的用户名。</param>
-    /// <param name="password">期望的密码。</param>
+    /// <summary>停止 Broker（已停止时什么也不做）。之后可以用 <see cref="StartOnPortAsync"/> 在同一个端口起一个新的。</summary>
+    /// <returns>停止完成。</returns>
     public async Task StopAsync()
     {
         if (server.IsStarted)
@@ -211,8 +212,14 @@ public sealed partial class TestBroker : IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    private Task OnInterceptingSubscriptionAsync(InterceptingSubscriptionEventArgs args)
+    private async Task OnInterceptingSubscriptionAsync(InterceptingSubscriptionEventArgs args)
     {
+        if (delayedTopic is not null && args.TopicFilter.Topic == delayedTopic)
+        {
+            delayedTopic = null;
+            await Task.Delay(subscriptionDelay);
+        }
+
         MqttSubscribeReasonCode? rejection = subscriptionRejection;
         if (rejection is not null && args.TopicFilter.Topic == rejectedTopic)
         {
@@ -222,7 +229,5 @@ public sealed partial class TestBroker : IAsyncDisposable
             args.Response.ReasonCode = rejection.Value;
             args.Response.ReasonString = "Rejected by the test broker.";
         }
-
-        return Task.CompletedTask;
     }
 }

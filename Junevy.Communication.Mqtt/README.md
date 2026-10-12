@@ -6,7 +6,7 @@ MQTT client for the [Junevy.Communication](https://github.com/Junevy/Junevy.Comm
 - **MQTT 3.1.1 and 5.0.** MQTT 3.1 is not supported.
 - **.NET 8 only.** Unlike the other packages of this repository, this one does not target .NET Framework 4.7.2, because MQTTnet 5 itself no longer does.
 
-Everything above .NET 8 — TLS, MQTT 5 properties, last will and testament, session-resuming reconnect — is built on [MQTTnet](https://github.com/dotnet/MQTTnet) (MIT). This package is a thin adapter around it: it exposes its own types, keeps the SDK out of the public API, and translates every SDK failure into `CommResult`.
+The MQTT protocol itself — packets, TLS, keep-alive, QoS flows, MQTT 5 properties, the last will — is handled by [MQTTnet](https://github.com/dotnet/MQTTnet) (MIT). This package is a thin adapter around it: it exposes its own types, keeps the SDK out of the public API, translates every SDK failure into `CommResult`, and adds reconnect with subscription restore (MQTTnet 5 no longer reconnects by itself).
 
 ## Getting started
 
@@ -113,10 +113,14 @@ When the SDK reports a disconnect that was not asked for by the host, and `AutoR
 
 1. The state becomes `Reconnecting`.
 2. A background loop reconnects with exponential backoff (`ReconnectInterval` doubling up to `MaxReconnectInterval`, unlimited attempts). Authentication failures keep retrying, because the credentials on the broker side may since have been corrected.
-3. On success: if the broker reports **Session Present = false**, every filter in the subscription table is re-subscribed, one by one; a filter the broker rejects is logged as a warning and forgotten. Then, and only then, the state becomes `Connected`.
+3. On success: if the broker reports **Session Present = false**, every filter in the subscription table is re-subscribed, one by one. A filter the **broker rejects** is logged as a warning and forgotten. A timeout or a lost connection **while restoring** is a link problem, not a rejection: that attempt fails, the table is kept, and the loop tries again. Only when every filter is back does the state become `Connected`.
 4. `DisconnectAsync` and disposal stop the loop **and wait for it to exit**, so no background task survives the client.
 
-`AutoReconnect = false` turns an unexpected drop straight into `Disconnected` with a non-empty `Reason`. A **first** `ConnectAsync` that fails never starts the loop.
+`AutoReconnect = false` turns an unexpected drop straight into `Disconnected` with a non-empty `Reason`. A **first** `ConnectAsync` that fails never starts the loop. `DisconnectAsync` ends only the current reconnect round: after a new `ConnectAsync`, the next unexpected drop reconnects again.
+
+## Disposal
+
+`Dispose` and `DisposeAsync` are repeatable. They cancel a connect that is still in progress (that `ConnectAsync` returns `ConnectionClosed`), stop the reconnect loop, wait for both to finish, and then send a DISCONNECT if connected. Afterwards `PublishAsync`, `SubscribeAsync` and `UnsubscribeAsync` return `ConnectionClosed`, while `ConnectAsync` and `DisconnectAsync` throw `ObjectDisposedException`.
 
 ## TLS
 
@@ -167,7 +171,7 @@ Failures come back as `CommResult` with an `ErrorKind` and, where the broker sup
 
 | Situation | `ErrorKind` | `ProtocolErrorCode` |
 |---|---|---|
-| Caller's cancellation token fires | `Cancelled` | — |
+| Caller's cancellation token fires (also while `ConnectAsync` waits behind another lifecycle operation) | `Cancelled` | — |
 | Connect timeout, or a wait for an acknowledgement times out | `Timeout` | — |
 | CONNACK rejected: BadUserNameOrPassword, NotAuthorized, Banned, BadAuthenticationMethod | `AuthenticationFailed` | reason code |
 | CONNACK rejected: ServerBusy, QuotaExceeded, ConnectionRateExceeded | `ResourceExhausted` | reason code |

@@ -67,12 +67,17 @@ internal static class MqttSdkOptions
             return;
         }
 
-        builder.WithTlsOptions(tls => tls
-            .UseTls(true)
-            .WithTargetHost(options.Host!)
-            .WithAllowUntrustedCertificates(options.AllowUntrustedCertificates)
-            .WithIgnoreCertificateChainErrors(options.AllowUntrustedCertificates)
-            .WithIgnoreCertificateRevocationErrors(options.AllowUntrustedCertificates));
+        builder.WithTlsOptions(tls =>
+        {
+            tls.UseTls(true).WithTargetHost(options.Host!);
+
+            // P61-D4："接受任何证书，包括主机名不符"。SDK 自己的 AllowUntrustedCertificates 只放过证书链错误，
+            // 主机名不符照样拒绝（验收时实测，见 MqttTlsTests），因此改为由校验回调一律放行。
+            if (options.AllowUntrustedCertificates)
+            {
+                tls.WithCertificateValidationHandler(_ => true);
+            }
+        });
     }
 
     // 遗嘱放在连接选项里，因此每次连接（含重连）都会在 CONNECT 中带上（P61-D14）。

@@ -59,36 +59,36 @@ internal sealed class MqttReconnectController
             logger);
     }
 
-    /// <summary>是否启用了自动重连。</summary>
-    public bool Enabled => enabled;
-
     /// <summary>SDK 报告断线时调用；只有"原本已连接、而且不是我们自己在断开"才反应。</summary>
     /// <param name="clientWasConnected">断线之前是否已经连上过。</param>
     /// <param name="reason">SDK 给出的断开原因。</param>
     public void OnUnexpectedDisconnect(bool clientWasConnected, string? reason)
     {
-        // 首次连接失败不重连（P6-C11）；主动断开时状态已经是 Disconnected，同样不重连。
-        if (!clientWasConnected || state.Current != MqttConnectionState.Connected)
+        // 首次连接失败不重连（P6-C11）。只有状态仍是 Connected 才反应，而且判断与修改一步完成：
+        // 应用正在断开时状态已经是 Disconnected，这里不会把它改回去，也不会启动重连。
+        if (!clientWasConnected)
         {
             return;
         }
 
         if (!enabled)
         {
-            state.MoveTo(MqttConnectionState.Disconnected, reason);
+            state.TryMoveTo(MqttConnectionState.Connected, MqttConnectionState.Disconnected, reason);
             return;
         }
 
-        state.MoveTo(MqttConnectionState.Reconnecting, reason);
-        loop.TryStart();
+        if (state.TryMoveTo(MqttConnectionState.Connected, MqttConnectionState.Reconnecting, reason))
+        {
+            loop.TryStart();
+        }
     }
 
-    /// <summary>停止循环并等待它退出。停掉之后不能再次启动。</summary>
-    /// <returns>循环已退出。</returns>
+    /// <summary>结束当前这一轮重连（如果有）并等待它退出；之后的断线仍会重连。</summary>
+    /// <returns>这一轮已退出。</returns>
     public Task StopAsync() => loop.StopAsync();
 
-    /// <summary>停止循环并释放它。可重复调用。</summary>
-    /// <returns>循环已退出。</returns>
+    /// <summary>永久停止重连并等待它退出。可重复调用。</summary>
+    /// <returns>已停止。</returns>
     public ValueTask DisposeAsync() => loop.DisposeAsync();
 
     private void OnReconnectFailed(int attempt, CommResult outcome) =>
@@ -102,17 +102,34 @@ internal sealed class MqttReconnectController
     {
         // 每次重连尝试都走同一把生命周期锁（P61-D10）。
         await using IAsyncDisposable lease = await lifecycle.EnterAsync(cancellationToken).ConfigureAwait(false);
+
+        // 应用的断开与释放都在锁内把状态改成 Disconnected：拿到锁时已经不是 Reconnecting，这一轮就此结束。
+        if (state.Current != MqttConnectionState.Reconnecting)
+        {
+            throw new OperationCanceledException("The application disconnected the client.");
+        }
+
         (CommResult outcome, bool sessionPresent) = await sdk.ConnectAsync(cancellationToken).ConfigureAwait(false);
         if (!outcome.IsSuccess)
         {
             return outcome;
         }
 
-        // Broker 保留了会话就不重新订阅（P61-D9）。
+        // Broker 保留了会话就不重新订阅（P61-D9）。恢复时遇到链路问题，这一轮算失败：断开后由循环再试，订阅表不变。
         if (!sessionPresent)
         {
-            int restored = await messaging.RestoreSubscriptionsAsync(cancellationToken).ConfigureAwait(false);
-            logger.LogInformation("Restored {RestoredCount} subscription(s) after reconnecting.", restored);
+            CommResult restored = await messaging.RestoreSubscriptionsAsync(cancellationToken).ConfigureAwait(false);
+            if (!restored.IsSuccess)
+            {
+                await sdk.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+                return restored;
+            }
+        }
+
+        // 恢复期间又断线时，SDK 的断线事件因为状态不是 Connected 而被忽略，因此在这里补查一次。
+        if (!sdk.IsConnected)
+        {
+            return CommResult.Fail("The connection was lost while the subscriptions were being restored.", CommErrorKind.ConnectionClosed);
         }
 
         // 恢复完订阅才报 Connected：宿主看到它时订阅已经可用（P61-D5）。

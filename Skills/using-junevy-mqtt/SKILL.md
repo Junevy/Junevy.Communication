@@ -82,10 +82,10 @@ using var client = MqttClient.Create(options);
 
 - the state becomes `Reconnecting`;
 - a background loop retries with exponential backoff (`ReconnectInterval` doubling up to `MaxReconnectInterval`), unlimited attempts, including after authentication failures;
-- if the broker reports **Session Present = false**, every remembered filter is re-subscribed one by one; a rejected filter is logged and forgotten;
+- if the broker reports **Session Present = false**, every remembered filter is re-subscribed one by one. A filter the **broker rejects** is logged and forgotten; a timeout or a drop **while restoring** fails that attempt instead, the table is kept and the loop tries again;
 - the state becomes `Connected` **after** the subscriptions are back, so subscribing on `Connected` is safe.
 
-A **first** `ConnectAsync` that fails never starts the loop. With `AutoReconnect = false` an unexpected drop goes straight to `Disconnected`.
+A **first** `ConnectAsync` that fails never starts the loop. With `AutoReconnect = false` an unexpected drop goes straight to `Disconnected`. `DisconnectAsync` ends the current reconnect round only: after a new `ConnectAsync`, the next unexpected drop reconnects again.
 
 ## Results, not exceptions
 
@@ -97,7 +97,7 @@ Every operation returns `CommResult` or `CommResult<MqttQos>`. Decide on `ErrorK
 | `InvalidRequest` | Bad topic / filter, MQTT 5 property on 3.1.1, undefined QoS | Fix the request; nothing was sent |
 | `AuthenticationFailed` | Bad credentials, or a TLS certificate problem | Check credentials / certificate |
 | `Timeout` | Connect or acknowledgement wait exceeded `Timeout` | Retry, or raise `Timeout` |
-| `Cancelled` | The caller's token fired | Usually expected |
+| `Cancelled` | The caller's token fired (also while `ConnectAsync` waited behind another lifecycle operation) | Usually expected |
 | `ConnectionClosed` | Refused, reset, or dropped mid-operation | Reconnect; for publishes see mistake 4 |
 | `RemoteError` + `ProtocolErrorCode` | The broker rejected the packet with a reason code | Log the reason code; it is the MQTT reason |
 | `ResourceExhausted` | Broker-side quota / rate limit | Back off |
@@ -124,9 +124,10 @@ MqttClient client = factory.GetOrAdd("line1", options);
 | `MqttClient.Create(options, loggerFactory?)` | Validates and snapshots. Throws `ArgumentException` with `ParamName = "options.<Property>"`. |
 | `State` / `StateChanged` | Transitions are reported only when the state really changes; `Reason` carries why. |
 | `MessageReceived` | Synchronous on the SDK thread. Do not block. |
-| `ConnectAsync` / `DisconnectAsync` | Success if already connected; `InvalidRequest` if an attempt is in progress. |
+| `ConnectAsync` | Success if already connected; `InvalidRequest` if a connect or reconnect is in progress. |
+| `DisconnectAsync` | Repeatable; sends DISCONNECT and ends the current reconnect round. No result: failures are logged. |
 | `PublishAsync` / `SubscribeAsync` / `UnsubscribeAsync` | `SubscribeAsync` returns the QoS the **broker granted**. |
-| `Dispose` / `DisposeAsync` | Repeatable. Stops the reconnect loop and waits for it to exit. |
+| `Dispose` / `DisposeAsync` | Repeatable. Cancels an in-flight connect, stops the reconnect loop and waits for both. Afterwards publish, subscribe and unsubscribe return `ConnectionClosed`; `ConnectAsync` and `DisconnectAsync` throw `ObjectDisposedException`. |
 
 Full option table, error table and "Verification status" are in
 [Junevy.Communication.Mqtt/README.md](file://Junevy.Communication.Mqtt/README.md).

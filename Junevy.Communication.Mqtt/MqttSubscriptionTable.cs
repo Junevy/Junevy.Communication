@@ -14,12 +14,9 @@ internal sealed class MqttSubscriptionTable
     private readonly ConcurrentDictionary<string, Entry> entries = new(StringComparer.Ordinal);
     private long sequence;
 
-    /// <summary>当前记住的订阅，按首次订阅的顺序。</summary>
+    /// <summary>当前记住的订阅，按首次订阅的顺序；每次读取都是新的快照，遍历期间可以修改表。</summary>
     public IReadOnlyList<KeyValuePair<string, MqttQos>> Entries =>
         entries.Values.OrderBy(entry => entry.Order).Select(entry => new KeyValuePair<string, MqttQos>(entry.Filter, entry.Qos)).ToArray();
-
-    /// <summary>订阅表是否为空。</summary>
-    public bool IsEmpty => entries.IsEmpty;
 
     /// <summary>订阅成功后记录；同一过滤器只更新 QoS，保留原来的位置。</summary>
     /// <param name="topicFilter">主题过滤器。</param>
@@ -36,7 +33,7 @@ internal sealed class MqttSubscriptionTable
     /// <param name="topicFilter">主题过滤器。</param>
     public void Remove(string topicFilter) => entries.TryRemove(topicFilter, out _);
 
-    /// <summary>重连恢复时某个过滤器被 Broker 拒绝，把它移出表，避免每次重连都重试同一个坏订阅。</summary>
+    /// <summary>重连恢复时某个过滤器被 Broker 明确拒绝，把它移出表，避免每次重连都重试同一个坏订阅。</summary>
     /// <param name="topicFilter">主题过滤器。</param>
     public void Forget(string topicFilter) => entries.TryRemove(topicFilter, out _);
 

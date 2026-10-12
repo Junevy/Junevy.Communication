@@ -9,6 +9,8 @@ namespace Junevy.Communication.Mqtt;
 /// <para>退避用 Core 的 <see cref="ExponentialBackoff"/>，不限次数，每次尝试前先等待。
 /// 不在 SDK 的事件回调里发起重连——MQTTnet 明确警告这样会死锁，因此由 <see cref="MqttClient"/> 在事件回调里
 /// 只是"启动"这个循环，循环本身跑在自己的任务上。</para>
+/// <para>每一轮有自己的取消令牌源：<see cref="StopAsync"/> 只结束当前这一轮，之后仍可再次启动（应用断开后又连上，
+/// 下一次断线照样要重连）；只有 <see cref="DisposeAsync"/> 才永久停止。</para>
 /// </summary>
 internal sealed class MqttReconnectLoop : IAsyncDisposable
 {
@@ -16,14 +18,14 @@ internal sealed class MqttReconnectLoop : IAsyncDisposable
     private readonly Func<CancellationToken, Task<CommResult>> attemptAsync;
     private readonly Action<int, CommResult> onFailure;
     private readonly ILogger logger;
-    private readonly CancellationTokenSource shutdown = new();
     private readonly object sync = new();
+    private CancellationTokenSource? cancellation;
     private Task? running;
-    private int stopping;
+    private bool disposed;
 
     /// <summary>创建重连循环。</summary>
     /// <param name="backoff">退避策略；返回 null 表示放弃。</param>
-    /// <param name="attemptAsync">一次连接尝试；成功即表示重连完成。</param>
+    /// <param name="attemptAsync">一次连接尝试；成功即表示重连完成，抛 <see cref="OperationCanceledException"/> 表示这一轮就此结束。</param>
     /// <param name="onFailure">每次失败后的回调，参数为已尝试的次数与结果。</param>
     /// <param name="logger">日志。</param>
     public MqttReconnectLoop(
@@ -38,33 +40,34 @@ internal sealed class MqttReconnectLoop : IAsyncDisposable
         this.logger = logger;
     }
 
-    /// <summary>启动循环。已经在跑、或者已经被停掉时返回 false。</summary>
-    /// <returns>本次调用真正启动了循环时为 true。</returns>
+    /// <summary>启动一轮重连。已经有一轮在跑、或者已经释放时返回 false。</summary>
+    /// <returns>本次调用真正启动了一轮时为 true。</returns>
     public bool TryStart()
     {
         lock (sync)
         {
-            if (running is not null || Volatile.Read(ref stopping) != 0)
+            if (running is not null || disposed)
             {
                 return false;
             }
 
-            running = Task.Run(RunAsync);
+            var run = new CancellationTokenSource();
+            cancellation = run;
+            running = Task.Run(() => RunAsync(run));
             return true;
         }
     }
 
-    /// <summary>停止循环并等待它退出。停掉之后不能再次启动。</summary>
-    /// <returns>循环已退出。</returns>
+    /// <summary>结束当前这一轮（如果有）并等待它退出。之后仍可再次启动。</summary>
+    /// <returns>这一轮已退出。</returns>
     public async Task StopAsync()
     {
-        Interlocked.Exchange(ref stopping, 1);
-        shutdown.Cancel();
-
         Task? pending;
+        CancellationTokenSource? run;
         lock (sync)
         {
             pending = running;
+            run = cancellation;
         }
 
         if (pending is null)
@@ -72,30 +75,36 @@ internal sealed class MqttReconnectLoop : IAsyncDisposable
             return;
         }
 
-        // 取消会让正在等锁或正在连接的那次尝试抛 OperationCanceledException，循环随即退出。
         try
         {
-            await pending.ConfigureAwait(false);
+            // 取消会让正在等待退避、等锁或正在连接的那次尝试结束，这一轮随即退出。
+            run!.Cancel();
         }
-        catch (OperationCanceledException)
+        catch (ObjectDisposedException)
         {
-            // 停止导致的取消是预期结果。
+            // 这一轮恰好自己结束并释放了令牌源：没有需要取消的了。
         }
+
+        await pending.ConfigureAwait(false);
     }
 
-    /// <summary>停止循环并等待它退出。可重复调用。</summary>
-    /// <returns>循环已退出。</returns>
+    /// <summary>永久停止：结束当前这一轮并等待它退出，之后 <see cref="TryStart"/> 一律返回 false。可重复调用。</summary>
+    /// <returns>已停止。</returns>
     public async ValueTask DisposeAsync()
     {
+        lock (sync)
+        {
+            disposed = true;
+        }
+
         await StopAsync().ConfigureAwait(false);
-        shutdown.Dispose();
     }
 
-    private async Task RunAsync()
+    private async Task RunAsync(CancellationTokenSource run)
     {
         try
         {
-            await PumpAsync().ConfigureAwait(false);
+            await PumpAsync(run.Token).ConfigureAwait(false);
         }
         finally
         {
@@ -103,11 +112,14 @@ internal sealed class MqttReconnectLoop : IAsyncDisposable
             lock (sync)
             {
                 running = null;
+                cancellation = null;
             }
+
+            run.Dispose();
         }
     }
 
-    private async Task PumpAsync()
+    private async Task PumpAsync(CancellationToken stop)
     {
         for (int attempt = 1; ; attempt++)
         {
@@ -120,29 +132,30 @@ internal sealed class MqttReconnectLoop : IAsyncDisposable
 
             try
             {
-                await Task.Delay(delay.Value, shutdown.Token).ConfigureAwait(false);
+                await Task.Delay(delay.Value, stop).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 return;
             }
 
-            if (await TryOnceAsync(attempt).ConfigureAwait(false))
+            if (await TryOnceAsync(attempt, stop).ConfigureAwait(false))
             {
                 return;
             }
         }
     }
 
-    /// <summary>跑一次尝试，成功返回 true。</summary>
+    /// <summary>跑一次尝试；成功或这一轮被结束时返回 true。</summary>
     /// <param name="attempt">已尝试的次数（从 1 开始）。</param>
-    /// <returns>连接成功时为 true。</returns>
-    private async Task<bool> TryOnceAsync(int attempt)
+    /// <param name="stop">这一轮的取消令牌。</param>
+    /// <returns>不需要再试时为 true。</returns>
+    private async Task<bool> TryOnceAsync(int attempt, CancellationToken stop)
     {
         CommResult outcome;
         try
         {
-            outcome = await attemptAsync(shutdown.Token).ConfigureAwait(false);
+            outcome = await attemptAsync(stop).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
