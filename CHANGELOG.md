@@ -6,6 +6,9 @@
 
 ### 新增（Added）
 
+- 2026-10-12 [Mqtt] 新增 Skill `Skills/using-junevy-mqtt/SKILL.md`（计划 Task 7，P6-C13）：何时使用、最小可用代码、以及五个最容易踩的坑——**在 `ConnectAsync` 成功之前就订阅**、**在 `MessageReceived` 里做耗时操作**、**在 3.1.1 下使用 MQTT 5 属性**、**把 `ConnectionClosed` 的发布当成"已经送达"**、**以为正常 `DisconnectAsync` 也会触发遗嘱**。另有结果与 `ErrorKind` 的对照表、重连与恢复订阅的说明、以及"SDK 类型不外露""只支持 .NET 8"等行为约定。
+- 2026-10-12 [Mqtt] `Junevy.Communication.Mqtt/README.md` 补全为完整参考：定位与范围、选项表、状态与事件、发布与订阅规则、接收规则（含"订阅者不能阻塞"）、重连与恢复订阅、TLS、MQTT 5 属性、遗嘱与在线状态的常见用法、错误分类表、依赖注入，以及 **Verification status**——明确记录三条已知不确定项：只与进程内的 MQTTnet Server 联调过、没有对 Mosquitto / EMQX / HiveMQ 等真实 Broker 验证；Session Present 为 true 时不重新订阅依赖 Broker 正确保存会话；订阅者阻塞会拖住确认（P61-D13）。
+- 2026-10-12 [Mqtt] 根 `readme.md`：协议表增加 MQTT 一行（注明"客户端、只支持 .NET 8"）；开头的 Targets 改为说明三个 SDK 适配包只面向 .NET 8；正文中补一句该包是 MQTTnet 的薄适配且尚未对真实 Broker 验证。
 - 2026-10-12 [Mqtt] 新增 `Junevy.Communication.Mqtt.DependencyInjection.MqttClientFactory` 与 `MqttServiceCollectionExtensions.AddMqttClients()`（计划 Task 6，P61-D12、P6-C9）：工厂继承 Core 的 `NamedFactory<MqttClient>`，按名称复用实例、支持别名与移除，释放工厂会释放其中的客户端；`AddMqttClients()` 内部用 `TryAdd`，**可以重复调用**，容器没有 `ILoggerFactory` 时创建的客户端不输出日志。命名与调用习惯照 `AddChannels` / `AddPlcClients` / `AddWebApiClients`。
 - 2026-10-12 [Mqtt] `MqttClientOptions` 新增内部的 `Copy()`：创建客户端时**复制**一份选项，因此宿主之后修改原对象不影响已创建的客户端（P6-C9 的快照）。配套用例用反射逐项核对副本包含每一个属性——将来新增属性却忘了写进 `Copy()` 时会立刻失败。
 - 2026-10-12 [Mqtt] 实现自动重连与恢复订阅（计划 Task 5，P61-D9、D10、D11、P6-C11）：SDK 报告"原本已连接、并非我方主动断开"的断线时，状态转 `Reconnecting`（`Reason` 取 SDK 给出的原因，没有原因串时回退到原因码），并在**后台任务**里启动重连循环——不在 SDK 的事件回调里重连（MQTTnet 明确警告这样会死锁）。退避用 Core 的 `ExponentialBackoff`，不限次数，每次尝试前先等待；每一次尝试都走同一把生命周期锁。**首次 `ConnectAsync` 失败不启动重连**（P6-C11）；`AutoReconnect = false` 时断线直接转 `Disconnected` 且不再尝试。重连成功后：Broker 的 Session Present 为 false 时按订阅表**逐个**重新订阅（被拒绝的过滤器记一条 Warning 并移出表，避免每次重连都重试），恢复完毕才把状态报成 `Connected`——宿主看到 `Connected` 时订阅已经可用；Session Present 为 true 时不重新订阅。`DisconnectAsync` 与释放会停止循环并**等待它退出**，因此释放之后不留残留的后台任务。
