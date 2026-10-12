@@ -398,10 +398,39 @@ For a request/response protocol whose frames carry no correlation id (S7, FINS o
 
 ### Transport profile and factories
 
-- Declare the channel components for each transport in a profile: a `FrameCodec` (for example a length field or a DLE codec), `Correlation`, an optional `KeyExtractor`, an `Initializer` when the link negotiates something, and a `HealthProbeFactory` for the heartbeat.
-- A stream transport that carries a length-prefixed frame declares it with `FrameCodecFactory.Create(new FramingOptions { ... })` and the offset/length/correction of that shell: S7 uses the TPKT length at offset 2 with correction −4, FINS the 4-byte shell length at offset 4 with correction 0. Keep `MaxFrameLength` at the default (65536) unless the protocol proves a smaller ceiling.
-- Guard the profile: if the caller already set one of these components, throw `ArgumentException`. Do not override it silently.
-- Reject a delivery that cannot carry the protocol: S7 and FINS require `ChannelDelivery.Stream` and throw `ArgumentException` for datagrams, because the framing shell only makes sense on a byte stream.
+- Declare the channel components for each transport in a profile. Use `PlcComponentWiring.Apply` — do not write the guard and the assignments yourself:
+
+  ```csharp
+  using System;
+  using Junevy.Communication.Channels;
+  using Junevy.Communication.Plc;
+
+  internal static class MyProtocolProfile
+  {
+      public static TComponents Configure<TComponents>(TComponents components, MyProtocolSettings settings, MySession session, ChannelDelivery delivery)
+          where TComponents : ChannelComponents
+      {
+          // Rules that depend on the transport are the protocol's own, and run before the wiring.
+          if (delivery != ChannelDelivery.Stream)
+              throw new ArgumentException("This protocol runs over a byte stream.", nameof(delivery));
+
+          return PlcComponentWiring.Apply(
+              components,
+              owner: nameof(MyProtocolProfile),
+              frameCodec: MyFraming.Create(),
+              correlation: CorrelationMode.Sequential,
+              keyExtractor: null,
+              initializer: new MyHandshake(settings, session),
+              healthProbeFactory: channel => new MyReadProbe(channel));
+      }
+  }
+  ```
+
+  `owner` only shows up in the exception message, so use the profile's own type name. `Apply` always owns `FrameCodec`, `Correlation`, `KeyExtractor`, `HealthProbe` and `HealthProbeFactory`: if the caller already set one, it throws `ArgumentException` with `ParamName` `"components"` instead of overriding. Pass `frameCodec: null` when the protocol has no framing (a datagram transport) and `keyExtractor: null` when correlation is not `Keyed`. `Initializer` belongs to the protocol only when you pass one; pass `initializer: null` to leave a caller-provided handshake hook alone. `ReconnectPolicy` is never touched.
+- A stream transport that carries a length-prefixed frame declares it with `FrameCodecFactory.Create(new FramingOptions { ... })` and the offset/length/correction of that shell: S7 uses the TPKT length at offset 2 with correction ?4, FINS the 4-byte shell length at offset 4 with correction 0. Keep `MaxFrameLength` at the default (65536) unless the protocol proves a smaller ceiling.
+- Header fields go through Core's `BigEndianFields` (`WriteUInt8/16/24/32`, `WriteBytes`, `TryTakeUInt8/16/24/32`, `TryTakeBytes`), not through a per-protocol helper. Reads return `false` and leave the span untouched on a short buffer, which is what a decoder needs so it can return a structural error instead of throwing.
+- The value that pairs a reply with its request comes from a `SequenceCounter` on the type that encodes that header field, shared process-wide so requests and the heartbeat probe draw from one source. Keep one instance per width.
+- Reject a delivery that cannot carry the protocol **before** calling `Apply`: S7 and FINS require `ChannelDelivery.Stream` and throw `ArgumentException` for datagrams, because the framing shell only makes sense on a byte stream. Rules that depend on the medium (a frame type that only exists on serial) also belong to the profile, for the same reason.
 - Provide one creation entry per protocol: `Create(IChannelConfig transport, ...)`. Add an overload per built-in transport only as a shortcut to it. Create the channel with `PlcChannelBinding.CreateChannel(creator, name, transport, configureComponents, loggerFactory)`: the components come from the creator's `Delivery` and `Medium`, and a transport that is not built in supplies its own `IChannelCreator`, so the protocol package does not change (P25-D4).
 - Take the options snapshot before creating the channel, and dispose the channel if the client constructor then throws — the channel has no other owner and the caller never receives it.
 - Check the transport configuration's defaults (framing, correlation) and throw `ArgumentException` when they differ.
@@ -422,9 +451,9 @@ For a request/response protocol whose frames carry no correlation id (S7, FINS o
 |---|---|
 | Device table and address type (or a hand-written parser when two numbers make the address) | Connection, reconnect, heartbeat scheduling, timeouts |
 | The abstract hooks, plus the bit-read or byte hooks only if the device table has that unit, `CanWriteBitsNatively` when the default is wrong, and `ValidateRange` if the limits depend on the frame | Stream framing as such (you declare it in the profile), the byte/word/bit routing between hook families |
-| Frame codecs and the framing shell, with golden-vector tests | Request serialisation, retries, batching, packet splitting |
+| Frame codecs and the framing shell, with golden-vector tests | Request serialisation, retries, batching, packet splitting, big-endian field helpers (`BigEndianFields`) |
 | Handshake, session snapshot and read probe when the link negotiates anything | Address text normalisation, the operation lock, the disposed check |
-| Transport profile and client factories | Typed reads and writes, byte-order conversion, string padding |
+| Transport profile and client factories (the profile itself is one `PlcComponentWiring.Apply` call plus its own delivery rule) | The component guard and the assignment order (`PlcComponentWiring`), the sequence counter (`SequenceCounter`) |
 | Creator, config type and the `AddX()` extension | Logging, the registry, the factory |
 | Device adapter, simulator and end-to-end tests | Transport adapters (TCP, UDP, serial) |
 
@@ -448,15 +477,15 @@ These are the traps S7 and FINS hit on top of the suite. Design document section
 
 - A declarative device table fits one number per address. `DB1.DBW12` has two, and the width letter decides whether a bit index is mandatory or forbidden, so S7 hand-writes `S7AddressParser` and keeps the suite's message shapes. FINS (18 symbols, EM groups included) needed no such workaround — the model held for the second protocol, so hand-writing a parser is the exception, not a sign the table is wrong (F1).
 - `PlcLayout` and `PlcBitPacking` are internal to Plc, so a protocol writes its own round-up from bytes to bits (three lines in `S7VarItem`). A new IVT is not an option: the architecture test fixes the production-to-production IVT count at 2 (F2).
-- Process-wide sequence counters now exist three times: `McSerialNumbers`, `S7PduReferences`, `FinsSessionIds` — 13 to 14 lines each, identical skeleton, different width. The duplicate scanner does not see them because the comparable line count is under 6, so treat "the scanner is quiet" as evidence of nothing (F3).
-- The `RequireUnset` component guard is a third copy per protocol, and it is what pushed the production duplicate-window metric above the baseline. Do not "fix" it by rewriting the six `if` statements as a data-driven loop: that hides the duplication from the metric while the logic stays duplicated, which is rewriting for the scanner (F4).
+- Process-wide sequence counters used to exist three times: `McSerialNumbers`, `S7PduReferences`, `FinsSessionIds` — 13 to 14 lines each, identical skeleton, different width. The duplicate scanner did not see them because the comparable line count was under 6, so treat "the scanner is quiet" as evidence of nothing (F3). **Resolved in P4.5**: all three now use Core's `SequenceCounter`, so a new protocol takes `private static readonly SequenceCounter Requests = new SequenceCounter();` on the type that encodes that header field and calls `NextUInt16()` or `NextByte()`. Keep it process-wide so the client's requests and its heartbeat probe share one source; one instance per width.
+- The `RequireUnset` component guard was a third copy per protocol, and it is what pushed the production duplicate-window metric above the baseline. Do not "fix" duplication by rewriting six `if` statements as a data-driven loop: that hides the duplication from the metric while the logic stays duplicated, which is rewriting for the scanner (F4). **Resolved in P4.5**: the guard and the assignments moved into one shared call — `PlcComponentWiring.Apply(components, owner: nameof(XProtocolProfile), frameCodec: …, correlation: …, keyExtractor: …, initializer: …, healthProbeFactory: …)`. It refuses to overwrite anything the caller set and assigns only after every guard passes.
 - Hooks are `protected internal`, and the `internal` half does not reach a protocol's test assembly. A protocol test cannot call `GetMaxReadPoints`, `BuildReadBytesRequest` or `ValidateRange` directly; it must drive a connected client with a canned CPU. S7 moved its PDU arithmetic into `S7SessionState` to make the limits assertable; FINS has constant limits and could not, so 16 of its 22 hook tests drag a pipeline plus a simulator in front of a pure arithmetic expectation (F5).
 - `TcpClientChannel` validates its configuration in the constructor, so `Port = 0` throws before a `Create`-guard test reaches its assertion. Give the test's transport the protocol's standard port (102 for S7, 9600 for FINS) and keep the null guards in `Create` ahead of the channel creation, or the guard is unreachable (F6).
 - `PlcMemory` in `Junevy.Communication.Testing` stores words. An S7 simulator that needs byte blocks, "block does not exist" and "past the end of the block" carries its own `Dictionary<(S7Area, int), byte[]>` instead; a FINS bit write lives inside a word, so its simulator routes bits through the word store. Expect to write the memory you actually need (F7).
-- Big-endian field helpers (`WriteRaw`, `TryTakeUInt8/16`) exist once per protocol now, and that pair of files is the largest single contributor to the duplicate metric. There is no Core utility for "take a field from the head of a span and fail rather than throw" — `ByteTransform` throws on a short buffer, which violates the decoder rule that structural errors come back as results (F8).
-- The whole profile file is the same shape across protocols: guard set components, refuse datagrams, declare framing, set `CorrelationMode.Sequential`, hang the initializer and the probe factory. So is the framing one-liner (`FrameCodecFactory.Create(new FramingOptions { … })`). Three protocols write it three times (F9).
+- Big-endian field helpers (`WriteRaw`, `TryTakeUInt8/16`) used to exist once per protocol, and that pair of files was the largest single contributor to the duplicate metric. There was no Core utility for "take a field from the head of a span and fail rather than throw" — `ByteTransform` throws on a short buffer, which violates the decoder rule that structural errors come back as results (F8). **Resolved in P4.5**: Core's `BigEndianFields` writes and takes 1/2/3/4-byte big-endian fields; `TryTake*` returns `false` and leaves the span untouched when there are not enough bytes, so a decoder reports the structural error through its own result. Pass `frameCodec`-style widths from `BigEndianFields.UInt16Bytes` rather than redeclaring them.
+- The whole profile file was the same shape across protocols: guard set components, refuse datagrams, declare framing, set `CorrelationMode.Sequential`, hang the initializer and the probe factory. So was the framing one-liner (`FrameCodecFactory.Create(new FramingOptions { … })`). Three protocols wrote it three times (F9). **Resolved in P4.5**: `PlcComponentWiring.Apply` (see F4 above) does the guard and the assignment; a new profile keeps only what is genuinely its own — the delivery or medium rule that runs *before* the call, and the field values themselves.
 - End-to-end failure tests for two protocols are the same TCP scaffolding: `ScriptedTcpServer.Start`, a `TaskCompletionSource` with `RunContinuationsAsynchronously`, `ReconnectOptions { Enabled = true, Interval = 100 }`, `HeartbeatOptions { Enabled = true, Interval = 100, Timeout = 200, MaxFailures = 2 }`. The Testing library has the server and the device simulator but no minimal reconnectable/heartbeatable TCP config and no arrival-with-timeout helper (F10).
-- `CommResult<T>.Data` is declared `T?` with no nullability link to `IsSuccess`, so `return result.IsSuccess ? result.Data : fallback;` is a CS8603 warning as soon as `T` is a reference type (`string`, `byte[]`) — it is silent for value types, because `T?` over an unconstrained type parameter does not become `Nullable<T>`. Write `result.Data ?? fallback`, or check `IsSuccess` and still coalesce at the use site (F11).
+- `CommResult<T>.Data` used to be declared `T?` with no nullability link to `IsSuccess`, so `return result.IsSuccess ? result.Data : fallback;` was a CS8603 warning as soon as `T` is a reference type (`string`, `byte[]`) — it was silent for value types, because `T?` over an unconstrained type parameter does not become `Nullable<T>`. Writing `result.Data ?? fallback` was the workaround (F11). **Resolved in P4.5**: `IsSuccess` carries `[MemberNotNullWhen(true, nameof(Data))]` and `[MemberNotNullWhen(false, nameof(ErrorMessage))]`, so inside `if (result.IsSuccess)` the compiler already knows `Data` is not null and inside the negative branch it knows `ErrorMessage` is not null. Write the plain `result.Data`; do not add a coalescing operator or a null-forgiving `!`. The invariant is backed by `CommResult<T>.Success` rejecting a null `data`, so a nullable `T` is not the intended use — report a "successful but empty" outcome with `Fail` instead.
 - When you document a protocol, compile the samples: extract every `csharp` fenced block from the package README **and** this skill into a throwaway project (`ImplicitUsings=disable`, `Nullable=enable`, `TreatWarningsAsErrors=true`, both target frameworks) instead of transcribing them. That is what caught the non-existent `AddFins()` (the method is `AddOmronFins()`), the missing `using Junevy.Communication.Plc;` for the typed readers, and the `Data` nullability above.
 
-When you add the fourth protocol, all five "must write again" items (F3, F4/F9, F8, F7, F10) will reappear. Plan for them rather than treating them as a mistake in your design.
+When you add the fourth protocol, F3, F4/F9 and F8 will **not** reappear — they are shared parts now (`PlcComponentWiring`, `SequenceCounter`, `BigEndianFields`), and the guide above shows the one-line call for each. F7 (the memory your simulator must provide) and F10 (the end-to-end TCP scaffolding in the Testing library) are still yours to write. Plan for those two rather than treating them as a mistake in your design.

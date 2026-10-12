@@ -276,6 +276,47 @@ public static class PlcComponentWiring
 
 ### 14.2 执行汇报与偏差（执行者填写）
 
+#### Task 6：文档与知识库
+
+**新增**：无。
+**修改（入库）**：`Skills/using-junevy-plc/SKILL.md`、`docs/superpowers/specs/2026-10-10-communication-core-design.md`（新增第 20.6 节）、`docs/superpowers/plans/2026-10-12-p4-s7-fins.md`（第 20.2 节的 F3 / F4 / F8 / F9 / F11 末尾各加一句）、`CHANGELOG.md`。
+**修改（知识库，只写不提交）**：`知识库首页.md`、`zh/content/Agent协作/新增协议指南.md`、`zh/content/架构设计/Plc 地址型设备协议套件.md`、`zh/content/协议细节/S7 协议.md`、`zh/content/协议细节/FINS 协议.md`。
+
+**第 6 节 Task 6 第 1 条（Skill）**：
+
+- 协议作者指南的 "Transport profile and factories" 改为直接给 `PlcComponentWiring.Apply` 的完整调用（不是裸调用片段），并写明五项"总是拥有"、`Initializer` 的条件规则、`ReconnectPolicy` 不碰、`frameCodec: null` / `keyExtractor: null` 的含义，以及"交付方式与介质规则在调用**之前**检查"。
+- 补两条共用件说明：头部字段走 `BigEndianFields`；配对字段的序号来自挂在编码器类型上的 `SequenceCounter`。
+- "What you must write and what you do not" 表的两行更新：编码器那行注明不再需要自写大端字段工具，profile 那行注明 profile 本身只是一次 `Apply` 调用加自己的交付规则。
+- 摩擦说明 F3 / F4 / F8 / F9 / F11 五条都改成"**Resolved in P4.5**"开头，并给出新协议该怎么写；F11 的 `result.Data ?? fallback` 变通解释改成"直接写 `result.Data`，不要加合并运算符或 null-forgiving"。
+- 结尾那句"第四个协议会再写一遍五件事"改为：F3 / F4·F9 / F8 **不会**再来（已是共用件），只剩 F7 与 F10。
+- **示例编译验证**（计划要求"在临时项目里经 net8.0 与 net472 编译验证，验证材料不入库"）：6 个 `csharp` 代码块**逐个**编译，全部 0 错误。
+
+**验证过程中的一处自查（重要）**：第一版验证脚本**并没有真正编译**——临时工程的 `ProjectReference` 路径写错（`Junevy.Communication.Testing` 在 `Tests/` 下，不在仓库根），加上 `Microsoft.Extensions.Configuration.Json` 的版本不存在，restore 直接 NU1603 失败，而我每轮跑了两遍 build（第二遍是增量的空跑），于是"6/6 OK"全是假的。是靠**负控实验**（故意写一个 `int y = 1 + null;` 的片段）报出 6 个错误才发现的。修正路径与包版本、每轮只跑一次 `--no-incremental` 之后，负控稳定报错，真实片段才逐一验证：
+
+| 代码块 | 结果 |
+|---|---|
+| 0 `McTcpExample` | OK |
+| 1 `S7SkillExample` | OK |
+| 2 `FinsSkillExample` | OK |
+| 3 `McErrorHandlingExample` | OK |
+| 4 `McDependencyInjectionExample` | OK（需要 `Microsoft.Extensions.Configuration.Abstractions`，已加进临时工程） |
+| 5 新增的 `MyProtocolProfile` | **先失败**：用了 `ArgumentException` 却缺 `using System;`（CS0246）→ 补上后 OK |
+
+Task 1 / 4 / 5 的 README 验证也用了同样的负控思路；其中 Task 1 的 `HeaderExample`（缺 `out` 赋值）、Task 4 的 `ProtocolWiringExample`（同样缺 `using System;`）、Task 5 的 `CommResult` 示例（用了未定义的 `Send` / `Consume` / `Log`）三处真实缺陷都是这样发现的。**Task 1 的那次负控当时没有做，结论是靠真实报错支撑的**；为免同样的疏漏，这次对每个验证脚本都先跑了负控。
+
+**第 6 节 Task 6 第 2 条（知识库，只写不提交）**：
+
+- `Agent协作/新增协议指南.md`：F3、F4+F9、F8、F11 四条改写为"已由 P4.5 解决，新协议直接用……"并给出各自的形状（`SequenceCounter` 挂在写字段的类型上、`PlcComponentWiring.Apply` 的七参与规则、`BigEndianFields` 的成员与"字节不足返回 false 且不移动切片"的约定、`IsSuccess` 的两条不变式）；收尾那条把 F3/F4·F9/F8 划归"已抽取"，F7、F10、F5 留给 P5。
+- `架构设计/Plc 地址型设备协议套件.md`：新增 "P4.5 变更：三个协议共用的接线与字段件" 一节，四个子节（`PlcComponentWiring` / `BigEndianFields` / `SequenceCounter` / `CommResult` 可空性），含 profile 的行数变化（58 → 34、58 → 34、89 → 54）与 54 → 34 的度量；并注明 `WebApiResult<T>` 与 `ModbusResult` 未做同类标注。
+- `协议细节/S7 协议.md`、`FINS 协议.md`：指向已删除文件的 `file://` 链接改为指向仍然存在的承载类型（`Protocol/S7Message.cs`、`Protocol/FinsHead.cs`），并说明计数器来自 Core 的 `SequenceCounter`。
+- `知识库首页.md`：版本清单加一条"共用件 P4.5"；"版本与时效"段落加一条 P4.5 的基线与测试数。
+- 用 `Grep` 扫过整个知识库的 `McSerialNumbers` / `S7Fields` / `FinsFields` / `RequireUnset` / `S7PduReferences` / `FinsSessionIds` / `Data ??`，剩余命中全部是**有意保留的历史叙述**（"取代了 `S7Fields` / `FinsFields`"、"原先三个 profile 各自的 `RequireUnset`"），没有指向已删除文件的死链接。
+- **一处刻意不改**：`项目概述/快速开始指南.md:36` 的 `result.Data!` 属于 **Modbus** 示例（`modbus.ReadHoldingRegisters` 返回 `ModbusResult`）。`ModbusResult` 与 `WebApiResult<T>` 的同类标注被 P45-D1 明确排除在本期之外，删掉 `!` 会让这段示例编译不过，因此保留。
+
+**第 6 节 Task 6 第 3、4 条**：设计文档新增第 20.6 节（四行表格 + 对第 12 节与 20.5 的影响说明）；P4 计划第 20.2 节的五条摩擦末尾各加一句"已在 P4.5 解决（本计划 Task N）"，F3 → Task 3、F4 → Task 4、F8 → Task 1、2、F9 → Task 4、F11 → Task 5。
+
+**三条命令的结果**：本 Task 只改 Markdown，`dotnet build -c Debug`、`dotnet build -c Release`、`dotnet test -c Debug` 均与 Task 5 结束时相同（0 错误 / 0 错误 / 23 个项目目标组合 0 失败）。
+
 #### Task 5：`CommResult` 可空性标注（P45-D5，F11）
 
 **新增**：无新文件。

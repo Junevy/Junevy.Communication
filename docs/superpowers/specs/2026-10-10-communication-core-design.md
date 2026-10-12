@@ -1428,6 +1428,24 @@ S7 与 FINS 两个协议包（计划 `docs/superpowers/plans/2026-10-12-p4-s7-fi
 4. **钩子可测性**（F5）：三个协议里有三个都需要"脱离通道与替身断言钩子"的套件门面，FINS 因上限是常量而无路可搬，代价最直白（22 条钩子用例里 16 条拖着真流水线）。与第 3 条的测试基建一起列为 P5 的第一优先项。
 5. **"新增一个协议要写多少"的量化答案**：见计划 20.4 节与 20.2 节末尾的扩展性结论（Siemens 与 Omron 的公开面、有效行与文件数对 MELSEC 1275 行的对照）。
 
+### 20.6 实施修订（P4.5）
+
+P4.5（计划 `docs/superpowers/plans/2026-10-12-p45-shared-protocol-parts.md`，Task 0–7）是**行为不变的重构**，外加一处 Core 的小改动：三个协议的线上字节、错误分类与消息、公开 API 都不变（例外见下表第 4 行，已逐条列出）。目的是把 20.5 第 3 条记录的"第三个协议出现同一逻辑"抽成共用件，让第四个协议不必再写第四份。
+
+| # | 章节 | 原设计 | 实际实现 | 原因 |
+|---|---|---|---|---|
+| 1 | 12.8、20.5 第 3 条 | 每个协议包各写一份大端字段工具（`S7Fields`、`FinsFields`），生产重复窗口 54 | Core 新增 `BigEndianFields`（`Buffers`）：`WriteUInt8/16/24/32`、`WriteBytes`、`TryTakeUInt8/16/24/32`、`TryTakeBytes` 与四个宽度常量。两个协议包改为直接调用，两个旧类型整体删除，无转发层。读取在字节不足时返回 `false` 且不移动切片，参数错误才抛异常 | P45-D1 ①、P45-D2（Task 1、2；计划 20.2 节 F8） |
+| 2 | 12.2、20.5 第 3 条 | 进程级序号计数器三份同骨架（`McSerialNumbers`、`S7PduReferences`、`FinsSessionIds`），扫描器因有效行不足 6 看不到 | Core 新增 `SequenceCounter`（`Utils`）：`NextUInt16()` / `NextByte()`，线程安全、第一次返回 1、按宽度回绕。三个协议各留**一个进程级实例**，位置跟着"谁写这个字段"走（`McFrameExchange.SerialNumbers`、`S7Message.PduReferences`、`FinsHead.SessionIds`），三个旧类型整体删除。取值序列一字不变 | P45-D1 ②、P45-D3（Task 3；F3） |
+| 3 | 12.2、20.5 第 3 条 | 每个协议的 profile 各写一份组件守卫与逐项赋值（`RequireUnset` / `ThrowAlreadySet` / MELSEC 另有 `RequireComponents` / `ApplyCorrelation`） | Plc 新增 `PlcComponentWiring.Apply`：协议总是拥有 `FrameCodec` / `Correlation` / `KeyExtractor` / `HealthProbe` / `HealthProbeFactory` 五项，`Initializer` 只在协议提供了初始化器时才视为拥有；守卫按固定顺序全部通过后才赋值，不碰 `ReconnectPolicy`。三个 profile 的六份守卫整体删除，交付方式与介质的规则仍留在各自 profile 且在调用之前检查 | P45-D1 ③、P45-D4（Task 4；F4、F9） |
+| 4 | 12.1、20.5 | `CommResult` / `CommResult<T>` 的 `Data` 与 `ErrorMessage` 没有和 `IsSuccess` 关联的可空性，引用方必须写 `Data ?? default` 或 null-forgiving 运算符 | `IsSuccess` 加 `[MemberNotNullWhen]`（成功分支内 `Data` 非空、失败分支内 `ErrorMessage` 非空）；net472 通过 `build/Polyfills` 的内部可空性分析特性获得同样的标注（编译器按特性全名识别，引用方的流分析同样生效）。**唯一的破坏性变更**：`CommResult<T>.Success(null)` 改为抛 `ArgumentNullException`，这是让不变式成立的必要条件 | P45-D1 ④、P45-D5（Task 5；F11） |
+
+**对第 12 节与 20.5 的影响**：
+
+- **第 12 节"新增协议要写什么"缩短了**：20.5 第 3 条列的四件"必然写第三份"里，前三件（大端字段工具、序号计数器、组件守卫与接线）现在是 Core / Plc 的共用件，新协议按 Skill `using-junevy-plc` 的作者指南各写一行调用即可；只有测试侧的内存模型（F7）与端到端故障脚手架（F10）仍然是新协议要写的。
+- **度量结论**：生产重复窗口 **54 → 34**，正好是三个集群（9 + 8 + 3）的总和；跨协议只剩 `FinsFraming ↔ S7Framing` 的 1 个窗口（两个协议包各自声明 `FramingOptions`，接受）。
+- **20.5 第 3 条标记为"本期只记录、未抽取"的四项**里，F3、F4/F9、F8 在本期完成抽取；F7、F10 转入 P5（测试基建整理）。
+- **`CommResult` 的可空性（第 4 行）是本期唯一的行为变化**，因此本期被 P45-D8 限定为"S7、FINS、MELSEC 的测试断言不改且全绿"——它们三者的 316 / 259 / 184 条用例全部原样通过，正是行为不变的证据。
+
 ## 21. 决策记录
 
 ### 21.1 已确认（2026-10-10）
