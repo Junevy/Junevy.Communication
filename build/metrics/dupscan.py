@@ -38,10 +38,7 @@ for chunk, places in index.items():
     key = tuple(sorted({p for p, _ in places}))
     pairs[key].append(sorted(places))
 
-reported = 0
+# Print every cluster: the metric is the sum of windows over all clusters, so a cap would silently undercount it.
 for key, groups in sorted(pairs.items(), key=lambda kv: -len(kv[1])):
     lines = sorted({line for group in groups for (p, line) in group if p == key[0]})
     print(f"{len(groups):3d} windows  {' <-> '.join(key)}  (first file lines {lines[0]}..{lines[-1]})")
-    reported += 1
-    if reported >= 40:
-        break

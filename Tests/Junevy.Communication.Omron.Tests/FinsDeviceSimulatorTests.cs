@@ -36,4 +36,15 @@ public sealed class FinsDeviceSimulatorTests
         Assert.Equal(ToBytes(V_F_6_Response), reply);
         Assert.Equal(ToBytes("01 00 01"), Succeeded(FinsMemoryArea.ReadResponse(reply, 0x03, payloadBytes: 3, logger: null)));
     }
+
+    [Fact]
+    public void MemoryAccessOutsideTheArea_FailsLoudly()
+    {
+        // 用例预置或核对时写错地址，必须当场失败，而不是静默不写或读出空数组。
+        var device = new FinsDeviceSimulator();
+
+        Assert.Throws<InvalidOperationException>(() => device.Memory.SetWords("D", FinsDeviceSimulator.AreaCapacity, 0x0001));
+        Assert.Throws<InvalidOperationException>(() => device.Memory.GetWords("D", FinsDeviceSimulator.AreaCapacity - 1, 2));
+        Assert.Throws<InvalidOperationException>(() => device.Memory.SetPoint("W", FinsDeviceSimulator.AreaCapacity * 16, true));
+    }
 }

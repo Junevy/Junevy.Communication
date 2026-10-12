@@ -39,10 +39,10 @@ internal sealed class FinsSimulatorMemory
         for (int i = 0; i < values.Length; i++)
             BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(i * FinsMemoryArea.WordBytes, FinsMemoryArea.WordBytes), values[i]);
 
-        storage.TryWrite(symbol, SingleBlock, word * FinsMemoryArea.WordBytes, bytes);
+        Require(storage.TryWrite(symbol, SingleBlock, word * FinsMemoryArea.WordBytes, bytes), symbol, word);
     }
 
-    /// <summary>读回字：用例用它核对设备真正收到的值；越出块尾的部分按 0 读出。</summary>
+    /// <summary>读回字：用例用它核对设备真正收到的值。越出块尾时抛 <see cref="InvalidOperationException"/>（用例写错了地址）。</summary>
     /// <param name="symbol">软元件符号。</param>
     /// <param name="word">起始字号。</param>
     /// <param name="count">字数。</param>
@@ -51,21 +51,21 @@ internal sealed class FinsSimulatorMemory
     {
         var result = new ushort[count];
         int length = count * FinsMemoryArea.WordBytes;
-        storage.TryRead(symbol, SingleBlock, word * FinsMemoryArea.WordBytes, length, out byte[] raw);
+        Require(storage.TryRead(symbol, SingleBlock, word * FinsMemoryArea.WordBytes, length, out byte[] raw), symbol, word);
         for (int i = 0; i < result.Length; i++)
             result[i] = BinaryPrimitives.ReadUInt16BigEndian(raw.AsSpan(i * FinsMemoryArea.WordBytes, FinsMemoryArea.WordBytes));
 
         return result;
     }
 
-    /// <summary>读一段字的原始大端字节（回环负载），越界时为空。</summary>
+    /// <summary>读一段字的原始大端字节（回环负载）。调用前已由 <see cref="FitsRequest"/> 判过范围，越界说明替身接错了线，抛异常。</summary>
     /// <param name="symbol">软元件符号。</param>
     /// <param name="word">起始字号。</param>
     /// <param name="count">字数。</param>
     /// <returns>内存里的字节，按地址顺序。</returns>
     public byte[] ReadWordBytes(string symbol, int word, int count)
     {
-        storage.TryRead(symbol, SingleBlock, word * FinsMemoryArea.WordBytes, count * FinsMemoryArea.WordBytes, out byte[] raw);
+        Require(storage.TryRead(symbol, SingleBlock, word * FinsMemoryArea.WordBytes, count * FinsMemoryArea.WordBytes, out byte[] raw), symbol, word);
         return raw;
     }
 
@@ -74,7 +74,7 @@ internal sealed class FinsSimulatorMemory
     /// <param name="word">起始字号。</param>
     /// <param name="payload">大端字负载，长度应为 <paramref name="word"/> 个字。</param>
     public void WriteWordBytes(string symbol, int word, ReadOnlySpan<byte> payload)
-        => storage.TryWrite(symbol, SingleBlock, word * FinsMemoryArea.WordBytes, payload);
+        => Require(storage.TryWrite(symbol, SingleBlock, word * FinsMemoryArea.WordBytes, payload), symbol, word);
 
     /// <summary>绝对位是否置起。</summary>
     /// <param name="symbol">软元件符号。</param>
@@ -82,7 +82,7 @@ internal sealed class FinsSimulatorMemory
     /// <returns>该位是否置起。</returns>
     public bool IsPointSet(string symbol, int absoluteBit)
     {
-        storage.TryRead(symbol, SingleBlock, ByteOf(absoluteBit), 1, out byte[] cell);
+        Require(storage.TryRead(symbol, SingleBlock, ByteOf(absoluteBit), 1, out byte[] cell), symbol, absoluteBit / BitsPerWord);
         return (cell[0] & (1 << BitInByte(absoluteBit))) != 0;
     }
 
@@ -93,11 +93,11 @@ internal sealed class FinsSimulatorMemory
     public void SetPoint(string symbol, int absoluteBit, bool value)
     {
         int offset = ByteOf(absoluteBit);
-        storage.TryRead(symbol, SingleBlock, offset, 1, out byte[] cell);
+        Require(storage.TryRead(symbol, SingleBlock, offset, 1, out byte[] cell), symbol, absoluteBit / BitsPerWord);
 
         int mask = 1 << BitInByte(absoluteBit);
         byte updated = value ? (byte)(cell[0] | mask) : (byte)(cell[0] & ~mask);
-        storage.TryWrite(symbol, SingleBlock, offset, new[] { updated });
+        Require(storage.TryWrite(symbol, SingleBlock, offset, new[] { updated }), symbol, absoluteBit / BitsPerWord);
     }
 
     /// <summary>检查一次读写请求是否落在块内（替身回复越界结束码 11 03 的依据）。</summary>
@@ -117,6 +117,13 @@ internal sealed class FinsSimulatorMemory
             : firstByte + (count * FinsMemoryArea.WordBytes) - 1;
 
         return storage.TryRead(symbol, SingleBlock, firstByte, lastByte - firstByte + 1, out _) == PlcByteAccess.Ok;
+    }
+
+    // 预置、核对与替身自己的读写都必须落在块内：静默忽略失败会让写错地址的用例假绿，或在读出空数组时抛出看不出原因的越界异常。
+    private static void Require(PlcByteAccess access, string symbol, int word)
+    {
+        if (access != PlcByteAccess.Ok)
+            throw new InvalidOperationException($"The simulator memory access at {symbol}{word} failed with {access}.");
     }
 
     // 位号 0–7 在大端字的第二个字节，8–15 在第一个字节。

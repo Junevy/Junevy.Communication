@@ -187,7 +187,7 @@ internal sealed class S7DeviceSimulator
         block[byteAddress] = Payload(frame)[0] != 0 ? (byte)(value | mask) : (byte)(value & ~mask);
     }
 
-private byte AccessCheck(byte[] frame, int length, out byte[] block)
+    private byte AccessCheck(byte[] frame, int length, out byte[] block)
     {
         block = Array.Empty<byte>();
         string area = ((S7Area)(AreaCode(frame) - FirstAreaCode)).ToString();

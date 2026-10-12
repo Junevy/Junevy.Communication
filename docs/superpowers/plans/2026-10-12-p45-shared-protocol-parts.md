@@ -6,7 +6,7 @@
   - 同级协议包之间的结构性重复，**现在就在本分支抽成共用件**，并允许 MELSEC 换上共用件；
   - `CommResult<T>` 的可空性标注一并做；
   - S7 不支持 `MX0.0` 写法，保持现状（已写入知识库与 Siemens README）；
-  - 测试基建留到 P5（知识库 `测试/P4.6 测试基建整理（待办）.md`；2026-10-12 改名 P4.6，计划 `docs/superpowers/plans/2026-10-12-p46-test-infra.md`），钩子测试门面不做。
+  - 测试基建留到 P5（知识库 `测试/P4.6 测试基建整理（已完成）.md`；2026-10-12 改名 P4.6，计划 `docs/superpowers/plans/2026-10-12-p46-test-infra.md`），钩子测试门面不做。
 - 依据：P4 计划 `docs/superpowers/plans/2026-10-12-p4-s7-fins.md` 第 20.2 节摩擦记录 F3、F4、F8、F9、F11，以及第 1、2、3 节的执行规则、质量标准与度量。
 - **执行者从第 0、1、2 节读起。**本计划的规则与 P4 计划冲突时，以本计划为准。
 
@@ -258,7 +258,7 @@ public static class PlcComponentWiring
 
 ## 13. 未纳入本计划的条目
 
-- 测试基建（P4 计划 F6、F7、F10，Task 7 偏差 4、Task 8 偏差 6）：P5，见知识库 `测试/P4.6 测试基建整理（待办）.md`；2026-10-12 改名 P4.6，计划 `docs/superpowers/plans/2026-10-12-p46-test-infra.md`。
+- 测试基建（P4 计划 F6、F7、F10，Task 7 偏差 4、Task 8 偏差 6）：P5，见知识库 `测试/P4.6 测试基建整理（已完成）.md`；2026-10-12 改名 P4.6，计划 `docs/superpowers/plans/2026-10-12-p46-test-infra.md`。
 - 钩子测试门面（F5）：用户决定不做。
 - F1（S7 地址需要自写解析器）、F2（位/字节换算 3 行）：不处理。
 - `S7Framing` / `FinsFraming` 的 1 个重复窗口：接受。

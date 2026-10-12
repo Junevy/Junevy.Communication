@@ -40,6 +40,17 @@ public sealed class ArrivalTests
     }
 
     [Fact]
+    public async Task WithinAsync_OfAResult_ExceedingTheLimit_ThrowsTimeout()
+    {
+        // 迁移后的调用点大多等的是带结果的任务：超时必须失败，不能返回默认值。
+        var never = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        TimeoutException error = await Assert.ThrowsAsync<TimeoutException>(() => Arrival.WithinAsync(never.Task, 50));
+
+        Assert.Equal("The awaited operation did not complete within 50 ms.", error.Message);
+    }
+
+    [Fact]
     public async Task WithinAsync_WhenTheOperationItselfFails_PropagatesThatException()
     {
         Task<int> pending = Task.FromException<int>(new InvalidOperationException("boom"));
