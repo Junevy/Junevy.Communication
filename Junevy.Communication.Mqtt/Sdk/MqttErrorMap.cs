@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using System.Security.Authentication;
 using Junevy.Communication.Core.Results;
+using Junevy.Communication.Core.Utils;
 using SdkClient = MQTTnet;
 using SdkExceptions = MQTTnet.Exceptions;
 
@@ -60,18 +61,50 @@ internal static class MqttErrorMap
 
     /// <summary>运行期异常 → 结果。SDK 抛出的异常不能逃出公开方法（P6-C8）。</summary>
     /// <param name="exception">SDK 或 BCL 抛出的异常。</param>
+    /// <param name="scope">包住这次操作的超时作用域；给了它就以"是不是我们自己超时 / 调用方取消"为准，
+    /// 不再猜异常的类型——MQTTnet 在连接被中止时抛的是笼统的通信异常，类型里读不出原因。</param>
     /// <returns>带分类的结果；异常只作诊断。</returns>
-    public static CommResult Runtime(Exception exception)
+    public static CommResult Runtime(Exception exception, TimeoutScope? scope = null)
     {
         ArgumentNullException.ThrowIfNull(exception);
+
+        // 先看作用域：调用方取消与超时由我们自己掌握，比异常类型可靠。
+        if (scope is not null)
+        {
+            if (scope.IsUserCancelled)
+            {
+                return Fail(CommErrorKind.Cancelled, null, "The operation was cancelled.", exception);
+            }
+
+            if (scope.IsTimedOut)
+            {
+                return Fail(CommErrorKind.Timeout, null, "The MQTT operation timed out.", exception);
+            }
+        }
 
         // 顺序要紧：超时与"未连接"都是 MqttCommunicationException 的子类，必须排在它前面。
         return exception switch
         {
             OperationCanceledException => Fail(CommErrorKind.Cancelled, null, "The operation was cancelled.", exception),
-            AuthenticationException => Fail(CommErrorKind.AuthenticationFailed, null, $"TLS authentication failed: {exception.Message}", exception),
             SdkExceptions.MqttCommunicationTimedOutException => Fail(CommErrorKind.Timeout, null, "The MQTT operation timed out.", exception),
             SdkExceptions.MqttClientNotConnectedException => Fail(CommErrorKind.NotConnected, null, "The MQTT client is not connected.", exception),
+            _ => Classify(exception),
+        };
+    }
+
+    // TLS 的认证异常会被 MQTTnet 包进 MqttCommunicationException，因此要沿内层异常链找一遍（P6-C14 / 18.2 的 F7）。
+    private static CommResult Classify(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is AuthenticationException)
+            {
+                return Fail(CommErrorKind.AuthenticationFailed, null, $"TLS authentication failed: {current.Message}", exception);
+            }
+        }
+
+        return exception switch
+        {
             SdkExceptions.MqttCommunicationException => Fail(CommErrorKind.ConnectionClosed, null, $"The MQTT connection failed: {exception.Message}", exception),
             IOException or SocketException => Fail(CommErrorKind.ConnectionClosed, null, $"The connection failed: {exception.Message}", exception),
             _ => Fail(CommErrorKind.Unspecified, null, $"The MQTT operation failed with {exception.GetType().Name}: {exception.Message}", exception),

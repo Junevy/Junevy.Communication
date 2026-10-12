@@ -3,7 +3,7 @@ using Junevy.Communication.Mqtt.Sdk;
 namespace Junevy.Communication.Mqtt;
 
 /// <summary>
-/// <see cref="MqttClientOptions"/> 的校验。全部集中在 <c>MqttClient.Create</c> 时执行一次，之后取快照，
+/// <see cref="MqttClientOptions"/> 的校验。全部集中在 <see cref="MqttClient.Create"/> 时执行一次，之后取快照，
 /// 非法时抛 <see cref="ArgumentException"/> 族，消息写明属性名与允许范围。遗嘱主题的合法性交给 SDK 的校验器（P61-D6）。
 /// </summary>
 internal static class MqttOptionsValidator

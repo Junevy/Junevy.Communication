@@ -1,7 +1,7 @@
 namespace Junevy.Communication.Mqtt;
 
 /// <summary>
-/// 客户端的连接状态（P61-D5）。状态只在 <c>MqttClient</c> 内部的一处变化，并按发生顺序经 <c>StateChanged</c> 通知。
+/// 客户端的连接状态（P61-D5）。状态只在 <see cref="MqttClient"/> 内部的一处变化，并按发生顺序经 <c>StateChanged</c> 通知。
 /// </summary>
 public enum MqttConnectionState
 {

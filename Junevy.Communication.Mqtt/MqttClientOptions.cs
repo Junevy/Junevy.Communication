@@ -1,7 +1,7 @@
 namespace Junevy.Communication.Mqtt;
 
 /// <summary>
-/// 客户端的连接选项。全为简单属性，可以直接由 appsettings 绑定；<c>MqttClient.Create</c> 时校验并取快照，
+/// 客户端的连接选项。全为简单属性，可以直接由 appsettings 绑定；<see cref="MqttClient.Create"/> 时校验并取快照，
 /// 之后修改本对象不影响已创建的客户端。
 /// </summary>
 public sealed class MqttClientOptions
@@ -39,7 +39,7 @@ public sealed class MqttClientOptions
     /// <summary>是否使用 TLS。</summary>
     public bool UseTls { get; set; }
 
-    /// <summary>是否接受任何证书与主机名不符的服务器证书。置为 true 时 <c>MqttClient.Create</c> 记一条 Warning。</summary>
+    /// <summary>是否接受任何证书与主机名不符的服务器证书。置为 true 时 <see cref="MqttClient.Create"/> 记一条 Warning。</summary>
     public bool AllowUntrustedCertificates { get; set; }
 
     /// <summary>意外断开后是否自动重连并恢复订阅；默认 true（P6-C11：会话恢复是 MQTT 的原生语义）。</summary>
