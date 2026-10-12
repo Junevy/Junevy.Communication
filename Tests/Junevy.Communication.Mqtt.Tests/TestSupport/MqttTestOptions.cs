@@ -19,9 +19,16 @@ internal static class MqttTestOptions
             ProtocolVersion = version,
             Timeout = TimeoutMs,
             KeepAliveSeconds = 0,
-            // 重连在 Task 5 实现之前默认关掉，避免用例被后台循环干扰；Task 5 的用例会显式打开。
-            AutoReconnect = false,
         };
+
+    /// <summary>打开自动重连，并把退避调到几十毫秒——重连用例不要真的等几秒（计划第 1 节第 7 条）。</summary>
+    public static MqttClientOptions Reconnecting(this MqttClientOptions options, int intervalMs = 40, int maxIntervalMs = 200)
+    {
+        options.AutoReconnect = true;
+        options.ReconnectInterval = intervalMs;
+        options.MaxReconnectInterval = maxIntervalMs;
+        return options;
+    }
 }
 
 internal static class MqttClientExtensions

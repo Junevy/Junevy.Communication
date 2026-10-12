@@ -24,6 +24,7 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
     private readonly MqttMessaging messaging;
     private readonly MqttConnectionStateMachine state;
     private readonly MqttLifecycleGate lifecycle = new();
+    private readonly MqttReconnectController reconnect;
     private readonly string endpoint;
     private readonly ILogger logger;
     private int disposed;
@@ -41,7 +42,18 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
 
         sdk = new MqttSdkClient(options, loggerFactory);
         messaging = new MqttMessaging(sdk, state, new MqttSubscriptionTable(), options.ProtocolVersion, logger);
+        reconnect = new MqttReconnectController(
+            sdk,
+            state,
+            messaging,
+            lifecycle,
+            options.AutoReconnect,
+            options.ReconnectInterval,
+            options.MaxReconnectInterval,
+            logger);
+
         sdk.MessageReceived += OnSdkMessageReceived;
+        sdk.Disconnected += OnUnexpectedDisconnect;
     }
 
     /// <summary>按选项创建客户端，并在此时校验选项、取快照。</summary>
@@ -102,7 +114,10 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
     {
         ThrowIfDisposed();
 
-        // 生命周期操作走同一把锁：断开会等当前这次连接尝试结束（P61-D10）。
+        // 先停重连循环再拿锁：循环里正在等锁的那次尝试由取消令牌唤醒，
+        // 因此在锁内等待循环退出不会死锁（P61-D9、P61-D10）。
+        await reconnect.StopAsync().ConfigureAwait(false);
+
         await using IAsyncDisposable lease = await lifecycle.EnterAsync(cancellationToken).ConfigureAwait(false);
         state.MoveTo(MqttConnectionState.Disconnected, "The client was disconnected by the application.");
 
@@ -164,6 +179,8 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
             return;
         }
 
+        // 停止重连循环并等它退出：释放之后不留残留的后台任务（Q40、P61-D11）。
+        reconnect.StopAsync().GetAwaiter().GetResult();
         state.MoveTo(MqttConnectionState.Disconnected, "The client was disposed.");
         sdk.DisposeAsync().AsTask().GetAwaiter().GetResult();
         lifecycle.Dispose();
@@ -178,6 +195,7 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
             return;
         }
 
+        await reconnect.DisposeAsync().ConfigureAwait(false);
         state.MoveTo(MqttConnectionState.Disconnected, "The client was disposed.");
         await sdk.DisposeAsync().ConfigureAwait(false);
         lifecycle.Dispose();
@@ -223,6 +241,17 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
             new MqttMessageReceivedEventArgs(message),
             logger,
             nameof(MessageReceived));
+
+    // 释放之后不再响应 SDK 的断线事件（P6-C8）。
+    private void OnUnexpectedDisconnect(bool clientWasConnected, string? reason)
+    {
+        if (Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
+
+        reconnect.OnUnexpectedDisconnect(clientWasConnected, reason);
+    }
 
     private static CommResult InProgress() => CommResult.Fail(
         "A connection attempt is already in progress.",

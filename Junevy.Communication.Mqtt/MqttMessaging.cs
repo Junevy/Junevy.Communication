@@ -116,6 +116,40 @@ internal sealed class MqttMessaging
         return outcome;
     }
 
+    /// <summary>当前记住的订阅（P61-D7）：过滤器 → 请求的 QoS。重连恢复时按这个表逐个重新订阅。</summary>
+    public IReadOnlyCollection<KeyValuePair<string, MqttQos>> Subscriptions => subscriptions.Entries;
+
+    /// <summary>
+    /// 重连成功后按订阅表逐个重新订阅（P61-D9）。
+    /// <para>调用时机是"已经连上、但状态还没报成 <see cref="MqttConnectionState.Connected"/>"，因此这里直接走 SDK，
+    /// 不经过上面那个"必须是 Connected"的守卫——宿主看到 <c>Connected</c> 时订阅已经可用（P61-D5）。</para>
+    /// <para>某个过滤器被 Broker 拒绝时记一条 Warning 并把它移出订阅表，避免每次重连都重试同一个坏订阅。</para>
+    /// </summary>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>成功恢复的订阅数量。</returns>
+    public async Task<int> RestoreSubscriptionsAsync(CancellationToken cancellationToken)
+    {
+        int restored = 0;
+
+        foreach (KeyValuePair<string, MqttQos> entry in subscriptions.Entries.ToArray())
+        {
+            CommResult<MqttQos> outcome = await sdk.SubscribeAsync(entry.Key, entry.Value, cancellationToken).ConfigureAwait(false);
+            if (outcome.IsSuccess)
+            {
+                restored++;
+                continue;
+            }
+
+            logger.LogWarning(
+                "The broker rejected the restored subscription on {Topic}: {Outcome}. The topic is forgotten.",
+                entry.Key,
+                outcome);
+            subscriptions.Forget(entry.Key);
+        }
+
+        return restored;
+    }
+
     private static CommResult NotConnected(string pastTense) => CommResult.Fail(
         $"The MQTT client is not connected, so the request cannot be {pastTense}.",
         CommErrorKind.NotConnected);

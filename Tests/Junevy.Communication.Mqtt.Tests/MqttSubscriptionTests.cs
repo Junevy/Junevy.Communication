@@ -43,8 +43,7 @@ public sealed class MqttSubscriptionTests
     [Fact]
     public async Task Subscribe_RejectedByTheBroker_ReportsRemoteErrorWithTheReasonCode()
     {
-        await using TestBroker broker = (await TestBroker.StartAsync()).RejectSubscription(
-            MqttSubscribeReasonCode.TopicFilterInvalid);
+        await using TestBroker broker = (await TestBroker.StartAsync()).RejectSubscription("a/b");
         MqttClientOptions options = MqttTestOptions.Valid(broker.Port, version: MqttProtocolVersion.V500);
         using var client = MqttClient.Create(options);
         await client.ConnectAndAssertAsync();

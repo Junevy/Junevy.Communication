@@ -202,7 +202,9 @@ internal sealed class MqttSdkClient : IAsyncDisposable
 
     private Task OnDisconnectedAsync(SdkClient.MqttClientDisconnectedEventArgs args)
     {
-        Disconnected?.Invoke(args.ClientWasConnected, args.ReasonString);
+        // ReasonString 常常是 null（Broker 只给了原因码），回退到原因码本身，保证 StateChanged 的 Reason 非空。
+        string? reason = args.ReasonString ?? args.Reason.ToString();
+        Disconnected?.Invoke(args.ClientWasConnected, reason);
         return Task.CompletedTask;
     }
 
