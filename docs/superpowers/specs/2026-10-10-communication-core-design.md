@@ -1399,6 +1399,35 @@ WebApi 客户端（计划 `docs/superpowers/plans/2026-10-11-p31-webapi-client.m
 | 15 | 15.3 | 释放行为未规定 | 释放结束的在途尝试，其 `ResponseReceived.ErrorKind`、调用结果与 `RequestCompleted` 都是 `ConnectionClosed`（可用性跟踪不把它算作失败）；`DisposeAsync` 等待可用性事件派发完最多 2000 ms，剩余的丢弃并记 Warning；注入的处理器不释放 | 里程碑 2 审阅裁决（Task 7） |
 | 16 | 15.4 | 强类型 SOAP 正文用 `XmlSerializer` | 只用 `new XmlSerializer(Type)` 与 `new XmlSerializer(Type, string)`（其他重载每次生成新程序集会泄漏），按类型缓存；序列化时给出显式命名空间表（空前缀绑定到正文根元素的命名空间），QName 值属性（`xsi:type="xsd:int"`）的前缀声明保持有效；响应解析 `DtdProcessing.Prohibit`、`XmlResolver = null`；Fault 先于状态码解析且永不重试 | P3-D17、Task 9、最终里程碑修订 |
 
+### 20.5 实施修订（P4）
+
+S7 与 FINS 两个协议包（计划 `docs/superpowers/plans/2026-10-12-p4-s7-fins.md`，Task 0–16）与第 12 节有下列差异。"原设计"列为本文件原文的要点；"原因"列指向计划第 0 节的决策编号（P4-D 编号）或本文件 20.2 节与计划 20.2 节的扩展性摩擦记录（F 编号）。范围（P4-D1）：S7comm 经典协议、只做 S7-1200/1500、经 ISO-on-TCP 端口 102；FINS 只做 TCP 端口 9600；不做 S7comm-plus、S7-300/400/200 SMART/LOGO!、T/C 区、FINS/UDP、Host Link 串口、NJ/NX 变量名访问。
+
+| # | 章节 | 原设计 | 实际实现 | 原因 |
+|---|---|---|---|---|
+| 1 | 12.3 | `IPlcClient` 只有 `DataFormat` 加四个读写方法 | 新增三个成员：`ParseAddress(string)` 返回 `CommResult<PlcAddress>`（同步、无 I/O、线程安全、释放后仍可调用，非法地址为 `InvalidRequest`）、`ReadBytesAsync(address, count)`、`WriteBytesAsync(address, data)`；三者都不接受带位号的地址。对 `IPlcClient` 的**外部实现者是破坏性变更**，预览版允许，已写入 CHANGELOG | P4-D3 S3、P4-D4（Task 1、2） |
+| 2 | 12.3、P2-D4 | `PlcAddress.Unit` 只有 `Bit` / `Word`，`Byte` 留到 P4；位号进制只有 MELSEC 的十六进制 | `PlcAddressUnit.Byte` 落地；位号上限按单位决定（字节软元件 0–7、字软元件 0–15），`PlcAccess` 增加 `Bytes`；声明式解析器的位号进制支持十进制（FINS `W10.03`） | P4-D3 S1、S2、P4-D16（Task 1、11） |
+| 3 | 12.3 | 十个钩子全部 `abstract`，其中含 `BuildReadBitsRequest` 与 `ParseReadBitsResponse` | 只有字钩子、`BuildWriteBitsRequest`、`ParseWriteResponse`、`TryParseAddress` 与两个上限方法是 abstract；读位钩子改为 `virtual`；新增三个字节钩子（`BuildReadBytesRequest` / `ParseReadBytesResponse` / `BuildWriteBytesRequest`，`virtual`）与 `virtual CanWriteBitsNatively(address)`（默认 `address.Unit == PlcAddressUnit.Bit`）。未覆写的 `virtual` 钩子默认抛 `InvalidOperationException`，由流水线收口为 `Unspecified` 并记 `Error`。整张契约表写进 `PlcClientBase` 的类 XML 注释 | P4-D3 S4–S6、P4-D5（Task 1–3）。S7 没有位软元件、FINS 没有字节软元件，不必为用不到的钩子写死代码 |
+| 4 | 12.6 | 位访问只分两种：原生位软元件、字中的位（写默认 `NotSupported`） | 路由按单位三分：位软元件走位钩子；字软元件读覆盖字取位、写按 `CanWriteBitsNatively` 决定（FINS 覆写为 `true` 走原生位写，MELSEC 保持 `false`，开 `AllowReadModifyWriteBits` 才读-改-写）；**字节软元件**读覆盖字节取位（第 i 点在 `(start+i)/8` 字节的 `(start+i)%8` 位，位 0 为最低位），写位一律 `NotSupported`，不为它实现读-改-写 | P4-D3 S7、P4-D6（Task 3）。S7 的字节内位序与 MELSEC 的大端字内位序不同 |
+| 5 | 12.2 | 类型化读写含 `String`，未规定跨单位与固定长度 | 字符串改走字节访问：`ReadStringAsync(address, byteLength)` 用 `ReadBytesAsync`，字与位软元件上结果与 P2 相同；`WriteStringAsync` 在字与位软元件上对奇数长度补 `0x00`，字节软元件精确写入；新增固定长度重载 `WriteStringAsync(address, value, byteLength)`（超长 `InvalidRequest`、不足补 `0x00`，用来清掉旧长串的残留；字与位软元件要求偶数长度）；新增 `ReadByteAsync` / `WriteByteAsync`。协议的私有字符串格式不进套件——S7 的 `String` / `WString`（容量字节、实际长度字节、UTF-16 码字对）是 `S7Client` 的扩展方法，留在 Siemens 包 | P4-D3 S8、P4-D7（Task 2、4、9） |
+| 6 | 12.2、12.8 | "可选：握手（S7、FINS，设计预期）"一句带过 | 落地为 `ChannelComponents.Initializer` + 会话快照：`S7Handshake`（COTP CR/CC → Setup Communication，取回协商 PDU）与 `FinsNodeHandshake`（节点地址请求，取回服务端与客户端节点号），每次重连都重新执行；结果写进不可变快照、以 `Volatile` 整体替换引用，钩子只读当前快照；快照与初始化器由同一个 `Create` 分别交给两端。S7 的包头顶数（PDU − 18 / − 28）算在 internal 的 `S7SessionState` 里而不是钩子里，因为钩子对协议测试程序集不可见（F5） | P4-D9（Task 8、13） |
+| 7 | 12.7 | 每协议三个公开工厂 `CreateTcp` / `CreateUdp` / `CreateSerial`，另有公开的协议配置类 | S7 与 FINS 只有两个公开入口：`Create(IChannelConfig, options, loggerFactory)` 与 `Create(IChannelConfig, IChannelCreator, options, loggerFactory)`；不提供接收已构造通道的公开构造函数，也不公开协议配置类。内置创建器目录只有 `TcpClientChannelCreator`，其他精确类型抛 `NotSupportedException`；自定义创建器的 `Delivery` 不是 `Stream` 时抛 `ArgumentException`；客户端构造失败时释放已创建的通道 | P4-D10（Task 9、13）。会话把初始化器与客户端绑在一起，分开创建必然出错 |
+| 8 | 12.7 | 关联方式：4E 用 `Keyed` + 序列号键提取器 | S7 与 FINS 都用 `CorrelationMode.Sequential`（握手帧没有关联键，`Keyed` 下 `RequestAsync` 会以 `InvalidRequest` 拒绝）；应答解码时校验 S7 的 PDU 引用号与 FINS 的 SID / 命令码回显，不一致返回 `ProtocolViolation` | P4-D8（Task 8、12、13） |
+| 9 | 12.8 | "28 行声明式软元件表与地址解析器"是新协议要写的第一项，暗示所有协议都能用它 | S7 自写 `S7AddressParser`：`DB1.DBW12` 带两个数字，且宽度字母决定位号必须（`X`）还是禁止（`B`/`W`/`D`），单数字的声明式表表达不了；`S7Device` 仍实现 `IPlcDeviceDefinition`，但其 `Symbol` / `Radix` 不被解析器使用。FINS 用套件解析器完整表达 18 个符号（含 `E0_`–`EC_` 十三组），最长前缀匹配足够，F1 的重新评估条件没有触发 | P4-D16、计划 20.2 节 F1（Task 6、11） |
+| 10 | 12.2 | 单次上限"依访问方式与传输给出"，MELSEC 是常量表 | 上限按 `access` 的单位计，且可依赖协商结果：S7 读 = 协商 PDU − 18 字节、写 = PDU − 28 字节，字取字节数的一半向下取整，位每请求 1 点；请求 PDU 固定写 960，协商值小于 64 时握手返回 `ProtocolViolation`，不提供选项。FINS 读 999 字/位、写 996 字/位（由 2012 字节帧上限推得的保守值）。两者的数据请求都只含 1 个项 | P4-D12、D13（Task 8、13） |
+| 11 | 12.2、P2-D12 | 结束码保留原始码、不做说明表 | 原则不变，加两条映射细节：S7 `ProtocolErrorCode = class << 8 \| code`（应答头）或数据项返回码本身；FINS 结束码先屏蔽状态标志（主码 `& 0x7F`、子码 `& 0x3F`），屏蔽后为 0 即成功（原码非 0 时记 `Debug`），否则 `RemoteError` 且取屏蔽后的码。0x8104 与返回码 0x03 / 0x05 / 0x0A 的消息末尾固定附加 PUT/GET 与优化块访问的检查提示——这是 1200/1500 最常见的现场故障，属于提示而不是码表 | P4-D14（Task 9、13） |
+| 12 | 12.2、12.7 | 心跳探测：MELSEC 用 0619 回环 | S7 读 MB0 的 1 字节、FINS 读 D0 的 1 字，收到格式正确的应答即判健康（返回码与结束码不参与判定）；探测与客户端请求共用进程级单调序号计数器（S7 16 位引用号、FINS 8 位 SID） | P4-D15、D17（Task 8、13）。该计数器是第三份同骨架代码（F3） |
+| 13 | 12.9 | `AddSiemensS7()` 只是设计示例 | 已实现 `AddSiemensS7()` 与 `AddOmronFins()`，各自 `TryAddEnumerable` 一个 `IPlcClientCreator` 再调用 `AddPlcClients()`（幂等）。配置类 `S7ClientConfig` / `FinsClientConfig` 只有 `Tcp` 与 `Options` 两个属性——协议只走 TCP，因此没有 MELSEC 式的 `Transport` 开关，`Tcp` 为 null 时创建器抛 `ArgumentException`；`PlcDataFormat` 无可参构造函数，数据格式不能由 JSON 绑定，只能在代码里设 | P4-D2、D10、D11（Task 10、13） |
+| 14 | 12.3、P2-D9 | 默认字节序由协议选项决定 | 各协议定死默认数据格式，`DataFormat` 为 `PlcDataFormat?`，null 时取协议默认：MELSEC `DCBA`、S7 `ABCD`、FINS `CDAB`，都是 ASCII。规范化布局等于设备内存的字节顺序，因此 S7 按字节、FINS 按大端字取字符串无需重排；`ReadByteAsync` 在字/位软元件上返回覆盖字的规范化首字节（MELSEC 低字节、FINS 高字节） | P4-D11（Task 9、13） |
+
+**12.8 末尾"设计预期"的验证结果**：那句话是"设计预期三者都不需要改套件"。实测**不成立，但缺口全部落在 12.1 第 1 条预告的位置**——套件确实需要修改，于是按该条处置为"作为通用能力补进套件"，共 8 项（P4-D3 的 S1–S8，里程碑 1 完成，Plc 生产有效行停在 1189 行未再增长）。逐条拆开：
+
+1. **需要改套件的地方**（已改，见上表 1–5）：`PlcAddressUnit.Byte`、按单位决定位号上限、`PlcAccess.Bytes`、`IPlcClient` 三个新成员、三个字节钩子、读位钩子 `abstract` 改 `virtual`、`CanWriteBitsNatively`、字节软元件上的位路由、字符串与单字节扩展。除此之外第 12 节的接口形状没有被推翻。
+2. **设计预期成立、无需改套件的部分**：`IConnectionInitializer` 足以承载两种性质不同的握手（协商长度 / 协商路由）；`GetMaxReadPoints` 读运行时快照足以表达协商上限；`ChannelComponents` 的四项声明（`FrameCodec`、`Correlation`、`Initializer`、`HealthProbeFactory`）与 `FrameCodecFactory` 的长度字段分帧覆盖 TPKT 与 FINS/TCP 外壳；`PlcChannelBinding.CreateChannel` + `IChannelCreator` 目录使"只走 TCP"的协议无需新工厂代码；`NamedRegistry` / `PlcClientFactory` / DI、Core 的 `Buffers`（`ByteBufferWriter`、`ByteSequenceReader`、`WordOrder`、`ByteTransform`）、请求管线与操作锁全部按原样使用。MELSEC 的覆写在钩子契约变化后不受影响（`abstract` 改 `virtual` 对派生类不是破坏性变更）。
+3. **套件之外仍缺的共用能力**（本期只记录、未抽取，全部标"需要决定"）：进程级序号计数器（F3，三份 13–14 行）、通道组件守卫与接线顺序（F4 + F9，三份，生产重复窗口 33 → **54** 的全部来源）、大端字段读写（F8，一对文件一次推高 9 个窗口）、共享测试库的字节粒度内存与端到端故障脚手架（F7、F10）。生产重复窗口的增量与三个协议之间"必然写第三份"的四件事一一对应，这是本期最重要的度量结论。
+4. **钩子可测性**（F5）：三个协议里有三个都需要"脱离通道与替身断言钩子"的套件门面，FINS 因上限是常量而无路可搬，代价最直白（22 条钩子用例里 16 条拖着真流水线）。与第 3 条的测试基建一起列为 P5 的第一优先项。
+5. **"新增一个协议要写多少"的量化答案**：见计划 20.4 节与 20.2 节末尾的扩展性结论（Siemens 与 Omron 的公开面、有效行与文件数对 MELSEC 1275 行的对照）。
+
 ## 21. 决策记录
 
 ### 21.1 已确认（2026-10-10）

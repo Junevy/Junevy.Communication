@@ -13,9 +13,11 @@ Asynchronous .NET communication libraries for industrial equipment and factory s
 |---|---|---|---|---|
 | Modbus RTU / TCP | `Junevy.Communication.Modbus` | 2.0.0 | Modbus master (client) over TCP and serial RTU: read and write coils and registers, raw requests, reconnect and retry, a connection factory | [Modbus README](Junevy.Communication.Modbus/README.md) |
 | MELSEC MC | `Junevy.Communication.Melsec` | preview | Mitsubishi MC protocol: 3E and 4E frames (binary or ASCII) over TCP and UDP, 4C frames over serial; typed reads and writes by device address such as `D100` or `M0` | [Melsec README](Junevy.Communication.Melsec/README.md) |
+| Siemens S7 | `Junevy.Communication.Siemens` | preview | S7comm over ISO-on-TCP (port 102) for S7-1200 and S7-1500: byte-addressed `DB`, `M`, `I` and `Q` areas, typed reads and writes by address such as `DB1.DBW12`, S7 `String` and `WString` fields, PDU-size handshake | [Siemens README](Junevy.Communication.Siemens/README.md) |
+| Omron FINS | `Junevy.Communication.Omron` | preview | FINS over TCP (port 9600): `CIO`, `W`, `H`, `A`, `D` and `EM` areas, typed reads and writes by address such as `D100` or `W10.03`, node-address handshake, native bit writes | [Omron README](Junevy.Communication.Omron/README.md) |
 | MES WebApi (REST, SOAP) | `Junevy.Communication.WebApi` | preview | Reporting to a MES over HTTP: a REST client with JSON and business-envelope support, and a SOAP 1.1 / 1.2 client; retries that respect idempotency, availability tracking, events and interceptors (signing, token refresh) | [WebApi README](Junevy.Communication.WebApi/README.md) |
 
-MELSEC is the first protocol built on the protocol-neutral PLC suite, which other address-based PLC protocols will reuse ([Plc README](Junevy.Communication.Plc/README.md)). The MES WebApi package currently covers the client side; the HTTP server side, where the MES sends requests to the device, is planned.
+MELSEC, S7 and FINS are built on the protocol-neutral PLC suite, which other address-based PLC protocols reuse ([Plc README](Junevy.Communication.Plc/README.md)). S7 and FINS are preview packages that have not been verified against real CPUs. The MES WebApi package currently covers the client side; the HTTP server side, where the MES sends requests to the device, is planned.
 
 ## Transports and building blocks
 

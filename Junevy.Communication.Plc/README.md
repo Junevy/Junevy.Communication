@@ -14,11 +14,15 @@ Address-based PLC client suite. It provides the common part of every protocol th
 |---|---|---|
 | `Junevy.Communication.Plc` | `IPlcClient`, `PlcClientBase<TAddress>`, typed extensions, addresses, options, `PlcClientFactory`, DI | `Junevy.Communication.Channels` |
 | `Junevy.Communication.Melsec` | MELSEC MC protocol client (see its README) | Plc, Tcp, Udp, Serial |
+| `Junevy.Communication.Siemens` | Siemens S7 client over ISO-on-TCP (see its README) | Plc, Tcp |
+| `Junevy.Communication.Omron` | Omron FINS client over FINS/TCP (see its README) | Plc, Tcp |
 
 Install a protocol package; it references this package. Preview packages need `--prerelease`:
 
 ```text
 dotnet add package Junevy.Communication.Melsec --prerelease
+dotnet add package Junevy.Communication.Siemens --prerelease
+dotnet add package Junevy.Communication.Omron --prerelease
 ```
 
 ## Typed Reads and Writes
@@ -33,8 +37,12 @@ Every protocol gets the same typed API as extension methods on `IPlcClient`. Rea
 | `float` / `double` | `ReadFloatAsync` / `ReadDoubleAsync` | `WriteFloatAsync` / `WriteDoubleAsync` |
 | `string` | `ReadStringAsync(address, byteLength)` | `WriteStringAsync` |
 | `bool` | `ReadBoolAsync` | `WriteBoolAsync` |
+| `bool[]` | `ReadBitsAsync(address, count)` | `WriteBitsAsync(address, values)` |
+| `byte` | `ReadByteAsync` | `WriteByteAsync` |
+| `byte[]` (bytes, not words) | `ReadBytesAsync(address, count)` | `WriteBytesAsync(address, data)` |
+| `byte[]` (normalised words) | `ReadAsync(address, wordCount)` | `WriteAsync(address, data)` |
 
-The write methods have a single-value and an array overload. Multi-word values use the word order of the protocol's data format (`PlcDataFormat`); the default is `DCBA` with ASCII strings. A protocol decides its data format, so there is no per-call override.
+The write methods have a single-value and an array overload. Multi-word values use the word order of the protocol's data format (`PlcDataFormat`); each protocol picks the default that matches its devices, so MELSEC is `DCBA` with ASCII strings, S7 is `ABCD` and FINS is `CDAB`. A protocol decides its data format, so there is no per-call override.
 
 ```csharp
 using System;
@@ -63,7 +71,48 @@ public static class PlcTypedExample
 }
 ```
 
-Raw bytes are available through `ReadAsync` and `WriteAsync`. Their layout is the protocol's normalised layout (for MELSEC: two bytes per word, little-endian, words in address order), so the same typed conversions apply to every encoding the protocol supports.
+Raw bytes are available through `ReadAsync` and `WriteAsync`. Their layout is the protocol's normalised layout (MELSEC: two bytes per word, little-endian; S7: the CPU's own byte order; FINS: big-endian inside each word), so the same typed conversions apply to every encoding the protocol supports.
+
+## Addresses and Units
+
+An address is a device symbol plus a number, optionally plus a bit index (`D100`, `D100.5`, `M0`, `DB1.DBW12`, `W10.03`). Each device declares the unit its number counts in, and the unit decides how everything else behaves:
+
+| `PlcAddressUnit` | One address is | Bit index | Example protocol |
+|---|---|---|---|
+| `Bit` | one bit | not allowed | MELSEC `M`, `X`, `Y` |
+| `Word` | one 16-bit word | `0`–`15` | MELSEC `D`, FINS `D`, `CIO`, `W` |
+| `Byte` | one byte | `0`–`7` | S7 `DB`, `M`, `I`, `Q` |
+
+On a byte device, word access counts two consecutive bytes as one word, so `ReadInt32Async("DB1.DBB0", …)` works on S7 even though the address is a byte address. On a word device, byte access covers the whole words that the requested bytes fall in. A protocol whose areas are all one unit therefore needs no special addressing rules for the typed API.
+
+## Byte Access
+
+`IPlcClient` exposes byte-granular operations next to the word-granular ones:
+
+| Method | Behaviour on a byte device | Behaviour on a word or bit device |
+|---|---|---|
+| `ReadBytesAsync(address, count)` | reads exactly `count` bytes | reads the `ceil(count / 2)` words that cover them and returns the first `count` bytes of the normalised layout |
+| `WriteBytesAsync(address, data)` | writes exactly those bytes | requires a positive even length; otherwise `InvalidRequest` |
+| `ReadByteAsync(address)` | reads one byte | reads the covering word and returns the **first byte of the normalised layout**, which is the low byte on MELSEC and the high byte on FINS |
+| `WriteByteAsync(address, value)` | writes one byte | `InvalidRequest` (only whole words can be written) |
+
+All four reject addresses that carry a bit index, and a bit access on a byte device addresses the bits inside a byte (bit 0 is the lowest bit).
+
+## Strings
+
+`ReadStringAsync` and `WriteStringAsync` are built on byte access, so their unit rules are the byte rules above:
+
+| Method | Byte device | Word or bit device |
+|---|---|---|
+| `ReadStringAsync(address, byteLength)` | reads `byteLength` bytes | reads the covering words, uses the first `byteLength` bytes |
+| `WriteStringAsync(address, value)` | writes the encoded bytes exactly | pads an odd encoded length with one `0x00` |
+| `WriteStringAsync(address, value, byteLength)` | writes the encoded bytes padded with `0x00` to `byteLength` | same, and `byteLength` must be a positive even number |
+
+The fixed-length overload exists because a shorter string written over a longer one otherwise leaves the tail of the old text in the field. `byteLength` must be at least 1, an encoded value that does not fit is `InvalidRequest`, and the encoding is `PlcDataFormat.StringEncoding` (ASCII unless the protocol's options say otherwise). A protocol with its own string type — S7's `String` and `WString`, which carry a length header — adds its own methods in its own package.
+
+## Parsing an Address Without Sending Anything
+
+`IPlcClient.ParseAddress(address)` runs the protocol's parser synchronously and returns `CommResult<PlcAddress>`: `InvalidRequest` with the parser's message when the text is not valid. It performs no I/O, is thread-safe, and still works after the client is disposed, which makes it the check to run when a configuration file or a screen definition is loaded.
 
 ## Results, Not Exceptions
 
@@ -122,7 +171,24 @@ Calling `GetOrAdd` with a name that already exists returns the existing client a
 
 ## Writing a Protocol
 
-A protocol derives from `PlcClientBase<TAddress>` and implements the hooks that describe its frames: address parsing, point limits per request, the word and bit request and response builders, and the write response. It may override `ValidateRange` to reject requests the protocol cannot represent. The base class provides the rest. See `Junevy.Communication.Melsec` as the reference implementation, and the `using-junevy-plc` skill in the repository for a step-by-step guide.
+A protocol derives from `PlcClientBase<TAddress>` and implements the hooks that describe its frames. The base class provides the rest: batching into packets, the operation lock, retries, bit routing, timeouts and disposal. See `Junevy.Communication.Melsec`, `Junevy.Communication.Siemens` and `Junevy.Communication.Omron` as implementations, and the `using-junevy-plc` skill in the repository for a step-by-step guide.
+
+Which hooks you have to override is decided by the units your device table contains (P4-D5):
+
+| Hook | Kind | Who implements it |
+|---|---|---|
+| `TryParseAddress(address, out parsed, out error)` | abstract | every protocol |
+| `GetMaxReadPoints(address, access)` / `GetMaxWritePoints(address, access)` | abstract | every protocol. `access` is `Words`, `Bits` or `Bytes`, and the returned count is in that unit |
+| `BuildReadWordsRequest` / `ParseReadWordsResponse` / `BuildWriteWordsRequest` / `ParseWriteResponse` | abstract | every protocol; the typed API runs on them |
+| `BuildWriteBitsRequest` | abstract | every protocol |
+| `BuildReadBitsRequest` / `ParseReadBitsResponse` | virtual, default throws | only protocols with a bit device. A protocol without bit areas never sees a bit read: the suite routes it to byte or word access |
+| `BuildReadBytesRequest` / `ParseReadBytesResponse` / `BuildWriteBytesRequest` | virtual, default throws | only protocols with a byte device (S7). `offset` and `count` are in bytes |
+| `CanWriteBitsNatively(address)` | virtual, default `address.Unit == PlcAddressUnit.Bit` | protocols that can write a single bit of a word or byte area override it to `true` (FINS, S7). When it is `false`, a word device writes bits by read-modify-write under `AllowReadModifyWriteBits`, and a byte device returns `NotSupported` |
+| `ValidateRange(address, access, count)` | virtual, default success | protocols that cannot represent some range override it; it runs before any frame is sent |
+
+A default hook that is not overridden throws `InvalidOperationException`, which the pipeline reports as `Unspecified` with an error log — so a protocol never has to write an empty implementation for a hook it does not use.
+
+Protocol state that a handshake discovers (a negotiated PDU size, a node address) belongs in an immutable session snapshot that the `Create` method hands to both the channel's `IConnectionInitializer` and the client, and the hooks read the current snapshot; see the S7 and FINS packages for the pattern.
 
 A protocol offers one creation entry, which takes the transport configuration and a creator for that transport (the built-in creators are used when the protocol offers a shortcut). `PlcChannelBinding.CreateChannel` creates the channel: it takes the creator, the optional name, the transport configuration (its type must be the creator's `ConfigType`) and a delegate that returns the components for the creator's `Delivery` and `Medium`. A transport that is not built in supplies its own `IChannelCreator`, and the protocol works with it without changes to the protocol package.
 
