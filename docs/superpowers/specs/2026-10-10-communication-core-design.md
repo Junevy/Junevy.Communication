@@ -22,7 +22,7 @@
 |---|---|---|---|
 | **字节通道族** | TCP、TLS、UDP、串口 | 连接生命周期、分帧、请求-应答关联、心跳、重连、超时 | `IClientChannel` / `IByteChannel` |
 | **地址型设备协议族** | MELSEC MC、S7、欧姆龙 FINS、Modbus（v3 迁移后） | 建立在字节通道族之上：请求管线、类型化读写、地址解析、拆包、字节序 | `IPlcClient` + 类型化扩展方法 |
-| **SECS** | HSMS、SECS-I、GEM | **内部**复用字节通道族的实现 | 原生：SECS-II 消息、HSMS 状态、GEM 状态 |
+| **SECS** | HSMS、GEM（不做 SECS-I，见 21.1 Q13） | **内部**复用字节通道族的实现 | 原生：SECS-II 消息、HSMS 状态、GEM 状态 |
 | **SDK 协议** | OPC UA、MQTT、FTP、厂商 DLL | 只用 Core 工具 | 原生：保留各 SDK 的模型 |
 | **无状态请求** | WebAPI（REST、SOAP）、HTTP 服务端 | 只用 Core 工具 | 原生：HTTP 语义 |
 
@@ -46,7 +46,7 @@ flowchart TD
 
 1. **扩展性优先于抽象度**：衡量标准是"新增一个协议要写多少代码、要不要改公共代码"，不是"有多少协议实现了同一个接口"。
 2. **族内统一，族间只共享工具**：只有语义真正一致的协议才共用接口；特殊协议保留原生模型。
-3. **协议与传输分离**：协议客户端**持有**一条字节通道，而不是继承 socket。MELSEC 的 TCP、UDP、串口三种接法共用一套 MC 协议代码；SECS 的 HSMS（TCP）和 SECS-I（串口）共用 SECS-II 编解码。
+3. **协议与传输分离**：协议客户端**持有**一条字节通道，而不是继承 socket。MELSEC 的 TCP、UDP、串口三种接法共用一套 MC 协议代码。
 4. **组合优于继承，骨架用模板方法**：通道层用可组合部件（Supervisor、StreamChannel、分帧器、探测器、策略）；协议族内部用模板方法基类（`PlcClientBase`），这与 Modbus 的 `ModbusTransportBase` 已验证的做法一致。
 5. **依赖隔离**：每种传输、每个协议一个包；第三方 SDK 只出现在各自的适配包里；特殊协议族不依赖通道机制。
 6. **沿用 Modbus 已验证的契约**：失败一律走结果对象，编程错误抛标准异常；Dispose 契约、超时与取消的区分、net472 的"取消时销毁 socket"降级手法、重试规则 A–F 的语义都直接继承。
@@ -102,7 +102,7 @@ graph TB
 | `Junevy.Communication.Melsec`                   | 三菱 MC 协议                                                                            | Plc + Tcp + Udp + Serial                                                                                    | P2       |
 | `Junevy.Communication.WebApi`                   | REST 客户端、SOAP 客户端、HTTP 服务端                                                          | Core + System.Text.Json                                                                                     | P3       |
 | `Junevy.Communication.Siemens` / `.Omron`       | S7、FINS                                                                             | Plc + 所需传输包                                                                                                 | P4       |
-| `Junevy.Communication.Secs`                     | SECS-II、HSMS、SECS-I，之后是 GEM                                                         | Channels + Tcp + Serial                                                                                     | P5       |
+| `Junevy.Communication.Secs`                     | SECS-II、HSMS-SS（设备端），之后是 GEM；不做 SECS-I                                       | Channels + Tcp                                                                                              | P5       |
 | `Junevy.Communication.Mqtt` / `.OpcUa` / `.Ftp` | SDK 适配：只做客户端，**只面向 net8.0**（Q9–Q12）                                                 | Core + 对应第三方 SDK（MQTTnet 5、OPC Foundation .NET Standard 2.0、FluentFTP）                                           | P6       |
 | `Junevy.Communication.Modbus`                   | 现有，本期不动                                                                             | 现状                                                                                                          | P7 可选迁移  |
 | `Junevy.Communication.Testing`                  | 测试套件（内部共享测试工程，暂不发布）                                                                 | Channels                                                                                                    | P1 起持续扩充 |
@@ -643,7 +643,7 @@ public class SerialChannelConfig : IChannelConfig
     public int WriteBufferSize { get; set; } = 2048;
 
     public int OpenTimeout { get; set; } = 2000;              // SerialPort.Open 可能被驱动阻塞
-    public int HandshakeTimeout { get; set; } = 5000;         // IConnectionInitializer 的时限（SECS-I、MC 串口格式等）
+    public int HandshakeTimeout { get; set; } = 5000;         // IConnectionInitializer 的时限（HSMS 的 Select、MC 串口格式等）
     public int DisconnectTimeout { get; set; } = 1000;        // 断开时排空派发队列的时限
     public int SendTimeout { get; set; } = 2000;
     public int RequestTimeout { get; set; } = 2000;
@@ -997,7 +997,6 @@ SECS 对外暴露自己的模型：`SecsMessage`（Stream、Function、W 位、S
 | System Bytes（事务号） | `Keyed` 关联 |
 | 双方都会主动发主消息并等待应答（如 S5F1 报警、S6F11 事件） | `FrameReceived` + 客户端或会话上的 `RequestAsync` |
 | T3 / T5 / T6 / T7 / T8 | `RequestTimeout` / 重连固定间隔 / `HandshakeTimeout` / `SessionHandshakeTimeout` / `PartialFrameTimeout` |
-| SECS-I（RS-232） | `SerialChannel`（Raw）+ SECS 包内的块传输状态机（ENQ/EOT/ACK/NAK、校验和、T1/T2/T4） |
 
 SECS 的结果类型自带 `ErrorKind` 字段（取 `CommErrorKind`），方便宿主统一告警，但 SECS 的完整错误语义（T3 超时、S9F7 非法数据、Reject 原因）保留在自己的字段里。
 
@@ -1249,7 +1248,8 @@ public sealed class OutboxItem
 | P2 | Plc 套件 + MELSEC MC（验证扩展性，见 21.1 R2） |
 | P3 | WebApi（MES）：REST 客户端、SOAP 客户端、HTTP 服务端；离线缓存只预留接口 |
 | P4 | S7、FINS（套件的第二、第三个使用者） |
-| P5 | SECS：HSMS → SECS-I → GEM |
+| P4.5 / P4.6 | 协议共用件（`BigEndianFields`、`SequenceCounter`、组件装配）；共享测试库整理 |
+| P5 | SECS（设备端）：P5.1 SECS-II + HSMS-SS → P5.2 GEM。不做 SECS-I（21.1 Q13） |
 | P6 | SDK 协议（只做客户端，只面向 net8.0）：**P6.1 MQTT 已完成** → P6.2 OPC UA → P6.3 FTP |
 | P7（可选，破坏性） | Modbus 迁移到 Plc 套件（v3.0） |
 
@@ -1497,6 +1497,7 @@ P6.1（计划 `docs/superpowers/plans/2026-10-12-p61-mqtt.md`，Task 0–10）�
 | Q10 | SDK 选型（2026-10-12） | 选现代、支持异步、经过大量验证的 NuGet，自己只写适配层，不从零实现协议：MQTTnet 5（MIT）、OPC Foundation .NET Standard 2.0.x（OPC Foundation MIT，用户选定新版本线）、FluentFTP（MIT）。只做客户端 |
 | Q11 | SDK 类型是否外露（2026-10-12） | 不外露：公开 API 只用本库与 BCL 的类型，SDK 只出现在包内的 `Sdk` 命名空间，由架构测试强制。代价是 OPC UA 的结构体等复杂类型本期不支持 |
 | Q12 | P6 的范围（2026-10-12） | MQTT：3.1.1 与 5.0、TLS、MQTT 5 属性、遗嘱消息。OPC UA：连接（None 安全策略、匿名）、读、写、浏览、订阅，不做方法调用、安全连接与用户登录（用户名登录以后再加，计划已留好位置）。FTP：FTP 与 FTPS，不做 SFTP。P6 不等 P5.1，从已含 P4.6 的 master 新建分支，与 P5.1 并行 |
+| Q13 | SECS-I（2026-10-13） | 不做。用户认为 RS-232 块传输的 SECS-I 过于老旧，不值得投入。SECS 族只做 SECS-II + HSMS-SS（设备端，P5.1），之后是 GEM（P5.2）；Secs 包只依赖 Core、Channels、Tcp |
 
 ### 21.2 待确认
 
