@@ -229,6 +229,47 @@ public sealed class MqttClientOptionsTests
     }
 
     [Fact]
+    public void Copy_IsIndependentAndCoversEveryProperty()
+    {
+        MqttClientOptions source = new MqttClientOptions
+        {
+            Host = "broker.local",
+            Port = 8883,
+            ClientId = "plc-1",
+            UserName = "device",
+            Password = "s3cret",
+            ProtocolVersion = MqttProtocolVersion.V500,
+            CleanSession = false,
+            SessionExpiryInterval = 3600,
+            KeepAliveSeconds = 30,
+            Timeout = 8000,
+            UseTls = true,
+            AllowUntrustedCertificates = true,
+            AutoReconnect = false,
+            ReconnectInterval = 2000,
+            MaxReconnectInterval = 60000,
+            WillTopic = "devices/plc-1/status",
+            WillPayload = "offline",
+            WillQos = MqttQos.ExactlyOnce,
+            WillRetain = true,
+        };
+
+        MqttClientOptions copy = source.Copy();
+
+        // 逐项比对：每个属性都进了副本（默认值不同的那几项也已显式覆盖）。
+        foreach (System.Reflection.PropertyInfo property in typeof(MqttClientOptions).GetProperties())
+        {
+            object? expected = property.GetValue(source);
+            object? actual = property.GetValue(copy);
+            Assert.True(Equals(expected, actual), $"{property.Name}: expected {expected ?? "null"} but the copy has {actual ?? "null"}.");
+        }
+
+        Assert.NotSame(source, copy);
+        source.Port = 1;
+        Assert.Equal(8883, copy.Port);
+    }
+
+    [Fact]
     public void CompleteWill_Passes()
     {
         MqttClientOptions options = Valid();

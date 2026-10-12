@@ -62,4 +62,31 @@ public sealed class MqttClientOptions
 
     /// <summary>遗嘱消息是否为保留消息。</summary>
     public bool WillRetain { get; set; }
+
+    /// <summary>
+    /// 复制一份选项。创建客户端时取快照用——宿主之后修改原对象不影响已创建的客户端（P6-C9）。
+    /// </summary>
+    /// <returns>内容相同的独立副本。</returns>
+    internal MqttClientOptions Copy() => new MqttClientOptions
+    {
+        Host = Host,
+        Port = Port,
+        ClientId = ClientId,
+        UserName = UserName,
+        Password = Password,
+        ProtocolVersion = ProtocolVersion,
+        CleanSession = CleanSession,
+        SessionExpiryInterval = SessionExpiryInterval,
+        KeepAliveSeconds = KeepAliveSeconds,
+        Timeout = Timeout,
+        UseTls = UseTls,
+        AllowUntrustedCertificates = AllowUntrustedCertificates,
+        AutoReconnect = AutoReconnect,
+        ReconnectInterval = ReconnectInterval,
+        MaxReconnectInterval = MaxReconnectInterval,
+        WillTopic = WillTopic,
+        WillPayload = WillPayload,
+        WillQos = WillQos,
+        WillRetain = WillRetain,
+    };
 }

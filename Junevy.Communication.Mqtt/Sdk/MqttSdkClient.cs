@@ -22,8 +22,8 @@ internal sealed class MqttSdkClient : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
-        // 选项的快照在这里取：之后本库不再读调用方的对象（P6-C9）。
-        this.options = options;
+        // 选项的快照在这里取：复制一份，之后本库不再读调用方的对象（P6-C9）。
+        this.options = options.Copy();
         logger = loggerFactory.CreateLogger<MqttClient>();
         client = new SdkClient.MqttClientFactory(new MqttSdkLogBridge(loggerFactory)).CreateMqttClient();
         client.ConnectedAsync += OnConnectedAsync;

@@ -26,6 +26,11 @@
     <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
   </ItemGroup>
 
+  <!-- P6-C9：AddMqttClients() 需要 IServiceCollection；与 Core 用的同一个包，因此不新增依赖来源。 -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Junevy.Communication.Mqtt.Tests" />
   </ItemGroup>

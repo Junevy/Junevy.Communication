@@ -6,11 +6,14 @@
 
 ### 新增（Added）
 
+- 2026-10-12 [Mqtt] 新增 `Junevy.Communication.Mqtt.DependencyInjection.MqttClientFactory` 与 `MqttServiceCollectionExtensions.AddMqttClients()`（计划 Task 6，P61-D12、P6-C9）：工厂继承 Core 的 `NamedFactory<MqttClient>`，按名称复用实例、支持别名与移除，释放工厂会释放其中的客户端；`AddMqttClients()` 内部用 `TryAdd`，**可以重复调用**，容器没有 `ILoggerFactory` 时创建的客户端不输出日志。命名与调用习惯照 `AddChannels` / `AddPlcClients` / `AddWebApiClients`。
+- 2026-10-12 [Mqtt] `MqttClientOptions` 新增内部的 `Copy()`：创建客户端时**复制**一份选项，因此宿主之后修改原对象不影响已创建的客户端（P6-C9 的快照）。配套用例用反射逐项核对副本包含每一个属性——将来新增属性却忘了写进 `Copy()` 时会立刻失败。
 - 2026-10-12 [Mqtt] 实现自动重连与恢复订阅（计划 Task 5，P61-D9、D10、D11、P6-C11）：SDK 报告"原本已连接、并非我方主动断开"的断线时，状态转 `Reconnecting`（`Reason` 取 SDK 给出的原因，没有原因串时回退到原因码），并在**后台任务**里启动重连循环——不在 SDK 的事件回调里重连（MQTTnet 明确警告这样会死锁）。退避用 Core 的 `ExponentialBackoff`，不限次数，每次尝试前先等待；每一次尝试都走同一把生命周期锁。**首次 `ConnectAsync` 失败不启动重连**（P6-C11）；`AutoReconnect = false` 时断线直接转 `Disconnected` 且不再尝试。重连成功后：Broker 的 Session Present 为 false 时按订阅表**逐个**重新订阅（被拒绝的过滤器记一条 Warning 并移出表，避免每次重连都重试），恢复完毕才把状态报成 `Connected`——宿主看到 `Connected` 时订阅已经可用；Session Present 为 true 时不重新订阅。`DisconnectAsync` 与释放会停止循环并**等待它退出**，因此释放之后不留残留的后台任务。
 - 2026-10-12 [Mqtt] 新增的内部类型：`MqttReconnectLoop`（通用一点的"带退避的后台重试驱动"）、`MqttReconnectController`（MQTT 特有的重连策略：触发条件、成功后做什么）、`MqttSubscriptionTable` 的有序版本（`ConcurrentDictionary` 的枚举顺序没有保证，而重连要"逐个"恢复，因此表自己维护首次订阅的顺序）。
 
 ### 变更（Changed）
 
+- 2026-10-12 [Mqtt] 修复"创建后再改选项对象会影响已连接的客户端"的缺陷：此前 `MqttSdkClient` 直接持有调用方的 `MqttClientOptions` 引用，每次连接时从中读值，因此改一下 `Port` 就会让下一次 `ConnectAsync` 连到别处。现在在构造时复制一份快照。
 - 2026-10-12 [Mqtt] 修复重连循环**只能运行一次**的问题：`TryStart` 在 `running` 非空时返回 false，而循环正常退出时并没有清掉这个句柄，因此第二次断线时状态会永远停在 `Reconnecting`。现在循环退出时在 `finally` 里清空句柄，并用一把小锁保护"启动 / 停止 / 清句柄"三者的互斥。已由"遗嘱在第二次异常断开后仍然送达"那条用例钉住。
 - 2026-10-12 [Mqtt] 空的 `ContentType`（`""`）按"未设置"处理，与 SDK 的判断一致——空字符串在报文上与不带这个属性没有区别。
 - 2026-10-12 [Mqtt] MQTT 5 的 `MessageExpiryInterval` 是唯一一项 SDK 的校验器**不**当作"仅 5.0"的属性，因此在 `MqttSdkMessages.TryValidateForPublish` 里单独补了一次判断：3.1.1 连接上带 `MessageExpiryInterval` 返回 `InvalidRequest` 且不发送。其余四项 MQTT 5 属性仍由 SDK 判定，本库不重复实现。
