@@ -117,11 +117,11 @@ internal static class SecsItemCodec
 
         return format == SecsFormat.List
             ? ReadList(ref data, length, depth, end, offset)
-            : ReadScalar(data, format, length, offset);
+            : ReadScalar(ref data, format, length, offset);
     }
 
-    private static CommResult<SecsItem> ReadScalar(
-        ReadOnlySpan<byte> data, SecsFormat format, int length, int offset)
+    // 标量要连载荷一起消耗掉：列表的子项是紧挨着写的，游标不前进的话下一个子项就从载荷中间开始读了。
+    private static CommResult<SecsItem> ReadScalar(ref ReadOnlySpan<byte> data, SecsFormat format, int length, int offset)
     {
         int elementBytes = ElementBytes(format);
         if (length % elementBytes != 0)
@@ -129,7 +129,9 @@ internal static class SecsItemCodec
         if (length > data.Length)
             return Invalid<SecsItem>($"The item at offset {offset} is truncated: it declares {length} byte(s) but only {data.Length} byte(s) remain.");
 
-        return CommResult<SecsItem>.Success(SecsItem.FromPayload(format, data.Slice(0, length).ToArray()));
+        byte[] payload = data.Slice(0, length).ToArray();
+        data = data.Slice(length);
+        return CommResult<SecsItem>.Success(SecsItem.FromPayload(format, payload));
     }
 
     private static CommResult<SecsItem> ReadList(ref ReadOnlySpan<byte> data, int count, int depth, int end, int offset)

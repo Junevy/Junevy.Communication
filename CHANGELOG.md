@@ -39,6 +39,12 @@
   - **结构错误走结果不抛异常**，一律返回 `CommErrorKind.ProtocolViolation`，消息写明偏移与原因：长度字节数为 0、长度不是元素宽度的整数倍、载荷截断、未知格式码（含 `J` 与 `C2`）、嵌套深度超过 64、列表声明的子项数超过剩余字节的一半、正文超过 `MaxMessageLength`。
   - **上限全部在切之前判定**，声明了多长的载荷都不会先按声明分配内存（P51-D5）。
   - 黄金向量：第 17.2 节 V-I-1 至 V-I-17 全部双向逐字节通过；255 / 256、65535 / 65536 个字符的 1 / 2 / 3 个长度字节边界往返通过。
+- 2026-10-13 [Secs] 新增内部的 HSMS 协议层（计划 Task 4，P51-D6、D7、D8）。
+  - **报文**：4 字节长度（大端、不含自身）+ 10 字节头 + 正文；数据消息的会话号是设备号、头字节 2 = W 位 << 7 | Stream、头字节 3 = Function；控制消息的会话号是 0xFFFF，`Reject.req` 例外——它回送被拒消息的会话号。
+  - **控制消息**：`Select.req/rsp`、`Deselect.req/rsp`、`Linktest.req/rsp`、`Reject.req`、`Separate.req`，System Bytes 由调用方显式传入（应答回送对方的号，新发起用 `HsmsSystemBytes.Next()`），因此"这条报文用的是谁的号"在每个调用点都看得见。
+  - **关联键（P51-D7、Q34）**：`CorrelationMode.Keyed`，键是 System Bytes，**只有应答类消息取应答键**——数据消息中偶数 Function 的、`*.rsp` 与 `Reject.req`。主消息与 `*.req` 不取应答键，否则对方主消息的 System Bytes 碰巧等于我方在途请求时会被错认成应答。
+  - **分帧**：`LengthField`，偏移 0、宽 4、大端、修正值 0，剥除 0 字节——帧交给协议层时仍带 4 字节长度；最大帧长取 `MaxMessageLength`。
+  - 黄金向量：第 17.1 节 V-H-1 至 V-H-18 全部双向逐字节通过。
 
 ### 变更（Changed）
 
