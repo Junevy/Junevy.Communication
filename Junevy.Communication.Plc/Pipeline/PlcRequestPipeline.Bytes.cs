@@ -50,7 +50,7 @@ internal partial class PlcRequestPipeline<TAddress> where TAddress : PlcAddress
         return await ExclusiveAsync(cancellationToken, async () =>
         {
             CommResult<byte[]> read = await transfer.ReadWordsAsync(ReadBytesOperation, target, words, cancellationToken).ConfigureAwait(false);
-            return read.IsSuccess ? CommResult<byte[]>.Success(TakeBytes(read.Data!, count)) : read.As<byte[]>();
+            return read.IsSuccess ? CommResult<byte[]>.Success(TakeBytes(read.Data, count)) : read.As<byte[]>();
         }).ConfigureAwait(false);
     }
 

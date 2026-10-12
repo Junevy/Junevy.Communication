@@ -99,7 +99,7 @@ internal sealed class PlcPacketExchange
         buildRequest(request);
 
         CommResult<byte[]> reply = await channel.RequestAsync(request.WrittenMemory, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return reply.IsSuccess ? parseResponse(reply.Data!) : reply.ToResult();
+        return reply.IsSuccess ? parseResponse(reply.Data) : reply.ToResult();
     }
 
     // 只有链路层的临时性失败才重试；对端的错误码、参数错误与取消都是终态。

@@ -98,9 +98,9 @@ internal sealed class TcpListenerLoop
                     continue;
                 }
 
-                if (!tryStart(bound.Data!))
+                if (!tryStart(bound.Data))
                 {
-                    bound.Data!.Dispose();
+                    bound.Data.Dispose();
                     return;
                 }
 

@@ -108,7 +108,7 @@ public sealed class TcpClientChannel : StreamClientChannel, ITcpClientChannel
         if (!connected.IsSuccess)
             return connected.As<Stream>();
 
-        Socket socket = connected.Data!;
+        Socket socket = connected.Data;
         Socket? previous;
         lock (socketSync)
         {

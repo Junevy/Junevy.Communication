@@ -174,11 +174,11 @@ public sealed class TcpServer : ITcpServer
             {
                 if (core.StopRequested)
                 {
-                    bound.Data!.Dispose();
+                    bound.Data.Dispose();
                     return CommResult.Fail("The server was stopped while it was starting.", CommErrorKind.ConnectionClosed);
                 }
 
-                StartListening(bound.Data!);
+                StartListening(bound.Data);
             }
 
             logger.LogInformation("TCP server {Name} is listening.", name);

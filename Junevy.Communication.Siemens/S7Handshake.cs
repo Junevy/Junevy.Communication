@@ -32,7 +32,7 @@ internal sealed class S7Handshake : IConnectionInitializer
         if (!confirm.IsSuccess)
             return confirm.ToResult();
 
-        CommResult connectionConfirm = CotpFrames.ReadConnectionConfirm(confirm.Data!);
+        CommResult connectionConfirm = CotpFrames.ReadConnectionConfirm(confirm.Data);
         if (!connectionConfirm.IsSuccess)
             return connectionConfirm;
 
@@ -43,7 +43,7 @@ internal sealed class S7Handshake : IConnectionInitializer
         if (!setup.IsSuccess)
             return setup.ToResult();
 
-        CommResult<int> negotiated = S7SetupCommunication.ReadNegotiatedPdu(setup.Data!, pduReference);
+        CommResult<int> negotiated = S7SetupCommunication.ReadNegotiatedPdu(setup.Data, pduReference);
         if (!negotiated.IsSuccess)
             return negotiated.ToResult();
 

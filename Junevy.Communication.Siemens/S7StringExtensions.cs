@@ -27,7 +27,7 @@ public static class S7StringExtensions
 
         CommResult<byte[]> bytes = await client.ReadBytesAsync(address, field.Data, cancellationToken).ConfigureAwait(false);
         return bytes.IsSuccess
-            ? S7StringFormat.Decode(bytes.Data!, maxLength, client.DataFormat.StringEncoding)
+            ? S7StringFormat.Decode(bytes.Data, maxLength, client.DataFormat.StringEncoding)
             : bytes.As<string>();
     }
 
@@ -64,7 +64,7 @@ public static class S7StringExtensions
             return field.As<string>();
 
         CommResult<byte[]> bytes = await client.ReadBytesAsync(address, field.Data, cancellationToken).ConfigureAwait(false);
-        return bytes.IsSuccess ? S7StringFormat.DecodeWide(bytes.Data!, maxLength) : bytes.As<string>();
+        return bytes.IsSuccess ? S7StringFormat.DecodeWide(bytes.Data, maxLength) : bytes.As<string>();
     }
 
     /// <summary>写入 S7 的 <c>WString</c> 字段。</summary>

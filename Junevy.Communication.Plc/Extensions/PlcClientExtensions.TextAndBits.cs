@@ -29,7 +29,7 @@ public static partial class PlcClientExtensions
         if (!bytes.IsSuccess)
             return bytes.As<string>();
 
-        string text = client.DataFormat.StringEncoding.GetString(bytes.Data!, 0, byteLength);
+        string text = client.DataFormat.StringEncoding.GetString(bytes.Data, 0, byteLength);
         int terminator = text.IndexOf('\0');
         return CommResult<string>.Success(terminator < 0 ? text : text.Substring(0, terminator));
     }
@@ -106,7 +106,7 @@ public static partial class PlcClientExtensions
     {
         RequireClient(client);
         CommResult<byte[]> bytes = await client.ReadBytesAsync(address, 1, cancellationToken).ConfigureAwait(false);
-        return bytes.IsSuccess ? CommResult<byte>.Success(bytes.Data![0]) : bytes.As<byte>();
+        return bytes.IsSuccess ? CommResult<byte>.Success(bytes.Data[0]) : bytes.As<byte>();
     }
 
     /// <summary>
@@ -133,7 +133,7 @@ public static partial class PlcClientExtensions
     {
         RequireClient(client);
         CommResult<bool[]> bits = await client.ReadBitsAsync(address, 1, cancellationToken).ConfigureAwait(false);
-        return bits.IsSuccess ? CommResult<bool>.Success(bits.Data![0]) : bits.As<bool>();
+        return bits.IsSuccess ? CommResult<bool>.Success(bits.Data[0]) : bits.As<bool>();
     }
 
     /// <summary>写入一个位（规则同 <c>WriteBitsAsync</c>，包括原生位写入与字软元件的读-改-写开关）。</summary>
@@ -152,7 +152,7 @@ public static partial class PlcClientExtensions
     private static CommResult<bool> RequiresWholeWords(IPlcClient client, string address)
     {
         CommResult<PlcAddress> parsed = client.ParseAddress(address);
-        return parsed.IsSuccess ? CommResult<bool>.Success(parsed.Data!.Unit != PlcAddressUnit.Byte) : parsed.As<bool>();
+        return parsed.IsSuccess ? CommResult<bool>.Success(parsed.Data.Unit != PlcAddressUnit.Byte) : parsed.As<bool>();
     }
 
     // 把编码后的字节扩展为 destinationLength 个字节，多出的部分保持 0x00；缩短由调用方在编码长度检查里拒绝。

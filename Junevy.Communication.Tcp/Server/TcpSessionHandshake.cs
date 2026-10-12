@@ -54,7 +54,7 @@ internal sealed class TcpSessionHandshake
         if (!secured.IsSuccess)
             return secured.ToResult();
 
-        if (!openChannel(session, secured.Data!))
+        if (!openChannel(session, secured.Data))
             return CommResult.Fail("The session was closed during its handshake.", CommErrorKind.ConnectionClosed);
 
         var handshake = new HandshakeRunner(options.Initializer, session.ClosingToken, () => HandshakeAbandoned(session),

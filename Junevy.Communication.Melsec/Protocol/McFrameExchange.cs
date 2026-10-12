@@ -57,7 +57,7 @@ internal sealed class McFrameExchange
         if (!decoded.IsSuccess)
             return decoded.As<byte[]>();
 
-        McResponse response = decoded.Data!;
+        McResponse response = decoded.Data;
         CommResult end = response.CheckEndCode();
         return end.IsSuccess ? CommResult<byte[]>.Success(response.Data) : end.As<byte[]>();
     }
@@ -69,7 +69,7 @@ internal sealed class McFrameExchange
         if (!decoded.IsSuccess)
             return decoded.As<bool[]>();
 
-        McResponse response = decoded.Data!;
+        McResponse response = decoded.Data;
         CommResult end = response.CheckEndCode();
         return end.IsSuccess ? CommResult<bool[]>.Success(response.Bits) : end.As<bool[]>();
     }
@@ -78,7 +78,7 @@ internal sealed class McFrameExchange
     public CommResult ReadWrite(ReadOnlySpan<byte> frame)
     {
         CommResult<McResponse> decoded = Decode(frame, McDataKind.None, 0);
-        return decoded.IsSuccess ? decoded.Data!.CheckEndCode() : decoded.ToResult();
+        return decoded.IsSuccess ? decoded.Data.CheckEndCode() : decoded.ToResult();
     }
 
     /// <summary>检查回环应答：结束码为 0，且回显与发送的数据一致。</summary>
@@ -88,7 +88,7 @@ internal sealed class McFrameExchange
         if (!decoded.IsSuccess)
             return decoded.ToResult();
 
-        McResponse response = decoded.Data!;
+        McResponse response = decoded.Data;
         CommResult end = response.CheckEndCode();
         if (!end.IsSuccess)
             return end;

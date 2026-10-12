@@ -74,7 +74,7 @@ internal sealed class TcpConnector
             return resolved.As<Socket>();
 
         CommResult<Socket>? last = null;
-        foreach (IPAddress address in resolved.Data!)
+        foreach (IPAddress address in resolved.Data)
         {
             scope.Token.ThrowIfCancellationRequested();
             CommResult<Socket> attempt = await TryConnectAsync(address, scope).ConfigureAwait(false);

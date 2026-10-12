@@ -84,7 +84,7 @@ internal static class FinsMemoryArea
         if (!opened.IsSuccess)
             return opened;
 
-        int returned = opened.Data!.Length;
+        int returned = opened.Data.Length;
         return returned == payloadBytes
             ? opened
             : FinsErrors.Violation<byte[]>(
@@ -102,7 +102,7 @@ internal static class FinsMemoryArea
         if (!opened.IsSuccess)
             return opened.ToResult();
 
-        return opened.Data!.Length == 0
+        return opened.Data.Length == 0
             ? CommResult.Success()
             : FinsErrors.Violation($"The FINS write acknowledgement carries {opened.Data.Length} data byte(s); it has none.");
     }

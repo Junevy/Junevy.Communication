@@ -102,7 +102,7 @@ internal sealed class UdpDatagramTransport : IDatagramTransport
                 return resolved.As<IDatagramTransport>();
             }
 
-            remote = new IPEndPoint(resolved.Data!, settings.RemotePort);
+            remote = new IPEndPoint(resolved.Data, settings.RemotePort);
         }
 
         return CommResult<IDatagramTransport>.Success(new UdpDatagramTransport(client, remote));

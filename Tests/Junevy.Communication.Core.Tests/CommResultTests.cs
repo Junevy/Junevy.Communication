@@ -34,6 +34,30 @@ public sealed class CommResultTests
     }
 
     [Fact]
+    public void Success_NullData_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => CommResult<string>.Success(null!));
+    }
+
+    [Fact]
+    public void Success_DefaultValueTypes_Succeed()
+    {
+        CommResult<int> zero = CommResult<int>.Success(0);
+
+        Assert.True(zero.IsSuccess);
+        Assert.Equal(0, zero.Data);
+    }
+
+    [Fact]
+    public void Success_EmptyReferenceData_Succeeds()
+    {
+        CommResult<string> empty = CommResult<string>.Success(string.Empty);
+
+        Assert.True(empty.IsSuccess);
+        Assert.Equal(string.Empty, empty.Data);
+    }
+
+    [Fact]
     public void As_PropagatesFailureFields()
     {
         var exception = new InvalidOperationException("inner");

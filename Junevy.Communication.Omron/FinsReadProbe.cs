@@ -42,6 +42,6 @@ internal sealed class FinsReadProbe : IHealthProbe
         if (!response.IsSuccess)
             return response.ToResult();
 
-        return FinsMemoryArea.CheckProbeResponse(response.Data!, sessionId);
+        return FinsMemoryArea.CheckProbeResponse(response.Data, sessionId);
     }
 }

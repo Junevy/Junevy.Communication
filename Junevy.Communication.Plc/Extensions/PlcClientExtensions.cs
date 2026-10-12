@@ -175,7 +175,7 @@ public static partial class PlcClientExtensions
         int bytesPerValue = words * PlcLayout.WordBytes;
         var values = new T[count];
         for (int i = 0; i < count; i++)
-            values[i] = decode(bytes.Data!.AsSpan(i * bytesPerValue), client.DataFormat.WordOrder);
+            values[i] = decode(bytes.Data.AsSpan(i * bytesPerValue), client.DataFormat.WordOrder);
 
         return CommResult<T[]>.Success(values);
     }
@@ -201,7 +201,7 @@ public static partial class PlcClientExtensions
     }
 
     private static CommResult<T> First<T>(CommResult<T[]> values)
-        => values.IsSuccess ? CommResult<T>.Success(values.Data![0]) : values.As<T>();
+        => values.IsSuccess ? CommResult<T>.Success(values.Data[0]) : values.As<T>();
 
     // 字数超过上限时返回 InvalidRequest。使用 long 计算，避免溢出；数量小于 1 由 ReadAsync / WriteAsync 处理。
     private static CommResult? CheckSize(int count, int words)

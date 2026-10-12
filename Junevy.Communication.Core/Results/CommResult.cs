@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Junevy.Communication.Core.Results;
 
 /// <summary>
@@ -18,12 +20,13 @@ public sealed class CommResult
     }
 
     /// <summary>是否成功。</summary>
+    [MemberNotNullWhen(false, nameof(ErrorMessage))]
     public bool IsSuccess { get; }
 
     /// <summary>失败的机器可读分类（成功时为 <see cref="CommErrorKind.None"/>）。</summary>
     public CommErrorKind ErrorKind { get; }
 
-    /// <summary>错误信息（英文）；成功时为 null。</summary>
+    /// <summary>错误信息（英文）；成功时为 null，失败时非空。</summary>
     public string? ErrorMessage { get; }
 
     /// <summary>协议原始错误码（例如 MC 结束码 0xC051）；没有协议码时为 null。</summary>
@@ -65,7 +68,7 @@ public sealed class CommResult
         if (IsSuccess)
             throw new InvalidOperationException("A successful result cannot be converted to a failure of another type.");
 
-        return CommResult<T>.Fail(ErrorMessage!, ErrorKind, ProtocolErrorCode, Exception);
+        return CommResult<T>.Fail(ErrorMessage, ErrorKind, ProtocolErrorCode, Exception);
     }
 
     /// <summary>
@@ -109,15 +112,17 @@ public sealed class CommResult<T>
     }
 
     /// <summary>是否成功。</summary>
+    [MemberNotNullWhen(true, nameof(Data))]
+    [MemberNotNullWhen(false, nameof(ErrorMessage))]
     public bool IsSuccess { get; }
 
-    /// <summary>成功时的数据；失败时为默认值。</summary>
+    /// <summary>成功时的数据；失败时为默认值，成功分支内非 null。</summary>
     public T? Data { get; }
 
     /// <summary>失败的机器可读分类（成功时为 <see cref="CommErrorKind.None"/>）。</summary>
     public CommErrorKind ErrorKind { get; }
 
-    /// <summary>错误信息（英文）；成功时为 null。</summary>
+    /// <summary>错误信息（英文）；成功时为 null，失败时非空。</summary>
     public string? ErrorMessage { get; }
 
     /// <summary>协议原始错误码（例如 MC 结束码 0xC051）；没有协议码时为 null。</summary>
@@ -127,12 +132,18 @@ public sealed class CommResult<T>
     public Exception? Exception { get; }
 
     /// <summary>
-    /// 成功结果。
+    /// 成功结果。数据不能为 null：约定 <typeparamref name="T"/> 不是可空引用类型（值类型的默认值合法）。
     /// </summary>
     /// <param name="data">成功时的数据。</param>
     /// <returns>成功结果。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="data"/> 为 null。</exception>
     public static CommResult<T> Success(T data)
-        => new CommResult<T>(true, data, CommErrorKind.None, null, null, null);
+    {
+        if (data is null)
+            throw new ArgumentNullException(nameof(data));
+
+        return new CommResult<T>(true, data, CommErrorKind.None, null, null, null);
+    }
 
     /// <summary>
     /// 失败结果。
@@ -161,7 +172,7 @@ public sealed class CommResult<T>
         if (IsSuccess)
             throw new InvalidOperationException("A successful result cannot be converted to a failure of another type.");
 
-        return CommResult<TOther>.Fail(ErrorMessage!, ErrorKind, ProtocolErrorCode, Exception);
+        return CommResult<TOther>.Fail(ErrorMessage, ErrorKind, ProtocolErrorCode, Exception);
     }
 
     /// <summary>
@@ -171,7 +182,7 @@ public sealed class CommResult<T>
     public CommResult ToResult()
         => IsSuccess
             ? CommResult.Success()
-            : CommResult.Fail(ErrorMessage!, ErrorKind, ProtocolErrorCode, Exception);
+            : CommResult.Fail(ErrorMessage, ErrorKind, ProtocolErrorCode, Exception);
 
     /// <summary>
     /// 返回可读文本：成功为 "Success"；失败为 "Kind: message"，有协议码时追加 " (code 0x...)"。

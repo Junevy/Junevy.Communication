@@ -276,6 +276,32 @@ public static class PlcComponentWiring
 
 ### 14.2 执行汇报与偏差（执行者填写）
 
+#### Task 5：`CommResult` 可空性标注（P45-D5，F11）
+
+**新增**：无新文件。
+**修改**：`build/Polyfills/NullableAttributes.cs`（加 `MemberNotNullWhenAttribute`，改正文件头注释）、`Junevy.Communication.Core/Results/CommResult.cs`（三个特性 + `Success` 的 null 守卫 + 两处 XML 注释）、`Tests/Junevy.Communication.Core.Tests/CommResultTests.cs`（加 3 条用例）、**23 个生产文件**的纯 `!` 清理、`Junevy.Communication.Core/README.md`、`CHANGELOG.md`。
+
+**测试先红后绿的证据**：先只往 `CommResultTests.cs` 加用例，`dotnet test --filter CommResultTests` → **12 个用例里 1 失败**（`Success_NullData_Throws` 报 `Assert.Throws` 未抛异常），两个目标都失败。加上 null 守卫后转绿；Core 全量 **160 通过 / 0 失败 / 0 跳过**（net8.0 与 net472 各一次），比 Task 4 后多 3 条（`Success_NullData_Throws`、`Success_DefaultValueTypes_Succeed`、`Success_EmptyReferenceData_Succeeds`）。
+
+**第 2 节自查**：
+
+- **Q31 清理 `!` 不改行为**：逐行核对过。`git diff -U0` 的 **41 个改动行**里，每一行的"旧行去掉 `.Data!` 的叹号"与"新行"**完全相等**（脚本核对结果 `non-'!'-removal diffs=0`）；另有 3 行在 `CommResult.cs` 里是 `ErrorMessage!`（前面没有点，因此不在同一批正则里，单独处理）。分布与计划基线一致：Core 3、Channels 5、Tcp 7、Udp 1、Plc 13、Melsec 5、Siemens 5、Omron 5 = **44 处**，与第 3 节 P45-D5 写的"41 + 3"逐个吻合。
+- **标注确实生效的证据**：
+  - 正向：`TreatWarningsAsErrors` 下 Debug 与 Release 均 **0 错误**——41 处 `.Data!` 去掉叹号后编译器不再报 CS8604，说明流分析认得标注。
+  - 反向（变异检查）：临时把 `CommResult.cs` 里三行 `[MemberNotNullWhen…]` 删掉再构建 → **12 个 CS8604**（"可能为 null 的参数"）；恢复后回到 0 错误。这正是审阅者清单里"去掉 `MemberNotNullWhen`（生产构建应失败）"那一条的提前验证。
+- **编译器证明不了的、需要保留的 `!`**：**没有**。计划第 6 节 Task 5 第 4 条要求的"逐处列出原因"因此是空列表。`PlcTransfer.cs:154` 的 `packet.Data!.Length` 与 `PlcClientExtensions.cs:178` 的 `bytes.Data!.AsSpan(…)` 都属"跨越属性链 / 传给 Span 转换"的情形，编译器同样能证明，因此一并去掉。
+- **net472 侧**：`MemberNotNullWhenAttribute` 是 `internal sealed`、`AttributeUsage(Method | Property, AllowMultiple = true, Inherited = false)`、两个构造函数、`ReturnValue` 与 `Members` 属性，与 BCL 的定义一致；`[AttributeUsage]` 的 `Inherited = false` 与既有三个 polyfill 同一写法。文件头注释已改成正确说法（"编译器按特性全名识别，标在公开成员上时引用方的流分析同样生效"）。
+- **行为变化只有一处**：`CommResult<T>.Success(null)` 现在抛 `ArgumentNullException`（`CommResult.Fail` 的 `message` 守卫早就有，同样写法）。已写进 CHANGELOG 的"破坏性变更"，`<param>` 与 `<exception>` 已同步。Task 0 复核过没有 `CommResult<X?>` 的用法，也没有任何 `CommResult<T>.Success(null/default)` 的调用点（那 5 处 `Success(default…)` 全是 `WebApiResult<T>`，不在本期范围）。
+- **Q28′ MELSEC 行为不变**：Melsec 的 diff 只有 5 处 `!`（`McLoopbackProbe.cs` 1、`McFrameExchange.cs` 4），测试 **184 + 1 跳过** 与基线一致。
+- **依赖方向 / 公开 API**：没有新增程序集引用；`MemberNotNullWhenAttribute` 是 `internal`，不进入公开 API（第 2 节的 Q11 只要求公开 API 不增加计划外的成员，这里是零增加）。
+- **文件 ≤ 300 行 / 方法 ≤ 60 行**：`CommResult.cs` 182 → 196 行（增加的是注释与守卫），仍在限内；`methodlen.py 61` 无输出。
+
+**第 3 节度量**：重复窗口仍是 **34**（本 Task 只做语法级清理，不改结构）；超过 60 行的方法 0；超过 300 行的文件 9；IVT 仍为 2。有效行变化极小（`CommResult.cs` +14 行注释与守卫，其余 22 个生产文件净 0）。
+
+**三条命令的结果**：`dotnet build -c Debug` 0 错误；`dotnet build -c Release` 0 错误、31 个警告（同基线）；`dotnet test -c Debug` **23 个测试项目 / 目标组合全部通过，0 失败**——Core **160**、Plc 262、Channels 278、Tcp 129、Udp 38、Serial 63+2 跳过、Melsec 184+1 跳过、Architecture 11、WebApi 732 / 733、Modbus 405、Siemens 316、Omron 259。
+
+**顺带发现并修正**：Core README 新增的示例初版用了未定义的 `Send` / `Consume` / `Log` 占位名，在临时项目里编译失败（CS0103）；已改成完全自足的代码并经 net8.0 与 net472 编译通过。
+
 #### Task 4：Plc 的 `PlcComponentWiring` 与三个 profile（P45-D4，F4、F9）
 
 **新增**：`Junevy.Communication.Plc/Factory/PlcComponentWiring.cs`（95 行）、`Tests/Junevy.Communication.Plc.Tests/PlcComponentWiringTests.cs`。

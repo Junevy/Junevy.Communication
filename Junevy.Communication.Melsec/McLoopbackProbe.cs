@@ -32,6 +32,6 @@ internal sealed class McLoopbackProbe : IHealthProbe
         CommResult<byte[]> response = await channel
             .RequestAsync(exchange.Loopback(Payload), null, cancellationToken)
             .ConfigureAwait(false);
-        return response.IsSuccess ? exchange.CheckLoopback(response.Data!, Payload) : response.ToResult();
+        return response.IsSuccess ? exchange.CheckLoopback(response.Data, Payload) : response.ToResult();
     }
 }

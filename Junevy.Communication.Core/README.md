@@ -42,6 +42,31 @@ Console.WriteLine(typed.ErrorKind);
 
 `Fail` rejects `CommErrorKind.None` with `ArgumentException`. `As<T>()` on a successful result throws `InvalidOperationException`.
 
+`IsSuccess` carries the invariants with it, so the nullable analysis does the narrowing for you:
+
+| On | `IsSuccess` is `true` | `IsSuccess` is `false` |
+|---|---|---|
+| `CommResult<T>` | `Data` is not null | `ErrorMessage` is not null |
+| `CommResult` | — | `ErrorMessage` is not null |
+
+```csharp
+using System;
+using Junevy.Communication.Core.Results;
+
+CommResult<byte[]> reply = CommResult<byte[]>.Success(new byte[] { 1, 2, 3 });
+if (reply.IsSuccess)
+{
+    byte[] payload = reply.Data;        // no null check and no null-forgiving operator
+    Console.WriteLine(payload.Length);
+}
+
+CommResult<byte[]> failed = CommResult<byte[]>.Fail("No reply.", CommErrorKind.Timeout);
+if (!failed.IsSuccess)
+    Console.WriteLine(failed.ErrorMessage);    // not null either
+```
+
+`CommResult<T>.Success` rejects a null `data` with `ArgumentNullException`, which is what makes the first row hold: `T` is expected to be a non-nullable type, and a value type's default (`CommResult<int>.Success(0)`) is still fine. Use `Fail` for the "no value" case — `Data` is `default` there.
+
 `CommResult<T>.ToResult()` is the reverse for the data: it drops the data and keeps the kind, message, protocol code and exception. A successful result becomes `CommResult.Success()`.
 
 ```csharp

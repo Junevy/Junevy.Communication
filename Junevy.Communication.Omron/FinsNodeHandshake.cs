@@ -32,12 +32,12 @@ internal sealed class FinsNodeHandshake : IConnectionInitializer
         if (!reply.IsSuccess)
             return reply.ToResult();
 
-        CommResult<FinsNodeNumbers> nodes = FinsNodeAddress.ReadResponse(reply.Data!);
+        CommResult<FinsNodeNumbers> nodes = FinsNodeAddress.ReadResponse(reply.Data);
         if (!nodes.IsSuccess)
             return nodes.ToResult();
 
         // 以应答为准：请求固定节点号时 PLC 也可能另派一个号，后续 SA1 用应答里的那个（P4-D20 ⑥）。
-        session.ReplaceAfterHandshake(settings.RouteWith(nodes.Data!));
+        session.ReplaceAfterHandshake(settings.RouteWith(nodes.Data));
         return CommResult.Success();
     }
 }

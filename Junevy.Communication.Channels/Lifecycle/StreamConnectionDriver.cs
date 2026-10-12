@@ -90,14 +90,14 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
         LiveConnection? live = null;
         try
         {
-            CommResult<Stream> secured = await SecureWithinWindowAsync(opened.Data!, window, cancellationToken).ConfigureAwait(false);
+            CommResult<Stream> secured = await SecureWithinWindowAsync(opened.Data, window, cancellationToken).ConfigureAwait(false);
             if (!secured.IsSuccess)
             {
                 SafeAbortTransport();
                 return secured.ToResult();
             }
 
-            live = CreateConnection(secured.Data!, new ConnectionAttempt(owner, generation));
+            live = CreateConnection(secured.Data, new ConnectionAttempt(owner, generation));
             live.Channel.Start();
             return await CompleteOpenAsync(live, window, cancellationToken).ConfigureAwait(false);
         }
@@ -233,7 +233,7 @@ internal sealed class StreamConnectionDriver : IConnectionDriver
         work.ContinueWith(task =>
         {
             if (task.Status == TaskStatus.RanToCompletion && task.Result.IsSuccess)
-                task.Result.Data!.Dispose();
+                task.Result.Data.Dispose();
             else if (task.IsFaulted)
                 _ = task.Exception;
         }, TaskContinuationOptions.ExecuteSynchronously);

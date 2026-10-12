@@ -73,7 +73,7 @@ internal sealed class DatagramConnectionDriver : IConnectionDriver
         if (!opened.IsSuccess)
             return opened.ToResult();
 
-        IDatagramTransport transport = opened.Data!;
+        IDatagramTransport transport = opened.Data;
 
         // 握手时限从绑定之后开始计时。时限耗尽时中止传输，使挂起的初始化器结束。握手成功后释放窗口，之后不再中止连接。
         using TimeoutScope window = TimeoutScope.Start(options.Core.HandshakeTimeout, cancellationToken, () => SafeAbort(transport));

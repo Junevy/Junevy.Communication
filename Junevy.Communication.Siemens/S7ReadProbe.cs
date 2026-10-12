@@ -34,7 +34,7 @@ internal sealed class S7ReadProbe : IHealthProbe
         if (!response.IsSuccess)
             return response.ToResult();
 
-        if (!S7Message.TryOpenResponse(response.Data!, pduReference,
+        if (!S7Message.TryOpenResponse(response.Data, pduReference,
                 out _, out _, out _, out _, out string? violation))
             return S7Errors.Violation(violation);
 

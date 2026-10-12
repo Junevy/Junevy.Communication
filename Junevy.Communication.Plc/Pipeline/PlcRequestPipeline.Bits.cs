@@ -60,7 +60,7 @@ internal partial class PlcRequestPipeline<TAddress> where TAddress : PlcAddress
         {
             CommResult<byte[]> read = await transfer.ReadWordsAsync(ReadBitsOperation, target, words, cancellationToken).ConfigureAwait(false);
             return read.IsSuccess
-                ? CommResult<bool[]>.Success(PlcBitPacking.Extract(read.Data!, wordOrder, bitStart, count))
+                ? CommResult<bool[]>.Success(PlcBitPacking.Extract(read.Data, wordOrder, bitStart, count))
                 : read.As<bool[]>();
         }).ConfigureAwait(false);
     }
@@ -78,7 +78,7 @@ internal partial class PlcRequestPipeline<TAddress> where TAddress : PlcAddress
         {
             CommResult<byte[]> read = await transfer.ReadBytesAsync(ReadBitsOperation, target, bytes, cancellationToken).ConfigureAwait(false);
             return read.IsSuccess
-                ? CommResult<bool[]>.Success(PlcBitPacking.ExtractFromBytes(read.Data!, bitStart, count))
+                ? CommResult<bool[]>.Success(PlcBitPacking.ExtractFromBytes(read.Data, bitStart, count))
                 : read.As<bool[]>();
         }).ConfigureAwait(false);
     }
@@ -132,7 +132,7 @@ internal partial class PlcRequestPipeline<TAddress> where TAddress : PlcAddress
         if (!read.IsSuccess)
             return read.As<bool>();
 
-        PlcBitPacking.Insert(read.Data!, wordOrder, bitStart, values.Span);
-        return Acknowledge(await transfer.WriteWordsAsync(WriteBitsOperation, target, read.Data!, cancellationToken).ConfigureAwait(false));
+        PlcBitPacking.Insert(read.Data, wordOrder, bitStart, values.Span);
+        return Acknowledge(await transfer.WriteWordsAsync(WriteBitsOperation, target, read.Data, cancellationToken).ConfigureAwait(false));
     }
 }

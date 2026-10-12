@@ -76,7 +76,7 @@ public static class ByteChannelTextExtensions
     }
 
     private static CommResult<string> Decode(CommResult<byte[]> result, Encoding encoding)
-        => result.IsSuccess ? CommResult<string>.Success(encoding.GetString(result.Data!)) : result.As<string>();
+        => result.IsSuccess ? CommResult<string>.Success(encoding.GetString(result.Data)) : result.As<string>();
 
     private static void ValidateChannel(IByteChannel? channel)
     {

@@ -151,7 +151,7 @@ internal sealed class PlcTransfer<TAddress> where TAddress : PlcAddress
         if (!packet.IsSuccess)
             return packet.ToResult();
 
-        PlcLayout.RequireLength(packet.Data!.Length, length, hook);
+        PlcLayout.RequireLength(packet.Data.Length, length, hook);
         Array.Copy(packet.Data, 0, destination, offset, length);
         return CommResult.Success();
     }
