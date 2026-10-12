@@ -9,7 +9,7 @@ namespace Junevy.Communication.Tcp.Tests;
 /// <summary>
 /// 事件处理器内的重入调用不得死锁（计划 D16 边界，审阅者补充的固定规则）。处理器内以同步方式调用停止、释放或关闭，
 /// 调用必须在明显短于 <c>StopTimeout</c> 的时间内返回，并且服务端最终进入 Stopped。
-/// 每个测试都有上限（<c>Fact(Timeout)</c> 与 <see cref="TcpTestHelpers.WithinAsync{T}(Task{T}, int)"/>），挂起时测试失败而不是卡住。
+/// 每个测试都有上限（<c>Fact(Timeout)</c> 与 <see cref="Arrival.WithinAsync{T}(Task{T}, int)"/>），挂起时测试失败而不是卡住。
 /// </summary>
 [Collection(SocketTimingCollection.Name)]
 public sealed class TcpServerReentrancyTests
@@ -31,13 +31,13 @@ public sealed class TcpServerReentrancyTests
             handlerDuration.TrySetResult(stopwatch.Elapsed);
         };
 #pragma warning restore xUnit1031
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         await using TcpClientChannel client = CreateClient(port);
-        Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
         await client.SendAsync(Ascii("TRIGGER"));
 
-        TimeSpan elapsed = await WithinAsync(handlerDuration.Task, 10000);
+        TimeSpan elapsed = await Arrival.WithinAsync(handlerDuration.Task, 10000);
         Assert.True(elapsed.TotalMilliseconds < HandlerLimitMilliseconds, $"StopAsync blocked the frame handler for {elapsed.TotalMilliseconds:F0} ms.");
         await Polling.WaitUntilAsync(() => server.State == ServerState.Stopped, 10000);
         await Polling.WaitUntilAsync(() => !client.IsConnected, 5000);
@@ -59,14 +59,14 @@ public sealed class TcpServerReentrancyTests
         };
 #pragma warning restore xUnit1031
         server.SessionClosed += (sender, args) => closedReason.TrySetResult(args.Reason);
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         await using TcpClientChannel client = CreateClient(port);
-        Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
 
-        TimeSpan elapsed = await WithinAsync(handlerDuration.Task, 10000);
+        TimeSpan elapsed = await Arrival.WithinAsync(handlerDuration.Task, 10000);
         Assert.True(elapsed.TotalMilliseconds < HandlerLimitMilliseconds, $"CloseAsync blocked the connected handler for {elapsed.TotalMilliseconds:F0} ms.");
-        DisconnectReason reason = await WithinAsync(closedReason.Task, 10000);
+        DisconnectReason reason = await Arrival.WithinAsync(closedReason.Task, 10000);
         Assert.Equal(DisconnectReason.UserRequested, reason);
         await Polling.WaitUntilAsync(() => server.SessionCount == 0, 5000);
     }
@@ -83,13 +83,13 @@ public sealed class TcpServerReentrancyTests
             server.Dispose();   // 同步释放（D16）：派发上下文内只发出停止信号。
             handlerDuration.TrySetResult(stopwatch.Elapsed);
         };
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         await using TcpClientChannel client = CreateClient(port);
-        Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
-        await WithinAsync(client.DisconnectAsync(), 5000);
+        Assert.True((await Arrival.WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
+        await Arrival.WithinAsync(client.DisconnectAsync(), 5000);
 
-        TimeSpan elapsed = await WithinAsync(handlerDuration.Task, 10000);
+        TimeSpan elapsed = await Arrival.WithinAsync(handlerDuration.Task, 10000);
         Assert.True(elapsed.TotalMilliseconds < HandlerLimitMilliseconds, $"Dispose blocked the closed handler for {elapsed.TotalMilliseconds:F0} ms.");
         await Polling.WaitUntilAsync(() => server.State == ServerState.Stopped, 10000);
     }

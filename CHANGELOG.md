@@ -6,6 +6,10 @@
 
 ### 变更（Changed）
 
+- 2026-10-12 [Tests] 共享测试库 `Junevy.Communication.Testing` 新增 `Arrival.WithinAsync<T>(Task<T>, int)` 与 `Arrival.WithinAsync(Task, int)`（计划 Task 2）：等一个已经启动的操作在给定时间内结束——按时完成返回它的结果、它自身的异常原样抛出，超时抛 `TimeoutException`（消息 `The awaited operation did not complete within {ms} ms.`）。取代 Channels / Serial / Tcp / Siemens / Omron 五个测试项目里 10 个同形方法（`WithinAsync` ×6、`AwaitWithinAsync` ×2、`FinishWithinAsync`、`ArrivesAsync`）与约 374 处调用点，10 个方法整体删除。四个项目原本用 `Assert.True` / `Assert.Same` 失败的改为抛 `TimeoutException`（共享库不引用 xUnit 的断言）。调用点传入的时限值一个都没改。
+- 2026-10-12 [Tests] 共享测试库 `Junevy.Communication.Testing` 新增 `LoopbackTcp`（计划 Task 2）：`Host` 常量与 `Client(port)` / `Reconnecting(port, reconnectIntervalMs = 100)` / `WithHeartbeat(port, intervalMs = 100, timeoutMs = 200, maxFailures = 2, reconnectIntervalMs = 200)`，消除端到端用例与"未连接客户端"用例里反复手写的"`127.0.0.1` + 端口 + 重连 / 心跳选项"。默认值取自 S7 / FINS / MELSEC 故障用例现有的字面量，**迁移时按现有值传参**，任何用例的时序都不变；每次调用返回新对象，调用方可以继续改（例如换成脚本服务器的随机端口）。S7 / FINS 的 `Transport()` 助手、DI 用例与 MELSEC 的重连与心跳用例已改用。
+- 2026-10-12 [Tests] 共享测试库 `Junevy.Communication.Testing` 新增对 `Junevy.Communication.Tcp` 的项目引用（计划 Task 2，P46-D2）：`LoopbackTcp` 需要 `TcpClientChannelConfig`。它仍是 `IsPackable=false` 的测试库，架构测试只约束生产程序集，11 个架构用例不受影响。
+
 - 2026-10-12 [Tests] 共享测试库 `Junevy.Communication.Testing` 新增 `Polling.WaitUntilAsync(Func<bool> condition, int milliseconds = 10000)`（计划 Task 1）：每 5 ms 轮询一次条件，用 `Stopwatch` 计时，时限用尽后**再判一次**（条件恰好在最后一次等待期间成立也算通过），失败抛 `TimeoutException`（消息 `The condition was not met within {ms} ms.`）。取代 Channels / Melsec / Serial / Tcp / Udp 五个测试项目里各自的 `WaitUntilAsync` 共 7 份实现、120 处调用点，7 份定义整体删除，不保留转发层。统一后的行为差异：轮询间隔由其中 3 份的 10 ms 收敛为 5 ms（只是更早发现条件，不会让通过的用例失败）；4 份原先用 `Assert.True` 失败的改为抛 `TimeoutException`（共享库只引用 `xunit.extensibility.core`，没有 `Assert`；对 xUnit 两者等价）；原先不做最后一次检查的 3 份现在会在超时前补判一次。迁移过程中**没有用例捕获 `TimeoutException` 或断言失败消息**（7 处 `catch (TimeoutException)` 全在 Modbus.Tests，且与本助手无关），因此断言语义不变。断言一个都没改。
 
 ## [Unreleased] — P4.5（Core / Plc 共用件；CommResult 可空性标注）

@@ -26,7 +26,7 @@ public sealed class FrameRouterTests
         waiter.StartTimer();
         await rig.Router.RouteAsync(Ascii("RSP"), null, CancellationToken.None);
 
-        CommResult<byte[]> result = await WithinAsync(waiter.Completion, 2000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 2000);
         Assert.True(result.IsSuccess);
         Assert.Equal(Ascii("RSP"), result.Data);
 
@@ -50,7 +50,7 @@ public sealed class FrameRouterTests
         Assert.Equal(Ascii("X-unsolicited"), rig.Sink.Frames[0]);
 
         await rig.Router.RouteAsync(Ascii("R-reply"), null, CancellationToken.None);
-        CommResult<byte[]> result = await WithinAsync(waiter.Completion, 2000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 2000);
         Assert.True(result.IsSuccess);
         Assert.Equal(Ascii("R-reply"), result.Data);
         Assert.Equal(1, rig.Sink.Count);
@@ -75,9 +75,9 @@ public sealed class FrameRouterTests
         await rig.Router.RouteAsync(Tagged(1, "reply-1"), null, CancellationToken.None);
         await rig.Router.RouteAsync(Tagged(2, "reply-2"), null, CancellationToken.None);
 
-        CommResult<byte[]> r1 = await WithinAsync(first.Completion, 2000);
-        CommResult<byte[]> r2 = await WithinAsync(second.Completion, 2000);
-        CommResult<byte[]> r3 = await WithinAsync(third.Completion, 2000);
+        CommResult<byte[]> r1 = await Arrival.WithinAsync(first.Completion, 2000);
+        CommResult<byte[]> r2 = await Arrival.WithinAsync(second.Completion, 2000);
+        CommResult<byte[]> r3 = await Arrival.WithinAsync(third.Completion, 2000);
         Assert.Equal(Tagged(1, "reply-1"), r1.Data);
         Assert.Equal(Tagged(2, "reply-2"), r2.Data);
         Assert.Equal(Tagged(3, "reply-3"), r3.Data);
@@ -109,7 +109,7 @@ public sealed class FrameRouterTests
 
         for (int key = 1; key <= count; key++)
         {
-            CommResult<byte[]> result = await WithinAsync(waiters[key - 1].Completion, 2000);
+            CommResult<byte[]> result = await Arrival.WithinAsync(waiters[key - 1].Completion, 2000);
             Assert.True(result.IsSuccess, $"Request with key {key} did not complete successfully: {result}");
             Assert.Equal(PrefixKeyExtractor.Frame(key, $"reply-{key}"), result.Data);
         }
@@ -157,7 +157,7 @@ public sealed class FrameRouterTests
         Assert.False(first.Completion.IsCompleted);
 
         await rig.Router.RouteAsync(PrefixKeyExtractor.Frame(7, "reply"), null, CancellationToken.None);
-        CommResult<byte[]> result = await WithinAsync(first.Completion, 2000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(first.Completion, 2000);
         Assert.True(result.IsSuccess);
         Assert.Equal(PrefixKeyExtractor.Frame(7, "reply"), result.Data);
     }
@@ -176,8 +176,8 @@ public sealed class FrameRouterTests
         await rig.Router.RouteAsync(Ascii("first"), null, CancellationToken.None);
         await rig.Router.RouteAsync(Ascii("second"), null, CancellationToken.None);
 
-        CommResult<byte[]> requestResult = await WithinAsync(request.Completion, 2000);
-        CommResult<byte[]> receiveResult = await WithinAsync(receive.Completion, 2000);
+        CommResult<byte[]> requestResult = await Arrival.WithinAsync(request.Completion, 2000);
+        CommResult<byte[]> receiveResult = await Arrival.WithinAsync(receive.Completion, 2000);
         Assert.Equal(Ascii("first"), requestResult.Data);
         Assert.Equal(Ascii("second"), receiveResult.Data);
 
@@ -195,7 +195,7 @@ public sealed class FrameRouterTests
         var stopwatch = Stopwatch.StartNew();
         waiter.StartTimer();
 
-        CommResult<byte[]> result = await WithinAsync(waiter.Completion, 2000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 2000);
         stopwatch.Stop();
 
         Assert.False(result.IsSuccess);
@@ -217,7 +217,7 @@ public sealed class FrameRouterTests
 
         var stopwatch = Stopwatch.StartNew();
         waiter.StartTimer();
-        CommResult<byte[]> result = await WithinAsync(waiter.Completion, 2000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 2000);
         stopwatch.Stop();
 
         Assert.Equal(CommErrorKind.Timeout, result.ErrorKind);
@@ -232,7 +232,7 @@ public sealed class FrameRouterTests
 
         using PendingRequest waiter = rig.Table.Register(Ascii("REQ"), null, 100, null, CancellationToken.None);
         waiter.StartTimer();
-        CommResult<byte[]> timedOut = await WithinAsync(waiter.Completion, 2000);
+        CommResult<byte[]> timedOut = await Arrival.WithinAsync(waiter.Completion, 2000);
         Assert.Equal(CommErrorKind.Timeout, timedOut.ErrorKind);
 
         // 窗口内到达的应答是迟到应答：不派发，计入 FramesDropped 并记 Warning。
@@ -251,7 +251,7 @@ public sealed class FrameRouterTests
 
         using PendingRequest waiter = rig.Table.Register(PrefixKeyExtractor.Frame(9, "request"), null, 100, null, CancellationToken.None);
         waiter.StartTimer();
-        CommResult<byte[]> timedOut = await WithinAsync(waiter.Completion, 2000);
+        CommResult<byte[]> timedOut = await Arrival.WithinAsync(waiter.Completion, 2000);
         Assert.Equal(CommErrorKind.Timeout, timedOut.ErrorKind);
 
         // 超时键的迟到应答被丢弃；其他键的未认领帧照常派发。
@@ -274,7 +274,7 @@ public sealed class FrameRouterTests
 
         using PendingRequest waiter = rig.Table.Register(Tagged(5, "request"), new LeadingByteMatcher(), 100, null, CancellationToken.None);
         waiter.StartTimer();
-        CommResult<byte[]> timedOut = await WithinAsync(waiter.Completion, 2000);
+        CommResult<byte[]> timedOut = await Arrival.WithinAsync(waiter.Completion, 2000);
         Assert.Equal(CommErrorKind.Timeout, timedOut.ErrorKind);
 
         // Matcher 模式无法识别迟到应答：按未认领帧派发，不丢弃。
@@ -302,7 +302,7 @@ public sealed class FrameRouterTests
         Assert.False(waiter.Completion.IsCompleted);
 
         await rig.Router.RouteAsync(Ascii("from-expected"), expected, CancellationToken.None);
-        CommResult<byte[]> result = await WithinAsync(waiter.Completion, 2000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 2000);
         Assert.True(result.IsSuccess);
         Assert.Equal(Ascii("from-expected"), result.Data);
         Assert.Equal(1, rig.Sink.Count);
@@ -329,7 +329,7 @@ public sealed class FrameRouterTests
 
         foreach (PendingRequest waiter in waiters)
         {
-            CommResult<byte[]> result = await WithinAsync(waiter.Completion, 1000);
+            CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 1000);
             Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
             waiter.Dispose();
         }
@@ -460,9 +460,9 @@ public sealed class FrameRouterTests
 
         // 第一帧被派发循环取出，处理器阻塞；之后两帧占满容量为 2 的队列。
         await rig.Router.RouteAsync(Ascii("frame-1"), null, CancellationToken.None);
-        await WithinAsync(entered.Task, 2000);
-        await WithinAsync(rig.Router.RouteAsync(Ascii("frame-2"), null, CancellationToken.None).AsTask(), 2000);
-        await WithinAsync(rig.Router.RouteAsync(Ascii("frame-3"), null, CancellationToken.None).AsTask(), 2000);
+        await Arrival.WithinAsync(entered.Task, 2000);
+        await Arrival.WithinAsync(rig.Router.RouteAsync(Ascii("frame-2"), null, CancellationToken.None).AsTask(), 2000);
+        await Arrival.WithinAsync(rig.Router.RouteAsync(Ascii("frame-3"), null, CancellationToken.None).AsTask(), 2000);
 
         // 队列已满：第四帧的 RouteAsync 必须挂起（背压）。
         Task blocked = rig.Router.RouteAsync(Ascii("frame-4"), null, CancellationToken.None).AsTask();
@@ -471,7 +471,7 @@ public sealed class FrameRouterTests
 
         // 放行处理器后，挂起的调用完成，全部帧按顺序派发，不丢帧。
         release.TrySetResult(true);
-        await WithinAsync(blocked, 2000);
+        await Arrival.WithinAsync(blocked, 2000);
         await Polling.WaitUntilAsync(() => sink.Count == 4, 3000);
 
         IReadOnlyList<byte[]> frames = sink.Frames;
@@ -494,13 +494,13 @@ public sealed class FrameRouterTests
         rig.Start();
 
         await rig.Router.RouteAsync(Ascii("frame-1"), null, CancellationToken.None);
-        await WithinAsync(entered.Task, 2000);
+        await Arrival.WithinAsync(entered.Task, 2000);
 
         // 队列 [2, 3]；帧 4 挤掉最旧的 2，帧 5 挤掉 3。RouteAsync 从不挂起。
-        await WithinAsync(rig.Router.RouteAsync(Ascii("frame-2"), null, CancellationToken.None).AsTask(), 2000);
-        await WithinAsync(rig.Router.RouteAsync(Ascii("frame-3"), null, CancellationToken.None).AsTask(), 2000);
-        await WithinAsync(rig.Router.RouteAsync(Ascii("frame-4"), null, CancellationToken.None).AsTask(), 2000);
-        await WithinAsync(rig.Router.RouteAsync(Ascii("frame-5"), null, CancellationToken.None).AsTask(), 2000);
+        await Arrival.WithinAsync(rig.Router.RouteAsync(Ascii("frame-2"), null, CancellationToken.None).AsTask(), 2000);
+        await Arrival.WithinAsync(rig.Router.RouteAsync(Ascii("frame-3"), null, CancellationToken.None).AsTask(), 2000);
+        await Arrival.WithinAsync(rig.Router.RouteAsync(Ascii("frame-4"), null, CancellationToken.None).AsTask(), 2000);
+        await Arrival.WithinAsync(rig.Router.RouteAsync(Ascii("frame-5"), null, CancellationToken.None).AsTask(), 2000);
 
         Assert.Equal(2, rig.Statistics.FramesDropped);
 
@@ -524,13 +524,13 @@ public sealed class FrameRouterTests
 
         // 处理器阻塞（派发循环被占用）期间，请求的应答必须照常认领。
         await rig.Router.RouteAsync(Ascii("unsolicited"), null, CancellationToken.None);
-        await WithinAsync(entered.Task, 2000);
+        await Arrival.WithinAsync(entered.Task, 2000);
 
         using PendingRequest waiter = rig.Table.Register(Ascii("REQ"), null, 2000, null, CancellationToken.None);
         waiter.StartTimer();
         await rig.Router.RouteAsync(Ascii("RSP"), null, CancellationToken.None);
 
-        CommResult<byte[]> result = await WithinAsync(waiter.Completion, 100);
+        CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 100);
         Assert.True(result.IsSuccess);
         Assert.Equal(Ascii("RSP"), result.Data);
 
@@ -561,7 +561,7 @@ public sealed class FrameRouterTests
                 await rig.Router.RouteAsync(Ascii($"RSP-{i}"), null, CancellationToken.None);
             });
 
-            CommResult<byte[]> result = await WithinAsync(waiter.Completion, 2000);
+            CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 2000);
             await routing;
             if (result.IsSuccess)
             {
@@ -594,15 +594,15 @@ public sealed class FrameRouterTests
         rig.Start();
 
         await rig.Router.RouteAsync(Ascii("frame-1"), null, CancellationToken.None);
-        await WithinAsync(entered.Task, 2000);
-        await WithinAsync(rig.Router.RouteAsync(Ascii("frame-2"), null, CancellationToken.None).AsTask(), 2000);
+        await Arrival.WithinAsync(entered.Task, 2000);
+        await Arrival.WithinAsync(rig.Router.RouteAsync(Ascii("frame-2"), null, CancellationToken.None).AsTask(), 2000);
 
         // 队列已满且派发被阻塞：应答由解析线程直接认领，不经过队列，因此 RouteAsync 不挂起。
         using PendingRequest waiter = rig.Table.Register(Ascii("REQ"), null, 2000, null, CancellationToken.None);
         waiter.StartTimer();
-        await WithinAsync(rig.Router.RouteAsync(Ascii("RSP"), null, CancellationToken.None).AsTask(), 500);
+        await Arrival.WithinAsync(rig.Router.RouteAsync(Ascii("RSP"), null, CancellationToken.None).AsTask(), 500);
 
-        CommResult<byte[]> result = await WithinAsync(waiter.Completion, 500);
+        CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 500);
         Assert.Equal(Ascii("RSP"), result.Data);
 
         release.TrySetResult(true);
@@ -620,7 +620,7 @@ public sealed class FrameRouterTests
         waiter.StartTimer();
         cancellation.Cancel();
 
-        CommResult<byte[]> result = await WithinAsync(waiter.Completion, 1000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 1000);
         Assert.Equal(CommErrorKind.Cancelled, result.ErrorKind);
 
         // 用户取消等待应答与超时一样进入迟到应答窗口（D10）。
@@ -654,7 +654,7 @@ public sealed class FrameRouterTests
         waiter.StartTimer();
         waiter.Dispose();
 
-        CommResult<byte[]> result = await WithinAsync(waiter.Completion, 1000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 1000);
         Assert.Equal(CommErrorKind.Unspecified, result.ErrorKind);
 
         await rig.Router.RouteAsync(Ascii("after-release"), null, CancellationToken.None);
@@ -672,7 +672,7 @@ public sealed class FrameRouterTests
         // 接收等待者在注册时即开始计时。
         using PendingRequest waiter = rig.Table.Register(ReadOnlyMemory<byte>.Empty, null, 150, null, CancellationToken.None);
         var stopwatch = Stopwatch.StartNew();
-        CommResult<byte[]> result = await WithinAsync(waiter.Completion, 2000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 2000);
         stopwatch.Stop();
 
         Assert.Equal(CommErrorKind.Timeout, result.ErrorKind);
@@ -691,13 +691,13 @@ public sealed class FrameRouterTests
         rig.Start();
 
         await rig.Router.RouteAsync(Ascii("frame-1"), null, CancellationToken.None);
-        await WithinAsync(entered.Task, 2000);
+        await Arrival.WithinAsync(entered.Task, 2000);
 
         // 队列 [2, 3]；帧 4、5 是新到的，被丢弃。
-        await WithinAsync(rig.Router.RouteAsync(Ascii("frame-2"), null, CancellationToken.None).AsTask(), 2000);
-        await WithinAsync(rig.Router.RouteAsync(Ascii("frame-3"), null, CancellationToken.None).AsTask(), 2000);
-        await WithinAsync(rig.Router.RouteAsync(Ascii("frame-4"), null, CancellationToken.None).AsTask(), 2000);
-        await WithinAsync(rig.Router.RouteAsync(Ascii("frame-5"), null, CancellationToken.None).AsTask(), 2000);
+        await Arrival.WithinAsync(rig.Router.RouteAsync(Ascii("frame-2"), null, CancellationToken.None).AsTask(), 2000);
+        await Arrival.WithinAsync(rig.Router.RouteAsync(Ascii("frame-3"), null, CancellationToken.None).AsTask(), 2000);
+        await Arrival.WithinAsync(rig.Router.RouteAsync(Ascii("frame-4"), null, CancellationToken.None).AsTask(), 2000);
+        await Arrival.WithinAsync(rig.Router.RouteAsync(Ascii("frame-5"), null, CancellationToken.None).AsTask(), 2000);
 
         Assert.Equal(2, rig.Statistics.FramesDropped);
 
@@ -745,7 +745,7 @@ public sealed class FrameRouterTests
         {
             using PendingRequest waiter = rig.Table.Register(PrefixKeyExtractor.Frame(key, "request"), null, 1, null, CancellationToken.None);
             waiter.StartTimer();
-            CommResult<byte[]> timedOut = await WithinAsync(waiter.Completion, 2000);
+            CommResult<byte[]> timedOut = await Arrival.WithinAsync(waiter.Completion, 2000);
             Assert.Equal(CommErrorKind.Timeout, timedOut.ErrorKind);
         }
 
@@ -819,13 +819,13 @@ public sealed class FrameRouterTests
         {
             // 第一帧使处理器阻塞；之后 5 帧在队列中等待派发。
             await rig.Router.RouteAsync(Ascii("blocker"), null, CancellationToken.None);
-            await WithinAsync(entered.Task, 2000);
+            await Arrival.WithinAsync(entered.Task, 2000);
             for (int i = 1; i <= 5; i++)
                 await rig.Router.RouteAsync(Ascii($"frame-{i}"), null, CancellationToken.None);
 
             // 排空窗口 200 ms 到期：StopAsync 在区间内返回，不等待仍被阻塞的处理器。
             var stopwatch = Stopwatch.StartNew();
-            await WithinAsync(rig.Router.StopAsync(200).AsTask(), 3000);
+            await Arrival.WithinAsync(rig.Router.StopAsync(200).AsTask(), 3000);
             stopwatch.Stop();
             Assert.InRange(stopwatch.Elapsed.TotalMilliseconds, 160d, 2200d);
 
@@ -859,7 +859,7 @@ public sealed class FrameRouterTests
         {
             // 第一帧使处理器阻塞；之后 3 帧在队列中等待派发。
             await rig.Router.RouteAsync(Ascii("blocker"), null, CancellationToken.None);
-            await WithinAsync(entered.Task, 2000);
+            await Arrival.WithinAsync(entered.Task, 2000);
             for (int i = 1; i <= 3; i++)
                 await rig.Router.RouteAsync(Ascii($"frame-{i}"), null, CancellationToken.None);
 
@@ -874,8 +874,8 @@ public sealed class FrameRouterTests
 
             // 放行处理器：排空完成，两次停止都返回；队列中的帧全部派发，没有丢弃。
             release.TrySetResult(true);
-            await WithinAsync(first, 3000);
-            await WithinAsync(second, 3000);
+            await Arrival.WithinAsync(first, 3000);
+            await Arrival.WithinAsync(second, 3000);
             Assert.Equal(4, sink.Count);
             Assert.Equal(0, rig.Statistics.FramesDropped);
         }
@@ -904,7 +904,7 @@ public sealed class FrameRouterTests
 
         using PendingRequest request = rig.Table.Register(Ascii("REQ"), null, 100, null, CancellationToken.None);
         request.StartTimer();
-        CommResult<byte[]> timedOut = await WithinAsync(request.Completion, 2000);
+        CommResult<byte[]> timedOut = await Arrival.WithinAsync(request.Completion, 2000);
         Assert.Equal(CommErrorKind.Timeout, timedOut.ErrorKind);
 
         // 窗口内：无 Matcher 的接收等待者不能认领迟到应答；迟到应答被丢弃。
@@ -918,7 +918,7 @@ public sealed class FrameRouterTests
         // 窗口结束后：同一个接收等待者认领之后到达的帧。
         await Task.Delay(1200);
         await rig.Router.RouteAsync(Ascii("next-frame"), null, CancellationToken.None);
-        CommResult<byte[]> result = await WithinAsync(receive.Completion, 2000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(receive.Completion, 2000);
         Assert.True(result.IsSuccess);
         Assert.Equal(Ascii("next-frame"), result.Data);
         Assert.Equal(1, rig.Statistics.FramesDropped);
@@ -932,7 +932,7 @@ public sealed class FrameRouterTests
 
         using PendingRequest request = rig.Table.Register(PrefixKeyExtractor.Frame(9, "request"), null, 100, null, CancellationToken.None);
         request.StartTimer();
-        CommResult<byte[]> timedOut = await WithinAsync(request.Completion, 2000);
+        CommResult<byte[]> timedOut = await Arrival.WithinAsync(request.Completion, 2000);
         Assert.Equal(CommErrorKind.Timeout, timedOut.ErrorKind);
 
         // 窗口内：超时键的迟到应答不能被接收等待者认领，被丢弃。
@@ -946,7 +946,7 @@ public sealed class FrameRouterTests
         // 窗口结束后：同一个接收等待者认领该键之后到达的帧。
         await Task.Delay(1200);
         await rig.Router.RouteAsync(PrefixKeyExtractor.Frame(9, "after-window"), null, CancellationToken.None);
-        CommResult<byte[]> result = await WithinAsync(receive.Completion, 2000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(receive.Completion, 2000);
         Assert.True(result.IsSuccess);
         Assert.Equal(PrefixKeyExtractor.Frame(9, "after-window"), result.Data);
         Assert.Equal(1, rig.Statistics.FramesDropped);
@@ -969,7 +969,7 @@ public sealed class FrameRouterTests
 
         // 随后到达的匹配帧：被等待者认领，不进入事件。
         await rig.Router.RouteAsync(Tagged(0x09, "select-req"), null, CancellationToken.None);
-        CommResult<byte[]> result = await WithinAsync(receive.Completion, 2000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(receive.Completion, 2000);
         Assert.True(result.IsSuccess);
         Assert.Equal(Tagged(0x09, "select-req"), result.Data);
 
@@ -997,7 +997,7 @@ public sealed class FrameRouterTests
         bool[] outcomes = await Task.WhenAll(attempts);
 
         Assert.Equal(1, outcomes.Count(won => won));
-        CommResult<byte[]> result = await WithinAsync(waiter.Completion, 1000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 1000);
         Assert.False(result.IsSuccess);
     }
 
@@ -1020,7 +1020,7 @@ public sealed class FrameRouterTests
         bool ranInline = Volatile.Read(ref continuationRan) == 1;
         await routing;
 
-        await WithinAsync(continuation, 2000);
+        await Arrival.WithinAsync(continuation, 2000);
         Assert.False(ranInline, "The completion continuation must not run inline on the routing thread.");
     }
 
@@ -1050,10 +1050,10 @@ public sealed class FrameRouterTests
             gate.TrySetResult(true);
 
             // 处理器在 1 s 内返回，没有死锁。
-            await WithinAsync(handlerDone.Task, 1000);
+            await Arrival.WithinAsync(handlerDone.Task, 1000);
 
             // 之后的外部停止在 1 s 内完成。
-            await WithinAsync(rig.Router.StopAsync(0).AsTask(), 1000);
+            await Arrival.WithinAsync(rig.Router.StopAsync(0).AsTask(), 1000);
             Assert.Equal(2, rig.Statistics.FramesDropped);
         }
         finally
@@ -1085,8 +1085,8 @@ public sealed class FrameRouterTests
             await rig.Router.RouteAsync(Ascii("trigger"), null, CancellationToken.None);
 
             // 处理器在 1 s 内返回，没有死锁；之后的外部停止在 1 s 内完成。
-            await WithinAsync(handlerDone.Task, 1000);
-            await WithinAsync(rig.Router.StopAsync(0).AsTask(), 1000);
+            await Arrival.WithinAsync(handlerDone.Task, 1000);
+            await Arrival.WithinAsync(rig.Router.StopAsync(0).AsTask(), 1000);
         }
         finally
         {
@@ -1117,7 +1117,7 @@ public sealed class FrameRouterTests
         try
         {
             await rig.Router.RouteAsync(Ascii("trigger"), null, CancellationToken.None);
-            await WithinAsync(entered.Task, 2000);
+            await Arrival.WithinAsync(entered.Task, 2000);
 
             // 处理器仍在阻塞时发起外部停止：它必须等派发循环结束，即处理器返回之后才完成。
             Task external = rig.Router.StopAsync(2000).AsTask();
@@ -1126,8 +1126,8 @@ public sealed class FrameRouterTests
                 _ => { returnedWhenExternalCompleted = returned.Task.IsCompleted; },
                 TaskContinuationOptions.ExecuteSynchronously);
 
-            await WithinAsync(external, 3000);
-            await WithinAsync(observer, 1000);
+            await Arrival.WithinAsync(external, 3000);
+            await Arrival.WithinAsync(observer, 1000);
             Assert.True(returnedWhenExternalCompleted, "The external stop completed before the handler returned.");
         }
         finally
@@ -1150,14 +1150,14 @@ public sealed class FrameRouterTests
         {
             // 第一帧使处理器阻塞；之后两帧在队列中。
             await rig.Router.RouteAsync(Ascii("blocker"), null, CancellationToken.None);
-            await WithinAsync(entered.Task, 2000);
+            await Arrival.WithinAsync(entered.Task, 2000);
             await rig.Router.RouteAsync(Ascii("frame-1"), null, CancellationToken.None);
             await rig.Router.RouteAsync(Ascii("frame-2"), null, CancellationToken.None);
 
             // 不排空停止：先发出信号，再放行处理器。处理器返回后派发循环必须退出，停止随之完成。
             Task stop = rig.Router.StopAsync(0).AsTask();
             release.TrySetResult(true);
-            await WithinAsync(stop, 2000);
+            await Arrival.WithinAsync(stop, 2000);
 
             Assert.Equal(1, sink.Count);
             Assert.Equal(2, rig.Statistics.FramesDropped);

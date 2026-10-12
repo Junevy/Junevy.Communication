@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Junevy.Communication.Channels\Junevy.Communication.Channels.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Tcp\Junevy.Communication.Tcp.csproj" />
     <PackageReference Include="xunit.extensibility.core" Version="2.5.3" />
   </ItemGroup>
 

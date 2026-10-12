@@ -25,26 +25,6 @@ internal static class SerialTestHelpers
         return result;
     }
 
-    /// <summary>在毫秒上限内等待任务；超时抛出 <see cref="TimeoutException"/>。</summary>
-    public static async Task<T> WithinAsync<T>(Task<T> task, int milliseconds)
-    {
-        Task finished = await Task.WhenAny(task, Task.Delay(milliseconds)).ConfigureAwait(false);
-        if (!ReferenceEquals(finished, task))
-            throw new TimeoutException($"The operation did not complete within {milliseconds} ms.");
-
-        return await task.ConfigureAwait(false);
-    }
-
-    /// <summary>在毫秒上限内等待任务；超时抛出 <see cref="TimeoutException"/>。</summary>
-    public static async Task WithinAsync(Task task, int milliseconds)
-    {
-        Task finished = await Task.WhenAny(task, Task.Delay(milliseconds)).ConfigureAwait(false);
-        if (!ReferenceEquals(finished, task))
-            throw new TimeoutException($"The operation did not complete within {milliseconds} ms.");
-
-        await task.ConfigureAwait(false);
-    }
-
     /// <summary>向流写入原始字节（不经编码）并刷新。</summary>
     public static async Task WriteRawAsync(Stream stream, byte[] bytes)
     {

@@ -31,7 +31,7 @@ public sealed class TcpClientChannelLifecycleTests
         config.Reconnect = new ReconnectOptions { Enabled = true, Mode = ReconnectMode.FixedInterval, Interval = 300 };
         await using var channel = new TcpClientChannel(config);
         var log = new StateLog(channel);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
         // ConnectAsync 在客户端握手完成时返回，服务端的接受循环可能还没登记这条连接。
         await Polling.WaitUntilAsync(() => server.AcceptedConnectionCount == 1, 5000);
 
@@ -72,7 +72,7 @@ public sealed class TcpClientChannelLifecycleTests
             },
         };
         await using var channel = new TcpClientChannel(config, null, components);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
         await Polling.WaitUntilAsync(() => Volatile.Read(ref probes) >= 1 && server.AcceptedConnectionCount == 1, 5000);
 
         server.CloseConnection(0);
@@ -104,7 +104,7 @@ public sealed class TcpClientChannelLifecycleTests
         config.Reconnect = new ReconnectOptions { Enabled = true, Mode = ReconnectMode.FixedInterval, Interval = 100 };
         await using var channel = new TcpClientChannel(config);
         var log = new StateLog(channel);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
 
         StateEntry lost = await log.WaitForAsync(e => e.Current == ConnectionState.Reconnecting, 10000);
 
@@ -121,7 +121,7 @@ public sealed class TcpClientChannelLifecycleTests
         config.IdleTimeout = 300;
         await using var channel = new TcpClientChannel(config);
         var log = new StateLog(channel);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
 
         StateEntry connected = await log.WaitForAsync(e => e.Current == ConnectionState.Connected, 5000);
         StateEntry lost = await log.WaitForAsync(e => e.Current == ConnectionState.Disconnected, 5000, connected);
@@ -147,16 +147,16 @@ public sealed class TcpClientChannelLifecycleTests
         config.RequestTimeout = 300;
         config.Reconnect = new ReconnectOptions { Enabled = true, Mode = ReconnectMode.FixedInterval, Interval = 100 };
         await using var channel = new TcpClientChannel(config);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
 
-        CommResult<byte[]> timedOut = await WithinAsync(channel.RequestAsync(Ascii("PING")), 5000);
+        CommResult<byte[]> timedOut = await Arrival.WithinAsync(channel.RequestAsync(Ascii("PING")), 5000);
         Assert.Equal(CommErrorKind.Timeout, timedOut.ErrorKind);
 
         // 超时后 Sequential 模式断开并重建：服务端应看到第二个连接，之后请求成功。
         await Polling.WaitUntilAsync(() => server.AcceptedConnectionCount == 2, 5000);
-        Assert.True(await WithinAsync(channel.WaitForConnectedAsync(5000), 6000));
+        Assert.True(await Arrival.WithinAsync(channel.WaitForConnectedAsync(5000), 6000));
 
-        CommResult<byte[]> reply = await WithinAsync(channel.RequestAsync(Ascii("PING")), 5000);
+        CommResult<byte[]> reply = await Arrival.WithinAsync(channel.RequestAsync(Ascii("PING")), 5000);
         Assert.True(reply.IsSuccess, reply.ToString());
         Assert.Equal(Ascii("PING"), DataOf(reply));
     }
@@ -189,12 +189,12 @@ public sealed class TcpClientChannelLifecycleTests
         config.RequestTimeout = 5000;
         var components = new TcpChannelComponents { KeyExtractor = new TwoDigitKeyExtractor() };
         await using var channel = new TcpClientChannel(config, null, components);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
 
         Task<CommResult<byte[]>>[] requests = Enumerable.Range(0, count)
             .Select(i => channel.RequestAsync(Ascii($"REQ-{i:D2}")))
             .ToArray();
-        CommResult<byte[]>[] replies = await WithinAsync(Task.WhenAll(requests), 10000);
+        CommResult<byte[]>[] replies = await Arrival.WithinAsync(Task.WhenAll(requests), 10000);
 
         for (int i = 0; i < count; i++)
         {
@@ -221,8 +221,8 @@ public sealed class TcpClientChannelLifecycleTests
         config.SendTimeout = 500;
         config.Socket = new TcpSocketOptions { SendBufferSize = 4096 };
         await using var channel = new TcpClientChannel(config);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
-        Assert.True(await WithinAsync(accepted.Task, 5000));
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True(await Arrival.WithinAsync(accepted.Task, 5000));
 
         byte[] payload = new byte[10 * 1024 * 1024];
         CommResult sent = CommResult.Success();
@@ -247,10 +247,10 @@ public sealed class TcpClientChannelLifecycleTests
         var config = CreateConfig(server.Port);
         config.Reconnect = new ReconnectOptions { Enabled = true, Mode = ReconnectMode.FixedInterval, Interval = 100 };
         await using var channel = new TcpClientChannel(config);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
         await Polling.WaitUntilAsync(() => server.AcceptedConnectionCount == 1, 5000);
 
-        await WithinAsync(channel.DisconnectAsync(), 5000);
+        await Arrival.WithinAsync(channel.DisconnectAsync(), 5000);
         Assert.Equal(ConnectionState.Disconnected, channel.State);
 
         // 重连已开启，但用户断开之后不会被悄悄连回。
@@ -274,7 +274,7 @@ public sealed class TcpClientChannelLifecycleTests
             var config = CreateConfig(server.Port);
             config.RequestTimeout = 10000;
             var channel = new TcpClientChannel(config);
-            Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
+            Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
 
             int received = server.ReceivedBytes;
             Task<CommResult<byte[]>> pending = channel.RequestAsync(Ascii("PING"));

@@ -2,6 +2,7 @@ using Junevy.Communication.Core.Results;
 using Junevy.Communication.Plc;
 using Junevy.Communication.Siemens.Protocol;
 using Junevy.Communication.Tcp;
+using Junevy.Communication.Testing;
 using static Junevy.Communication.Siemens.Tests.S7RequestFrame;
 using static Junevy.Communication.Siemens.Tests.S7TestSupport;
 using static Junevy.Communication.Testing.HexVector;
@@ -203,5 +204,5 @@ public sealed class S7ClientHooksTests
         => Assert.Equal(WithReference(vector, ReferenceOf(request)), request);
 
     // 范围校验在未连接的客户端上进行：端口为 0 时 TcpClientChannel 在构造阶段就拒绝，因此用 S7 的标准端口 102。
-    private static TcpClientChannelConfig Transport() => new TcpClientChannelConfig { Host = "127.0.0.1", Port = 102 };
+    private static TcpClientChannelConfig Transport() => LoopbackTcp.Client(102);
 }

@@ -89,14 +89,9 @@ public sealed class McEndToEndTcpTests
         var adapter = new McDeviceAdapter(McFrameType.Frame3E, McEncoding.Binary, sumCheck: true, memory);
         DeviceSimulator simulator = new DeviceSimulator(McEndToEndSupport.DeviceFraming(options), adapter.Handle);
         using ScriptedTcpServer server = ScriptedTcpServer.Start((index, stream, token) => simulator.RunAsync(stream, token));
-        var config = new TcpClientChannelConfig
-        {
-            Host = "127.0.0.1",
-            Port = server.Port,
-            Reconnect = new ReconnectOptions { Enabled = true, Interval = 100 },
-        };
-        using McClient client = McClient.Create(config, options);
-        Assert.True((await client.ConnectAsync()).IsSuccess);
+TcpClientChannelConfig config = LoopbackTcp.Reconnecting(server.Port, reconnectIntervalMs: 100);
+using McClient client = McClient.Create(config, options);
+Assert.True((await client.ConnectAsync()).IsSuccess);
         Assert.Equal((short)7, (await client.ReadInt16Async("D100")).Data);
 
         server.CloseConnection(0);
@@ -112,15 +107,9 @@ public sealed class McEndToEndTcpTests
     [Fact(Timeout = 60000)]
     public async Task SilentDeviceWithHeartbeat_EntersReconnectingWithHeartbeatFailed()
     {
-        using SilentTcpServer silent = SilentTcpServer.Start();
-        var config = new TcpClientChannelConfig
-        {
-            Host = "127.0.0.1",
-            Port = silent.Port,
-            Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 100, Timeout = 100, MaxFailures = 2 },
-            Reconnect = new ReconnectOptions { Enabled = true, Interval = 200 },
-        };
-        using McClient client = McClient.Create(config, new McClientOptions());
+using SilentTcpServer silent = SilentTcpServer.Start();
+        TcpClientChannelConfig config = LoopbackTcp.WithHeartbeat(silent.Port, intervalMs: 100, timeoutMs: 100, maxFailures: 2, reconnectIntervalMs: 200);
+using McClient client = McClient.Create(config, new McClientOptions());
         var changes = new List<ConnectionStateChangedEventArgs>();
         client.StateChanged += (sender, args) =>
         {

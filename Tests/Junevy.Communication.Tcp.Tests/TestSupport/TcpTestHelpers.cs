@@ -16,26 +16,6 @@ internal static class TcpTestHelpers
     /// <summary>ASCII 编码的字节数组。</summary>
     public static byte[] Ascii(string text) => Encoding.ASCII.GetBytes(text);
 
-    /// <summary>在毫秒上限内等待任务；超时抛出 <see cref="TimeoutException"/>。</summary>
-    public static async Task<T> WithinAsync<T>(Task<T> task, int milliseconds)
-    {
-        Task finished = await Task.WhenAny(task, Task.Delay(milliseconds)).ConfigureAwait(false);
-        if (!ReferenceEquals(finished, task))
-            throw new TimeoutException($"The operation did not complete within {milliseconds} ms.");
-
-        return await task.ConfigureAwait(false);
-    }
-
-    /// <summary>在毫秒上限内等待任务；超时抛出 <see cref="TimeoutException"/>。</summary>
-    public static async Task WithinAsync(Task task, int milliseconds)
-    {
-        Task finished = await Task.WhenAny(task, Task.Delay(milliseconds)).ConfigureAwait(false);
-        if (!ReferenceEquals(finished, task))
-            throw new TimeoutException($"The operation did not complete within {milliseconds} ms.");
-
-        await task.ConfigureAwait(false);
-    }
-
     /// <summary>取一个当前空闲的回环端口（先监听取得端口号，再释放）。</summary>
     public static int FreePort()
     {

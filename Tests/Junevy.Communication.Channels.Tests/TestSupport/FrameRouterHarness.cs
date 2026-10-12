@@ -178,22 +178,6 @@ internal static class RouterTestHelpers
         return frame;
     }
 
-    /// <summary>等待任务在给定时间内完成，并返回其结果。</summary>
-    public static async Task<T> WithinAsync<T>(Task<T> task, int milliseconds)
-    {
-        Task completed = await Task.WhenAny(task, Task.Delay(milliseconds)).ConfigureAwait(false);
-        Assert.True(ReferenceEquals(completed, task), $"The operation did not complete within {milliseconds} ms.");
-        return await task.ConfigureAwait(false);
-    }
-
-    /// <summary>等待任务在给定时间内完成。</summary>
-    public static async Task WithinAsync(Task task, int milliseconds)
-    {
-        Task completed = await Task.WhenAny(task, Task.Delay(milliseconds)).ConfigureAwait(false);
-        Assert.True(ReferenceEquals(completed, task), $"The operation did not complete within {milliseconds} ms.");
-        await task.ConfigureAwait(false);
-    }
-
     /// <summary>等待派发记录达到指定数量。</summary>
     public static Task WaitForCountAsync(RecordingSink sink, int count)
         => Polling.WaitUntilAsync(() => sink.Count >= count, 3000);

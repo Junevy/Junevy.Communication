@@ -1,6 +1,7 @@
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Plc;
 using Junevy.Communication.Tcp;
+using Junevy.Communication.Testing;
 using static Junevy.Communication.Omron.Tests.FinsTestSupport;
 using static Junevy.Communication.Testing.HexVector;
 
@@ -217,5 +218,5 @@ public sealed class FinsClientHooksTests
         => Assert.Equal(WithSessionId(vector, SessionIdOf(request)), request);
 
     // 端口为 0 的 TCP 配置在创建通道时就被 TcpClientChannel 拒绝，因此统一用 FINS 的标准端口 9600。
-    private static TcpClientChannelConfig Transport() => new TcpClientChannelConfig { Host = "127.0.0.1", Port = 9600 };
+    private static TcpClientChannelConfig Transport() => LoopbackTcp.Client(9600);
 }

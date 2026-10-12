@@ -25,11 +25,11 @@ public sealed class StreamChannelTests
         await using var rig = new StreamRig(pair, Settings(), Delimiter());
         rig.Start();
 
-        CommResult sent = await WithinAsync(rig.Channel.SendAsync(Ascii("PING"), CancellationToken.None), 2000);
+        CommResult sent = await Arrival.WithinAsync(rig.Channel.SendAsync(Ascii("PING"), CancellationToken.None), 2000);
         Assert.True(sent.IsSuccess, sent.ToString());
 
         var peer = new StreamPeer(pair.B, Delimiter());
-        Assert.Equal(Ascii("PING"), await WithinAsync(peer.ReceiveFrameAsync(), 2000));
+        Assert.Equal(Ascii("PING"), await Arrival.WithinAsync(peer.ReceiveFrameAsync(), 2000));
         Assert.Equal(1, rig.Statistics.FramesSent);
     }
 
@@ -41,7 +41,7 @@ public sealed class StreamChannelTests
         rig.Start();
 
         var peer = new StreamPeer(pair.B, Delimiter());
-        await WithinAsync(peer.SendFrameAsync(Ascii("EVT-1")), 2000);
+        await Arrival.WithinAsync(peer.SendFrameAsync(Ascii("EVT-1")), 2000);
 
         await WaitForCountAsync(rig.Sink, 1);
         Assert.Equal(Ascii("EVT-1"), rig.Sink.Frames[0]);
@@ -60,12 +60,12 @@ public sealed class StreamChannelTests
             .Select(i => rig.Channel.SendAsync(Ascii($"FRAME-{i:D3}"), CancellationToken.None))
             .ToArray();
 
-        CommResult[] results = await WithinAsync(Task.WhenAll(sends), 5000);
+        CommResult[] results = await Arrival.WithinAsync(Task.WhenAll(sends), 5000);
         Assert.All(results, result => Assert.True(result.IsSuccess, result.ToString()));
 
         var received = new List<string>(count);
         for (int i = 0; i < count; i++)
-            received.Add(Encoding.ASCII.GetString(await WithinAsync(peer.ReceiveFrameAsync(), 2000)));
+            received.Add(Encoding.ASCII.GetString(await Arrival.WithinAsync(peer.ReceiveFrameAsync(), 2000)));
 
         string[] expected = Enumerable.Range(0, count).Select(i => $"FRAME-{i:D3}").OrderBy(s => s, StringComparer.Ordinal).ToArray();
         Assert.Equal(expected, received.OrderBy(s => s, StringComparer.Ordinal).ToArray());
@@ -80,12 +80,12 @@ public sealed class StreamChannelTests
         await using var rig = new StreamRig(pair, Settings(), Delimiter());
         rig.Start();
 
-        CommResult<byte[]> reply = await WithinAsync(rig.Channel.RequestAsync(Ascii("PING"), null, null, CancellationToken.None), 2000);
+        CommResult<byte[]> reply = await Arrival.WithinAsync(rig.Channel.RequestAsync(Ascii("PING"), null, null, CancellationToken.None), 2000);
         Assert.True(reply.IsSuccess, reply.ToString());
         Assert.Equal(Ascii("PING"), reply.Data);
 
         device.Cancel();
-        await WithinAsync(deviceTask, 5000);
+        await Arrival.WithinAsync(deviceTask, 5000);
     }
 
     [Fact]
@@ -105,8 +105,8 @@ public sealed class StreamChannelTests
         });
 
         var options = new RequestOptions { Matcher = new LeadingByteMatcher() };
-        CommResult<byte[]> reply = await WithinAsync(rig.Channel.RequestAsync(Ascii("REQ"), options, null, CancellationToken.None), 2000);
-        await WithinAsync(script, 2000);
+        CommResult<byte[]> reply = await Arrival.WithinAsync(rig.Channel.RequestAsync(Ascii("REQ"), options, null, CancellationToken.None), 2000);
+        await Arrival.WithinAsync(script, 2000);
 
         Assert.True(reply.IsSuccess, reply.ToString());
         Assert.Equal(Ascii("RSP-1"), reply.Data);
@@ -125,7 +125,7 @@ public sealed class StreamChannelTests
 
         // 对端不应答。
         var stopwatch = Stopwatch.StartNew();
-        CommResult<byte[]> result = await WithinAsync(rig.Channel.RequestAsync(Ascii("REQ"), null, null, CancellationToken.None), 3000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(rig.Channel.RequestAsync(Ascii("REQ"), null, null, CancellationToken.None), 3000);
         stopwatch.Stop();
 
         Assert.Equal(CommErrorKind.Timeout, result.ErrorKind);
@@ -133,7 +133,7 @@ public sealed class StreamChannelTests
         Assert.Equal(new[] { DisconnectReason.RequestTimeout }, rig.Faults);
 
         // 连接已判定为故障：之后的请求立即以 ConnectionClosed 失败。
-        CommResult<byte[]> later = await WithinAsync(rig.Channel.RequestAsync(Ascii("REQ"), null, null, CancellationToken.None), 1000);
+        CommResult<byte[]> later = await Arrival.WithinAsync(rig.Channel.RequestAsync(Ascii("REQ"), null, null, CancellationToken.None), 1000);
         Assert.Equal(CommErrorKind.ConnectionClosed, later.ErrorKind);
         Assert.Equal(new[] { DisconnectReason.RequestTimeout }, rig.Faults);
     }
@@ -156,11 +156,11 @@ public sealed class StreamChannelTests
             await peer.SendFrameAsync(Ascii("RSP-2"));
         });
 
-        CommResult<byte[]> first = await WithinAsync(rig.Channel.RequestAsync(Ascii("REQ-1"), null, null, CancellationToken.None), 3000);
+        CommResult<byte[]> first = await Arrival.WithinAsync(rig.Channel.RequestAsync(Ascii("REQ-1"), null, null, CancellationToken.None), 3000);
         Assert.Equal(CommErrorKind.Timeout, first.ErrorKind);
 
-        CommResult<byte[]> second = await WithinAsync(rig.Channel.RequestAsync(Ascii("REQ-2"), null, null, CancellationToken.None), 3000);
-        await WithinAsync(script, 3000);
+        CommResult<byte[]> second = await Arrival.WithinAsync(rig.Channel.RequestAsync(Ascii("REQ-2"), null, null, CancellationToken.None), 3000);
+        await Arrival.WithinAsync(script, 3000);
 
         Assert.True(second.IsSuccess, second.ToString());
         Assert.Equal(Ascii("RSP-2"), second.Data);
@@ -178,7 +178,7 @@ public sealed class StreamChannelTests
 
         var peer = new StreamPeer(pair.B, IdleGap(gapMs: 50));
         var stopwatch = Stopwatch.StartNew();
-        await WithinAsync(peer.SendRawAsync(Ascii("ABCDE")), 2000);
+        await Arrival.WithinAsync(peer.SendRawAsync(Ascii("ABCDE")), 2000);
         await WaitForCountAsync(rig.Sink, 1);
         stopwatch.Stop();
 
@@ -198,7 +198,7 @@ public sealed class StreamChannelTests
         var peer = new StreamPeer(pair.B, IdleGap(gapMs: 100));
         for (int i = 0; i < 10; i++)
         {
-            await WithinAsync(peer.SendRawAsync(new[] { (byte)('A' + i) }), 2000);
+            await Arrival.WithinAsync(peer.SendRawAsync(new[] { (byte)('A' + i) }), 2000);
             await Task.Delay(10);
         }
 
@@ -222,7 +222,7 @@ public sealed class StreamChannelTests
         // 长度字段声明 10 字节负载（帧总长 12），只写 7 字节。
         var peer = new StreamPeer(pair.B, LengthField());
         var stopwatch = Stopwatch.StartNew();
-        await WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3, 4, 5 }), 2000);
+        await Arrival.WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3, 4, 5 }), 2000);
         await Polling.WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
         stopwatch.Stop();
 
@@ -242,11 +242,11 @@ public sealed class StreamChannelTests
         rig.Start();
 
         var peer = new StreamPeer(pair.B, LengthField());
-        await WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3, 4, 5 }), 2000);
+        await Arrival.WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3, 4, 5 }), 2000);
         await Polling.WaitUntilAsync(() => rig.Statistics.ProtocolErrors == 1, 3000);
 
         // 残余字节已丢弃：之后的完整帧能正常交出。
-        await WithinAsync(peer.SendRawAsync(LengthFrame("0123456789")), 2000);
+        await Arrival.WithinAsync(peer.SendRawAsync(LengthFrame("0123456789")), 2000);
         await WaitForCountAsync(rig.Sink, 1);
 
         Assert.Equal(Ascii("0123456789"), rig.Sink.Frames[0]);
@@ -263,7 +263,7 @@ public sealed class StreamChannelTests
 
         // 长度字段声明 256 字节负载，超过 MaxFrameLength（64）。
         var peer = new StreamPeer(pair.B, LengthField(maxFrameLength: 64));
-        await WithinAsync(peer.SendRawAsync(new byte[] { 0x01, 0x00 }), 2000);
+        await Arrival.WithinAsync(peer.SendRawAsync(new byte[] { 0x01, 0x00 }), 2000);
         await Polling.WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
 
         Assert.Equal(new[] { DisconnectReason.ProtocolViolation }, rig.Faults);
@@ -281,7 +281,7 @@ public sealed class StreamChannelTests
         await Task.Delay(50);   // 请求已写出，对端不应答
         pair.Abort();
 
-        CommResult<byte[]> result = await WithinAsync(pending, 2000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(pending, 2000);
         Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
         Assert.Equal(new[] { DisconnectReason.RemoteClosed }, rig.Faults);
         Assert.Equal(0, rig.AbortCount);
@@ -298,7 +298,7 @@ public sealed class StreamChannelTests
         await Task.Delay(50);
         pair.B.Dispose();   // 对端正常关闭：读到流末尾
 
-        CommResult<byte[]> result = await WithinAsync(pending, 2000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(pending, 2000);
         Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
         Assert.Equal(new[] { DisconnectReason.RemoteClosed }, rig.Faults);
     }
@@ -315,7 +315,7 @@ public sealed class StreamChannelTests
         // 对端不读取：写出在 4096 字节后挂起，300 ms 后超时。
         var payload = new byte[64 * 1024];
         var stopwatch = Stopwatch.StartNew();
-        CommResult sent = await WithinAsync(rig.Channel.SendAsync(payload, CancellationToken.None), 5000);
+        CommResult sent = await Arrival.WithinAsync(rig.Channel.SendAsync(payload, CancellationToken.None), 5000);
         stopwatch.Stop();
 
         Assert.Equal(CommErrorKind.Timeout, sent.ErrorKind);
@@ -341,7 +341,7 @@ public sealed class StreamChannelTests
         using var cancellation = new CancellationTokenSource();
         Task<CommResult> second = rig.Channel.SendAsync(Ascii("X"), cancellation.Token);
         cancellation.CancelAfter(100);
-        CommResult secondResult = await WithinAsync(second, 2000);
+        CommResult secondResult = await Arrival.WithinAsync(second, 2000);
 
         Assert.Equal(CommErrorKind.Cancelled, secondResult.ErrorKind);
         Assert.Empty(rig.Faults);
@@ -349,14 +349,14 @@ public sealed class StreamChannelTests
 
         // 对端读取第一次发送的字节：第一次成功完成，通道仍可用。
         var peer = new StreamPeer(pair.B, Raw());
-        byte[] received = await WithinAsync(peer.ReadExactAsync(big.Length), 5000);
-        CommResult firstResult = await WithinAsync(first, 5000);
+        byte[] received = await Arrival.WithinAsync(peer.ReadExactAsync(big.Length), 5000);
+        CommResult firstResult = await Arrival.WithinAsync(first, 5000);
         Assert.True(firstResult.IsSuccess, firstResult.ToString());
         Assert.Equal(big, received);
 
-        CommResult third = await WithinAsync(rig.Channel.SendAsync(Ascii("AFTER"), CancellationToken.None), 2000);
+        CommResult third = await Arrival.WithinAsync(rig.Channel.SendAsync(Ascii("AFTER"), CancellationToken.None), 2000);
         Assert.True(third.IsSuccess, third.ToString());
-        Assert.Equal(Ascii("AFTER"), await WithinAsync(peer.ReadExactAsync(5), 2000));
+        Assert.Equal(Ascii("AFTER"), await Arrival.WithinAsync(peer.ReadExactAsync(5), 2000));
         Assert.Empty(rig.Faults);
     }
 
@@ -372,7 +372,7 @@ public sealed class StreamChannelTests
         await Task.Delay(100);   // 写出阻塞于对端不读
 
         cancellation.Cancel();
-        CommResult result = await WithinAsync(sending, 2000);
+        CommResult result = await Arrival.WithinAsync(sending, 2000);
 
         // 写出期间取消：中止传输并报告 SendFailed（D10）。
         Assert.Equal(CommErrorKind.Cancelled, result.ErrorKind);
@@ -400,13 +400,13 @@ public sealed class StreamChannelTests
                 await peer.SendFrameAsync(Sequenced(i));
         });
 
-        await WithinAsync(entered.Task, 5000);
+        await Arrival.WithinAsync(entered.Task, 5000);
         await Task.Delay(500);
         Assert.False(writer.IsCompleted, "The peer's writes must block while the device side is not drained.");
 
         // 放行处理器：挂起的写入完成，全部帧按顺序派发，不丢帧。
         release.TrySetResult(true);
-        await WithinAsync(writer, 30000);
+        await Arrival.WithinAsync(writer, 30000);
         await Polling.WaitUntilAsync(() => sink.Count == frameCount, 30000);
 
         IReadOnlyList<byte[]> frames = sink.Frames;
@@ -426,16 +426,16 @@ public sealed class StreamChannelTests
         Task<CommResult<byte[]>> pending = rig.Channel.RequestAsync(Ascii("REQ"), null, null, CancellationToken.None);
         await Task.Delay(50);
 
-        await WithinAsync(rig.Channel.StopAsync(1000), 2000);
+        await Arrival.WithinAsync(rig.Channel.StopAsync(1000), 2000);
 
-        CommResult<byte[]> result = await WithinAsync(pending, 2000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(pending, 2000);
         Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
 
         // 主动停止不报告 onFault，只中止一次传输。
         Assert.Empty(rig.Faults);
         Assert.Equal(1, rig.AbortCount);
 
-        CommResult<byte[]> after = await WithinAsync(rig.Channel.RequestAsync(Ascii("LATE"), null, null, CancellationToken.None), 1000);
+        CommResult<byte[]> after = await Arrival.WithinAsync(rig.Channel.RequestAsync(Ascii("LATE"), null, null, CancellationToken.None), 1000);
         Assert.Equal(CommErrorKind.ConnectionClosed, after.ErrorKind);
     }
 
@@ -450,9 +450,9 @@ public sealed class StreamChannelTests
         Task<CommResult> sending = rig.Channel.SendAsync(new byte[64 * 1024], CancellationToken.None);
         await Task.Delay(100);
 
-        await WithinAsync(rig.Channel.StopAsync(1000), 2000);
+        await Arrival.WithinAsync(rig.Channel.StopAsync(1000), 2000);
 
-        CommResult result = await WithinAsync(sending, 2000);
+        CommResult result = await Arrival.WithinAsync(sending, 2000);
         Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
         Assert.Empty(rig.Faults);
         Assert.Equal(1, rig.AbortCount);
@@ -466,11 +466,11 @@ public sealed class StreamChannelTests
         rig.Start();
 
         // 空负载在路由表中表示 ReceiveAsync，因此在通道层直接拒绝，且不写出任何字节。
-        CommResult<byte[]> result = await WithinAsync(rig.Channel.RequestAsync(ReadOnlyMemory<byte>.Empty, null, null, CancellationToken.None), 1000);
+        CommResult<byte[]> result = await Arrival.WithinAsync(rig.Channel.RequestAsync(ReadOnlyMemory<byte>.Empty, null, null, CancellationToken.None), 1000);
         Assert.Equal(CommErrorKind.InvalidRequest, result.ErrorKind);
         Assert.Equal(0, rig.Statistics.FramesSent);
 
-        CommResult sent = await WithinAsync(rig.Channel.SendAsync(Ascii("OK"), CancellationToken.None), 2000);
+        CommResult sent = await Arrival.WithinAsync(rig.Channel.SendAsync(Ascii("OK"), CancellationToken.None), 2000);
         Assert.True(sent.IsSuccess, sent.ToString());
     }
 
@@ -500,9 +500,9 @@ public sealed class StreamChannelTests
         Task<CommResult<byte[]>> first = rig.Channel.RequestAsync(Ascii("REQ-A"), null, null, CancellationToken.None);
         Task<CommResult<byte[]>> second = rig.Channel.RequestAsync(Ascii("REQ-B"), null, null, CancellationToken.None);
 
-        CommResult<byte[]> a = await WithinAsync(first, 3000);
-        CommResult<byte[]> b = await WithinAsync(second, 5000);
-        await WithinAsync(script, 3000);
+        CommResult<byte[]> a = await Arrival.WithinAsync(first, 3000);
+        CommResult<byte[]> b = await Arrival.WithinAsync(second, 5000);
+        await Arrival.WithinAsync(script, 3000);
 
         Assert.Equal(CommErrorKind.Timeout, a.ErrorKind);
         Assert.True(b.IsSuccess, b.ToString());
@@ -538,7 +538,7 @@ public sealed class StreamChannelTests
 
         var peer = new StreamPeer(pair.B, Delimiter());
         for (int i = 1; i <= 4; i++)
-            await WithinAsync(peer.SendFrameAsync(Ascii($"F{i}")), 2000);
+            await Arrival.WithinAsync(peer.SendFrameAsync(Ascii($"F{i}")), 2000);
 
         // 第 3 帧已进入路由并等待队列空位：解析循环挂起。
         await Polling.WaitUntilAsync(() => rig.Statistics.FramesReceived >= 3, 3000);
@@ -547,10 +547,10 @@ public sealed class StreamChannelTests
         gate.TrySetResult(true);
 
         // 处理器应在 2 s 内返回（计划）；此处要求明显快于超时：停止本身只需毫秒级，若被迫等待 drainTimeout，耗时会超过 900 ms。
-        await WithinAsync(handlerDone.Task, 2000);
+        await Arrival.WithinAsync(handlerDone.Task, 2000);
         Assert.True(handlerElapsed < 900d, $"The stop called from the handler took {handlerElapsed:F0} ms; it must not wait for the drain timeout.");
 
-        CommResult sent = await WithinAsync(rig.Channel.SendAsync(Ascii("AFTER"), CancellationToken.None), 1000);
+        CommResult sent = await Arrival.WithinAsync(rig.Channel.SendAsync(Ascii("AFTER"), CancellationToken.None), 1000);
         Assert.Equal(CommErrorKind.ConnectionClosed, sent.ErrorKind);
         Assert.Empty(rig.Faults);
     }
@@ -567,16 +567,16 @@ public sealed class StreamChannelTests
 
         var peer = new StreamPeer(pair.B, Delimiter());
         for (int i = 1; i <= 4; i++)
-            await WithinAsync(peer.SendFrameAsync(Ascii($"F{i}")), 2000);
+            await Arrival.WithinAsync(peer.SendFrameAsync(Ascii($"F{i}")), 2000);
 
         // F1 在处理器中阻塞，F2–F4 留在派发队列中。
-        await WithinAsync(entered.Task, 2000);
+        await Arrival.WithinAsync(entered.Task, 2000);
         await Polling.WaitUntilAsync(() => rig.Statistics.FramesReceived == 4, 3000);
         await Task.Delay(100);
 
         Task stop = rig.Channel.StopAsync(2000);
         release.TrySetResult(true);
-        await WithinAsync(stop, 3000);
+        await Arrival.WithinAsync(stop, 3000);
 
         // 停止在队列排空之后才返回：4 帧全部派发，没有丢弃。
         IReadOnlyList<byte[]> frames = sink.Frames;
@@ -614,8 +614,8 @@ public sealed class StreamChannelTests
         var options = new RequestOptions { Matcher = new LeadingByteMatcher() };
         Task<CommResult<byte[]>> request = rig.Channel.RequestAsync(Ascii("REQ"), options, null, CancellationToken.None);
 
-        await WithinAsync(entered.Task, 2000);
-        await WithinAsync(script, 5000);
+        await Arrival.WithinAsync(entered.Task, 2000);
+        await Arrival.WithinAsync(script, 5000);
         await Polling.WaitUntilAsync(() => rig.Statistics.FramesReceived >= 3, 3000);
         await Task.Delay(200);   // 填充循环有充足时间读到对端的结束
 
@@ -623,7 +623,7 @@ public sealed class StreamChannelTests
         Assert.Empty(rig.Faults);
 
         release.TrySetResult(true);
-        CommResult<byte[]> reply = await WithinAsync(request, 2000);
+        CommResult<byte[]> reply = await Arrival.WithinAsync(request, 2000);
         Assert.True(reply.IsSuccess, reply.ToString());
         Assert.Equal(Ascii("RSP-1"), reply.Data);
 
@@ -642,7 +642,7 @@ public sealed class StreamChannelTests
 
         var peer = new StreamPeer(pair.B, IdleGap(gapMs: 5000));
         var stopwatch = Stopwatch.StartNew();
-        await WithinAsync(peer.SendRawAsync(Ascii("ABCDE")), 2000);
+        await Arrival.WithinAsync(peer.SendRawAsync(Ascii("ABCDE")), 2000);
         pair.B.Dispose();   // 不等待静默，立即结束
 
         await WaitForCountAsync(rig.Sink, 1);
@@ -664,7 +664,7 @@ public sealed class StreamChannelTests
 
         // 长度字段声明 10 字节负载（帧总长 12），只写 5 字节后结束。
         var peer = new StreamPeer(pair.B, LengthField());
-        await WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3 }), 2000);
+        await Arrival.WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3 }), 2000);
         pair.B.Dispose();
 
         await Polling.WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
@@ -682,7 +682,7 @@ public sealed class StreamChannelTests
 
         var peer = new StreamPeer(pair.B, IdleGap(gapMs: 100));
         var stopwatch = Stopwatch.StartNew();
-        await WithinAsync(peer.SendRawAsync(Ascii("ABCDE")), 2000);
+        await Arrival.WithinAsync(peer.SendRawAsync(Ascii("ABCDE")), 2000);
         await WaitForCountAsync(rig.Sink, 1);
         stopwatch.Stop();
 
@@ -702,7 +702,7 @@ public sealed class StreamChannelTests
 
         var peer = new StreamPeer(pair.B, LengthField());
         var stopwatch = Stopwatch.StartNew();
-        await WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3, 4, 5 }), 2000);
+        await Arrival.WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3, 4, 5 }), 2000);
         await Polling.WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
         stopwatch.Stop();
 
@@ -721,7 +721,7 @@ public sealed class StreamChannelTests
 
         // 对端不读取：写出挂起，流忽略取消，只能靠 abortTransport 打断。
         var stopwatch = Stopwatch.StartNew();
-        CommResult sent = await WithinAsync(rig.Channel.SendAsync(new byte[64 * 1024], CancellationToken.None), 5000);
+        CommResult sent = await Arrival.WithinAsync(rig.Channel.SendAsync(new byte[64 * 1024], CancellationToken.None), 5000);
         stopwatch.Stop();
 
         Assert.Equal(CommErrorKind.Timeout, sent.ErrorKind);
@@ -740,7 +740,7 @@ public sealed class StreamChannelTests
         // 填充循环挂起在读取上（对端没有数据）。停止必须经 abortTransport 打断读取，而不是等待 2 s 的排空超时。
         await Task.Delay(50);
         var stopwatch = Stopwatch.StartNew();
-        await WithinAsync(rig.Channel.StopAsync(2000), 3000);
+        await Arrival.WithinAsync(rig.Channel.StopAsync(2000), 3000);
         stopwatch.Stop();
 
         Assert.InRange(stopwatch.Elapsed.TotalMilliseconds, 0d, 1000d);

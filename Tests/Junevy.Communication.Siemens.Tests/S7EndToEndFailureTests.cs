@@ -66,13 +66,8 @@ public sealed class S7EndToEndFailureTests
 
             await device.ToDevice().RunAsync(stream, token);
         });
-        var transport = new TcpClientChannelConfig
-        {
-            Host = "127.0.0.1",
-            Port = server.Port,
-            Reconnect = new ReconnectOptions { Enabled = true, Interval = 100 },
-        };
-        using S7Client client = S7Client.Create(transport, new S7ClientOptions());
+TcpClientChannelConfig transport = LoopbackTcp.Reconnecting(server.Port, reconnectIntervalMs: 100);
+using S7Client client = S7Client.Create(transport, new S7ClientOptions());
 
         Succeeded(await client.ConnectAsync());
         Succeeded(await client.WriteInt16Async("DB1.DBW0", 7));
@@ -81,7 +76,7 @@ public sealed class S7EndToEndFailureTests
         server.CloseConnection(0);
 
         // 重连重新走 CR → CC → Setup：替身统计到两次连接请求，旧值仍从同一块内存读回。
-        await FinishWithinAsync(secondConnection.Task, 15000);
+        await Arrival.WithinAsync(secondConnection.Task, 15000);
         Assert.True(await client.WaitForConnectedAsync(15000), "The channel did not finish reconnecting.");
         Assert.Equal(2, device.ConnectionRequestCount);
         Assert.Equal((short)7, Succeeded(await client.ReadInt16Async("DB1.DBW0")));
@@ -105,7 +100,7 @@ public sealed class S7EndToEndFailureTests
         // 心跳探测读 MB0（P4-D15）：握手之后设备不再回答任何请求，连续失败达到上限即判为心跳失效。
         cpu.Device.Silent = true;
 
-        ConnectionStateChangedEventArgs change = await FinishWithinAsync(failed.Task, 15000);
+        ConnectionStateChangedEventArgs change = await Arrival.WithinAsync(failed.Task, 15000);
 
         Assert.Equal(ConnectionState.Reconnecting, change.CurrentState);
         Assert.Equal(DisconnectReason.HeartbeatFailed, change.Reason);
@@ -137,22 +132,14 @@ public sealed class S7EndToEndFailureTests
             Task<CommResult<byte[]>> pending = cpu.Client.ReadBytesAsync("DB1.DBB0", 4);
 
             // 等设备确实收到读请求再 Dispose：否则命中的是"Dispose 之后才调用"的契约，而不是在途请求。
-            byte[] request = await FinishWithinAsync(arrived, 15000);
+            byte[] request = await Arrival.WithinAsync(arrived, 15000);
             Assert.Equal(S7VarItem.ReadService, Service(request));
 
             cpu.Client.Dispose();
 
             // 在途请求由通道的停止序列判为连接关闭：不抛异常、不悬挂，也不因 Dispose 而重试。
-            CommResult<byte[]> result = await FinishWithinAsync(pending, 15000);
+            CommResult<byte[]> result = await Arrival.WithinAsync(pending, 15000);
             Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
         }
-    }
-
-    /// <summary>在时限内等待一个任务完成；超时即失败（不轮询、不睡眠）。</summary>
-    private static async Task<T> FinishWithinAsync<T>(Task<T> task, int timeoutMs)
-    {
-        Task winner = await Task.WhenAny(task, Task.Delay(timeoutMs));
-        Assert.True(ReferenceEquals(winner, task), $"Still incomplete after {timeoutMs} ms.");
-        return await task;
     }
 }

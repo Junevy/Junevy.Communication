@@ -26,7 +26,7 @@ public sealed class TestingKitTests
         Task readTask = ReadFullAsync(pair.B, received);
         Task writeTask = pair.A.WriteAsync(payload, 0, payload.Length);
 
-        await AwaitWithinAsync(Task.WhenAll(writeTask, readTask), 10000);
+        await Arrival.WithinAsync(Task.WhenAll(writeTask, readTask), 10000);
         Assert.Equal(payload, received);
     }
 
@@ -55,8 +55,8 @@ public sealed class TestingKitTests
         Assert.False(writeTask.IsCompleted, "The writer must stay blocked while the peer does not read.");
 
         var received = new byte[payload.Length];
-        await AwaitWithinAsync(ReadFullAsync(pair.B, received), 5000);
-        await AwaitWithinAsync(writeTask, 5000);
+        await Arrival.WithinAsync(ReadFullAsync(pair.B, received), 5000);
+        await Arrival.WithinAsync(writeTask, 5000);
         Assert.Equal(payload, received);
     }
 
@@ -74,14 +74,14 @@ public sealed class TestingKitTests
         encoder.Encode(Ascii("PING"), writer);
         encoder.Encode(Ascii("PONG2"), writer);
         byte[] request = writer.ToArray();
-        await AwaitWithinAsync(pair.A.WriteAsync(request, 0, request.Length), 5000);
+        await Arrival.WithinAsync(pair.A.WriteAsync(request, 0, request.Length), 5000);
 
         byte[] echoed = new byte[request.Length];
-        await AwaitWithinAsync(ReadFullAsync(pair.A, echoed), 5000);
+        await Arrival.WithinAsync(ReadFullAsync(pair.A, echoed), 5000);
         Assert.Equal("PING\r\nPONG2\r\n", Encoding.ASCII.GetString(echoed));
 
         cancellation.Cancel();
-        await AwaitWithinAsync(device, 5000);
+        await Arrival.WithinAsync(device, 5000);
     }
 
     [Fact]
@@ -92,14 +92,14 @@ public sealed class TestingKitTests
         await using DeviceSimulatorTcpHost host = simulator.HostTcp();
 
         using var client = new TcpClient();
-        await AwaitWithinAsync(client.ConnectAsync(IPAddress.Loopback, host.Port), 5000);
+        await Arrival.WithinAsync(client.ConnectAsync(IPAddress.Loopback, host.Port), 5000);
 
         NetworkStream stream = client.GetStream();
         byte[] request = Ascii("PING\r\n");
-        await AwaitWithinAsync(stream.WriteAsync(request, 0, request.Length), 5000);
+        await Arrival.WithinAsync(stream.WriteAsync(request, 0, request.Length), 5000);
 
         byte[] echoed = new byte[request.Length];
-        await AwaitWithinAsync(ReadFullAsync(stream, echoed), 5000);
+        await Arrival.WithinAsync(ReadFullAsync(stream, echoed), 5000);
         Assert.Equal("PING\r\n", Encoding.ASCII.GetString(echoed));
         Assert.Equal(1, host.AcceptedConnectionCount);
     }
@@ -110,10 +110,10 @@ public sealed class TestingKitTests
         using var peer = ScriptedUdpPeer.Start((index, datagram) => Task.FromResult<byte[]?>(index == 0 ? new byte[] { 0xAA } : null));
         using var client = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
 
-        await AwaitWithinAsync(client.SendAsync(new byte[] { 1 }, 1, peer.EndPoint), 3000);
-        await AwaitWithinAsync(client.SendAsync(new byte[] { 2 }, 1, peer.EndPoint), 3000);
+        await Arrival.WithinAsync(client.SendAsync(new byte[] { 1 }, 1, peer.EndPoint), 3000);
+        await Arrival.WithinAsync(client.SendAsync(new byte[] { 2 }, 1, peer.EndPoint), 3000);
 
-        UdpReceiveResult reply = await AwaitWithinAsync(client.ReceiveAsync(), 3000);
+        UdpReceiveResult reply = await Arrival.WithinAsync(client.ReceiveAsync(), 3000);
         Assert.Equal(new byte[] { 0xAA }, reply.Buffer);
 
         await Polling.WaitUntilAsync(() => peer.ReceivedCount == 2, 3000);
@@ -137,9 +137,9 @@ public sealed class TestingKitTests
         });
 
         using var client = new TcpClient();
-        await AwaitWithinAsync(client.ConnectAsync(IPAddress.Loopback, server.Port), 5000);
+        await Arrival.WithinAsync(client.ConnectAsync(IPAddress.Loopback, server.Port), 5000);
         byte[] data = { 1, 2, 3, 4 };
-        await AwaitWithinAsync(client.GetStream().WriteAsync(data, 0, data.Length), 5000);
+        await Arrival.WithinAsync(client.GetStream().WriteAsync(data, 0, data.Length), 5000);
 
         await Polling.WaitUntilAsync(() => server.ReceivedBytes == 4, 3000);
         client.Close();
@@ -160,14 +160,14 @@ public sealed class TestingKitTests
         });
 
         using var client = new TcpClient();
-        await AwaitWithinAsync(client.ConnectAsync(IPAddress.Loopback, server.Port), 5000);
+        await Arrival.WithinAsync(client.ConnectAsync(IPAddress.Loopback, server.Port), 5000);
         await Polling.WaitUntilAsync(() => server.AcceptedConnectionCount == 1, 3000);
 
         server.CloseConnection(0);
 
         // 服务端关闭连接后，客户端读到流末尾。
         var buffer = new byte[1];
-        int read = await AwaitWithinAsync(client.GetStream().ReadAsync(buffer, 0, buffer.Length), 3000);
+        int read = await Arrival.WithinAsync(client.GetStream().ReadAsync(buffer, 0, buffer.Length), 3000);
         Assert.Equal(0, read);
         Assert.Throws<ArgumentOutOfRangeException>(() => server.CloseConnection(1));
     }
@@ -177,10 +177,10 @@ public sealed class TestingKitTests
     {
         using var server = SilentTcpServer.Start();
         using var client = new TcpClient();
-        await AwaitWithinAsync(client.ConnectAsync(IPAddress.Loopback, server.Port), 5000);
+        await Arrival.WithinAsync(client.ConnectAsync(IPAddress.Loopback, server.Port), 5000);
 
         byte[] data = new byte[10];
-        await AwaitWithinAsync(client.GetStream().WriteAsync(data, 0, data.Length), 5000);
+        await Arrival.WithinAsync(client.GetStream().WriteAsync(data, 0, data.Length), 5000);
         await Polling.WaitUntilAsync(() => server.ReceivedBytes == 10, 3000);
 
         client.Close();
@@ -232,19 +232,5 @@ public sealed class TestingKitTests
 
             total += read;
         }
-    }
-
-    private static async Task AwaitWithinAsync(Task task, int milliseconds)
-    {
-        Task completed = await Task.WhenAny(task, Task.Delay(milliseconds));
-        Assert.Same(task, completed);
-        await task;
-    }
-
-    private static async Task<T> AwaitWithinAsync<T>(Task<T> task, int milliseconds)
-    {
-        Task completed = await Task.WhenAny(task, Task.Delay(milliseconds));
-        Assert.Same(task, completed);
-        return await task;
     }
 }

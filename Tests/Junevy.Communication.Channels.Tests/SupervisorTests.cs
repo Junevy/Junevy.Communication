@@ -21,7 +21,7 @@ public sealed class SupervisorTests
         var states = new StateRecorder();
         states.Attach(supervisor);
 
-        CommResult result = await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        CommResult result = await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
 
         Assert.True(result.IsSuccess, result.ToString());
         await WaitForEntriesAsync(states, 2);
@@ -45,7 +45,7 @@ public sealed class SupervisorTests
         var states = new StateRecorder();
         states.Attach(supervisor);
 
-        CommResult result = await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        CommResult result = await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
@@ -71,10 +71,10 @@ public sealed class SupervisorTests
         var states = new StateRecorder();
         states.Attach(supervisor);
 
-        CommResult first = await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        CommResult first = await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
 
         Assert.False(first.IsSuccess);
-        Assert.True(await WithinAsync(supervisor.WaitForConnectedAsync(3000, CancellationToken.None), 4000));
+        Assert.True(await Arrival.WithinAsync(supervisor.WaitForConnectedAsync(3000, CancellationToken.None), 4000));
         await WaitForEntriesAsync(states, 3);
         Assert.Equal(
             new List<(ConnectionState, ConnectionState)>
@@ -118,7 +118,7 @@ public sealed class SupervisorTests
         await using var supervisor = NewSupervisor(driver, new FixedIntervalBackoff(200, 0));
         var states = new StateRecorder();
         states.Attach(supervisor);
-        await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
         await WaitForEntriesAsync(states, 2);
 
         long lostAt = Stopwatch.GetTimestamp();
@@ -139,7 +139,7 @@ public sealed class SupervisorTests
         await using var supervisor = NewSupervisor(driver);
         var states = new StateRecorder();
         states.Attach(supervisor);
-        await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
 
         supervisor.ReportConnectionLost(0, DisconnectReason.RemoteClosed, null);
         supervisor.ReportConnectionLost(99, DisconnectReason.RemoteClosed, null);
@@ -155,13 +155,13 @@ public sealed class SupervisorTests
     {
         var driver = new FakeConnectionDriver();
         await using var supervisor = NewSupervisor(driver);
-        await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
 
         // 同一代次并发报告 10 次：只能关闭一次。
         var reports = Enumerable.Range(0, 10)
             .Select(_ => Task.Run(() => supervisor.ReportConnectionLost(1, DisconnectReason.RemoteClosed, null)))
             .ToArray();
-        await WithinAsync(Task.WhenAll(reports), 3000);
+        await Arrival.WithinAsync(Task.WhenAll(reports), 3000);
 
         await Polling.WaitUntilAsync(() => supervisor.State == ConnectionState.Disconnected, 3000);
         await Task.Delay(200);
@@ -176,7 +176,7 @@ public sealed class SupervisorTests
         await using var supervisor = NewSupervisor(driver, new FixedIntervalBackoff(10, 2));
         var states = new StateRecorder();
         states.Attach(supervisor);
-        await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
 
         supervisor.ReportConnectionLost(1, DisconnectReason.RemoteClosed, null);
 
@@ -193,11 +193,11 @@ public sealed class SupervisorTests
     {
         var driver = new FakeConnectionDriver((attempt, token) => attempt == 1 ? FakeConnectionDriver.Succeed() : FakeConnectionDriver.Refuse());
         await using var supervisor = NewSupervisor(driver, new FixedIntervalBackoff(50, 0));
-        await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
         supervisor.ReportConnectionLost(1, DisconnectReason.RemoteClosed, null);
         await Polling.WaitUntilAsync(() => driver.OpenCalls >= 3, 3000);
 
-        await WithinAsync(supervisor.DisconnectAsync(0, CancellationToken.None), 3000);
+        await Arrival.WithinAsync(supervisor.DisconnectAsync(0, CancellationToken.None), 3000);
 
         Assert.Equal(ConnectionState.Disconnected, supervisor.State);
         int opensAfterDisconnect = driver.OpenCalls;
@@ -210,8 +210,8 @@ public sealed class SupervisorTests
     {
         var driver = new FakeConnectionDriver();
         await using var supervisor = NewSupervisor(driver, new FixedIntervalBackoff(10, 0));
-        await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
-        await WithinAsync(supervisor.DisconnectAsync(0, CancellationToken.None), 2000);
+        await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        await Arrival.WithinAsync(supervisor.DisconnectAsync(0, CancellationToken.None), 2000);
 
         // 断开之后，旧代次的丢失报告不能触发重连。
         supervisor.ReportConnectionLost(1, DisconnectReason.RemoteClosed, null);
@@ -228,11 +228,11 @@ public sealed class SupervisorTests
         // 重连间隔 60 秒：若没有被取代，循环会一直等待。ConnectAsync 必须立即取消循环并打开连接。
         var driver = new FakeConnectionDriver((attempt, token) => FakeConnectionDriver.Succeed());
         await using var supervisor = NewSupervisor(driver, new FixedIntervalBackoff(60_000, 0));
-        await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
         supervisor.ReportConnectionLost(1, DisconnectReason.RemoteClosed, null);
         await Polling.WaitUntilAsync(() => supervisor.State == ConnectionState.Reconnecting, 2000);
 
-        CommResult result = await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        CommResult result = await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
 
         Assert.True(result.IsSuccess, result.ToString());
         Assert.Equal(ConnectionState.Connected, supervisor.State);
@@ -258,7 +258,7 @@ public sealed class SupervisorTests
             disconnectReturned.TrySetResult(true);
         };
 
-        await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
 
         Task finished = await Task.WhenAny(disconnectReturned.Task, Task.Delay(2000));
         Assert.Same(disconnectReturned.Task, finished);
@@ -271,13 +271,13 @@ public sealed class SupervisorTests
         var driver = new FakeConnectionDriver();
         await using var supervisor = NewSupervisor(driver);
 
-        Assert.False(await WithinAsync(supervisor.WaitForConnectedAsync(50, CancellationToken.None), 2000));
+        Assert.False(await Arrival.WithinAsync(supervisor.WaitForConnectedAsync(50, CancellationToken.None), 2000));
 
         Task<bool> waiting = supervisor.WaitForConnectedAsync(3000, CancellationToken.None);
-        await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
-        Assert.True(await WithinAsync(waiting, 3000));
+        await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        Assert.True(await Arrival.WithinAsync(waiting, 3000));
 
-        Assert.True(await WithinAsync(supervisor.WaitForConnectedAsync(0, CancellationToken.None), 2000));
+        Assert.True(await Arrival.WithinAsync(supervisor.WaitForConnectedAsync(0, CancellationToken.None), 2000));
     }
 
     [Fact(Timeout = 20000)]
@@ -358,7 +358,7 @@ public sealed class SupervisorTests
             var states = new StateRecorder();
             states.Attach(owned);
 
-            CommResult result = await WithinAsync(owned.ConnectAsync(CancellationToken.None), 2000);
+            CommResult result = await Arrival.WithinAsync(owned.ConnectAsync(CancellationToken.None), 2000);
 
             Assert.True(result.IsSuccess, result.ToString());
             await Polling.WaitUntilAsync(() => owned.State == ConnectionState.Disconnected, 3000);
@@ -389,9 +389,9 @@ public sealed class SupervisorTests
         Task disconnect = supervisor.DisconnectAsync(0, CancellationToken.None);
 
         gate.SetResult(true);
-        await WithinAsync(firstConnect, 3000);
-        await WithinAsync(queuedConnect, 3000);
-        await WithinAsync(disconnect, 3000);
+        await Arrival.WithinAsync(firstConnect, 3000);
+        await Arrival.WithinAsync(queuedConnect, 3000);
+        await Arrival.WithinAsync(disconnect, 3000);
 
         Assert.Equal(ConnectionState.Disconnected, supervisor.State);
         int opensAfterDisconnect = driver.OpenCalls;
@@ -404,10 +404,10 @@ public sealed class SupervisorTests
     {
         var driver = new FakeConnectionDriver();
         var supervisor = NewSupervisor(driver);
-        await WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+        await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
 
-        await WithinAsync(supervisor.DisposeAsync().AsTask(), 3000);
-        await WithinAsync(supervisor.DisposeAsync().AsTask(), 3000);
+        await Arrival.WithinAsync(supervisor.DisposeAsync().AsTask(), 3000);
+        await Arrival.WithinAsync(supervisor.DisposeAsync().AsTask(), 3000);
 
         Assert.Equal(ConnectionState.Disposed, supervisor.State);
         Assert.Equal(1, driver.CloseCalls);

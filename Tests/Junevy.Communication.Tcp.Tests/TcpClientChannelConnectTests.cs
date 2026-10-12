@@ -34,7 +34,7 @@ public sealed class TcpClientChannelConnectTests
         var config = CreateConfig(server.Port);
         await using var channel = new TcpClientChannel(config);
 
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 5000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 5000);
 
         Assert.True(result.IsSuccess, result.ToString());
         Assert.Equal(ConnectionState.Connected, channel.State);
@@ -56,7 +56,7 @@ public sealed class TcpClientChannelConnectTests
         var config = CreateConfig(FreePort());
         await using var channel = new TcpClientChannel(config);
 
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 10000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 10000);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
@@ -88,7 +88,7 @@ public sealed class TcpClientChannelConnectTests
         await using var channel = new TcpClientChannel(config);
         var stopwatch = Stopwatch.StartNew();
 
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 15000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 15000);
 
         stopwatch.Stop();
         output.WriteLine($"Invalid host nonexistent.invalid: result {result}; elapsed {stopwatch.ElapsedMilliseconds} ms.");
@@ -112,13 +112,13 @@ public sealed class TcpClientChannelConnectTests
         config.LocalPort = localPort;
         await using var channel = new TcpClientChannel(config);
 
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 10000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 10000);
 
         Assert.True(result.IsSuccess, result.ToString());
         IPEndPoint? local = channel.LocalEndPoint;
         Assert.NotNull(local);
         Assert.Equal(localPort, local!.Port);
-        Assert.Equal(localPort, await WithinAsync(remotePort.Task, 5000));
+        Assert.Equal(localPort, await Arrival.WithinAsync(remotePort.Task, 5000));
     }
 
     [Fact(Timeout = 30000)]
@@ -132,7 +132,7 @@ public sealed class TcpClientChannelConnectTests
 
         // 连接器级：直接读回套接字上的保活选项。
         var connector = new TcpConnector("127.0.0.1", server.Port, null, 0, 10000, socketOptions, NullLogger.Instance);
-        CommResult<Socket> connected = await WithinAsync(connector.ConnectAsync(CancellationToken.None), 10000);
+        CommResult<Socket> connected = await Arrival.WithinAsync(connector.ConnectAsync(CancellationToken.None), 10000);
         Assert.True(connected.IsSuccess, connected.ToString());
 
         using Socket socket = connected.Data!;
@@ -148,7 +148,7 @@ public sealed class TcpClientChannelConnectTests
         var config = CreateConfig(server.Port);
         config.Socket = socketOptions;
         await using var channel = new TcpClientChannel(config);
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 10000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 10000);
         Assert.True(result.IsSuccess, result.ToString());
     }
 
@@ -161,15 +161,15 @@ public sealed class TcpClientChannelConnectTests
         var config = CreateConfig(device.Port);
         config.Framing = framing;
         await using var channel = new TcpClientChannel(config);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
 
-        CommResult<byte[]> hello = await WithinAsync(channel.RequestAsync(Ascii("HELLO")), 5000);
+        CommResult<byte[]> hello = await Arrival.WithinAsync(channel.RequestAsync(Ascii("HELLO")), 5000);
         Assert.True(hello.IsSuccess, hello.ToString());
         Assert.Equal(Ascii("HELLO"), DataOf(hello));
 
         // 9000 字节跨越读取缓冲区，验证分隔符分帧在真实 TCP 上的重组。
         byte[] large = Enumerable.Repeat((byte)'x', 9000).ToArray();
-        CommResult<byte[]> echoed = await WithinAsync(channel.RequestAsync(large), 5000);
+        CommResult<byte[]> echoed = await Arrival.WithinAsync(channel.RequestAsync(large), 5000);
         Assert.True(echoed.IsSuccess, echoed.ToString());
         Assert.Equal(large, DataOf(echoed));
     }
@@ -189,16 +189,16 @@ public sealed class TcpClientChannelConnectTests
         var config = CreateConfig(device.Port);
         config.Framing = framing;
         await using var channel = new TcpClientChannel(config);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
 
         // 长度字段分帧的编码器原样发送，因此请求必须是完整的线路帧（含长度头）；设备原样回显。
         byte[] small = WireFrame(Ascii("PING-PAYLOAD"));
-        CommResult<byte[]> first = await WithinAsync(channel.RequestAsync(small), 5000);
+        CommResult<byte[]> first = await Arrival.WithinAsync(channel.RequestAsync(small), 5000);
         Assert.True(first.IsSuccess, first.ToString());
         Assert.Equal(small, DataOf(first));
 
         byte[] large = WireFrame(Enumerable.Repeat((byte)'L', 5000).ToArray());
-        CommResult<byte[]> second = await WithinAsync(channel.RequestAsync(large), 5000);
+        CommResult<byte[]> second = await Arrival.WithinAsync(channel.RequestAsync(large), 5000);
         Assert.True(second.IsSuccess, second.ToString());
         Assert.Equal(large, DataOf(second));
     }
@@ -215,7 +215,7 @@ public sealed class TcpClientChannelConnectTests
         config.Port = FreePort();
         config.ConnectTimeout = 1;
 
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 10000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 10000);
 
         Assert.True(result.IsSuccess, result.ToString());
         IPEndPoint? remote = channel.RemoteEndPoint;

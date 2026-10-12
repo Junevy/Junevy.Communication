@@ -29,7 +29,7 @@ public sealed class StreamClientSecureStreamTests
         await using var owned = channel;
 
         var stopwatch = Stopwatch.StartNew();
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 4000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 4000);
         stopwatch.Stop();
 
         Assert.False(result.IsSuccess);
@@ -50,12 +50,12 @@ public sealed class StreamClientSecureStreamTests
         });
         await using var owned = channel;
 
-        CommResult connected = await WithinAsync(channel.ConnectAsync(), 3000);
+        CommResult connected = await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
         Assert.True(connected.IsSuccess, connected.ToString());
         Assert.NotNull(wrapper);
 
         // 发送：对端收到的字节经过包装流写出。
-        CommResult sent = await WithinAsync(channel.SendAsync(Ascii("PING")), 3000);
+        CommResult sent = await Arrival.WithinAsync(channel.SendAsync(Ascii("PING")), 3000);
         Assert.True(sent.IsSuccess, sent.ToString());
         var received = new byte[4];
         await ReadExactlyAsync(channel.LatestPair!.B, received);
@@ -65,7 +65,7 @@ public sealed class StreamClientSecureStreamTests
         // 接收：对端写入的字节经包装流读入。先登记接收等待者，避免帧在无人认领时被派发丢弃。
         Task<CommResult<byte[]>> receiving = channel.ReceiveAsync(new RequestOptions { Timeout = 2000 });
         await channel.LatestPair.B.WriteAsync(Ascii("PONG"), 0, 4);
-        CommResult<byte[]> reply = await WithinAsync(receiving, 3000);
+        CommResult<byte[]> reply = await Arrival.WithinAsync(receiving, 3000);
         Assert.True(reply.IsSuccess, reply.ToString());
         Assert.Equal(Ascii("PONG"), reply.Data);
         Assert.True(wrapper.BytesRead >= 4, $"Only {wrapper.BytesRead} bytes came through the wrapper.");
@@ -78,7 +78,7 @@ public sealed class StreamClientSecureStreamTests
             Task.FromResult(CommResult<Stream>.Fail("The secure wrapper failed in the test.", CommErrorKind.AuthenticationFailed)));
         await using var owned = channel;
 
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 3000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(CommErrorKind.AuthenticationFailed, result.ErrorKind);

@@ -2,6 +2,7 @@ using System.Text;
 using Junevy.Communication.Plc;
 using Junevy.Communication.Siemens.DependencyInjection;
 using Junevy.Communication.Tcp;
+using Junevy.Communication.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -23,7 +24,7 @@ public sealed class S7DependencyInjectionTests
 
         IPlcClient client = factory.GetOrAdd("line", new S7ClientConfig
         {
-            Tcp = new TcpClientChannelConfig { Host = "127.0.0.1", Port = 102 },
+            Tcp = LoopbackTcp.Client(102),
         });
 
         Assert.IsType<S7Client>(client);
@@ -82,7 +83,7 @@ public sealed class S7DependencyInjectionTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() => factory.GetOrAdd("line", new S7ClientConfig
         {
-            Tcp = new TcpClientChannelConfig { Host = "127.0.0.1", Port = 102 },
+            Tcp = LoopbackTcp.Client(102),
             Options = new S7ClientOptions { Rack = rack, Slot = slot, ConnectionType = connectionType },
         }));
         Assert.Equal(0, factory.Count);

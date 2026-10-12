@@ -2,6 +2,7 @@ using System.Text;
 using Junevy.Communication.Omron.DependencyInjection;
 using Junevy.Communication.Plc;
 using Junevy.Communication.Tcp;
+using Junevy.Communication.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -23,7 +24,7 @@ public sealed class FinsDependencyInjectionTests
 
         IPlcClient client = factory.GetOrAdd("line", new FinsClientConfig
         {
-            Tcp = new TcpClientChannelConfig { Host = "127.0.0.1", Port = 9600 },
+            Tcp = LoopbackTcp.Client(9600),
         });
 
         Assert.IsType<FinsClient>(client);
@@ -79,7 +80,7 @@ public sealed class FinsDependencyInjectionTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() => factory.GetOrAdd("line", new FinsClientConfig
         {
-            Tcp = new TcpClientChannelConfig { Host = "127.0.0.1", Port = 9600 },
+            Tcp = LoopbackTcp.Client(9600),
             Options = new FinsClientOptions { ClientNode = 255 },
         }));
         Assert.Equal(0, factory.Count);

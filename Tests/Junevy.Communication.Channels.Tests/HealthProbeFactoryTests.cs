@@ -29,7 +29,7 @@ public sealed class HealthProbeFactoryTests
         var channel = new DuplexClientChannel(Settings(reconnect: true, heartbeat: true), components);
         await using var owned = channel;
 
-        CommResult first = await WithinAsync(channel.ConnectAsync(), 3000);
+        CommResult first = await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
 
         Assert.True(first.IsSuccess, first.ToString());
         Assert.Same(channel, received);
@@ -79,13 +79,13 @@ public sealed class HealthProbeFactoryTests
         var channel = new DuplexClientChannel(Settings(heartbeat: true), components);
         await using var owned = channel;
 
-        CommResult thrown = await WithinAsync(channel.ConnectAsync(), 3000);
+        CommResult thrown = await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
         Assert.False(thrown.IsSuccess);
         Assert.Equal(CommErrorKind.Unspecified, thrown.ErrorKind);
         Assert.Contains("HealthProbeFactory", thrown.ErrorMessage);
         Assert.Equal(ConnectionState.Disconnected, channel.State);
 
-        CommResult returnedNull = await WithinAsync(channel.ConnectAsync(), 3000);
+        CommResult returnedNull = await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
         Assert.False(returnedNull.IsSuccess);
         Assert.Equal(CommErrorKind.Unspecified, returnedNull.ErrorKind);
         Assert.Contains("HealthProbeFactory", returnedNull.ErrorMessage);
@@ -109,7 +109,7 @@ public sealed class HealthProbeFactoryTests
         var channel = new DuplexClientChannel(Settings(heartbeat: false), components);
         await using var owned = channel;
 
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
         Assert.Equal(0, Volatile.Read(ref calls));
     }
 

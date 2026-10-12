@@ -25,7 +25,7 @@ public sealed class TcpServerLifecycleTests
         {
             await using var server = new TcpServer(CreateServerConfig(port));
 
-            CommResult result = await WithinAsync(server.StartAsync(), 10000);
+            CommResult result = await Arrival.WithinAsync(server.StartAsync(), 10000);
 
             Assert.False(result.IsSuccess);
             Assert.Equal(CommErrorKind.ResourceExhausted, result.ErrorKind);
@@ -45,17 +45,17 @@ public sealed class TcpServerLifecycleTests
         await using var server = new TcpServer(CreateServerConfig(port));
         var recorder = new ServerRecorder(server);
 
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
         Assert.Equal(ServerState.Running, server.State);
         Assert.Equal(port, server.LocalEndPoint?.Port);
 
-        await WithinAsync(server.StopAsync(), 10000);
+        await Arrival.WithinAsync(server.StopAsync(), 10000);
         Assert.Equal(ServerState.Stopped, server.State);
         Assert.Null(server.LocalEndPoint);
 
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
         await using var client = CreateClient(port);
-        Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
         await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
 
         // 状态事件按顺序派发：启动、运行、停止中、已停止，再次启动并运行。
@@ -73,20 +73,20 @@ public sealed class TcpServerLifecycleTests
         config.StopTimeout = 3000;
         await using var server = new TcpServer(config);
         var recorder = new ServerRecorder(server);
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         var clients = new List<TcpClientChannel>();
         for (int i = 0; i < 10; i++)
         {
             TcpClientChannel client = CreateClient(port);
             clients.Add(client);
-            Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
+            Assert.True((await Arrival.WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
         }
 
         await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 10, 10000);
 
         var stopwatch = Stopwatch.StartNew();
-        await WithinAsync(server.StopAsync(), 10000);
+        await Arrival.WithinAsync(server.StopAsync(), 10000);
         stopwatch.Stop();
 
         Assert.True(stopwatch.ElapsedMilliseconds < config.StopTimeout, $"StopAsync took {stopwatch.ElapsedMilliseconds} ms.");
@@ -106,7 +106,7 @@ public sealed class TcpServerLifecycleTests
         config.RestartOnFault = new ReconnectOptions { Enabled = true, Mode = ReconnectMode.FixedInterval, Interval = 100 };
         await using var server = new TcpServer(config, null, null, FaultOnFirstAcceptListener.CreateFactory());
         var recorder = new ServerRecorder(server);
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         await Polling.WaitUntilAsync(() => recorder.States.Count == 4, 5000);
         Assert.Equal(
@@ -115,7 +115,7 @@ public sealed class TcpServerLifecycleTests
         Assert.Equal(ServerState.Running, server.State);
 
         await using var client = CreateClient(port);
-        Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
         await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
     }
 
@@ -125,7 +125,7 @@ public sealed class TcpServerLifecycleTests
         int port = FreePort();
         await using var server = new TcpServer(CreateServerConfig(port), null, null, FaultOnFirstAcceptListener.CreateFactory());
         var recorder = new ServerRecorder(server);
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         await Polling.WaitUntilAsync(() => recorder.States.Count == 3, 5000);
         await Task.Delay(300);

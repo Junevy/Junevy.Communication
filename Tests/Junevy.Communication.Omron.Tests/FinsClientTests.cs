@@ -100,7 +100,7 @@ public sealed class FinsClientTests
     public void Create_LeavesTheCallersOptionsAndTransportUntouched()
     {
         var options = new FinsClientOptions { ClientNode = 11, DestinationNetwork = 2, DestinationUnit = 3 };
-        var transport = new TcpClientChannelConfig { Host = "127.0.0.1", Port = 9600 };
+        var transport = LoopbackTcp.Client(9600);
 
         using FinsClient client = FinsClient.Create(transport, options);
 
@@ -183,5 +183,5 @@ public sealed class FinsClientTests
     }
 
     // 端口为 0 的 TCP 配置在创建通道时就被 TcpClientChannel 拒绝，因此统一用 FINS 的标准端口 9600（不连接，只是让通道构造成功）。
-    private static TcpClientChannelConfig Transport() => new TcpClientChannelConfig { Host = "127.0.0.1", Port = 9600 };
+    private static TcpClientChannelConfig Transport() => LoopbackTcp.Client(9600);
 }

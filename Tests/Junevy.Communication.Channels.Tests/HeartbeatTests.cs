@@ -94,23 +94,23 @@ public sealed class HeartbeatTests
         var probe = new PayloadHeartbeatProbe(channel, Ascii("PING"), Ascii("OK"), 500);
 
         channel.NextReply = CommResult<byte[]>.Success(Ascii("OK"));
-        CommResult same = await WithinAsync(probe.ProbeAsync(CancellationToken.None), 2000);
+        CommResult same = await Arrival.WithinAsync(probe.ProbeAsync(CancellationToken.None), 2000);
         Assert.True(same.IsSuccess, same.ToString());
         Assert.Equal(new[] { Ascii("PING") }, channel.Requests);
         Assert.Equal(500, channel.LastRequestTimeout);
 
         channel.NextReply = CommResult<byte[]>.Success(Ascii("OK!"));
-        CommResult different = await WithinAsync(probe.ProbeAsync(CancellationToken.None), 2000);
+        CommResult different = await Arrival.WithinAsync(probe.ProbeAsync(CancellationToken.None), 2000);
         Assert.False(different.IsSuccess);
         Assert.Equal(CommErrorKind.ProtocolViolation, different.ErrorKind);
 
         channel.NextReply = CommResult<byte[]>.Fail("No reply.", CommErrorKind.Timeout);
-        CommResult timedOut = await WithinAsync(probe.ProbeAsync(CancellationToken.None), 2000);
+        CommResult timedOut = await Arrival.WithinAsync(probe.ProbeAsync(CancellationToken.None), 2000);
         Assert.Equal(CommErrorKind.Timeout, timedOut.ErrorKind);
 
         // 未指定期望应答：发送成功即健康。
         var sendOnly = new PayloadHeartbeatProbe(channel, Ascii("PING"), null, 500);
-        CommResult sent = await WithinAsync(sendOnly.ProbeAsync(CancellationToken.None), 2000);
+        CommResult sent = await Arrival.WithinAsync(sendOnly.ProbeAsync(CancellationToken.None), 2000);
         Assert.True(sent.IsSuccess, sent.ToString());
         Assert.Equal(1, channel.SendCount);
     }

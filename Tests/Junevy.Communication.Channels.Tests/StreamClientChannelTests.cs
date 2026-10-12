@@ -18,11 +18,11 @@ public sealed class StreamClientChannelTests
         var channel = new DuplexClientChannel(Settings());
         await using var owned = channel;
 
-        CommResult warmUp = await WithinAsync(channel.SendAsync(Ascii("WARM")), 2000);
+        CommResult warmUp = await Arrival.WithinAsync(channel.SendAsync(Ascii("WARM")), 2000);
         Assert.Equal(CommErrorKind.NotConnected, warmUp.ErrorKind);
 
         var stopwatch = Stopwatch.StartNew();
-        CommResult result = await WithinAsync(channel.SendAsync(Ascii("PING")), 2000);
+        CommResult result = await Arrival.WithinAsync(channel.SendAsync(Ascii("PING")), 2000);
         stopwatch.Stop();
 
         Assert.Equal(CommErrorKind.NotConnected, result.ErrorKind);
@@ -51,7 +51,7 @@ public sealed class StreamClientChannelTests
                 states.Add(args.CurrentState);
         };
 
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 3000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
 
         Assert.True(result.IsSuccess, result.ToString());
         await Polling.WaitUntilAsync(() =>
@@ -90,7 +90,7 @@ public sealed class StreamClientChannelTests
         await using var owned = channel;
         channel.FrameReceived += (sender, args) => Interlocked.Increment(ref frameEvents);
 
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 3000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
 
         Assert.True(result.IsSuccess, result.ToString());
         Assert.Equal(Ascii("READY"), claimed);
@@ -110,7 +110,7 @@ public sealed class StreamClientChannelTests
         await using var owned = channel;
 
         var stopwatch = Stopwatch.StartNew();
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 4000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 4000);
         stopwatch.Stop();
 
         Assert.False(result.IsSuccess);
@@ -138,7 +138,7 @@ public sealed class StreamClientChannelTests
                                               });
         await using var owned = channel;
 
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 4000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 4000);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
@@ -156,7 +156,7 @@ public sealed class StreamClientChannelTests
         });
         var channel = new DuplexClientChannel(Settings(reconnect: true), new ChannelComponents { Initializer = initializer });
         await using var owned = channel;
-        await WithinAsync(channel.ConnectAsync(), 3000);
+        await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
         Assert.Equal(1, Volatile.Read(ref initializations));
 
         // 对端关闭连接：通道应自动重连，并再次执行初始化器。
@@ -171,19 +171,19 @@ public sealed class StreamClientChannelTests
     {
         var channel = new DuplexClientChannel(Settings(delimiter: true, reconnect: true));
         await using var owned = channel;
-        await WithinAsync(channel.ConnectAsync(), 3000);
+        await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
         DateTimeOffset? firstConnectedSince = channel.Statistics.ConnectedSince;
         Assert.NotNull(firstConnectedSince);
 
         var firstPeer = new StreamPeer(channel.LatestPair!.B, Delimiter());
-        await WithinAsync(firstPeer.SendFrameAsync(Ascii("FIRST")), 2000);
+        await Arrival.WithinAsync(firstPeer.SendFrameAsync(Ascii("FIRST")), 2000);
         await Polling.WaitUntilAsync(() => channel.Statistics.FramesReceived == 1, 3000);
 
         channel.LatestPair!.B.Dispose();
         await Polling.WaitUntilAsync(() => channel.State == ConnectionState.Connected && channel.OpenCount == 2, 5000);
 
         var secondPeer = new StreamPeer(channel.LatestPair!.B, Delimiter());
-        await WithinAsync(secondPeer.SendFrameAsync(Ascii("SECOND")), 2000);
+        await Arrival.WithinAsync(secondPeer.SendFrameAsync(Ascii("SECOND")), 2000);
         await Polling.WaitUntilAsync(() => channel.Statistics.FramesReceived == 2, 3000);
 
         Assert.Equal(1, channel.Statistics.ReconnectCount);
@@ -218,17 +218,17 @@ public sealed class StreamClientChannelTests
         for (int round = 0; round < 20; round++)
         {
             var channel = new DuplexClientChannel(Settings(delimiter: true, requestTimeout: 10000));
-            CommResult connected = await WithinAsync(channel.ConnectAsync(), 3000);
+            CommResult connected = await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
             Assert.True(connected.IsSuccess, connected.ToString());
 
             // 对端收到请求后不回复：请求一直在途，直到释放。
             var peer = new StreamPeer(channel.LatestPair!.B, Delimiter());
             Task<CommResult<byte[]>> request = channel.RequestAsync(Ascii("REQ"));
-            Assert.Equal(Ascii("REQ"), await WithinAsync(peer.ReceiveFrameAsync(), 3000));
+            Assert.Equal(Ascii("REQ"), await Arrival.WithinAsync(peer.ReceiveFrameAsync(), 3000));
 
             channel.Dispose();
 
-            CommResult<byte[]> outcome = await WithinAsync(request, 3000);
+            CommResult<byte[]> outcome = await Arrival.WithinAsync(request, 3000);
             Assert.Equal(CommErrorKind.ConnectionClosed, outcome.ErrorKind);
         }
     }
@@ -262,7 +262,7 @@ public sealed class StreamClientChannelTests
             handlerFinished.TrySetResult(stopwatch.Elapsed);
         };
 
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 3000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
         Assert.True(result.IsSuccess, result.ToString());
 
         Task finished = await Task.WhenAny(handlerFinished.Task, Task.Delay(5000));
@@ -289,10 +289,10 @@ public sealed class StreamClientChannelTests
             channel!.Dispose();
             handlerFinished.TrySetResult(stopwatch.Elapsed);
         };
-        await WithinAsync(channel.ConnectAsync(), 3000);
+        await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
 
         var peer = new StreamPeer(channel.LatestPair!.B, Delimiter());
-        await WithinAsync(peer.SendFrameAsync(Ascii("TRIGGER")), 2000);
+        await Arrival.WithinAsync(peer.SendFrameAsync(Ascii("TRIGGER")), 2000);
 
         Task finished = await Task.WhenAny(handlerFinished.Task, Task.Delay(5000));
         Assert.Same(handlerFinished.Task, finished);
@@ -317,10 +317,10 @@ public sealed class StreamClientChannelTests
             DisconnectOnDispatchThread(channel!);
             handlerFinished.TrySetResult(true);
         };
-        await WithinAsync(channel.ConnectAsync(), 3000);
+        await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
 
         var peer = new StreamPeer(channel.LatestPair!.B, Delimiter());
-        await WithinAsync(peer.SendFrameAsync(Ascii("TRIGGER")), 2000);
+        await Arrival.WithinAsync(peer.SendFrameAsync(Ascii("TRIGGER")), 2000);
 
         Task finished = await Task.WhenAny(handlerFinished.Task, Task.Delay(5000));
         Assert.Same(handlerFinished.Task, finished);
@@ -332,18 +332,18 @@ public sealed class StreamClientChannelTests
     {
         var channel = new DuplexClientChannel(Settings(delimiter: true));
         await using var owned = channel;
-        await WithinAsync(channel.ConnectAsync(), 3000);
+        await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
 
         var peer = new StreamPeer(channel.LatestPair!.B, Delimiter());
-        CommResult sent = await WithinAsync(channel.SendAsync(Ascii("PING")), 2000);
+        CommResult sent = await Arrival.WithinAsync(channel.SendAsync(Ascii("PING")), 2000);
         Assert.True(sent.IsSuccess, sent.ToString());
-        Assert.Equal(Ascii("PING"), await WithinAsync(peer.ReceiveFrameAsync(), 2000));
+        Assert.Equal(Ascii("PING"), await Arrival.WithinAsync(peer.ReceiveFrameAsync(), 2000));
 
         Task<CommResult<byte[]>> request = channel.RequestAsync(Ascii("Q1"));
-        Assert.Equal(Ascii("Q1"), await WithinAsync(peer.ReceiveFrameAsync(), 2000));
-        await WithinAsync(peer.SendFrameAsync(Ascii("A1")), 2000);
+        Assert.Equal(Ascii("Q1"), await Arrival.WithinAsync(peer.ReceiveFrameAsync(), 2000));
+        await Arrival.WithinAsync(peer.SendFrameAsync(Ascii("A1")), 2000);
 
-        CommResult<byte[]> reply = await WithinAsync(request, 2000);
+        CommResult<byte[]> reply = await Arrival.WithinAsync(request, 2000);
         Assert.True(reply.IsSuccess, reply.ToString());
         Assert.Equal(Ascii("A1"), reply.Data);
     }
@@ -362,12 +362,12 @@ public sealed class StreamClientChannelTests
             data = args.Data;
             raised.TrySetResult(true);
         };
-        await WithinAsync(channel.ConnectAsync(), 3000);
+        await Arrival.WithinAsync(channel.ConnectAsync(), 3000);
 
         var peer = new StreamPeer(channel.LatestPair!.B, Delimiter());
-        await WithinAsync(peer.SendFrameAsync(Ascii("EVT")), 2000);
+        await Arrival.WithinAsync(peer.SendFrameAsync(Ascii("EVT")), 2000);
 
-        await WithinAsync(raised.Task, 3000);
+        await Arrival.WithinAsync(raised.Task, 3000);
         Assert.Same(channel, sender);
         Assert.Equal(Ascii("EVT"), data);
     }
@@ -379,7 +379,7 @@ public sealed class StreamClientChannelTests
         channel.Dispose();
 
         Task disconnect = channel.DisconnectAsync();
-        await WithinAsync(disconnect, 1000);
+        await Arrival.WithinAsync(disconnect, 1000);
     }
 
     // 心跳探测的请求超时：探测期间发出的请求超时不触发 ResetOnRequestTimeout，第 MaxFailures 次失败才以 HeartbeatFailed 断开。
@@ -392,13 +392,13 @@ public sealed class StreamClientChannelTests
         settings.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 200, Timeout = 200, MaxFailures = 3, Payload = "PING", ExpectedReply = "PONG" };
         await using var channel = new DuplexClientChannel(settings);   // 对端不回复心跳。
         TaskCompletionSource<ConnectionStateChangedEventArgs> lost = ObserveLoss(channel);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
 
         await Polling.WaitUntilAsync(() => channel.Statistics.ConsecutiveHeartbeatFailures >= 2 || lost.Task.IsCompleted, 5000);
         Assert.False(lost.Task.IsCompleted, "The connection was lost before the second heartbeat failure.");
         Assert.Equal(ConnectionState.Connected, channel.State);
 
-        ConnectionStateChangedEventArgs lostEvent = await WithinAsync(lost.Task, 10000);
+        ConnectionStateChangedEventArgs lostEvent = await Arrival.WithinAsync(lost.Task, 10000);
         Assert.Equal(DisconnectReason.HeartbeatFailed, lostEvent.Reason);
         Assert.True(channel.Statistics.ConsecutiveHeartbeatFailures >= 3);
     }
@@ -420,13 +420,13 @@ public sealed class StreamClientChannelTests
         channel = new DuplexClientChannel(settings, new ChannelComponents { HealthProbe = probe });
         await using var owned = channel;
         TaskCompletionSource<ConnectionStateChangedEventArgs> lost = ObserveLoss(channel);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
 
         await Polling.WaitUntilAsync(() => channel.Statistics.ConsecutiveHeartbeatFailures >= 2 || lost.Task.IsCompleted, 5000);
         Assert.False(lost.Task.IsCompleted, "The connection was lost before the second probe failure.");
         Assert.Equal(ConnectionState.Connected, channel.State);
 
-        ConnectionStateChangedEventArgs lostEvent = await WithinAsync(lost.Task, 10000);
+        ConnectionStateChangedEventArgs lostEvent = await Arrival.WithinAsync(lost.Task, 10000);
         Assert.Equal(DisconnectReason.HeartbeatFailed, lostEvent.Reason);
         Assert.True(probe.Calls >= 3);
     }
@@ -446,13 +446,13 @@ public sealed class StreamClientChannelTests
         settings.Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 50, Timeout = 10000, MaxFailures = 3 };
         await using var channel = new DuplexClientChannel(settings, new ChannelComponents { HealthProbe = probe });
         TaskCompletionSource<ConnectionStateChangedEventArgs> lost = ObserveLoss(channel);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
         await Polling.WaitUntilAsync(() => probe.Calls >= 1, 5000);   // 探测已经开始，且远未返回（超时 10 秒）。
 
-        CommResult<byte[]> reply = await WithinAsync(channel.RequestAsync(Ascii("REQ")), 5000);
+        CommResult<byte[]> reply = await Arrival.WithinAsync(channel.RequestAsync(Ascii("REQ")), 5000);
 
         Assert.Equal(CommErrorKind.Timeout, reply.ErrorKind);
-        ConnectionStateChangedEventArgs lostEvent = await WithinAsync(lost.Task, 5000);
+        ConnectionStateChangedEventArgs lostEvent = await Arrival.WithinAsync(lost.Task, 5000);
         Assert.Equal(DisconnectReason.RequestTimeout, lostEvent.Reason);
     }
 

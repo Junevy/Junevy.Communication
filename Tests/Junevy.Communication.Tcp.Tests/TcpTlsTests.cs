@@ -32,15 +32,15 @@ public sealed class TcpTlsTests
         using TestCertificate serverCertificate = TestCertificates.CreateSelfSigned();
         int port = FreePort();
         await using TcpServer server = CreateTlsServer(port, new TcpChannelComponents { ServerCertificate = serverCertificate.Certificate });
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         await using var client = new TcpClientChannel(CreateTlsClientConfig(port),
                                                       components: new TcpChannelComponents { RemoteCertificateValidation = Pin(serverCertificate.Thumbprint) });
-        CommResult connected = await WithinAsync(client.ConnectAsync(), 10000);
+        CommResult connected = await Arrival.WithinAsync(client.ConnectAsync(), 10000);
         Assert.True(connected.IsSuccess, connected.ToString());
         Assert.True(client.IsTlsActive);
 
-        CommResult<byte[]> reply = await WithinAsync(client.RequestAsync(Ascii("PING")), 5000);
+        CommResult<byte[]> reply = await Arrival.WithinAsync(client.RequestAsync(Ascii("PING")), 5000);
         Assert.True(reply.IsSuccess, reply.ToString());
         Assert.Equal(Ascii("PING"), DataOf(reply));
 
@@ -55,11 +55,11 @@ public sealed class TcpTlsTests
         using TestCertificate serverCertificate = TestCertificates.CreateSelfSigned();
         int port = FreePort();
         await using TcpServer server = CreateTlsServer(port, new TcpChannelComponents { ServerCertificate = serverCertificate.Certificate });
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         await using var client = new TcpClientChannel(CreateTlsClientConfig(port));
 
-        CommResult result = await WithinAsync(client.ConnectAsync(), 10000);
+        CommResult result = await Arrival.WithinAsync(client.ConnectAsync(), 10000);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(CommErrorKind.AuthenticationFailed, result.ErrorKind);
@@ -73,13 +73,13 @@ public sealed class TcpTlsTests
         using TestCertificate serverCertificate = TestCertificates.CreateSelfSigned();
         int port = FreePort();
         await using TcpServer server = CreateTlsServer(port, new TcpChannelComponents { ServerCertificate = serverCertificate.Certificate });
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         var logger = new TestLogger();
         await using var client = new TcpClientChannel(CreateTlsClientConfig(port, tls => tls.AllowUntrustedServerCertificate = true),
                                                       new CategoryLogger<TcpClientChannel>(logger));
 
-        CommResult connected = await WithinAsync(client.ConnectAsync(), 10000);
+        CommResult connected = await Arrival.WithinAsync(client.ConnectAsync(), 10000);
 
         Assert.True(connected.IsSuccess, connected.ToString());
         Assert.True(client.IsTlsActive);
@@ -94,20 +94,20 @@ public sealed class TcpTlsTests
         using TestCertificate serverCertificate = TestCertificates.CreateSelfSigned();
         int port = FreePort();
         await using TcpServer server = CreateTlsServer(port, new TcpChannelComponents { ServerCertificate = serverCertificate.Certificate });
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         // 指纹匹配：校验通过。
         await using (var matching = new TcpClientChannel(CreateTlsClientConfig(port),
                                                          components: new TcpChannelComponents { RemoteCertificateValidation = Pin(serverCertificate.Thumbprint) }))
         {
-            CommResult connected = await WithinAsync(matching.ConnectAsync(), 10000);
+            CommResult connected = await Arrival.WithinAsync(matching.ConnectAsync(), 10000);
             Assert.True(connected.IsSuccess, connected.ToString());
         }
 
         // 指纹不匹配：校验失败。
         await using var mismatched = new TcpClientChannel(CreateTlsClientConfig(port),
                                                           components: new TcpChannelComponents { RemoteCertificateValidation = Pin("0123456789ABCDEF0123456789ABCDEF01234567") });
-        CommResult rejected = await WithinAsync(mismatched.ConnectAsync(), 10000);
+        CommResult rejected = await Arrival.WithinAsync(mismatched.ConnectAsync(), 10000);
         Assert.False(rejected.IsSuccess);
         Assert.Equal(CommErrorKind.AuthenticationFailed, rejected.ErrorKind);
     }
@@ -124,7 +124,7 @@ public sealed class TcpTlsTests
         await using var server = new TcpServer(serverConfig, new CategoryLogger<TcpServer>(serverLogger),
                                                new TcpChannelComponents { ServerCertificate = serverCertificate.Certificate });
         var recorder = new ServerRecorder(server);
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         // 客户端信任服务端证书，但不提供客户端证书。握手完成后的探测应当失败（TLS 1.3 下客户端可能先于服务端完成握手）。
         var probe = new DelegateInitializer(async (view, token) =>
@@ -136,7 +136,7 @@ public sealed class TcpTlsTests
                                                           RemoteCertificateValidation = Pin(serverCertificate.Thumbprint),
                                                       });
 
-        CommResult result = await WithinAsync(client.ConnectAsync(), 15000);
+        CommResult result = await Arrival.WithinAsync(client.ConnectAsync(), 15000);
 
         Assert.False(result.IsSuccess, "A client without a certificate must not be connected.");
         await Polling.WaitUntilAsync(() => serverLogger.GetEntries(LogLevel.Warning)
@@ -158,7 +158,7 @@ public sealed class TcpTlsTests
         await using var server = new TcpServer(serverConfig, new CategoryLogger<TcpServer>(serverLogger),
                                                new TcpChannelComponents { ServerCertificate = serverCertificate.Certificate });
         var recorder = new ServerRecorder(server);
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         var probe = new DelegateInitializer(async (view, token) =>
             (await view.RequestAsync(Ascii("PING"), new RequestOptions { Timeout = 2000 }, token)).ToResult());
@@ -169,7 +169,7 @@ public sealed class TcpTlsTests
             Initializer = probe,
         });
 
-        CommResult result = await WithinAsync(client.ConnectAsync(), 15000);
+        CommResult result = await Arrival.WithinAsync(client.ConnectAsync(), 15000);
 
         Assert.False(result.IsSuccess, "The server must reject an untrusted client certificate.");
         await Polling.WaitUntilAsync(() => serverLogger.GetEntries(LogLevel.Warning)
@@ -192,7 +192,7 @@ public sealed class TcpTlsTests
             RemoteCertificateValidation = Pin(clientCertificate.Thumbprint),
         });
         server.FrameReceived += (sender, args) => { _ = server.SendAsync(args.Session.Id, args.Data); };
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         await using var client = new TcpClientChannel(CreateTlsClientConfig(port), components: new TcpChannelComponents
         {
@@ -200,11 +200,11 @@ public sealed class TcpTlsTests
             RemoteCertificateValidation = Pin(serverCertificate.Thumbprint),
         });
 
-        CommResult connected = await WithinAsync(client.ConnectAsync(), 10000);
+        CommResult connected = await Arrival.WithinAsync(client.ConnectAsync(), 10000);
         Assert.True(connected.IsSuccess, connected.ToString());
         Assert.True(client.IsTlsActive);
 
-        CommResult<byte[]> reply = await WithinAsync(client.RequestAsync(Ascii("MUTUAL")), 5000);
+        CommResult<byte[]> reply = await Arrival.WithinAsync(client.RequestAsync(Ascii("MUTUAL")), 5000);
         Assert.True(reply.IsSuccess, reply.ToString());
         Assert.Equal(Ascii("MUTUAL"), DataOf(reply));
     }
@@ -217,7 +217,7 @@ public sealed class TcpTlsTests
         await using var client = new TcpClientChannel(CreateTlsClientConfig(silent.Port, handshakeTimeout: 500));
 
         var stopwatch = Stopwatch.StartNew();
-        CommResult result = await WithinAsync(client.ConnectAsync(), 6000);
+        CommResult result = await Arrival.WithinAsync(client.ConnectAsync(), 6000);
         stopwatch.Stop();
         output.WriteLine($"TLS handshake timeout observed after {stopwatch.ElapsedMilliseconds} ms.");
 
@@ -234,17 +234,17 @@ public sealed class TcpTlsTests
         int port = FreePort();
         await using TcpServer server = CreateTlsServer(port, new TcpChannelComponents { ServerCertificate = serverCertificate.Certificate });
         var recorder = new ServerRecorder(server);
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         await using var client = new TcpClientChannel(CreateTlsClientConfig(port),
                                                       components: new TcpChannelComponents { RemoteCertificateValidation = Pin(serverCertificate.Thumbprint) });
-        Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
         Assert.True(client.IsTlsActive);
 
-        await WithinAsync(client.DisconnectAsync(), 5000);
+        await Arrival.WithinAsync(client.DisconnectAsync(), 5000);
         Assert.False(client.IsTlsActive);
 
-        CommResult reconnected = await WithinAsync(client.ConnectAsync(), 10000);
+        CommResult reconnected = await Arrival.WithinAsync(client.ConnectAsync(), 10000);
         Assert.True(reconnected.IsSuccess, reconnected.ToString());
         Assert.True(client.IsTlsActive);
 
@@ -264,7 +264,7 @@ public sealed class TcpTlsTests
         serverConfig.SessionHandshakeTimeout = 500;
         await using var server = new TcpServer(serverConfig, components: new TcpChannelComponents { ServerCertificate = serverCertificate.Certificate });
         var recorder = new ServerRecorder(server);
-        Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
         using TcpClient silent = await ConnectRawAsync(port);
         var stopwatch = Stopwatch.StartNew();

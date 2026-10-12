@@ -26,22 +26,22 @@ public sealed class RealSerialPortTests
             var replies = new ConcurrentQueue<Task<CommResult>>();
             device.FrameReceived += (sender, args) => replies.Enqueue(device.SendAsync(Concat(Ascii("ACK:"), args.Data)));
 
-            CommResult deviceConnect = await WithinAsync(device.ConnectAsync(), 10000);
+            CommResult deviceConnect = await Arrival.WithinAsync(device.ConnectAsync(), 10000);
             Assert.True(deviceConnect.IsSuccess, deviceConnect.ToString());
-            CommResult clientConnect = await WithinAsync(client.ConnectAsync(), 10000);
+            CommResult clientConnect = await Arrival.WithinAsync(client.ConnectAsync(), 10000);
             Assert.True(clientConnect.IsSuccess, clientConnect.ToString());
 
             for (int i = 0; i < 10; i++)
             {
                 byte[] payload = Ascii($"REQ-{baud}-{i:D2}");
-                CommResult<byte[]> reply = await WithinAsync(client.RequestAsync(payload, new RequestOptions { Timeout = 5000 }), 10000);
+                CommResult<byte[]> reply = await Arrival.WithinAsync(client.RequestAsync(payload, new RequestOptions { Timeout = 5000 }), 10000);
                 Assert.True(reply.IsSuccess, $"{baud} baud, round {i}: {reply}");
                 Assert.Equal(Concat(Ascii("ACK:"), payload), reply.Data);
             }
 
             foreach (Task<CommResult> sent in replies)
             {
-                CommResult result = await WithinAsync(sent, 5000);
+                CommResult result = await Arrival.WithinAsync(sent, 5000);
                 Assert.True(result.IsSuccess, result.ToString());
             }
         }
@@ -57,9 +57,9 @@ public sealed class RealSerialPortTests
         await using var receiver = new SerialChannel(RealConfig(second, 115200, framing: null));
         var sink = new FrameSink(receiver);
 
-        CommResult receiverConnect = await WithinAsync(receiver.ConnectAsync(), 10000);
+        CommResult receiverConnect = await Arrival.WithinAsync(receiver.ConnectAsync(), 10000);
         Assert.True(receiverConnect.IsSuccess, receiverConnect.ToString());
-        CommResult senderConnect = await WithinAsync(sender.ConnectAsync(), 10000);
+        CommResult senderConnect = await Arrival.WithinAsync(sender.ConnectAsync(), 10000);
         Assert.True(senderConnect.IsSuccess, senderConnect.ToString());
 
         const int count = 100;
@@ -68,7 +68,7 @@ public sealed class RealSerialPortTests
         {
             byte[] payload = Ascii($"FRAME-{i:D3}-PAYLOAD-0123456789");
             expected.Add(payload);
-            CommResult sent = await WithinAsync(sender.SendAsync(payload), 5000);
+            CommResult sent = await Arrival.WithinAsync(sender.SendAsync(payload), 5000);
             Assert.True(sent.IsSuccess, sent.ToString());
             await Task.Delay(200);
         }

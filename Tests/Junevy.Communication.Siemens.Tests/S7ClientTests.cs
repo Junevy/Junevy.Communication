@@ -99,7 +99,7 @@ public sealed class S7ClientTests
     public void Create_LeavesTheCallersOptionsAndTransportUntouched()
     {
         var options = new S7ClientOptions { Rack = 2, Slot = 3, ConnectionType = S7ConnectionType.OP };
-        var transport = new TcpClientChannelConfig { Host = "127.0.0.1", Port = 5000 };
+        var transport = LoopbackTcp.Client(5000);
 
         using S7Client client = S7Client.Create(transport, options);
 
@@ -194,5 +194,5 @@ public sealed class S7ClientTests
     }
 
     // 端口为 0 的 TCP 配置在创建通道时就被 TcpClientChannel 拒绝，因此统一用 S7 的标准端口 102（不连接，只是让通道构造成功）。
-    private static TcpClientChannelConfig Transport() => new TcpClientChannelConfig { Host = "127.0.0.1", Port = 102 };
+    private static TcpClientChannelConfig Transport() => LoopbackTcp.Client(102);
 }

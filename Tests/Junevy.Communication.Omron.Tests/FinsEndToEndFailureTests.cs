@@ -88,13 +88,8 @@ public sealed class FinsEndToEndFailureTests
 
             await device.ToDevice().RunAsync(stream, token);
         });
-        var transport = new TcpClientChannelConfig
-        {
-            Host = "127.0.0.1",
-            Port = server.Port,
-            Reconnect = new ReconnectOptions { Enabled = true, Interval = 100 },
-        };
-        using FinsClient client = FinsClient.Create(transport, new FinsClientOptions());
+TcpClientChannelConfig transport = LoopbackTcp.Reconnecting(server.Port, reconnectIntervalMs: 100);
+using FinsClient client = FinsClient.Create(transport, new FinsClientOptions());
 
         Succeeded(await client.ConnectAsync());
         Succeeded(await client.WriteInt16Async("D0", 7));
@@ -104,7 +99,7 @@ public sealed class FinsEndToEndFailureTests
         server.CloseConnection(0);
 
         // 重连重走节点地址握手；PLC 另派新号，之后的请求都以新号为 SA1（P4-D18）。
-        await ArrivesAsync(secondConnection.Task, 15000);
+        await Arrival.WithinAsync(secondConnection.Task, 15000);
         Assert.True(await client.WaitForConnectedAsync(15000), "The channel did not finish reconnecting.");
         Assert.Equal(2, device.HandshakeCount);
         Succeeded(await client.WriteInt16Async("D0", 8));
@@ -132,7 +127,7 @@ public sealed class FinsEndToEndFailureTests
         // 心跳探测读 D0 的 1 字（P4-D15）：握手之后设备不再回答任何请求，连续失败达到上限即判为心跳失效。
         plc.Device.Silent = true;
 
-        ConnectionStateChangedEventArgs change = await ArrivesAsync(failed.Task, 15000);
+        ConnectionStateChangedEventArgs change = await Arrival.WithinAsync(failed.Task, 15000);
 
         Assert.Equal(ConnectionState.Reconnecting, change.CurrentState);
         Assert.Equal(DisconnectReason.HeartbeatFailed, change.Reason);
@@ -150,22 +145,14 @@ public sealed class FinsEndToEndFailureTests
             Task<CommResult<byte[]>> pending = plc.Client.ReadAsync("D0", 2);
 
             // 等设备确实收到读请求再 Dispose：否则命中的是"Dispose 之后才调用"的契约，而不是在途请求。
-            byte[] request = await ArrivesAsync(arrived, 15000);
+            byte[] request = await Arrival.WithinAsync(arrived, 15000);
             Assert.Equal(FinsMemoryArea.CommandRead, ServiceOf(request));
 
             plc.Client.Dispose();
 
             // 在途请求由通道的停止序列判为连接关闭：不抛异常、不悬挂，也不因 Dispose 而重试。
-            CommResult<byte[]> result = await ArrivesAsync(pending, 15000);
+            CommResult<byte[]> result = await Arrival.WithinAsync(pending, 15000);
             Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
         }
-    }
-
-    /// <summary>在时限内等待一个任务完成；超时即失败（不轮询、不睡眠）。</summary>
-    private static async Task<T> ArrivesAsync<T>(Task<T> pending, int withinMs)
-    {
-        Task finished = await Task.WhenAny(pending, Task.Delay(withinMs));
-        Assert.True(ReferenceEquals(finished, pending), $"Nothing arrived within {withinMs} ms.");
-        return await pending;
     }
 }

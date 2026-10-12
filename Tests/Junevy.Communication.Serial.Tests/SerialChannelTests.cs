@@ -20,7 +20,7 @@ public sealed class SerialChannelTests
         var factory = new FakeSerialPortHandleFactory();
         await using var channel = CreateChannel(factory, CreateConfig());
 
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 5000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 5000);
 
         Assert.True(result.IsSuccess, result.ToString());
         Assert.Equal(ConnectionState.Connected, channel.State);
@@ -39,7 +39,7 @@ public sealed class SerialChannelTests
         };
         await using var channel = CreateChannel(factory, CreateConfig());
 
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 5000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 5000);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
@@ -63,7 +63,7 @@ public sealed class SerialChannelTests
         };
         await using var channel = CreateChannel(factory, CreateConfig(openTimeout: 2000));
 
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 5000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 5000);
 
         Assert.True(result.IsSuccess, result.ToString());
         Assert.Equal(ConnectionState.Connected, channel.State);
@@ -83,7 +83,7 @@ public sealed class SerialChannelTests
         await using var channel = CreateChannel(factory, CreateConfig(openTimeout: 300));
 
         var stopwatch = Stopwatch.StartNew();
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 5000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 5000);
         stopwatch.Stop();
 
         Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
@@ -103,7 +103,7 @@ public sealed class SerialChannelTests
         await using var channel = CreateChannel(factory, CreateConfig(openTimeout: 300));
 
         var stopwatch = Stopwatch.StartNew();
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 5000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 5000);
         stopwatch.Stop();
 
         Assert.Equal(CommErrorKind.Timeout, result.ErrorKind);
@@ -129,7 +129,7 @@ public sealed class SerialChannelTests
         await Polling.WaitUntilAsync(() => factory.CreateCount == 1, 3000);
         cancel.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => WithinAsync(connecting, 3000));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Arrival.WithinAsync(connecting, 3000));
         Assert.Equal(ConnectionState.Disconnected, channel.State);
 
         FakeSerialPortHandle handle = Assert.Single(factory.Handles);
@@ -143,10 +143,10 @@ public sealed class SerialChannelTests
         // 串口的请求超时不重新打开端口（ResetOnRequestTimeout 固定为 false，迟到应答由 LateReplyWindow 处理，设计文档第 10 节）。
         var factory = new FakeSerialPortHandleFactory();
         await using var channel = CreateChannel(factory, CreateConfig(framing: DelimiterFraming(), requestTimeout: 300));
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
 
         // 设备不回复。
-        CommResult<byte[]> reply = await WithinAsync(channel.RequestAsync(Ascii("REQ")), 5000);
+        CommResult<byte[]> reply = await Arrival.WithinAsync(channel.RequestAsync(Ascii("REQ")), 5000);
 
         Assert.Equal(CommErrorKind.Timeout, reply.ErrorKind);
         Assert.Equal(ConnectionState.Connected, channel.State);
@@ -160,7 +160,7 @@ public sealed class SerialChannelTests
         var factory = new FakeSerialPortHandleFactory();
         await using var channel = CreateChannel(factory, CreateConfig());
         var sink = new FrameSink(channel);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
         FakeSerialPortHandle handle = Assert.Single(factory.Handles);
 
         // "AB" 与 "CD" 之间没有静默（远小于 20 ms），合并为一帧；之后超过 100 ms 的静默分隔出两帧。
@@ -190,7 +190,7 @@ public sealed class SerialChannelTests
         var factory = new FakeSerialPortHandleFactory();
         await using var channel = CreateChannel(factory, CreateConfig(framing: framing, partialFrameTimeout: 200));
         var sink = new FrameSink(channel);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
         FakeSerialPortHandle handle = Assert.Single(factory.Handles);
 
         // 声明 5 字节负载，只到达 2 字节。
@@ -217,7 +217,7 @@ public sealed class SerialChannelTests
             lock (states)
                 states.Add(args);
         };
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
 
         // 链路中断：读取抛出 IOException，驱动以 RemoteClosed 报告，监督器按重连策略重新打开端口。
         factory.Handles[0].Pair.Abort();
@@ -254,7 +254,7 @@ public sealed class SerialChannelTests
         ISerialChannel slave1 = channels.GetRequired<ISerialChannel>("slave-1");
         ISerialChannel slave2 = channels.GetRequired<ISerialChannel>("slave-2");
         Assert.Same(slave1, slave2);
-        Assert.True((await WithinAsync(slave1.ConnectAsync(), 5000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(slave1.ConnectAsync(), 5000)).IsSuccess);
 
         using var cancel = new CancellationTokenSource();
         var device = new SerialDevice(Assert.Single(factory.Handles).Device, DelimiterCodec(),
@@ -266,8 +266,8 @@ public sealed class SerialChannelTests
             Task<CommResult<byte[]>> first = slave1.RequestAsync(Ascii($"1:R{round}"), new RequestOptions { Timeout = 3000 });
             Task<CommResult<byte[]>> second = slave2.RequestAsync(Ascii($"2:R{round}"), new RequestOptions { Timeout = 3000 });
 
-            CommResult<byte[]> a = await WithinAsync(first, 10000);
-            CommResult<byte[]> b = await WithinAsync(second, 10000);
+            CommResult<byte[]> a = await Arrival.WithinAsync(first, 10000);
+            CommResult<byte[]> b = await Arrival.WithinAsync(second, 10000);
             Assert.True(a.IsSuccess, a.ToString());
             Assert.True(b.IsSuccess, b.ToString());
             Assert.Equal(Ascii($"ACK:1:R{round}"), a.Data);
@@ -302,13 +302,13 @@ public sealed class SerialChannelTests
             lock (delivered)
                 delivered.Add(args.Data);
         };
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
         FakeSerialPortHandle handle = Assert.Single(factory.Handles);
 
         try
         {
             await WriteRawAsync(handle.Device, Ascii("F1\r\n"));
-            await WithinAsync(entered.Task, 3000);
+            await Arrival.WithinAsync(entered.Task, 3000);
 
             for (int i = 2; i <= 6; i++)
                 await WriteRawAsync(handle.Device, Ascii($"F{i}\r\n"));
@@ -336,10 +336,10 @@ public sealed class SerialChannelTests
     {
         var factory = new FakeSerialPortHandleFactory();
         await using var channel = CreateChannel(factory, CreateConfig(framing: DelimiterFraming()));
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
         FakeSerialPortHandle handle = Assert.Single(factory.Handles);
 
-        await WithinAsync(channel.DisconnectAsync(), 5000);
+        await Arrival.WithinAsync(channel.DisconnectAsync(), 5000);
 
         Assert.Equal(ConnectionState.Disconnected, channel.State);
         Assert.True(handle.DisposeCount >= 1, "Disconnect must release the port.");
@@ -354,7 +354,7 @@ public sealed class SerialChannelTests
         await using var channel = CreateChannel(factory, CreateConfig(handshakeTimeout: 300), components: components);
 
         var stopwatch = Stopwatch.StartNew();
-        CommResult result = await WithinAsync(channel.ConnectAsync(), 5000);
+        CommResult result = await Arrival.WithinAsync(channel.ConnectAsync(), 5000);
         stopwatch.Stop();
 
         Assert.Equal(CommErrorKind.Timeout, result.ErrorKind);
@@ -389,14 +389,14 @@ public sealed class SerialChannelTests
             lock (delivered)
                 delivered.Add(args.Data);
         };
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
         FakeSerialPortHandle handle = Assert.Single(factory.Handles);
 
         Task disconnecting;
         try
         {
             await WriteRawAsync(handle.Device, Ascii("F1\r\n"));
-            await WithinAsync(entered.Task, 3000);
+            await Arrival.WithinAsync(entered.Task, 3000);
             await WriteRawAsync(handle.Device, Ascii("F2\r\nF3\r\nF4\r\n"));
             await Polling.WaitUntilAsync(() => channel.Statistics.FramesReceived == 4, 3000);
             await Task.Delay(100);   // 让解析循环把 F4 路由进派发队列（路由本身不阻塞）。
@@ -408,7 +408,7 @@ public sealed class SerialChannelTests
             release.Set();
         }
 
-        await WithinAsync(disconnecting, 5000);
+        await Arrival.WithinAsync(disconnecting, 5000);
 
         List<byte[]> frames;
         lock (delivered)
@@ -441,7 +441,7 @@ public sealed class SerialChannelTests
         await using var channel = CreateChannel(factory, CreateConfig(framing: DelimiterFraming()),
                                                 ((ILoggerFactory)logger).CreateLogger<SerialChannel>());
 
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
 
         Assert.Contains(logger.GetEntries(LogLevel.Information), entry => entry.Message.Contains("COM3@115200", StringComparison.Ordinal));
     }
@@ -459,7 +459,7 @@ public sealed class SerialChannelTests
         config.OpenTimeout = 1;
 
         Assert.Same(config, channel.Config);
-        Assert.True((await WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
         SerialChannelConfig used = Assert.Single(factory.Handles).Config;
         Assert.Equal("COM3", used.PortName);
         Assert.Equal(115200, used.BaudRate);
