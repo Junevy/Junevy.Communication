@@ -20,19 +20,6 @@ internal static class McTestSupport
     /// <summary>4C 的默认访问路径（计划 §18）：站号 00、网络号 00、PC FF、I/O 03FF、模块站 00、本站号 00。</summary>
     public static Mc4CAccessRoute DefaultSerialRoute => new Mc4CAccessRoute(0x00, 0x00, 0xFF, 0x03FF, 0x00, 0x00);
 
-    /// <summary>把手册的二进制表示（空格分隔的十六进制，如 "50 00"）转换为字节。</summary>
-    /// <param name="text">空格分隔的十六进制字节。</param>
-    /// <returns>字节数组。</returns>
-    public static byte[] Hex(string text)
-    {
-        string digits = text.Replace(" ", string.Empty);
-        var bytes = new byte[digits.Length / 2];
-        for (int i = 0; i < bytes.Length; i++)
-            bytes[i] = Convert.ToByte(digits.Substring(i * 2, 2), 16);
-
-        return bytes;
-    }
-
     /// <summary>把手册的 ASCII 表示（连续字符，如 "5000"）转换为字节。</summary>
     /// <param name="text">ASCII 字符。</param>
     /// <returns>字节数组。</returns>

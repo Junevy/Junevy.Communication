@@ -1,5 +1,6 @@
 using Junevy.Communication.Melsec.Protocol;
 using static Junevy.Communication.Melsec.Tests.McTestSupport;
+using Junevy.Communication.Testing;
 
 namespace Junevy.Communication.Melsec.Tests;
 
@@ -14,7 +15,7 @@ public sealed class McFieldEncodingTests
         // 手册 p.72：M10 起 ON、OFF、ON、OFF、ON 的 E71 二进制为 10H 10H 10H（奇数点的最低半字节为 0）。
         byte[] body = BitWrite(McEncoding.Binary, "M10", new[] { true, false, true, false, true });
 
-        Assert.Equal(Hex("01 14 01 00 0A 00 00 90 05 00 10 10 10"), body);
+        Assert.Equal(HexVector.ToBytes("01 14 01 00 0A 00 00 90 05 00 10 10 10"), body);
     }
 
     [Fact(Timeout = 20000)]
@@ -30,7 +31,7 @@ public sealed class McFieldEncodingTests
     public void BitRead_FivePointsBinary_TakesTheHighNibbleOfEachByteFirst()
     {
         McResponse response = Succeeded(Decode(McFrameType.Frame3E, McEncoding.Binary, 0,
-            Hex("D0 00 00 FF FF 03 00 05 00 00 00 10 10 10"), McDataKind.Bits, 5));
+            HexVector.ToBytes("D0 00 00 FF FF 03 00 05 00 00 00 10 10 10"), McDataKind.Bits, 5));
 
         Assert.Equal(new[] { true, false, true, false, true }, response.Bits);
     }
@@ -62,8 +63,8 @@ public sealed class McFieldEncodingTests
     [Fact(Timeout = 20000)]
     public void DeviceNumber_Binary_IsThreeBytesLittleEndianForBothRadixes()
     {
-        Assert.Equal(Hex("01 04 00 00 1A 00 00 90 01 00"), WordRead(McEncoding.Binary, "M26", 1));
-        Assert.Equal(Hex("01 04 00 00 1A 00 00 9C 01 00"), WordRead(McEncoding.Binary, "X1A", 1));
+        Assert.Equal(HexVector.ToBytes("01 04 00 00 1A 00 00 90 01 00"), WordRead(McEncoding.Binary, "M26", 1));
+        Assert.Equal(HexVector.ToBytes("01 04 00 00 1A 00 00 9C 01 00"), WordRead(McEncoding.Binary, "X1A", 1));
     }
 
     [Fact(Timeout = 20000)]
@@ -86,7 +87,7 @@ public sealed class McFieldEncodingTests
         {
             McRequestBody.BatchRead(McFieldCodec.For(McEncoding.Ascii), McCommands.WordUnit, device, 1000000, 1);
         });
-        Assert.Equal(Hex("01 04 00 00 40 42 0F A8 01 00"),
+        Assert.Equal(HexVector.ToBytes("01 04 00 00 40 42 0F A8 01 00"),
             McRequestBody.BatchRead(McFieldCodec.For(McEncoding.Binary), McCommands.WordUnit, device, 1000000, 1));
     }
 }

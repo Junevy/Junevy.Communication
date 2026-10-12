@@ -3,6 +3,7 @@ using Junevy.Communication.Channels;
 using Junevy.Communication.Channels.Framing;
 using Junevy.Communication.Melsec.Framing;
 using static Junevy.Communication.Melsec.Tests.McTestSupport;
+using Junevy.Communication.Testing;
 
 namespace Junevy.Communication.Melsec.Tests;
 
@@ -123,7 +124,7 @@ public sealed class McProtocolProfileTests
     public void Framing3EBinary_SplitsTheResponseAtTheLengthField()
     {
         // V1 的应答：长度字段位于偏移 7（副头部 2 字节 + 访问路径 5 字节）。
-        AssertFirstFrame(new McClientOptions { FrameType = McFrameType.Frame3E }, Hex("D0 00 00 FF FF 03 00 08 00 00 00 34 12 02 00 EF 1D"), Hex("D0 00"));
+        AssertFirstFrame(new McClientOptions { FrameType = McFrameType.Frame3E }, HexVector.ToBytes("D0 00 00 FF FF 03 00 08 00 00 00 34 12 02 00 EF 1D"), HexVector.ToBytes("D0 00"));
     }
 
     [Fact(Timeout = 20000)]
@@ -142,8 +143,8 @@ public sealed class McProtocolProfileTests
         // V3 的应答：长度字段位于偏移 11（副头部 2、序列号 2、固定 2、访问路径 5 字节）。
         AssertFirstFrame(
             new McClientOptions { FrameType = McFrameType.Frame4E },
-            Hex("D4 00 34 12 00 00 00 FF FF 03 00 06 00 00 00 00 01 00 11"),
-            Hex("D4 00"));
+            HexVector.ToBytes("D4 00 34 12 00 00 00 FF FF 03 00 06 00 00 00 00 01 00 11"),
+            HexVector.ToBytes("D4 00"));
     }
 
     [Fact(Timeout = 20000)]
@@ -160,11 +161,11 @@ public sealed class McProtocolProfileTests
     public void Format4_SplitsAtCrLf_AndDeliversTheFrameWithoutIt()
     {
         // 格式 4 的 NAK 应答（V10），通道去掉 CR LF 后交给协议层。
-        byte[] frame = Join(Hex("15"), Text("F80000FF03FF0000" + "C051"));
+        byte[] frame = Join(HexVector.ToBytes("15"), Text("F80000FF03FF0000" + "C051"));
         var components = McProtocolProfile.Configure(
             new ChannelComponents(), new McClientOptions { FrameType = McFrameType.Frame4C, Encoding = McEncoding.Ascii }, ChannelDelivery.Stream, ChannelMedium.Serial);
         IFrameDecoder decoder = components.FrameCodec!.CreateDecoder();
-        ReadOnlySequence<byte> buffer = new ReadOnlySequence<byte>(Join(frame, Hex("0D 0A")));
+        ReadOnlySequence<byte> buffer = new ReadOnlySequence<byte>(Join(frame, HexVector.ToBytes("0D 0A")));
 
         Assert.True(decoder.TryDecode(ref buffer, out ReadOnlySequence<byte> first));
         Assert.Equal(frame, first.ToArray());
@@ -176,8 +177,8 @@ public sealed class McProtocolProfileTests
         // V8 的应答（含附加码与和校验）；后面的部分帧以 DLE STX 开始。
         AssertFirstFrame(
             new McClientOptions { FrameType = McFrameType.Frame4C },
-            Hex("10 02 10 10 00 F8 00 00 FF FF 03 00 00 FF FF 00 00 10 10 00 10 10 10 10 10 03 33 37"),
-            Hex("10 02"));
+            HexVector.ToBytes("10 02 10 10 00 F8 00 00 FF FF 03 00 00 FF FF 00 00 10 10 00 10 10 10 10 10 03 33 37"),
+            HexVector.ToBytes("10 02"));
     }
 
     [Fact(Timeout = 20000)]
@@ -185,9 +186,9 @@ public sealed class McProtocolProfileTests
     {
         var extractor = new McSerialKeyExtractor(McEncoding.Binary);
 
-        Assert.True(extractor.TryGetRequestKey(Hex("54 00 34 12 00 00 00 FF FF 03 00 0C 00 10 00 01 04 01 00 64 00 00 90 08 00"), out long requestKey));
+        Assert.True(extractor.TryGetRequestKey(HexVector.ToBytes("54 00 34 12 00 00 00 FF FF 03 00 0C 00 10 00 01 04 01 00 64 00 00 90 08 00"), out long requestKey));
         Assert.Equal(0x1234L, requestKey);
-        Assert.True(extractor.TryGetResponseKey(Hex("D4 00 34 12 00 00 00 FF FF 03 00 06 00 00 00 00 01 00 11"), out long responseKey));
+        Assert.True(extractor.TryGetResponseKey(HexVector.ToBytes("D4 00 34 12 00 00 00 FF FF 03 00 06 00 00 00 00 01 00 11"), out long responseKey));
         Assert.Equal(0x1234L, responseKey);
     }
 

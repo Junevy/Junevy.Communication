@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using Junevy.Communication.Channels.Framing;
 using Junevy.Communication.Core.Buffers;
+using Junevy.Communication.Core.Results;
 using Junevy.Communication.Testing;
 using Microsoft.Extensions.Logging;
 
@@ -210,6 +211,40 @@ public sealed class TestingKitTests
     {
         TimeSpan elapsed = await TimingAssert.WithinAsync(TimeSpan.FromMilliseconds(80), TimeSpan.FromMilliseconds(2080), () => Task.Delay(100));
         Assert.InRange(elapsed.TotalMilliseconds, 80d, 2080d);
+    }
+
+    [Fact]
+    public void ScriptedByteChannel_LastRequest_IsNullBeforeAnyRequest()
+    {
+        var channel = new ScriptedByteChannel(_ => CommResult<byte[]>.Success(Array.Empty<byte>()));
+
+        Assert.Null(channel.LastRequest);
+    }
+
+    [Fact]
+    public async Task ScriptedByteChannel_LastRequest_IsTheMostRecentRequest()
+    {
+        var channel = new ScriptedByteChannel(_ => CommResult<byte[]>.Success(Array.Empty<byte>()));
+
+        await channel.RequestAsync(new byte[] { 0x01, 0x02 });
+        await channel.RequestAsync(new byte[] { 0x03, 0x04, 0x05 });
+
+        Assert.Equal(new byte[] { 0x03, 0x04, 0x05 }, channel.LastRequest);
+        Assert.Equal(new byte[] { 0x01, 0x02 }, channel.Requests[0]);
+    }
+
+    [Fact]
+    public async Task ScriptedByteChannel_SendAsync_LeavesLastRequestAlone()
+    {
+        var channel = new ScriptedByteChannel(_ => CommResult<byte[]>.Success(Array.Empty<byte>()));
+        await channel.RequestAsync(new byte[] { 0x01 });
+
+        await channel.SendAsync(new byte[] { 0x02 });
+
+        // LastRequest 只反映 RequestAsync：纯发送（帧同步类协议）不算一次请求。
+        // Requests 仍然两笔——出站帧一律记录，这是 ScriptedByteChannel 一直以来的语义。
+        Assert.Equal(new byte[] { 0x01 }, channel.LastRequest);
+        Assert.Equal(2, channel.Requests.Count);
     }
 
     [Fact]

@@ -13,7 +13,7 @@ namespace Junevy.Communication.Melsec.Tests;
 /// </summary>
 public sealed class Mc4CBinaryFrameDecoderTests
 {
-    private static readonly byte[] Response = Hex("10 02 10 10 00 F8 00 00 FF FF 03 00 00 FF FF 00 00 10 10 00 10 10 10 10 10 03 33 37");
+    private static readonly byte[] Response = HexVector.ToBytes("10 02 10 10 00 F8 00 00 FF FF 03 00 00 FF FF 00 00 10 10 00 10 10 10 10 10 03 33 37");
 
     // DLE ETX 之后的位置：帧体（不含和校验）为 26 字节。
     private const int BodyLength = 26;
@@ -49,7 +49,7 @@ public sealed class Mc4CBinaryFrameDecoderTests
     public void GarbageBeforeDleStx_ThrowsFrameDecodeException()
     {
         var decoder = new Mc4CBinaryFrameDecoder(true, 256);
-        ReadOnlySequence<byte> buffer = SequenceFactory.FromSegments(Hex("AA 10 02 10 03"));
+        ReadOnlySequence<byte> buffer = SequenceFactory.FromSegments(HexVector.ToBytes("AA 10 02 10 03"));
 
         Assert.Throws<FrameDecodeException>(() => { decoder.TryDecode(ref buffer, out _); });
     }
@@ -58,7 +58,7 @@ public sealed class Mc4CBinaryFrameDecoderTests
     public void InvalidDleSequence_ThrowsFrameDecodeException()
     {
         var decoder = new Mc4CBinaryFrameDecoder(false, 256);
-        ReadOnlySequence<byte> buffer = SequenceFactory.FromSegments(Hex("10 02 10 05 00"));
+        ReadOnlySequence<byte> buffer = SequenceFactory.FromSegments(HexVector.ToBytes("10 02 10 05 00"));
 
         Assert.Throws<FrameDecodeException>(() => { decoder.TryDecode(ref buffer, out _); });
     }
@@ -91,7 +91,7 @@ public sealed class Mc4CBinaryFrameDecoderTests
     public void TwoFramesInOneBuffer_AreDeliveredInOrder()
     {
         var decoder = new Mc4CBinaryFrameDecoder(false, 256);
-        byte[] second = Hex("10 02 0C 00 F8 00 00 FF FF 03 00 00 FF FF 51 C0 10 03");
+        byte[] second = HexVector.ToBytes("10 02 0C 00 F8 00 00 FF FF 03 00 00 FF FF 51 C0 10 03");
         ReadOnlySequence<byte> buffer = SequenceFactory.FromSegments(Join(Part(Response, 0, BodyLength), second));
 
         Assert.True(decoder.TryDecode(ref buffer, out ReadOnlySequence<byte> first));

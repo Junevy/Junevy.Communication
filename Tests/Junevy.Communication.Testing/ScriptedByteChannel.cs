@@ -24,6 +24,12 @@ public sealed class ScriptedByteChannel : IByteChannel
     /// <summary>最近一次 <see cref="RequestAsync"/> 收到的单次请求选项；协议使用通道的默认超时时为 null。</summary>
     public RequestOptions? LastOptions { get; private set; }
 
+    /// <summary>
+    /// 最近一次 <see cref="RequestAsync"/> 发出的帧；还没有请求过（或只调用过 <see cref="SendAsync"/>）时为 null。
+    /// <see cref="SendAsync"/> 不更新它：纯发送的协议（帧同步）没有"请求-应答"可言。
+    /// </summary>
+    public byte[]? LastRequest { get; private set; }
+
     /// <inheritdoc />
     public Task<CommResult> SendAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
     {
@@ -34,9 +40,9 @@ public sealed class ScriptedByteChannel : IByteChannel
     /// <inheritdoc />
     public Task<CommResult<byte[]>> RequestAsync(ReadOnlyMemory<byte> payload, RequestOptions? options = null, CancellationToken cancellationToken = default)
     {
-        byte[] frame = Record(payload);
+        LastRequest = Record(payload);
         LastOptions = options;
-        return Task.FromResult(responder(frame));
+        return Task.FromResult(responder(LastRequest));
     }
 
     /// <inheritdoc />
