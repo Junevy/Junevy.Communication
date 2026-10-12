@@ -131,11 +131,17 @@ internal static partial class FinsTestSupport
     /// <summary>D 区字代码。</summary>
     public const byte DWordArea = 0x82;
 
+    /// <summary>D 区位代码。</summary>
+    public const byte DBitArea = 0x02;
+
     /// <summary>W 区位代码。</summary>
     public const byte WBitArea = 0x31;
 
     /// <summary>CIO 区位代码。</summary>
     public const byte CioBitArea = 0x30;
+
+    /// <summary>EM 第 2 组的字代码（P4-D20 ④：0xA0 + 组号）。</summary>
+    public const byte Em2WordArea = 0xA2;
 
     /// <summary>把向量改写成"应答头错误码非 0"的形态（P4-D14 最后一条）。</summary>
     /// <param name="vector">原始向量。</param>

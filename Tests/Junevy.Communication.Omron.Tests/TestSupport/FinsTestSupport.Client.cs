@@ -29,6 +29,9 @@ internal static partial class FinsTestSupport
     /// <summary>结束码之后的数据起点：外壳 16 + 头 10 + 命令回显 2 + 结束码 2。</summary>
     public const int ResponsePayloadIndex = ShellBytes + 14;
 
+    /// <summary>请求的数据起点：内存区参数 6 字节（区域 1 + 字号 2 + 位号 1 + 数量 2）写在回显之后。</summary>
+    public const int RequestPayloadIndex = ShellBytes + 18;
+
     // ———— 由 17.2 节向量派生的两条（改动点写在注释里）————
 
     /// <summary>P4-D15：心跳探测的请求——读 D0 的 1 字（由 V-F-3 改字号 0 与数量 1，SID 仍为 0x01）。</summary>
@@ -43,6 +46,16 @@ internal static partial class FinsTestSupport
     /// <param name="frame">请求帧。</param>
     /// <returns>SID。</returns>
     public static byte SessionIdOf(byte[] frame) => frame[SidIndex];
+
+    /// <summary>内存区读写的服务码回显位置（0101 读、0102 写）。</summary>
+    /// <param name="frame">请求帧。</param>
+    /// <returns>服务码。</returns>
+    public static ushort ServiceOf(byte[] frame) => (ushort)(frame[CommandIndex] << 8 | frame[CommandIndex + 1]);
+
+    /// <summary>内存区读写的区域代码（第 17.3 节）。</summary>
+    /// <param name="frame">请求帧。</param>
+    /// <returns>区域代码。</returns>
+    public static byte AreaCodeOf(byte[] frame) => frame[AreaCodeIndex];
 
     /// <summary>把向量的 SID 改成实际请求使用的那个。</summary>
     /// <param name="vector">原始向量。</param>
@@ -64,6 +77,13 @@ internal static partial class FinsTestSupport
     /// <param name="frame">请求帧。</param>
     /// <returns>数量。</returns>
     public static int QuantityOf(byte[] frame) => frame[QuantityHighIndex] << 8 | frame[QuantityHighIndex + 1];
+
+    /// <summary>替身收到的最后一条该服务的请求帧（读位与写位之后还有心跳，因此不能直接取末条）。</summary>
+    /// <param name="device">设备替身。</param>
+    /// <param name="service">服务码（0101 读、0102 写）。</param>
+    /// <returns>请求帧。</returns>
+    public static byte[] LastRequest(FinsDeviceSimulator device, ushort service)
+        => device.Requests.Last(frame => ServiceOf(frame) == service);
 
     /// <summary>按实际 SID 与负载构造读应答（模板 V-F-4）：外壳长度与 SID 同步改写。</summary>
     /// <param name="sessionId">请求的 SID。</param>
