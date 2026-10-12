@@ -200,6 +200,45 @@ public static class BufferExample
 }
 ```
 
+`BigEndianFields` writes and takes the fixed-width fields of a protocol header, most significant byte first. It writes to an `IBufferWriter<byte>` and reads by consuming the front of a `ReadOnlySpan<byte>`, so a header is encoded field by field and decoded in the same order.
+
+```csharp
+using System;
+using System.Buffers;
+using Junevy.Communication.Core.Buffers;
+
+public static class HeaderExample
+{
+    public const int UInt24Max = 0xFFFFFF;
+
+    // Writes a 10-byte header: 4-byte length, 2-byte command, 3-byte address, 1-byte function code.
+    public static void WriteHeader(IBufferWriter<byte> output, ushort command, int address)
+    {
+        if (address < 0 || address > UInt24Max)
+            throw new ArgumentOutOfRangeException(nameof(address));
+
+        BigEndianFields.WriteUInt32(output, 0x00010000);
+        BigEndianFields.WriteUInt16(output, command);
+        BigEndianFields.WriteUInt24(output, address);
+        BigEndianFields.WriteUInt8(output, 0x7F);
+    }
+
+public static bool TryReadAddress(ReadOnlySpan<byte> data, out int address)
+    {
+        if (!BigEndianFields.TryTakeUInt32(ref data, out _)
+            || !BigEndianFields.TryTakeUInt16(ref data, out _))
+        {
+            address = 0;
+            return false;
+        }
+
+        return BigEndianFields.TryTakeUInt24(ref data, out address);
+    }
+}
+```
+
+`TryTake*` returns `false` when there are not enough bytes and then leaves both `data` and the value untouched, so a decoder can bail out and report a structural error through its own result instead of catching an exception. Passing a null `output`, a `UInt24` outside 0–0xFFFFFF or a negative length is a programming error and throws `ArgumentNullException` / `ArgumentOutOfRangeException`.
+
 ## Creator Catalog and Named Factory
 
 `CreatorCatalog<TCreator>` selects a creator by the exact runtime type of its configuration object (`TCreator` implements `IConfigTypedCreator`, which declares `ConfigType`). `NamedFactory<TItem>` is the base class of the channel and client factories: it keeps named items, aliases and disposal, and a derived factory only supplies the creation logic through `GetOrAddCore` and `TryAddCore`.

@@ -276,6 +276,40 @@ public static class PlcComponentWiring
 
 ### 14.2 执行汇报与偏差（执行者填写）
 
+#### Task 1：Core 的 `BigEndianFields`（P45-D2）
+
+**新增**：`Junevy.Communication.Core/Buffers/BigEndianFields.cs`（165 行）、`Tests/Junevy.Communication.Core.Tests/BigEndianFieldsTests.cs`。
+**修改**：`Junevy.Communication.Core/README.md`（"Buffers" 一节加一段用法与说明）、`CHANGELOG.md`（"新增"）。
+**删除**：无。
+
+**测试先红后绿的证据**：
+
+- 先只写测试文件 → `dotnet build Tests/Junevy.Communication.Core.Tests` 报 **CS0103「当前上下文中不存在名称 BigEndianFields」**（两个目标都报），即新代码阶段无法编译（符合第 1 节第 2 条）。
+- 写生产代码后再跑：先绿了，但 `WriteBytes_CopiesTheBytesVerbatim(value: [])` **失败**（`ArgumentOutOfRangeException: The initial capacity must be greater than zero.`）——这是测试辅助方法把 0 当成 `ByteBufferWriter` 的初始容量，改为 `Math.Max(1, minimumCapacity)` 后通过。
+- 最终：`dotnet test Tests/Junevy.Communication.Core.Tests` → **147 通过 / 0 失败 / 0 跳过**（net8.0 与 net472 各一次），比基线的 116 多 31 条。
+
+**第 2 节自查**：
+
+- **文件 ≤ 300 行**：165 行。**方法 ≤ 60 行**：最长的是类级 XML 注释后的 `WriteUInt24`（8 行），`methodlen.py 61` 无输出。
+- **不重复**：`WriteUInt8` 的"取 span、写、Advance"三步在四个写入方法里重复出现，但宽度、写入原语（`BinaryPrimitives` / 手写移位）与前置校验都不同；`WriteUInt16` / `WriteUInt32` 只有两行，抽辅助方法反而增加间接层。`TryTake*` 的"长度不足 → 取默认值 → 返回 false"是本类型的核心约定，五处各 5 行，形状相同但类型不同（`byte` / `ushort` / `int` / `uint` / `ReadOnlySpan<byte>`），合并需要装箱或委托，不值得。判断：可接受。
+- **依赖方向**：只依赖 `System.Buffers` 与 `System.Buffers.Binary`，Core 不引用任何上层。**可见性最小化**：`public` 成员与第 5 节的固定清单逐条一致，**不多不少**（4 个宽度常量 + 5 个写入 + 5 个读取）。
+- **无魔法数**：`0` / `0xFFFFFF` / `16` / `8` 提成 `UInt24Min` / `UInt24Max` 与 `UInt8Bytes` 等常量；`UInt24` 的移位量是位宽的固有值。
+- **无死代码**：每个成员都有测试覆盖。
+- **错误走结果**：字节不足返回 `false`（解码器据此走 `ProtocolViolation` 之类的结果），不抛异常；只有**编程错误**（null、越界、负长度）抛异常，符合第 2 节"入口校验"与 P45-D2。
+- **测试确定**：全部是纯函数 + 字节数组比较，无时间、无随机、无 I/O。黄金向量 `0x1234` / `0x123456` / `0x12345678` 与 S7、FINS 的线上字节序一致（高位在前）。
+- **不新增生产程序集之间的 IVT**：Core 内部使用，没有新增任何 `[assembly: InternalsVisibleTo]`。
+- **公开 API 只增加计划列出的成员**：第 1 节第 7 条与第 5 节代码块逐条核对通过。
+- **Q30 Core 与 Plc 的新类型协议无关**：`BigEndianFields.cs` 的代码与 XML 注释里**没有** S7、FINS、MELSEC 的术语（原 `S7Fields` 注释里的"S7 的多字节字段""S7 数据项的地址字段"、`FinsFields` 注释里的"FINS/TCP 的长度"等全部没有搬过来）；协议举例只出现在 README（"a protocol header"）。
+- **抽取后删除旧代码**：本 Task 只做 Core 侧的新增，旧代码在 Task 2 删除（计划已如此安排）。
+- **net472 禁用清单**：未用默认接口成员、`Enumerable.Append`、`SequenceReader<T>`、`Task.WaitAsync`、`ArgumentNullException.ThrowIfNull`、Index/Range、`init` 与 `record`。`BinaryPrimitives` 在 net472 由 `System.Memory` 提供（既有 `ByteTransform` 已经这么用）。
+- **代码风格**：文件作用域命名空间；英文异常消息、中文 XML 注释；每条公开成员都有 XML 注释与 `<exception>`。
+
+**第 3 节度量**：Core 有效行 979 → **1088**（+109，`effective_lines.py` 去掉空行与 `//` 注释后的口径；文件本身 165 行）；新增文件未产生新的重复窗口（`BigEndianFields` 的方法体与将被删除的 `S7Fields` / `FinsFields` 相似，Task 2 后自然消失）；超过 60 行的方法仍为 0。
+
+**三条命令的结果**：`dotnet build -c Debug` 0 错误、`dotnet build -c Release` 0 错误、`dotnet test -c Debug` **24 个测试项目 / 目标组合全部通过，0 失败**（Core 147+147、Plc 245+245、Channels 278+278、Tcp 129+129、Udp 38+38、Serial 63+2 跳过 ×2、Melsec 184+1 跳过 ×2、Architecture 11+11、WebApi 732 / 733、Modbus 405、Siemens 316+316、Omron 259+259）。除 Core 外的项目计数与基线逐项一致。
+
+**顺带发现并修正**：Core README 的 `HeaderExample.TryReadAddress` 初版在提前返回的分支没有给 `out address` 赋值，`dotnet build` 报 CS0177；已在临时项目里经 net8.0 与 net472 编译验证后改正（Task 6 的 Skill 示例也要走同样的验证）。
+
 #### Task 0：基线
 
 - **新增、修改、删除的文件**：无（只在本计划文件内记录基线）。

@@ -2,6 +2,18 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — P4.5（Core / Plc 共用件；CommResult 可空性标注）
+
+### 新增（Added）
+
+- 2026-10-12 [Core] 新增公开静态类 `Junevy.Communication.Core.Buffers.BigEndianFields`（计划 Task 1，P45-D2）：把协议报文头的定长大端字段逐个写出或逐个取出，取代原先每个协议各写一份的同类工具。公开成员为宽度常量 `UInt8Bytes` / `UInt16Bytes` / `UInt24Bytes` / `UInt32Bytes`，写入 `WriteUInt8` / `WriteUInt16` / `WriteUInt24` / `WriteUInt32` / `WriteBytes`（目标是 `IBufferWriter<byte>`，多字节一律高位在前），读取 `TryTakeUInt8` / `TryTakeUInt16` / `TryTakeUInt24` / `TryTakeUInt32` / `TryTakeBytes`（从 `ref ReadOnlySpan<byte>` 头部取出并前移）。**读取在字节不足时返回 `false`，既不移动 `data`，`value` 也取默认值**，结构上的长度不足由解码器判定并走结果，不抛异常。参数错误抛异常：`output` 为 null → `ArgumentNullException`；`WriteUInt24` 的值不在 0–0xFFFFFF → `ArgumentOutOfRangeException`；`TryTakeBytes` 的长度为负 → `ArgumentOutOfRangeException`。与 `ByteTransform`（面向数据载荷与字序，长度不足抛异常）、`ByteSequenceReader`（面向 `ReadOnlySequence`）的分工见 Core README 的 "Buffers" 一节。
+
+### 变更（Changed）
+
+### 破坏性变更（Breaking）
+
+### 移除（Removed）
+
 ## [Unreleased] — PLC 协议 P4（Siemens / Omron 1.0.0-preview.1；Plc 套件扩展）
 
 ### 新增（Added）
