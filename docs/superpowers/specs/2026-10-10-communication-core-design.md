@@ -91,27 +91,28 @@ graph TB
 
 ### 3.1 程序集（NuGet 包）
 
-| 程序集 | 内容 | 依赖 | 阶段 |
-|---|---|---|---|
-| `Junevy.Communication.Core` | 通用工具：`CommResult` / `CommErrorKind`、退避与重试循环、`NamedRegistry<T>`、超时工具、日志工具、字节序转换 | `Microsoft.Extensions.*.Abstractions`；net472 另加 `System.Memory`、`Microsoft.Bcl.AsyncInterfaces`（net8.0 已内置） | P1 |
-| `Junevy.Communication.Channels` | 字节通道族：接口、状态机、Supervisor、StreamChannel、DatagramChannel、分帧器、关联、心跳、重连、`ChannelFactory` | Core + `System.IO.Pipelines`（net472 另加 `System.Threading.Channels`） | P1 |
-| `Junevy.Communication.Tcp` | `TcpClientChannel`、`TcpServer`、`TcpSession`、可选 TLS | Channels | P1 |
-| `Junevy.Communication.Udp` | `UdpChannel`（定向 / 非定向、广播、组播） | Channels | P1 |
-| `Junevy.Communication.Serial` | `SerialChannel` | Channels + System.IO.Ports | P1 |
-| `Junevy.Communication.Plc` | 地址型设备协议套件 | Channels | P2 |
-| `Junevy.Communication.Melsec` | 三菱 MC 协议 | Plc + Tcp + Udp + Serial | P2 |
-| `Junevy.Communication.WebApi` | REST 客户端、SOAP 客户端、HTTP 服务端 | Core + System.Text.Json | P3 |
-| `Junevy.Communication.Siemens` / `.Omron` | S7、FINS | Plc + 所需传输包 | P4 |
-| `Junevy.Communication.Secs` | SECS-II、HSMS、SECS-I，之后是 GEM | Channels + Tcp + Serial | P5 |
-| `Junevy.Communication.OpcUa` / `.Mqtt` / `.Ftp` | SDK 适配 | Core + 对应第三方 SDK | P6 |
-| `Junevy.Communication.Modbus` | 现有，本期不动 | 现状 | P7 可选迁移 |
-| `Junevy.Communication.Testing` | 测试套件（内部共享测试工程，暂不发布） | Channels | P1 起持续扩充 |
+| 程序集                                             | 内容                                                                                  | 依赖                                                                                                          | 阶段       |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------- |
+| `Junevy.Communication.Core`                     | 通用工具：`CommResult` / `CommErrorKind`、退避与重试循环、`NamedRegistry<T>`、超时工具、日志工具、字节序转换      | `Microsoft.Extensions.*.Abstractions`；net472 另加 `System.Memory`、`Microsoft.Bcl.AsyncInterfaces`（net8.0 已内置） | P1       |
+| `Junevy.Communication.Channels`                 | 字节通道族：接口、状态机、Supervisor、StreamChannel、DatagramChannel、分帧器、关联、心跳、重连、`ChannelFactory` | Core + `System.IO.Pipelines`（net472 另加 `System.Threading.Channels`）                                         | P1       |
+| `Junevy.Communication.Tcp`                      | `TcpClientChannel`、`TcpServer`、`TcpSession`、可选 TLS                                  | Channels                                                                                                    | P1       |
+| `Junevy.Communication.Udp`                      | `UdpChannel`（定向 / 非定向、广播、组播）                                                        | Channels                                                                                                    | P1       |
+| `Junevy.Communication.Serial`                   | `SerialChannel`                                                                     | Channels + System.IO.Ports                                                                                  | P1       |
+| `Junevy.Communication.Plc`                      | 地址型设备协议套件                                                                           | Channels                                                                                                    | P2       |
+| `Junevy.Communication.Melsec`                   | 三菱 MC 协议                                                                            | Plc + Tcp + Udp + Serial                                                                                    | P2       |
+| `Junevy.Communication.WebApi`                   | REST 客户端、SOAP 客户端、HTTP 服务端                                                          | Core + System.Text.Json                                                                                     | P3       |
+| `Junevy.Communication.Siemens` / `.Omron`       | S7、FINS                                                                             | Plc + 所需传输包                                                                                                 | P4       |
+| `Junevy.Communication.Secs`                     | SECS-II、HSMS、SECS-I，之后是 GEM                                                         | Channels + Tcp + Serial                                                                                     | P5       |
+| `Junevy.Communication.Mqtt` / `.OpcUa` / `.Ftp` | SDK 适配：只做客户端，**只面向 net8.0**（Q9–Q12）                                                 | Core + 对应第三方 SDK（MQTTnet 5、OPC Foundation .NET Standard 2.0、FluentFTP）                                           | P6       |
+| `Junevy.Communication.Modbus`                   | 现有，本期不动                                                                             | 现状                                                                                                          | P7 可选迁移  |
+| `Junevy.Communication.Testing`                  | 测试套件（内部共享测试工程，暂不发布）                                                                 | Channels                                                                                                    | P1 起持续扩充 |
 
 **依赖规则**：
 - 只允许向下依赖；同层协议包之间互不引用。
 - 只有字节通道族及其上层（Plc、Secs、PLC 协议）依赖 Channels；WebApi、OpcUa、Mqtt、Ftp 只依赖 Core，不会被带上 Pipelines 和通道机制。
 - 协议包直接引用自己支持的传输包（例如 Melsec 引用 Tcp、Udp、Serial），用户不需要自己组装。
 - 第三方包只允许出现在 SDK 适配包中（Q3）。
+- SDK 适配包的公开 API 不出现 SDK 的类型；包内凡是使用 SDK 的代码都集中在 `Sdk` 命名空间（Q11）。
 
 ### 3.2 仓库目录
 
@@ -1002,15 +1003,18 @@ SECS 的结果类型自带 `ErrorKind` 字段（取 `CommErrorKind`），方便�
 
 ### 14.2 OPC UA
 
-- 包装官方 SDK，保留原生模型：`NodeId`、`DataValue`、`StatusCode`、订阅与监控项、浏览、方法调用。批量读返回**逐项**状态码，不压成单个结果。
-- 会话重连与订阅转移交给 SDK 自己的 `SessionReconnectHandler`，**不接入**通道族的 Supervisor（第一轮设计中"交给 Supervisor"会与 SDK 的重连逻辑冲突）。
-- 只使用 Core 工具：日志、`NamedRegistry`、初次连接的退避策略。
+- 包装官方 SDK（OPC Foundation .NET Standard **2.0.x**），保留原生**语义**：NodeId、值与状态码、订阅与监控项、浏览。批量读写返回**逐项**状态码，不压成单个结果。
+- 公开 API 用本库的薄类型表达这些语义（NodeId 用标准文本，值用 .NET 基本类型，状态码用自己的结构），不暴露 SDK 的 `NodeId`、`DataValue`、`Variant`（Q11）。原设计写的是"保留原生模型"，2026-10-12 改为现在的做法，理由是 SDK 2.0 把 API 里的 `object` 换成了 `Variant`，暴露 SDK 类型会让 SDK 升级连带破坏使用方。
+- 会话重连与订阅转移交给 SDK 自己的会话恢复机制（2.0 的 `ManagedSession`；原设计写的是 1.x 的 `SessionReconnectHandler`），**不接入**通道族的 Supervisor（第一轮设计中"交给 Supervisor"会与 SDK 的重连逻辑冲突）。
+- 本期范围（Q12）：连接（仅 None 安全策略、匿名登录）、读、写、浏览、订阅。不做方法调用、安全连接与用户登录；用户名登录以后再加，身份选择集中在一处，届时只新增选项。
+- 只使用 Core 工具：结果、日志、`NamedFactory`。
+- 实施计划：`docs/superpowers/plans/2026-10-12-p62-opcua.md`。
 
 ### 14.3 MQTT / FTP
 
-- MQTT：保留主题、QoS、保留消息、会话持久化等原生语义；重连用 Core 的 `RetryLoop`，重连成功后自动重订阅。
-- FTP：保留文件 / 目录 / 传输模式语义；常见的"每次操作一个连接"模式不需要心跳。
-- 都只依赖 Core。
+- MQTT（MQTTnet 5）：保留主题、QoS、保留消息、会话持久化、遗嘱消息、MQTT 5 属性等原生语义。支持 3.1.1 与 5.0，以及 TLS。重连是包内的后台循环，退避用 Core 的 `ExponentialBackoff`；重连成功后，若 Broker 没有保留会话，就按订阅表重新订阅。原设计写的是"用 Core 的 `RetryLoop`"，但 `RetryLoop` 按 P2-D3 没有加入 Core，这里也不加：它是带状态迁移和恢复订阅的循环，不是通用的"重试一个操作"。计划：`docs/superpowers/plans/2026-10-12-p61-mqtt.md`。
+- FTP（FluentFTP）：保留文件、目录、传输语义。支持 FTP 与 FTPS（显式、隐式），只用被动模式，不做 SFTP。每个客户端一条按需连接的控制连接，操作串行，不需要心跳。计划：`docs/superpowers/plans/2026-10-12-p63-ftp.md`。
+- 都只依赖 Core，公开 API 同样不出现 SDK 类型（Q11）。
 
 ---
 
@@ -1246,7 +1250,7 @@ public sealed class OutboxItem
 | P3 | WebApi（MES）：REST 客户端、SOAP 客户端、HTTP 服务端；离线缓存只预留接口 |
 | P4 | S7、FINS（套件的第二、第三个使用者） |
 | P5 | SECS：HSMS → SECS-I → GEM |
-| P6 | OPC UA、MQTT、FTP |
+| P6 | SDK 协议（只做客户端，只面向 net8.0）：P6.1 MQTT → P6.2 OPC UA → P6.3 FTP |
 | P7（可选，破坏性） | Modbus 迁移到 Plc 套件（v3.0） |
 
 P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份"新增协议指南"的更新（Skill + 知识库），把这次接入中踩到的坑写进去。
@@ -1466,6 +1470,10 @@ P4.5（计划 `docs/superpowers/plans/2026-10-12-p45-shared-protocol-parts.md`�
 | Q8 | JSON | System.Text.Json + 可替换的 `IWebApiSerializer` |
 | R1 | 原定的 Core 是否拆分？（第二轮） | 拆成 Core（无语义工具）+ Channels（字节通道族）：特殊协议族只依赖 Core，不会被带上 Pipelines 和通道机制 |
 | R2 | P1 之后的顺序？（第二轮） | 先 Plc 套件 + MELSEC（P2），再 WebApi（P3）：扩展性要尽早被真实协议验证，P1 的通道层如有缺口越早发现返工越小；WebApi 不依赖通道层 |
+| Q9 | SDK 协议的目标框架（2026-10-12） | MQTT、OPC UA、FTP 三个适配包与其测试只面向 net8.0，不做 net472。三个 SDK 的新版本也已不再支持 net472（MQTTnet 5 只有 net8.0 / net10.0，OPC UA 2.0 的 .NET Framework 最低为 4.8）。其余包仍是 `net472;net8.0` |
+| Q10 | SDK 选型（2026-10-12） | 选现代、支持异步、经过大量验证的 NuGet，自己只写适配层，不从零实现协议：MQTTnet 5（MIT）、OPC Foundation .NET Standard 2.0.x（OPC Foundation MIT，用户选定新版本线）、FluentFTP（MIT）。只做客户端 |
+| Q11 | SDK 类型是否外露（2026-10-12） | 不外露：公开 API 只用本库与 BCL 的类型，SDK 只出现在包内的 `Sdk` 命名空间，由架构测试强制。代价是 OPC UA 的结构体等复杂类型本期不支持 |
+| Q12 | P6 的范围（2026-10-12） | MQTT：3.1.1 与 5.0、TLS、MQTT 5 属性、遗嘱消息。OPC UA：连接（None 安全策略、匿名）、读、写、浏览、订阅，不做方法调用、安全连接与用户登录（用户名登录以后再加，计划已留好位置）。FTP：FTP 与 FTPS，不做 SFTP。P6 不等 P5.1，从已含 P4.6 的 master 新建分支，与 P5.1 并行 |
 
 ### 21.2 待确认
 
@@ -1476,7 +1484,7 @@ P4.5（计划 `docs/superpowers/plans/2026-10-12-p45-shared-protocol-parts.md`�
 ## 22. 已按默认处理的细节（可调整）
 
 - 超时单位用 `int` 毫秒，命名沿用 Modbus 的 `XxxTimeout`。
-- 自动重连默认关闭（与 Modbus 一致）；`PlcClientOptions.RetryCount` 默认 0。
+- 自动重连默认关闭（与 Modbus 一致）；`PlcClientOptions.RetryCount` 默认 0。例外（2026-10-12）：SDK 协议的会话恢复是协议原生语义，MQTT 的 `AutoReconnect` 默认开启，OPC UA 由 SDK 的会话恢复负责、始终开启（P6 计划 P6-C11）。
 - 断开期间的发送立即失败，不提供离线发送队列。
 - 对外交付的帧一律是复制出来的 `byte[]`。
 - 事件在线程池线程上触发，不自动切换到 UI 线程。
