@@ -113,7 +113,7 @@ public sealed class SerialChannelTests
         // Open 最终完成时驱动释放端口（计划 14.2）：此时端口已没有所有者。
         FakeSerialPortHandle handle = Assert.Single(factory.Handles);
         gate.Set();
-        await WaitUntilAsync(() => handle.DisposeCount == 1, 3000);
+        await Polling.WaitUntilAsync(() => handle.DisposeCount == 1, 3000);
     }
 
     [Fact(Timeout = 30000)]
@@ -126,7 +126,7 @@ public sealed class SerialChannelTests
         using var cancel = new CancellationTokenSource();
 
         Task<CommResult> connecting = channel.ConnectAsync(cancel.Token);
-        await WaitUntilAsync(() => factory.CreateCount == 1, 3000);
+        await Polling.WaitUntilAsync(() => factory.CreateCount == 1, 3000);
         cancel.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => WithinAsync(connecting, 3000));
@@ -134,7 +134,7 @@ public sealed class SerialChannelTests
 
         FakeSerialPortHandle handle = Assert.Single(factory.Handles);
         gate.Set();
-        await WaitUntilAsync(() => handle.DisposeCount == 1, 3000);
+        await Polling.WaitUntilAsync(() => handle.DisposeCount == 1, 3000);
     }
 
     [Fact(Timeout = 30000)]
@@ -166,13 +166,13 @@ public sealed class SerialChannelTests
         // "AB" 与 "CD" 之间没有静默（远小于 20 ms），合并为一帧；之后超过 100 ms 的静默分隔出两帧。
         await WriteRawAsync(handle.Device, Ascii("AB"));
         await WriteRawAsync(handle.Device, Ascii("CD"));
-        await WaitUntilAsync(() => sink.Count >= 1, 3000);
+        await Polling.WaitUntilAsync(() => sink.Count >= 1, 3000);
         await Task.Delay(100);
         await WriteRawAsync(handle.Device, Ascii("EF"));
-        await WaitUntilAsync(() => sink.Count >= 2, 3000);
+        await Polling.WaitUntilAsync(() => sink.Count >= 2, 3000);
         await Task.Delay(100);
         await WriteRawAsync(handle.Device, Ascii("GH"));
-        await WaitUntilAsync(() => sink.Count >= 3, 3000);
+        await Polling.WaitUntilAsync(() => sink.Count >= 3, 3000);
 
         IReadOnlyList<byte[]> frames = sink.Snapshot();
         Assert.Equal(3, frames.Count);
@@ -195,10 +195,10 @@ public sealed class SerialChannelTests
 
         // 声明 5 字节负载，只到达 2 字节。
         await WriteRawAsync(handle.Device, new byte[] { 0x05, (byte)'A', (byte)'B' });
-        await WaitUntilAsync(() => channel.Statistics.ProtocolErrors >= 1, 5000);
+        await Polling.WaitUntilAsync(() => channel.Statistics.ProtocolErrors >= 1, 5000);
 
         await WriteRawAsync(handle.Device, new byte[] { 0x02, (byte)'O', (byte)'K' });
-        await WaitUntilAsync(() => sink.Count >= 1, 3000);
+        await Polling.WaitUntilAsync(() => sink.Count >= 1, 3000);
 
         Assert.Equal(ConnectionState.Connected, channel.State);
         IReadOnlyList<byte[]> frames = sink.Snapshot();
@@ -222,8 +222,8 @@ public sealed class SerialChannelTests
         // 链路中断：读取抛出 IOException，驱动以 RemoteClosed 报告，监督器按重连策略重新打开端口。
         factory.Handles[0].Pair.Abort();
 
-        await WaitUntilAsync(() => factory.CreateCount == 2 && channel.State == ConnectionState.Connected, 5000);
-        await WaitUntilAsync(() => CountConnected(states) == 2, 3000);
+        await Polling.WaitUntilAsync(() => factory.CreateCount == 2 && channel.State == ConnectionState.Connected, 5000);
+        await Polling.WaitUntilAsync(() => CountConnected(states) == 2, 3000);
         Assert.Equal(2, factory.CreateCount);
         Assert.Equal(1, channel.Statistics.ReconnectCount);
 
@@ -235,7 +235,7 @@ public sealed class SerialChannelTests
         // 重新打开后的端口照常收发。
         var sink = new FrameSink(channel);
         await WriteRawAsync(factory.Handles[1].Device, Ascii("HELLO\r\n"));
-        await WaitUntilAsync(() => sink.Count >= 1, 3000);
+        await Polling.WaitUntilAsync(() => sink.Count >= 1, 3000);
         Assert.Equal(Ascii("HELLO"), Assert.Single(sink.Snapshot()));
     }
 
@@ -314,7 +314,7 @@ public sealed class SerialChannelTests
                 await WriteRawAsync(handle.Device, Ascii($"F{i}\r\n"));
 
             // 队列 [F2, F3] 满后：F4 挤掉 F2，F5 挤掉 F3，F6 挤掉 F4，共丢弃 3 帧；写入端从未被阻塞。
-            await WaitUntilAsync(() => channel.Statistics.FramesDropped == 3, 3000);
+            await Polling.WaitUntilAsync(() => channel.Statistics.FramesDropped == 3, 3000);
             Assert.Equal(ConnectionState.Connected, channel.State);
         }
         finally
@@ -322,7 +322,7 @@ public sealed class SerialChannelTests
             release.Set();
         }
 
-        await WaitUntilAsync(() => DeliveredCount(delivered) == 3, 3000);
+        await Polling.WaitUntilAsync(() => DeliveredCount(delivered) == 3, 3000);
         List<byte[]> frames;
         lock (delivered)
             frames = new List<byte[]>(delivered);
@@ -362,7 +362,7 @@ public sealed class SerialChannelTests
         Assert.Equal(ConnectionState.Disconnected, channel.State);
 
         FakeSerialPortHandle handle = Assert.Single(factory.Handles);
-        await WaitUntilAsync(() => handle.DisposeCount >= 1, 3000);
+        await Polling.WaitUntilAsync(() => handle.DisposeCount >= 1, 3000);
         Assert.Equal(1, handle.DisposeCount);
     }
 
@@ -398,7 +398,7 @@ public sealed class SerialChannelTests
             await WriteRawAsync(handle.Device, Ascii("F1\r\n"));
             await WithinAsync(entered.Task, 3000);
             await WriteRawAsync(handle.Device, Ascii("F2\r\nF3\r\nF4\r\n"));
-            await WaitUntilAsync(() => channel.Statistics.FramesReceived == 4, 3000);
+            await Polling.WaitUntilAsync(() => channel.Statistics.FramesReceived == 4, 3000);
             await Task.Delay(100);   // 让解析循环把 F4 路由进派发队列（路由本身不阻塞）。
 
             disconnecting = channel.DisconnectAsync();

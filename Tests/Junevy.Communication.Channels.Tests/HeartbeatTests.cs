@@ -20,7 +20,7 @@ public sealed class HeartbeatTests
         await using var monitor = NewMonitor(probe, interval: 100, maxFailures: 3, statistics, deaths.OnDead);
         monitor.Start();
 
-        await WaitUntilAsync(() => deaths.Count >= 1, 3000);
+        await Polling.WaitUntilAsync(() => deaths.Count >= 1, 3000);
         await Task.Delay(300);
 
         Assert.Equal(new[] { DisconnectReason.HeartbeatFailed }, deaths.Reasons);
@@ -41,7 +41,7 @@ public sealed class HeartbeatTests
         await using var monitor = NewMonitor(probe, interval: 50, maxFailures: 3, statistics, deaths.OnDead);
         monitor.Start();
 
-        await WaitUntilAsync(() => probe.Calls >= 7, 3000);
+        await Polling.WaitUntilAsync(() => probe.Calls >= 7, 3000);
 
         Assert.Equal(0, deaths.Count);
         Assert.Equal(0, statistics.ConsecutiveHeartbeatFailures);
@@ -67,7 +67,7 @@ public sealed class HeartbeatTests
         Assert.Equal(0, probe.Calls);
 
         // 停止流量之后恢复探测。
-        await WaitUntilAsync(() => probe.Calls >= 1, 3000);
+        await Polling.WaitUntilAsync(() => probe.Calls >= 1, 3000);
     }
 
     [Fact(Timeout = 20000)]
@@ -80,7 +80,7 @@ public sealed class HeartbeatTests
         var stopwatch = Stopwatch.StartNew();
         monitor.Start();
 
-        await WaitUntilAsync(() => deaths.Count >= 1, 3000);
+        await Polling.WaitUntilAsync(() => deaths.Count >= 1, 3000);
         double elapsedMs = stopwatch.Elapsed.TotalMilliseconds;
 
         Assert.Equal(new[] { DisconnectReason.IdleTimeout }, deaths.Reasons);
@@ -125,7 +125,7 @@ public sealed class HeartbeatTests
         await using var monitor = NewMonitor(probe, interval: 50, maxFailures: 2, statistics, deaths.OnDead, timeout: 100);
         monitor.Start();
 
-        await WaitUntilAsync(() => deaths.Count >= 1, 3000);
+        await Polling.WaitUntilAsync(() => deaths.Count >= 1, 3000);
 
         Assert.Equal(new[] { DisconnectReason.HeartbeatFailed }, deaths.Reasons);
         Assert.Equal(2, probe.Calls);

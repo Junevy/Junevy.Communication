@@ -194,17 +194,7 @@ internal static class RouterTestHelpers
         await task.ConfigureAwait(false);
     }
 
-    /// <summary>轮询直到条件成立或超时（超时则断言失败）。</summary>
-    public static async Task WaitUntilAsync(Func<bool> condition, int milliseconds)
-    {
-        DateTime deadline = DateTime.UtcNow.AddMilliseconds(milliseconds);
-        while (!condition() && DateTime.UtcNow < deadline)
-            await Task.Delay(5).ConfigureAwait(false);
-
-        Assert.True(condition(), "The condition was not met within the time limit.");
-    }
-
     /// <summary>等待派发记录达到指定数量。</summary>
     public static Task WaitForCountAsync(RecordingSink sink, int count)
-        => WaitUntilAsync(() => sink.Count >= count, 3000);
+        => Polling.WaitUntilAsync(() => sink.Count >= count, 3000);
 }

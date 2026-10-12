@@ -33,7 +33,7 @@ public sealed class TcpClientChannelLifecycleTests
         var log = new StateLog(channel);
         Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
         // ConnectAsync 在客户端握手完成时返回，服务端的接受循环可能还没登记这条连接。
-        await WaitUntilAsync(() => server.AcceptedConnectionCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => server.AcceptedConnectionCount == 1, 5000);
 
         server.CloseConnection(0);
 
@@ -42,7 +42,7 @@ public sealed class TcpClientChannelLifecycleTests
         Assert.Equal(DisconnectReason.RemoteClosed, lost.Reason);
         Assert.InRange(restored.MillisecondsSince(lost), 240.0, 2300.0);
 
-        await WaitUntilAsync(() => server.AcceptedConnectionCount == 2, 5000);
+        await Polling.WaitUntilAsync(() => server.AcceptedConnectionCount == 2, 5000);
         Assert.True(channel.IsConnected);
     }
 
@@ -73,12 +73,12 @@ public sealed class TcpClientChannelLifecycleTests
         };
         await using var channel = new TcpClientChannel(config, null, components);
         Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => Volatile.Read(ref probes) >= 1 && server.AcceptedConnectionCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => Volatile.Read(ref probes) >= 1 && server.AcceptedConnectionCount == 1, 5000);
 
         server.CloseConnection(0);
-        await WaitUntilAsync(() => server.AcceptedConnectionCount == 2 && channel.IsConnected, 10000);
+        await Polling.WaitUntilAsync(() => server.AcceptedConnectionCount == 2 && channel.IsConnected, 10000);
         int before = Volatile.Read(ref probes);
-        await WaitUntilAsync(() => Volatile.Read(ref probes) > before, 5000);
+        await Polling.WaitUntilAsync(() => Volatile.Read(ref probes) > before, 5000);
 
         lock (received)
         {
@@ -110,7 +110,7 @@ public sealed class TcpClientChannelLifecycleTests
 
         Assert.Equal(DisconnectReason.HeartbeatFailed, lost.Reason);
         Assert.True(server.ReceivedBytes >= "PING".Length, "The heartbeat probes were not received by the silent server.");
-        await WaitUntilAsync(() => server.AcceptedConnectionCount >= 2, 10000);
+        await Polling.WaitUntilAsync(() => server.AcceptedConnectionCount >= 2, 10000);
     }
 
     [Fact(Timeout = 30000)]
@@ -153,7 +153,7 @@ public sealed class TcpClientChannelLifecycleTests
         Assert.Equal(CommErrorKind.Timeout, timedOut.ErrorKind);
 
         // 超时后 Sequential 模式断开并重建：服务端应看到第二个连接，之后请求成功。
-        await WaitUntilAsync(() => server.AcceptedConnectionCount == 2, 5000);
+        await Polling.WaitUntilAsync(() => server.AcceptedConnectionCount == 2, 5000);
         Assert.True(await WithinAsync(channel.WaitForConnectedAsync(5000), 6000));
 
         CommResult<byte[]> reply = await WithinAsync(channel.RequestAsync(Ascii("PING")), 5000);
@@ -237,7 +237,7 @@ public sealed class TcpClientChannelLifecycleTests
 
         Assert.Equal(CommErrorKind.Timeout, sent.ErrorKind);
         Assert.InRange(stopwatch.Elapsed.TotalMilliseconds, 400.0, 2500.0);
-        await WaitUntilAsync(() => channel.State != ConnectionState.Connected, 5000);
+        await Polling.WaitUntilAsync(() => channel.State != ConnectionState.Connected, 5000);
     }
 
     [Fact(Timeout = 30000)]
@@ -248,7 +248,7 @@ public sealed class TcpClientChannelLifecycleTests
         config.Reconnect = new ReconnectOptions { Enabled = true, Mode = ReconnectMode.FixedInterval, Interval = 100 };
         await using var channel = new TcpClientChannel(config);
         Assert.True((await WithinAsync(channel.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => server.AcceptedConnectionCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => server.AcceptedConnectionCount == 1, 5000);
 
         await WithinAsync(channel.DisconnectAsync(), 5000);
         Assert.Equal(ConnectionState.Disconnected, channel.State);
@@ -278,7 +278,7 @@ public sealed class TcpClientChannelLifecycleTests
 
             int received = server.ReceivedBytes;
             Task<CommResult<byte[]>> pending = channel.RequestAsync(Ascii("PING"));
-            await WaitUntilAsync(() => server.ReceivedBytes >= received + 4, 5000);
+            await Polling.WaitUntilAsync(() => server.ReceivedBytes >= received + 4, 5000);
 
             var stopwatch = Stopwatch.StartNew();
             channel.Dispose();
@@ -291,7 +291,7 @@ public sealed class TcpClientChannelLifecycleTests
             Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
 
             int expectedClosed = i + 1;
-            await WaitUntilAsync(() => server.ClosedByPeerCount >= expectedClosed, 5000);
+            await Polling.WaitUntilAsync(() => server.ClosedByPeerCount >= expectedClosed, 5000);
         }
 
         Assert.True(server.ClosedByPeerCount >= 20);

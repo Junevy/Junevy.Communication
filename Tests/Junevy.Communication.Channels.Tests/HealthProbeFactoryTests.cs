@@ -34,13 +34,13 @@ public sealed class HealthProbeFactoryTests
         Assert.True(first.IsSuccess, first.ToString());
         Assert.Same(channel, received);
         Assert.Equal(1, Volatile.Read(ref factoryCalls));
-        await WaitUntilAsync(() => probe.Calls >= 1, 5000);
+        await Polling.WaitUntilAsync(() => probe.Calls >= 1, 5000);
 
         // 对端关闭：通道自动重连。工厂不再被调用，同一个探测继续驱动新连接的心跳。
         int callsBeforeLoss = probe.Calls;
         channel.LatestPair!.B.Dispose();
-        await WaitUntilAsync(() => channel.State == ConnectionState.Connected && channel.OpenCount == 2, 5000);
-        await WaitUntilAsync(() => probe.Calls > callsBeforeLoss, 5000);
+        await Polling.WaitUntilAsync(() => channel.State == ConnectionState.Connected && channel.OpenCount == 2, 5000);
+        await Polling.WaitUntilAsync(() => probe.Calls > callsBeforeLoss, 5000);
 
         Assert.Equal(1, Volatile.Read(ref factoryCalls));
         Assert.Equal(1, channel.Statistics.ReconnectCount);

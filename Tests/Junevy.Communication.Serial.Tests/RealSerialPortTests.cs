@@ -73,7 +73,7 @@ public sealed class RealSerialPortTests
             await Task.Delay(200);
         }
 
-        await WaitUntilAsync(() => sink.Count >= count, 60000);
+        await Polling.WaitUntilAsync(() => sink.Count >= count, 60000);
         IReadOnlyList<byte[]> frames = sink.Snapshot();
         Assert.Equal(count, frames.Count);
         for (int i = 0; i < count; i++)

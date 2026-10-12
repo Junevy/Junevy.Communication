@@ -37,7 +37,7 @@ public sealed class HeartbeatProbeBlockingTests
         }, 0, statistics, deaths.OnDead, new TestLogger());
 
         Task<CommResult<byte[]>> userRequest = channel.RequestAsync(new byte[] { 1 }, null, Peer, CancellationToken.None);
-        await WaitUntilAsync(() => transport.Sent.Count == 1, 3000);
+        await Polling.WaitUntilAsync(() => transport.Sent.Count == 1, 3000);
         monitor.Start();
 
         // 1200 ms 时仍处于迟到窗口之内（窗口约为 300–1800 ms）：被阻塞的探测不得计为失败，因此不应判定死亡。
@@ -47,7 +47,7 @@ public sealed class HeartbeatProbeBlockingTests
         Assert.True(probe.Attempts >= 3, $"The probe should have run while the request lock was held; attempts: {probe.Attempts}.");
 
         // 迟到窗口结束、请求锁释放后，探测真正发出并被计为失败；连续两次即判定死亡。
-        await WaitUntilAsync(() => deaths.Count >= 1, 15000);
+        await Polling.WaitUntilAsync(() => deaths.Count >= 1, 15000);
         Assert.Equal(new[] { DisconnectReason.HeartbeatFailed }, deaths.Reasons);
 
         await monitor.StopAsync();

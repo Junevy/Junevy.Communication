@@ -116,7 +116,7 @@ public sealed class TestingKitTests
         UdpReceiveResult reply = await AwaitWithinAsync(client.ReceiveAsync(), 3000);
         Assert.Equal(new byte[] { 0xAA }, reply.Buffer);
 
-        await WaitUntilAsync(() => peer.ReceivedCount == 2, 3000);
+        await Polling.WaitUntilAsync(() => peer.ReceivedCount == 2, 3000);
         Assert.Equal(2, peer.ReceivedCount);
 
         // 第二个数据报没有回复：之后 300 ms 内不应收到任何数据报。
@@ -141,10 +141,10 @@ public sealed class TestingKitTests
         byte[] data = { 1, 2, 3, 4 };
         await AwaitWithinAsync(client.GetStream().WriteAsync(data, 0, data.Length), 5000);
 
-        await WaitUntilAsync(() => server.ReceivedBytes == 4, 3000);
+        await Polling.WaitUntilAsync(() => server.ReceivedBytes == 4, 3000);
         client.Close();
 
-        await WaitUntilAsync(() => server.ClosedByPeerCount == 1, 3000);
+        await Polling.WaitUntilAsync(() => server.ClosedByPeerCount == 1, 3000);
         Assert.Equal(1, server.AcceptedConnectionCount);
     }
 
@@ -161,7 +161,7 @@ public sealed class TestingKitTests
 
         using var client = new TcpClient();
         await AwaitWithinAsync(client.ConnectAsync(IPAddress.Loopback, server.Port), 5000);
-        await WaitUntilAsync(() => server.AcceptedConnectionCount == 1, 3000);
+        await Polling.WaitUntilAsync(() => server.AcceptedConnectionCount == 1, 3000);
 
         server.CloseConnection(0);
 
@@ -181,10 +181,10 @@ public sealed class TestingKitTests
 
         byte[] data = new byte[10];
         await AwaitWithinAsync(client.GetStream().WriteAsync(data, 0, data.Length), 5000);
-        await WaitUntilAsync(() => server.ReceivedBytes == 10, 3000);
+        await Polling.WaitUntilAsync(() => server.ReceivedBytes == 10, 3000);
 
         client.Close();
-        await WaitUntilAsync(() => server.ClosedByPeerCount == 1, 3000);
+        await Polling.WaitUntilAsync(() => server.ClosedByPeerCount == 1, 3000);
     }
 
     [Fact]
@@ -246,14 +246,5 @@ public sealed class TestingKitTests
         Task completed = await Task.WhenAny(task, Task.Delay(milliseconds));
         Assert.Same(task, completed);
         return await task;
-    }
-
-    private static async Task WaitUntilAsync(Func<bool> condition, int milliseconds)
-    {
-        DateTime deadline = DateTime.UtcNow.AddMilliseconds(milliseconds);
-        while (!condition() && DateTime.UtcNow < deadline)
-            await Task.Delay(10);
-
-        Assert.True(condition(), "The condition was not met within the time limit.");
     }
 }

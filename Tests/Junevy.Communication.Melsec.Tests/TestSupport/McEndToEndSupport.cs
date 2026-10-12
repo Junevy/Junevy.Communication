@@ -15,19 +15,6 @@ internal static class McEndToEndSupport
     public static IFrameCodecFactory DeviceFraming(McClientOptions options)
         => McStreamFraming.Create(McProtocolSettings.From(options), new FramingOptions().MaxFrameLength);
 
-    /// <summary>每 10 ms 检查一次条件，超时抛出 <see cref="TimeoutException"/>。</summary>
-    public static async Task WaitUntilAsync(Func<bool> condition, int milliseconds)
-    {
-        DateTime deadline = DateTime.UtcNow.AddMilliseconds(milliseconds);
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline)
-                throw new TimeoutException("The expected condition was not met in time.");
-
-            await Task.Delay(10).ConfigureAwait(false);
-        }
-    }
-
     /// <summary>类型化读写的往返：每种类型写入后读回，结果必须与写入的值相同。</summary>
     public static async Task AssertTypedRoundTripAsync(IPlcClient client)
     {

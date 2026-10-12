@@ -21,7 +21,7 @@ public sealed class SerialDeviceSelfTests
 
             // 两帧连续发出：设备在第一帧的应答延迟结束之前已经收到两帧。
             await WriteRawAsync(pair.A, Ascii("ONE\r\nTWO\r\n"));
-            await WaitUntilAsync(() => device.Received == 2, 3000);
+            await Polling.WaitUntilAsync(() => device.Received == 2, 3000);
 
             Assert.Equal(2, device.MaxOutstanding);
         }

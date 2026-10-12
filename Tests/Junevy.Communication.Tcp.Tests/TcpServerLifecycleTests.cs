@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Core.Results;
+using Junevy.Communication.Testing;
 using static Junevy.Communication.Tcp.Tests.ServerTestHelpers;
 using static Junevy.Communication.Tcp.Tests.TcpTestHelpers;
 
@@ -55,10 +56,10 @@ public sealed class TcpServerLifecycleTests
         Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
         await using var client = CreateClient(port);
         Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
 
         // 状态事件按顺序派发：启动、运行、停止中、已停止，再次启动并运行。
-        await WaitUntilAsync(() => recorder.States.Count == 6, 5000);
+        await Polling.WaitUntilAsync(() => recorder.States.Count == 6, 5000);
         Assert.Equal(
             new[] { ServerState.Starting, ServerState.Running, ServerState.Stopping, ServerState.Stopped, ServerState.Starting, ServerState.Running },
             recorder.States);
@@ -82,7 +83,7 @@ public sealed class TcpServerLifecycleTests
             Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
         }
 
-        await WaitUntilAsync(() => recorder.ConnectedCount == 10, 10000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 10, 10000);
 
         var stopwatch = Stopwatch.StartNew();
         await WithinAsync(server.StopAsync(), 10000);
@@ -92,7 +93,7 @@ public sealed class TcpServerLifecycleTests
         Assert.Equal(ServerState.Stopped, server.State);
         Assert.Equal(0, server.SessionCount);
         foreach (TcpClientChannel client in clients)
-            await WaitUntilAsync(() => !client.IsConnected, 5000);
+            await Polling.WaitUntilAsync(() => !client.IsConnected, 5000);
 
         await DisposeAllAsync(clients);
     }
@@ -107,7 +108,7 @@ public sealed class TcpServerLifecycleTests
         var recorder = new ServerRecorder(server);
         Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
-        await WaitUntilAsync(() => recorder.States.Count == 4, 5000);
+        await Polling.WaitUntilAsync(() => recorder.States.Count == 4, 5000);
         Assert.Equal(
             new[] { ServerState.Starting, ServerState.Running, ServerState.Faulted, ServerState.Running },
             recorder.States);
@@ -115,7 +116,7 @@ public sealed class TcpServerLifecycleTests
 
         await using var client = CreateClient(port);
         Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
     }
 
     [Fact(Timeout = 30000)]
@@ -126,7 +127,7 @@ public sealed class TcpServerLifecycleTests
         var recorder = new ServerRecorder(server);
         Assert.True((await WithinAsync(server.StartAsync(), 10000)).IsSuccess);
 
-        await WaitUntilAsync(() => recorder.States.Count == 3, 5000);
+        await Polling.WaitUntilAsync(() => recorder.States.Count == 3, 5000);
         await Task.Delay(300);
         Assert.Equal(ServerState.Faulted, server.State);
         Assert.Equal(3, recorder.States.Count);

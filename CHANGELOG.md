@@ -2,6 +2,12 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — P4.6（共享测试库整理）
+
+### 变更（Changed）
+
+- 2026-10-12 [Tests] 共享测试库 `Junevy.Communication.Testing` 新增 `Polling.WaitUntilAsync(Func<bool> condition, int milliseconds = 10000)`（计划 Task 1）：每 5 ms 轮询一次条件，用 `Stopwatch` 计时，时限用尽后**再判一次**（条件恰好在最后一次等待期间成立也算通过），失败抛 `TimeoutException`（消息 `The condition was not met within {ms} ms.`）。取代 Channels / Melsec / Serial / Tcp / Udp 五个测试项目里各自的 `WaitUntilAsync` 共 7 份实现、120 处调用点，7 份定义整体删除，不保留转发层。统一后的行为差异：轮询间隔由其中 3 份的 10 ms 收敛为 5 ms（只是更早发现条件，不会让通过的用例失败）；4 份原先用 `Assert.True` 失败的改为抛 `TimeoutException`（共享库只引用 `xunit.extensibility.core`，没有 `Assert`；对 xUnit 两者等价）；原先不做最后一次检查的 3 份现在会在超时前补判一次。迁移过程中**没有用例捕获 `TimeoutException` 或断言失败消息**（7 处 `catch (TimeoutException)` 全在 Modbus.Tests，且与本助手无关），因此断言语义不变。断言一个都没改。
+
 ## [Unreleased] — P4.5（Core / Plc 共用件；CommResult 可空性标注）
 
 ### 新增（Added）

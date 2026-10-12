@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Core.Results;
+using Junevy.Communication.Testing;
 using static Junevy.Communication.Tcp.Tests.ServerTestHelpers;
 using static Junevy.Communication.Tcp.Tests.TcpTestHelpers;
 
@@ -31,7 +32,7 @@ public sealed class TcpServerSessionTests
             Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
         }
 
-        await WaitUntilAsync(() => recorder.ConnectedCount == 5, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 5, 5000);
         Assert.Equal(5, server.SessionCount);
         Assert.Equal(5, server.Sessions.Count);
 
@@ -52,7 +53,7 @@ public sealed class TcpServerSessionTests
         await using TcpClientChannel second = CreateClient(port);
         Assert.True((await WithinAsync(first.ConnectAsync(), 10000)).IsSuccess);
         Assert.True((await WithinAsync(second.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => recorder.ConnectedCount == 2, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 2, 5000);
 
         using TcpClient third = await ConnectRawAsync(port);
         Assert.True(await WaitForPeerCloseAsync(third, 1000), "The third connection was not closed by the server within 1 s.");
@@ -79,7 +80,7 @@ public sealed class TcpServerSessionTests
         // 绑定 127.0.0.2 作为来源（Windows 支持 127.0.0.0/8 的任意回环地址）：白名单内的连接正常接入。
         await using TcpClientChannel allowed = CreateClient(port, localAddress: "127.0.0.2");
         Assert.True((await WithinAsync(allowed.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
         Assert.Equal(IPAddress.Parse("127.0.0.2"), recorder.Connected[0].RemoteEndPoint.Address);
     }
 
@@ -120,7 +121,7 @@ public sealed class TcpServerSessionTests
         await using TcpClientChannel client = CreateClient(port);
         Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
 
-        await WaitUntilAsync(() => !client.IsConnected, 5000);
+        await Polling.WaitUntilAsync(() => !client.IsConnected, 5000);
         await Task.Delay(300);
 
         Assert.Equal(0, recorder.ConnectedCount);
@@ -160,7 +161,7 @@ public sealed class TcpServerSessionTests
 
         byte[] frameData = await WithinAsync(claimed.Task, 5000);
         Assert.Equal(Ascii("HELLO"), frameData);
-        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
         await Task.Delay(200);
 
         Assert.Empty(recorder.Frames);   // 已被握手认领，不作为 FrameReceived 派发。
@@ -177,11 +178,11 @@ public sealed class TcpServerSessionTests
 
         await using TcpClientChannel client = CreateClient(port);
         Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
 
         var stopwatch = Stopwatch.StartNew();
         await WithinAsync(client.DisconnectAsync(), 5000);
-        await WaitUntilAsync(() => recorder.ClosedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ClosedCount == 1, 5000);
         ServerRecorder.ClosedRecord closed = recorder.Closed[0];
         stopwatch.Stop();
 
@@ -201,7 +202,7 @@ public sealed class TcpServerSessionTests
 
         await using TcpClientChannel client = CreateClient(port);
         Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
         long id = server.Sessions.Single().Id;
 
         // 返回 true 时 session 非 null（[NotNullWhen(true)]），无需再判空。
@@ -211,7 +212,7 @@ public sealed class TcpServerSessionTests
         Assert.Null(missing);
 
         await WithinAsync(client.DisconnectAsync(), 5000);
-        await WaitUntilAsync(() => recorder.ClosedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ClosedCount == 1, 5000);
         Assert.False(server.TryGetSession(id, out ITcpSession? closed));
         Assert.Null(closed);
     }
@@ -228,8 +229,8 @@ public sealed class TcpServerSessionTests
 
         await using TcpClientChannel client = CreateClient(port);
         Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
-        await WaitUntilAsync(() => recorder.ClosedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ClosedCount == 1, 5000);
 
         ServerRecorder.ClosedRecord closed = recorder.Closed[0];
         Assert.Equal(DisconnectReason.IdleTimeout, closed.Reason);
@@ -259,7 +260,7 @@ public sealed class TcpServerSessionTests
         await using TcpClientChannel client = CreateClient(port);
         Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
 
-        await WaitUntilAsync(() => recorder.ClosedCount == 1, 10000);
+        await Polling.WaitUntilAsync(() => recorder.ClosedCount == 1, 10000);
         Assert.Equal(DisconnectReason.HeartbeatFailed, recorder.Closed[0].Reason);
     }
 
@@ -282,12 +283,12 @@ public sealed class TcpServerSessionTests
             Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
         }
 
-        await WaitUntilAsync(() => recorder.ConnectedCount == 10, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 10, 5000);
 
         int delivered = await WithinAsync(server.BroadcastAsync(Ascii("BROADCAST")), 5000);
 
         Assert.Equal(10, delivered);
-        await WaitUntilAsync(() => Enumerable.Range(0, 10).All(index => Volatile.Read(ref received[index]) == 1), 5000);
+        await Polling.WaitUntilAsync(() => Enumerable.Range(0, 10).All(index => Volatile.Read(ref received[index]) == 1), 5000);
         await Task.Delay(200);
         Assert.All(Enumerable.Range(0, 10), index => Assert.Equal(1, Volatile.Read(ref received[index])));
 
@@ -306,7 +307,7 @@ public sealed class TcpServerSessionTests
         await using TcpClientChannel client = CreateClient(port);
         client.FrameReceived += (sender, args) => client.SendAsync(args.Data);
         Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
 
         ITcpSession session = recorder.Connected[0];
         CommResult<byte[]> reply = await WithinAsync(session.RequestAsync(Ascii("REQ-1"), new RequestOptions { Timeout = 3000 }), 5000);
@@ -325,11 +326,11 @@ public sealed class TcpServerSessionTests
 
         await using TcpClientChannel client = CreateClient(port);
         Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
 
         await client.SendAsync(Ascii("HELLO"));
 
-        await WaitUntilAsync(() => recorder.Frames.Count == 2, 5000);
+        await Polling.WaitUntilAsync(() => recorder.Frames.Count == 2, 5000);
         Assert.Equal(new[] { "session:HELLO", "server:HELLO" }, recorder.Frames);
     }
 
@@ -364,8 +365,8 @@ public sealed class TcpServerSessionTests
             Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
         }
 
-        await WaitUntilAsync(() => recorder.ConnectedCount == 3, 5000);
-        await WaitUntilAsync(() =>
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 3, 5000);
+        await Polling.WaitUntilAsync(() =>
         {
             lock (created)
                 return created.Count == 3;
@@ -415,7 +416,7 @@ public sealed class TcpServerSessionTests
             Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
         }
 
-        await WaitUntilAsync(() => recorder.ClosedCount == 2, 10000);
+        await Polling.WaitUntilAsync(() => recorder.ClosedCount == 2, 10000);
         Assert.All(recorder.Closed, closed => Assert.Equal(DisconnectReason.Error, closed.Reason));
 
         // 第三个会话的工厂返回了正常的探测：它保持连接。
@@ -458,9 +459,9 @@ public sealed class TcpServerSessionTests
             Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
         }
 
-        await WaitUntilAsync(() => recorder.ConnectedCount == 3, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 3, 5000);
         ITcpSession unhealthy = await WithinAsync(firstSession.Task, 5000);
-        await WaitUntilAsync(() => recorder.ClosedCount == 1, 10000);
+        await Polling.WaitUntilAsync(() => recorder.ClosedCount == 1, 10000);
 
         ServerRecorder.ClosedRecord closed = recorder.Closed[0];
         Assert.Same(unhealthy, closed.Session);
@@ -485,13 +486,13 @@ public sealed class TcpServerSessionTests
         // 客户端不应答：服务端的请求超时后关闭该会话（ResetOnRequestTimeout 默认为 true）。
         await using TcpClientChannel client = CreateClient(port);
         Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
 
         ITcpSession session = recorder.Connected[0];
         CommResult<byte[]> reply = await WithinAsync(session.RequestAsync(Ascii("REQ"), new RequestOptions { Timeout = 200 }), 5000);
 
         Assert.Equal(CommErrorKind.Timeout, reply.ErrorKind);
-        await WaitUntilAsync(() => recorder.ClosedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ClosedCount == 1, 5000);
         Assert.Equal(DisconnectReason.RequestTimeout, recorder.Closed[0].Reason);
         Assert.False(session.IsConnected);
         Assert.Equal(0, server.SessionCount);
@@ -516,7 +517,7 @@ public sealed class TcpServerSessionTests
             await client.SendAsync(Ascii("LATE"));
         };
         Assert.True((await WithinAsync(client.ConnectAsync(), 10000)).IsSuccess);
-        await WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 1, 5000);
 
         ITcpSession session = recorder.Connected[0];
         CommResult<byte[]> first = await WithinAsync(session.RequestAsync(Ascii("REQ-1"), new RequestOptions { Timeout = 200 }), 10000);

@@ -44,7 +44,7 @@ public sealed class TcpTlsTests
         Assert.True(reply.IsSuccess, reply.ToString());
         Assert.Equal(Ascii("PING"), DataOf(reply));
 
-        await WaitUntilAsync(() => server.SessionCount == 1, 5000);
+        await Polling.WaitUntilAsync(() => server.SessionCount == 1, 5000);
         Assert.True(server.Sessions.Single().IsTlsActive);
     }
 
@@ -139,7 +139,7 @@ public sealed class TcpTlsTests
         CommResult result = await WithinAsync(client.ConnectAsync(), 15000);
 
         Assert.False(result.IsSuccess, "A client without a certificate must not be connected.");
-        await WaitUntilAsync(() => serverLogger.GetEntries(LogLevel.Warning)
+        await Polling.WaitUntilAsync(() => serverLogger.GetEntries(LogLevel.Warning)
                                     .Any(entry => entry.Message.Contains("AuthenticationFailed")), 5000);
         Assert.Equal(0, recorder.ConnectedCount);
     }
@@ -172,7 +172,7 @@ public sealed class TcpTlsTests
         CommResult result = await WithinAsync(client.ConnectAsync(), 15000);
 
         Assert.False(result.IsSuccess, "The server must reject an untrusted client certificate.");
-        await WaitUntilAsync(() => serverLogger.GetEntries(LogLevel.Warning)
+        await Polling.WaitUntilAsync(() => serverLogger.GetEntries(LogLevel.Warning)
                                     .Any(entry => entry.Message.Contains("AuthenticationFailed")), 5000);
         Assert.Equal(0, recorder.ConnectedCount);
     }
@@ -249,7 +249,7 @@ public sealed class TcpTlsTests
         Assert.True(client.IsTlsActive);
 
         // 每次连接都重新完成 TLS 握手：服务端为两次连接分别建立了加入会话表的会话。
-        await WaitUntilAsync(() => recorder.ConnectedCount == 2, 5000);
+        await Polling.WaitUntilAsync(() => recorder.ConnectedCount == 2, 5000);
         Assert.True(recorder.Connected[1].IsTlsActive);
     }
 

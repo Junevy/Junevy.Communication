@@ -365,16 +365,3 @@ public sealed class DatagramChannelTests
         }
     }
 }
-
-/// <summary>轮询等待条件成立（测试用）。超时后断言失败。</summary>
-internal static class Polling
-{
-    public static async Task WaitUntilAsync(Func<bool> condition, int milliseconds = 10000)
-    {
-        var watch = Stopwatch.StartNew();
-        while (!condition() && watch.ElapsedMilliseconds < milliseconds)
-            await Task.Delay(5).ConfigureAwait(false);
-
-        Assert.True(condition(), "The condition was not met within the time limit.");
-    }
-}

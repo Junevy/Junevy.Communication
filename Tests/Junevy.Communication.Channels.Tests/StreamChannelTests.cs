@@ -223,7 +223,7 @@ public sealed class StreamChannelTests
         var peer = new StreamPeer(pair.B, LengthField());
         var stopwatch = Stopwatch.StartNew();
         await WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3, 4, 5 }), 2000);
-        await WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
+        await Polling.WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
         stopwatch.Stop();
 
         Assert.Equal(new[] { DisconnectReason.PartialFrameTimeout }, rig.Faults);
@@ -243,7 +243,7 @@ public sealed class StreamChannelTests
 
         var peer = new StreamPeer(pair.B, LengthField());
         await WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3, 4, 5 }), 2000);
-        await WaitUntilAsync(() => rig.Statistics.ProtocolErrors == 1, 3000);
+        await Polling.WaitUntilAsync(() => rig.Statistics.ProtocolErrors == 1, 3000);
 
         // 残余字节已丢弃：之后的完整帧能正常交出。
         await WithinAsync(peer.SendRawAsync(LengthFrame("0123456789")), 2000);
@@ -264,7 +264,7 @@ public sealed class StreamChannelTests
         // 长度字段声明 256 字节负载，超过 MaxFrameLength（64）。
         var peer = new StreamPeer(pair.B, LengthField(maxFrameLength: 64));
         await WithinAsync(peer.SendRawAsync(new byte[] { 0x01, 0x00 }), 2000);
-        await WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
+        await Polling.WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
 
         Assert.Equal(new[] { DisconnectReason.ProtocolViolation }, rig.Faults);
         Assert.Equal(1, rig.Statistics.ProtocolErrors);
@@ -407,7 +407,7 @@ public sealed class StreamChannelTests
         // 放行处理器：挂起的写入完成，全部帧按顺序派发，不丢帧。
         release.TrySetResult(true);
         await WithinAsync(writer, 30000);
-        await WaitUntilAsync(() => sink.Count == frameCount, 30000);
+        await Polling.WaitUntilAsync(() => sink.Count == frameCount, 30000);
 
         IReadOnlyList<byte[]> frames = sink.Frames;
         for (int i = 0; i < frameCount; i++)
@@ -541,7 +541,7 @@ public sealed class StreamChannelTests
             await WithinAsync(peer.SendFrameAsync(Ascii($"F{i}")), 2000);
 
         // 第 3 帧已进入路由并等待队列空位：解析循环挂起。
-        await WaitUntilAsync(() => rig.Statistics.FramesReceived >= 3, 3000);
+        await Polling.WaitUntilAsync(() => rig.Statistics.FramesReceived >= 3, 3000);
         await Task.Delay(100);
 
         gate.TrySetResult(true);
@@ -571,7 +571,7 @@ public sealed class StreamChannelTests
 
         // F1 在处理器中阻塞，F2–F4 留在派发队列中。
         await WithinAsync(entered.Task, 2000);
-        await WaitUntilAsync(() => rig.Statistics.FramesReceived == 4, 3000);
+        await Polling.WaitUntilAsync(() => rig.Statistics.FramesReceived == 4, 3000);
         await Task.Delay(100);
 
         Task stop = rig.Channel.StopAsync(2000);
@@ -616,7 +616,7 @@ public sealed class StreamChannelTests
 
         await WithinAsync(entered.Task, 2000);
         await WithinAsync(script, 5000);
-        await WaitUntilAsync(() => rig.Statistics.FramesReceived >= 3, 3000);
+        await Polling.WaitUntilAsync(() => rig.Statistics.FramesReceived >= 3, 3000);
         await Task.Delay(200);   // 填充循环有充足时间读到对端的结束
 
         // 解析循环尚未处理完已收到的数据：此时不得报告故障。
@@ -627,7 +627,7 @@ public sealed class StreamChannelTests
         Assert.True(reply.IsSuccess, reply.ToString());
         Assert.Equal(Ascii("RSP-1"), reply.Data);
 
-        await WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
+        await Polling.WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
         Assert.Equal(new[] { DisconnectReason.RemoteClosed }, rig.Faults);
     }
 
@@ -651,7 +651,7 @@ public sealed class StreamChannelTests
         Assert.Equal(Ascii("ABCDE"), rig.Sink.Frames[0]);
         Assert.InRange(stopwatch.Elapsed.TotalMilliseconds, 0d, 2500d);
 
-        await WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
+        await Polling.WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
         Assert.Equal(new[] { DisconnectReason.RemoteClosed }, rig.Faults);
     }
 
@@ -667,7 +667,7 @@ public sealed class StreamChannelTests
         await WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3 }), 2000);
         pair.B.Dispose();
 
-        await WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
+        await Polling.WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
         Assert.Equal(new[] { DisconnectReason.RemoteClosed }, rig.Faults);
         Assert.Empty(rig.Sink.Frames);
         Assert.Equal(1, rig.Statistics.ProtocolErrors);
@@ -703,7 +703,7 @@ public sealed class StreamChannelTests
         var peer = new StreamPeer(pair.B, LengthField());
         var stopwatch = Stopwatch.StartNew();
         await WithinAsync(peer.SendRawAsync(new byte[] { 0x00, 0x0A, 1, 2, 3, 4, 5 }), 2000);
-        await WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
+        await Polling.WaitUntilAsync(() => rig.Faults.Count == 1, 3000);
         stopwatch.Stop();
 
         Assert.Equal(new[] { DisconnectReason.PartialFrameTimeout }, rig.Faults);

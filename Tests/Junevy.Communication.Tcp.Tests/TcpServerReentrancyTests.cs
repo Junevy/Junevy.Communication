@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Junevy.Communication.Channels;
+using Junevy.Communication.Testing;
 using static Junevy.Communication.Tcp.Tests.ServerTestHelpers;
 using static Junevy.Communication.Tcp.Tests.TcpTestHelpers;
 
@@ -38,8 +39,8 @@ public sealed class TcpServerReentrancyTests
 
         TimeSpan elapsed = await WithinAsync(handlerDuration.Task, 10000);
         Assert.True(elapsed.TotalMilliseconds < HandlerLimitMilliseconds, $"StopAsync blocked the frame handler for {elapsed.TotalMilliseconds:F0} ms.");
-        await WaitUntilAsync(() => server.State == ServerState.Stopped, 10000);
-        await WaitUntilAsync(() => !client.IsConnected, 5000);
+        await Polling.WaitUntilAsync(() => server.State == ServerState.Stopped, 10000);
+        await Polling.WaitUntilAsync(() => !client.IsConnected, 5000);
     }
 
     [Fact(Timeout = 30000)]
@@ -67,7 +68,7 @@ public sealed class TcpServerReentrancyTests
         Assert.True(elapsed.TotalMilliseconds < HandlerLimitMilliseconds, $"CloseAsync blocked the connected handler for {elapsed.TotalMilliseconds:F0} ms.");
         DisconnectReason reason = await WithinAsync(closedReason.Task, 10000);
         Assert.Equal(DisconnectReason.UserRequested, reason);
-        await WaitUntilAsync(() => server.SessionCount == 0, 5000);
+        await Polling.WaitUntilAsync(() => server.SessionCount == 0, 5000);
     }
 
     [Fact(Timeout = 30000)]
@@ -90,6 +91,6 @@ public sealed class TcpServerReentrancyTests
 
         TimeSpan elapsed = await WithinAsync(handlerDuration.Task, 10000);
         Assert.True(elapsed.TotalMilliseconds < HandlerLimitMilliseconds, $"Dispose blocked the closed handler for {elapsed.TotalMilliseconds:F0} ms.");
-        await WaitUntilAsync(() => server.State == ServerState.Stopped, 10000);
+        await Polling.WaitUntilAsync(() => server.State == ServerState.Stopped, 10000);
     }
 }

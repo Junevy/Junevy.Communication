@@ -45,19 +45,6 @@ internal static class SerialTestHelpers
         await task.ConfigureAwait(false);
     }
 
-    /// <summary>每 10 毫秒检查一次条件，直到满足；超过上限抛出 <see cref="TimeoutException"/>。</summary>
-    public static async Task WaitUntilAsync(Func<bool> condition, int milliseconds)
-    {
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        while (!condition())
-        {
-            if (stopwatch.ElapsedMilliseconds > milliseconds)
-                throw new TimeoutException($"The condition was not met within {milliseconds} ms.");
-
-            await Task.Delay(10).ConfigureAwait(false);
-        }
-    }
-
     /// <summary>向流写入原始字节（不经编码）并刷新。</summary>
     public static async Task WriteRawAsync(Stream stream, byte[] bytes)
     {

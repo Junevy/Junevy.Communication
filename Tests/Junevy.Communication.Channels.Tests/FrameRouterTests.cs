@@ -431,7 +431,7 @@ public sealed class FrameRouterTests
         await rig.Router.RouteAsync(Ascii("two"), null, CancellationToken.None);
         await rig.Router.RouteAsync(Ascii("three"), null, CancellationToken.None);
 
-        await WaitUntilAsync(() =>
+        await Polling.WaitUntilAsync(() =>
         {
             lock (sync)
                 return received.Count == 3;
@@ -472,7 +472,7 @@ public sealed class FrameRouterTests
         // 放行处理器后，挂起的调用完成，全部帧按顺序派发，不丢帧。
         release.TrySetResult(true);
         await WithinAsync(blocked, 2000);
-        await WaitUntilAsync(() => sink.Count == 4, 3000);
+        await Polling.WaitUntilAsync(() => sink.Count == 4, 3000);
 
         IReadOnlyList<byte[]> frames = sink.Frames;
         Assert.Equal(Ascii("frame-1"), frames[0]);
@@ -505,7 +505,7 @@ public sealed class FrameRouterTests
         Assert.Equal(2, rig.Statistics.FramesDropped);
 
         release.TrySetResult(true);
-        await WaitUntilAsync(() => sink.Count == 3, 3000);
+        await Polling.WaitUntilAsync(() => sink.Count == 3, 3000);
         IReadOnlyList<byte[]> frames = sink.Frames;
         Assert.Equal(Ascii("frame-1"), frames[0]);
         Assert.Equal(Ascii("frame-4"), frames[1]);
@@ -575,7 +575,7 @@ public sealed class FrameRouterTests
         }
 
         // 每次请求恰好以一种结果完成：应答被认领（不派发），或超时（应答随后派发）。
-        await WaitUntilAsync(() => rig.Sink.Count == timeouts, 3000);
+        await Polling.WaitUntilAsync(() => rig.Sink.Count == timeouts, 3000);
         await Task.Delay(100);
         Assert.Equal(timeouts, rig.Sink.Count);
         Assert.Equal(iterations, successes + timeouts);
@@ -606,7 +606,7 @@ public sealed class FrameRouterTests
         Assert.Equal(Ascii("RSP"), result.Data);
 
         release.TrySetResult(true);
-        await WaitUntilAsync(() => sink.Count == 2, 3000);
+        await Polling.WaitUntilAsync(() => sink.Count == 2, 3000);
     }
 
     [Fact]
@@ -702,7 +702,7 @@ public sealed class FrameRouterTests
         Assert.Equal(2, rig.Statistics.FramesDropped);
 
         release.TrySetResult(true);
-        await WaitUntilAsync(() => sink.Count == 3, 3000);
+        await Polling.WaitUntilAsync(() => sink.Count == 3, 3000);
         IReadOnlyList<byte[]> frames = sink.Frames;
         Assert.Equal(Ascii("frame-1"), frames[0]);
         Assert.Equal(Ascii("frame-2"), frames[1]);
@@ -838,7 +838,7 @@ public sealed class FrameRouterTests
         }
 
         // 放行处理器：只有已在处理的第一帧会交付；排队中的帧不会再派发。
-        await WaitUntilAsync(() => sink.Count == 1, 3000);
+        await Polling.WaitUntilAsync(() => sink.Count == 1, 3000);
         await Task.Delay(200);
         Assert.Equal(1, sink.Count);
         Assert.Equal(Ascii("blocker"), sink.Frames[0]);

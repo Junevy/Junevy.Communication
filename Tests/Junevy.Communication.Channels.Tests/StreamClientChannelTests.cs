@@ -54,7 +54,7 @@ public sealed class StreamClientChannelTests
         CommResult result = await WithinAsync(channel.ConnectAsync(), 3000);
 
         Assert.True(result.IsSuccess, result.ToString());
-        await WaitUntilAsync(() =>
+        await Polling.WaitUntilAsync(() =>
         {
             lock (states)
                 return states.Count >= 2;
@@ -162,7 +162,7 @@ public sealed class StreamClientChannelTests
         // 对端关闭连接：通道应自动重连，并再次执行初始化器。
         channel.LatestPair!.B.Dispose();
 
-        await WaitUntilAsync(() => channel.State == ConnectionState.Connected && channel.OpenCount == 2, 5000);
+        await Polling.WaitUntilAsync(() => channel.State == ConnectionState.Connected && channel.OpenCount == 2, 5000);
         Assert.Equal(2, Volatile.Read(ref initializations));
     }
 
@@ -177,14 +177,14 @@ public sealed class StreamClientChannelTests
 
         var firstPeer = new StreamPeer(channel.LatestPair!.B, Delimiter());
         await WithinAsync(firstPeer.SendFrameAsync(Ascii("FIRST")), 2000);
-        await WaitUntilAsync(() => channel.Statistics.FramesReceived == 1, 3000);
+        await Polling.WaitUntilAsync(() => channel.Statistics.FramesReceived == 1, 3000);
 
         channel.LatestPair!.B.Dispose();
-        await WaitUntilAsync(() => channel.State == ConnectionState.Connected && channel.OpenCount == 2, 5000);
+        await Polling.WaitUntilAsync(() => channel.State == ConnectionState.Connected && channel.OpenCount == 2, 5000);
 
         var secondPeer = new StreamPeer(channel.LatestPair!.B, Delimiter());
         await WithinAsync(secondPeer.SendFrameAsync(Ascii("SECOND")), 2000);
-        await WaitUntilAsync(() => channel.Statistics.FramesReceived == 2, 3000);
+        await Polling.WaitUntilAsync(() => channel.Statistics.FramesReceived == 2, 3000);
 
         Assert.Equal(1, channel.Statistics.ReconnectCount);
         Assert.Equal(2, channel.Statistics.FramesReceived);
@@ -324,7 +324,7 @@ public sealed class StreamClientChannelTests
 
         Task finished = await Task.WhenAny(handlerFinished.Task, Task.Delay(5000));
         Assert.Same(handlerFinished.Task, finished);
-        await WaitUntilAsync(() => channel.State == ConnectionState.Disconnected, 3000);
+        await Polling.WaitUntilAsync(() => channel.State == ConnectionState.Disconnected, 3000);
     }
 
     [Fact(Timeout = 20000)]
@@ -394,7 +394,7 @@ public sealed class StreamClientChannelTests
         TaskCompletionSource<ConnectionStateChangedEventArgs> lost = ObserveLoss(channel);
         Assert.True((await WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
 
-        await WaitUntilAsync(() => channel.Statistics.ConsecutiveHeartbeatFailures >= 2 || lost.Task.IsCompleted, 5000);
+        await Polling.WaitUntilAsync(() => channel.Statistics.ConsecutiveHeartbeatFailures >= 2 || lost.Task.IsCompleted, 5000);
         Assert.False(lost.Task.IsCompleted, "The connection was lost before the second heartbeat failure.");
         Assert.Equal(ConnectionState.Connected, channel.State);
 
@@ -422,7 +422,7 @@ public sealed class StreamClientChannelTests
         TaskCompletionSource<ConnectionStateChangedEventArgs> lost = ObserveLoss(channel);
         Assert.True((await WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
 
-        await WaitUntilAsync(() => channel.Statistics.ConsecutiveHeartbeatFailures >= 2 || lost.Task.IsCompleted, 5000);
+        await Polling.WaitUntilAsync(() => channel.Statistics.ConsecutiveHeartbeatFailures >= 2 || lost.Task.IsCompleted, 5000);
         Assert.False(lost.Task.IsCompleted, "The connection was lost before the second probe failure.");
         Assert.Equal(ConnectionState.Connected, channel.State);
 
@@ -447,7 +447,7 @@ public sealed class StreamClientChannelTests
         await using var channel = new DuplexClientChannel(settings, new ChannelComponents { HealthProbe = probe });
         TaskCompletionSource<ConnectionStateChangedEventArgs> lost = ObserveLoss(channel);
         Assert.True((await WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
-        await WaitUntilAsync(() => probe.Calls >= 1, 5000);   // 探测已经开始，且远未返回（超时 10 秒）。
+        await Polling.WaitUntilAsync(() => probe.Calls >= 1, 5000);   // 探测已经开始，且远未返回（超时 10 秒）。
 
         CommResult<byte[]> reply = await WithinAsync(channel.RequestAsync(Ascii("REQ")), 5000);
 

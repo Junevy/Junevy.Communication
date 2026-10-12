@@ -36,19 +36,6 @@ internal static class TcpTestHelpers
         await task.ConfigureAwait(false);
     }
 
-    /// <summary>每 10 毫秒检查一次条件，直到满足；超过上限抛出 <see cref="TimeoutException"/>。</summary>
-    public static async Task WaitUntilAsync(Func<bool> condition, int milliseconds)
-    {
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        while (!condition())
-        {
-            if (stopwatch.ElapsedMilliseconds > milliseconds)
-                throw new TimeoutException($"The condition was not met within {milliseconds} ms.");
-
-            await Task.Delay(10).ConfigureAwait(false);
-        }
-    }
-
     /// <summary>取一个当前空闲的回环端口（先监听取得端口号，再释放）。</summary>
     public static int FreePort()
     {
