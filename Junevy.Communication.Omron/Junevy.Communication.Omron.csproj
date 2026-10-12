@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\build\Junevy.Communication.Common.props" />
+
+  <PropertyGroup>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Junevy.Communication.Plc\Junevy.Communication.Plc.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.Tcp\Junevy.Communication.Tcp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Junevy.Communication.Omron.Tests" />
+  </ItemGroup>
+
+</Project>

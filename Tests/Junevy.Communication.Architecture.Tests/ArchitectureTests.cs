@@ -4,6 +4,7 @@ using Junevy.Communication.Channels;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Melsec;
 using Junevy.Communication.Modbus.Tcp;
+using Junevy.Communication.Omron;
 using Junevy.Communication.Plc;
 using Junevy.Communication.Serial;
 using Junevy.Communication.Siemens;
@@ -49,6 +50,8 @@ public sealed class ArchitectureTests
         (typeof(McClient).Assembly, new[] { PlcName, ChannelsName, CoreName, TcpName, UdpName, SerialName }),
         // Siemens 只有 S7overTCP，因此允许表里没有 Udp 与 Serial（P4-D2）。
         (typeof(S7Address).Assembly, new[] { PlcName, ChannelsName, CoreName, TcpName }),
+        // Omron 同样只有 FINS/TCP（端口 9600），因此允许表里没有 Udp 与 Serial（P4-D1）。
+        (typeof(FinsAddress).Assembly, new[] { PlcName, ChannelsName, CoreName, TcpName }),
         (typeof(WebApiResult<>).Assembly, new[] { CoreName }),
     };
 
