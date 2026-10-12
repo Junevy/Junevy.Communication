@@ -78,7 +78,7 @@ The typed API is the suite's: `ReadInt16Async`, `WriteFloatAsync`, `ReadBytesAsy
 | Property | Default | Meaning |
 |---|---|---|
 | `Rack` | `0` | Rack number, `0`–`7`. Part of the remote TSAP |
-| `Slot` | `1` | Slot number, `0`–`31`. S7-300/400 CPUs sit in slot 1, S7-1200/1500 accept `0` or `1` |
+| `Slot` | `1` | Slot number, `0`–`31`. Part of the remote TSAP. S7-1500 CPUs use slot `1`; S7-1200 CPUs accept `0` or `1` |
 | `ConnectionType` | `PG` | `PG` (programmer), `OP` (operator) or `Basic`. Some CPUs only accept one kind of connection, which is the usual reason for a device-side error during the handshake |
 | `DataFormat` | `null` (word order `ABCD`, ASCII strings) | Word order and string encoding of the typed API |
 | `RetryCount` | `0` | Inherited. Retries after a retryable failure |
@@ -87,7 +87,7 @@ The typed API is the suite's: `ReadInt16Async`, `WriteFloatAsync`, `ReadBytesAsy
 
 Remote TSAP = `(ConnectionType << 8) | (Rack << 5) | Slot`, local TSAP = `0x0100` (the Snap7 convention, P4-D19). Out-of-range values throw `ArgumentOutOfRangeException` from `Create`.
 
-`S7Client.NegotiatedPduSize` reports the PDU length the CPU agreed to (`null` before the first successful handshake, and after a handshake that has not run yet).
+`S7Client.NegotiatedPduSize` reports the PDU length the CPU agreed to in the most recent handshake. It is `null` until the first handshake succeeds.
 
 ## Addresses
 
@@ -101,9 +101,10 @@ Case-insensitive, with an optional `%` prefix. All numbers are decimal. The widt
 | Outputs | `Q12.3` | `QB12` | `QW12` | `QD12` |
 
 - `X` requires a bit index; `B`, `W` and `D` reject one. `M12.3` and `M12` are both valid, because the area letter there is followed directly by the number.
+- Only data blocks use the `X` width letter. `MX0.0`, `IX0.0` and `QX0.0` are rejected; write `M0.0`, `I0.0` and `Q0.0`.
 - Ranges: data block `1`–`65535`, byte number `0`–`2097151` (the largest byte the 24-bit bit-address field can hold), bit index `0`–`7`.
 - An unparseable address is `InvalidRequest`, with the parser's message, for example `'DB0.DBW0' is not a valid S7 address: the data block number must be 1–65535.`
-- A request whose last byte passes `2097151` is rejected before anything is sent: `InvalidRequest` with `The access on 'MD2097151' ends at byte 2097153, beyond the address field limit 2097151.`
+- A request whose last byte passes `2097151` is rejected before anything is sent. For example, `ReadInt32Async("MD2097150")` needs bytes 2097150–2097153 and returns `InvalidRequest` with `The access on 'MD2097150' ends at byte 2097153, beyond the address field limit 2097151.`
 - Every area is a byte device (`PlcAddressUnit.Byte`): word access treats one word as the two consecutive bytes that start at the address, and bit access addresses the bits inside a byte (bit 0 is the lowest bit).
 
 ## Data Format and Strings

@@ -25,8 +25,8 @@ The package depends on `Junevy.Communication.Plc` and `Junevy.Communication.Tcp`
 
 ### PLC-side settings
 
-1. **FINS/TCP is enabled on the Ethernet port** of the CPU (NJ/NX and CP series need a TCP unit service configured; CJ/CS use the built-in FINS port). The TCP port used by this client is **9600**.
-2. **Node addresses.** The client sends a FINS/TCP node-address request when it connects. The CPU answers with its own node number and, if you asked for one, assigns the client's node number. Set `ClientNode` to `0` to let the CPU assign it, or to a fixed number in `1`–`254`. `255` is the FINS broadcast address and is rejected.
+1. **FINS/TCP is enabled** on the CPU's built-in Ethernet port or Ethernet unit, on TCP port **9600**. Some models and units support only FINS/UDP; check the unit's manual before you plan on this package.
+2. **Node addresses.** The client sends a FINS/TCP node-address request when it connects. The CPU answers with its own node number and the client's node number; when you send `0`, the CPU assigns the client's number. Set `ClientNode` to `0` to let the CPU assign it, or to a fixed number in `1`–`254`. `255` is the FINS broadcast address and is rejected.
 3. **Same network.** `DestinationNetwork` (`DNA`) and `DestinationUnit` (`DA2`) default to `0`, which is a directly connected CPU on the local network. `SNA` and `SA2` are always sent as `0`. A CPU behind a router or on another network needs those two values set to match its configuration.
 
 ## Quick Start
@@ -92,9 +92,9 @@ Format `<device><number>[.<bit>]`, case-insensitive. Both the number and the bit
 
 | Device | Meaning | Word area code | Bit area code |
 |---|---|---|---|
-| `CIO` | Peripheral input and output | `0xB0` | `0x30` |
+| `CIO` | CIO area (I/O and work bits) | `0xB0` | `0x30` |
 | `W` | Work memory | `0xB1` | `0x31` |
-| `H` | Common memory | `0xB2` | `0x32` |
+| `H` | Holding area | `0xB2` | `0x32` |
 | `A` | Auxiliary memory | `0xB3` | `0x33` |
 | `D` | Data memory | `0x82` | `0x02` |
 | `E0_` – `EC_` | EM storage area, bank group 0–C | `0xA0` + group | `0x20` + group |
@@ -102,7 +102,7 @@ Format `<device><number>[.<bit>]`, case-insensitive. Both the number and the bit
 - Every device is a word device (`PlcAddressUnit.Word`): the number is a word, and one word holds 16 points. `W10.03` is bit 3 of `W10`; a bit index of `16` or more is rejected.
 - The word range the parser accepts is `0`–`65535`, the full width of the two-byte address field. The area that a real CPU actually has is smaller, and going past it is answered by the CPU with an end code rather than by the client.
 - Writing several bits starting at a bit address continues into the next word: `WriteBitsAsync("W10.15", …)` puts the second value into `W11.0`.
-- Reading bits of a word area reads the covering words and selects the bits; the width letters and area codes never change the number you write.
+- Reading bits of a word area reads the covering words and selects the bits; you always write the word number and bit index, never an area code.
 - An unparseable address is `InvalidRequest`, for example `'W10.0A' is not a valid decimal bit index.` or `The bit index in address 'W10.16' must be between 0 and 15.`
 
 ## Data Format and Strings

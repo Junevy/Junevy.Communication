@@ -18,9 +18,10 @@ internal static class S7SetupCommunication
     private const byte ServiceId = 0xF0;
     private const byte ReservedByte = 0x00;
 
-    // V-S7-3 中协商值之前的 4 个字节：两组固定的协议规格参数。
-    private const ushort SpecVersion = 0x0001;
-    private const ushort MaxPduType = 0x0001;
+    // V-S7-3 中协商值之前的 4 个字节：主叫与被叫各自允许的最大并行作业数（Max AmQ calling / called）。
+    // 通道按 Sequential 串行发送，同一时刻只有一个作业，因此两者都请求 1。
+    private const ushort MaxAmqCalling = 0x0001;
+    private const ushort MaxAmqCalled = 0x0001;
 
     // 参数块共 8 字节，最后 2 字节是 PDU 长度（V-S7-4）。
     private const int ParameterBytes = 8;
@@ -33,8 +34,8 @@ internal static class S7SetupCommunication
         using var parameters = new ByteBufferWriter(ParameterBytes);
         S7Fields.WriteUInt8(parameters, ServiceId);
         S7Fields.WriteUInt8(parameters, ReservedByte);
-        S7Fields.WriteUInt16(parameters, SpecVersion);
-        S7Fields.WriteUInt16(parameters, MaxPduType);
+        S7Fields.WriteUInt16(parameters, MaxAmqCalling);
+        S7Fields.WriteUInt16(parameters, MaxAmqCalled);
         S7Fields.WriteUInt16(parameters, checked((ushort)RequestedPduBytes));
         return S7Message.BuildRequest(pduReference, parameters.WrittenSpan, ReadOnlySpan<byte>.Empty);
     }

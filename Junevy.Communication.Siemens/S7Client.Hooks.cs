@@ -23,9 +23,6 @@ public sealed partial class S7Client
     // 地址字段是 24 位的位地址（17.3 节），因此字节号要乘以 8 才等于该字段。
     private const int BitsPerByte = 8;
 
-    /// <summary>可用的最后一个字节号：24 位地址字段换算成字节（P4-D14、P4-D16）。</summary>
-    private const int MaxByteNumber = 0xFFFFFF / BitsPerByte;
-
     // 构造请求时记下的引用号，解析同一包的应答时使用；操作锁保证一包的发与收不被其它包打断。
     private ushort lastPduReference;
 
@@ -97,18 +94,23 @@ public sealed partial class S7Client
     }
 
     /// <summary>
-    /// 检查整个操作的末端字节：字访问每点占 2 字节，位访问每点最多推进 1 字节（位号 7 起点的第二个点已在下一个字节）。
-    /// 末端超过 24 位地址字段所能表示的字节号时返回 InvalidRequest。
+    /// 检查整个操作的末端字节：字访问每点占 2 字节，字节访问每点 1 字节，位访问按绝对位号换算（与 <see cref="BuildWriteBitsRequest"/> 同一算法）。
+    /// 末端超过软元件的最大字节号（24 位地址字段所能表示的字节号）时返回 InvalidRequest。
     /// </summary>
     /// <inheritdoc />
     protected override CommResult ValidateRange(S7Address address, PlcAccess access, int count)
     {
-        int bytesPerPoint = access == PlcAccess.Words ? BytesPerWord : 1;
+        // 用 long 计算：count 接近 int 上限时会溢出。
+        long last = access switch
+        {
+            PlcAccess.Words => (long)address.Number + (long)BytesPerWord * count - 1,
+            PlcAccess.Bits => ((long)BitsPerByte * address.Number + (address.BitIndex ?? 0) + count - 1) / BitsPerByte,
+            _ => (long)address.Number + count - 1,
+        };
 
-        // 用 long 计算：count 接近 int 上限时 number + bytesPerPoint × count 会溢出。
-        long last = (long)address.Number + (long)bytesPerPoint * count - 1;
-        return last > MaxByteNumber
-            ? CommResult.Fail($"The access on '{address.Text}' ends at byte {last}, beyond the address field limit {MaxByteNumber}.",
+        int maxByteNumber = address.Device.MaxNumber;
+        return last > maxByteNumber
+            ? CommResult.Fail($"The access on '{address.Text}' ends at byte {last}, beyond the address field limit {maxByteNumber}.",
                               CommErrorKind.InvalidRequest)
             : CommResult.Success();
     }

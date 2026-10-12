@@ -169,6 +169,9 @@ public sealed class S7ClientHooksTests
     [InlineData("DB1.DBB2097151", 1, PlcAccess.Words, false)]
     [InlineData("M2097151.7", 1, PlcAccess.Bits, true)]
     [InlineData("M2097151.7", 2, PlcAccess.Bits, false)]
+    [InlineData("M2097151.6", 2, PlcAccess.Bits, true)]
+    [InlineData("M2097150.0", 16, PlcAccess.Bits, true)]
+    [InlineData("M2097150.0", 17, PlcAccess.Bits, false)]
     public async Task ValidateRange_AllowsUpToTheLastBitAddressFieldByte(string address, int count, PlcAccess access, bool legal)
     {
         using S7Client client = S7Client.Create(Transport(), new S7ClientOptions());
