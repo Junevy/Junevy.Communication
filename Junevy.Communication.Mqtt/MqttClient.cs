@@ -21,6 +21,7 @@ namespace Junevy.Communication.Mqtt;
 public sealed class MqttClient : IDisposable, IAsyncDisposable
 {
     private readonly MqttSdkClient sdk;
+    private readonly MqttMessaging messaging;
     private readonly MqttConnectionStateMachine state;
     private readonly MqttLifecycleGate lifecycle = new();
     private readonly string endpoint;
@@ -39,6 +40,7 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
         }
 
         sdk = new MqttSdkClient(options, loggerFactory);
+        messaging = new MqttMessaging(sdk, state, new MqttSubscriptionTable(), options.ProtocolVersion, logger);
         sdk.MessageReceived += OnSdkMessageReceived;
     }
 
@@ -114,27 +116,45 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
     /// <summary>发布一条消息。</summary>
     /// <param name="message">要发布的消息。</param>
     /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>发布结果。</returns>
-    // Task 3 的占位实现；Task 4 用真实实现整体替换，并删除这段注释。
-    public Task<CommResult> PublishAsync(MqttMessage message, CancellationToken cancellationToken = default) =>
-        Task.FromResult(CommResult.Fail("Publishing is not implemented yet.", CommErrorKind.NotSupported));
+    /// <returns>QoS 0 写出即成功，QoS 1 等 PUBACK，QoS 2 等 PUBCOMP（P61-D6）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="message"/> 为 null。</exception>
+    public async Task<CommResult> PublishAsync(MqttMessage message, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ThrowIfDisposed();
+
+        return await messaging.PublishAsync(message, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>订阅一个主题过滤器。</summary>
-    /// <param name="topicFilter">主题过滤器。</param>
+    /// <param name="topicFilter">主题过滤器；不能为 null。</param>
     /// <param name="qos">请求的 QoS。</param>
     /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>Broker 授予的 QoS，或失败原因。</returns>
-    // Task 3 的占位实现；Task 4 用真实实现整体替换，并删除这段注释。
-    public Task<CommResult<MqttQos>> SubscribeAsync(string topicFilter, MqttQos qos = MqttQos.AtMostOnce, CancellationToken cancellationToken = default) =>
-        Task.FromResult(CommResult<MqttQos>.Fail("Subscribing is not implemented yet.", CommErrorKind.NotSupported));
+    /// <returns>Broker 授予的 QoS，或失败原因。成功的订阅会记入订阅表，供重连后恢复。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="topicFilter"/> 为 null。</exception>
+    public async Task<CommResult<MqttQos>> SubscribeAsync(
+        string topicFilter,
+        MqttQos qos = MqttQos.AtMostOnce,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(topicFilter);
+        ThrowIfDisposed();
+
+        return await messaging.SubscribeAsync(topicFilter, qos, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>退订一个主题过滤器。</summary>
-    /// <param name="topicFilter">主题过滤器。</param>
+    /// <param name="topicFilter">主题过滤器；不能为 null。</param>
     /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>退订结果。</returns>
-    // Task 3 的占位实现；Task 4 用真实实现整体替换，并删除这段注释。
-    public Task<CommResult> UnsubscribeAsync(string topicFilter, CancellationToken cancellationToken = default) =>
-        Task.FromResult(CommResult.Fail("Unsubscribing is not implemented yet.", CommErrorKind.NotSupported));
+    /// <returns>退订结果。成功后才把过滤器移出订阅表。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="topicFilter"/> 为 null。</exception>
+    public async Task<CommResult> UnsubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(topicFilter);
+        ThrowIfDisposed();
+
+        return await messaging.UnsubscribeAsync(topicFilter, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>释放客户端。可以重复调用。</summary>
     public void Dispose()
@@ -207,6 +227,22 @@ public sealed class MqttClient : IDisposable, IAsyncDisposable
     private static CommResult InProgress() => CommResult.Fail(
         "A connection attempt is already in progress.",
         CommErrorKind.InvalidRequest);
+
+    private static CommResult NotConnected(string pastTense) => CommResult.Fail(
+        $"The MQTT client is not connected, so the request cannot be {pastTense}.",
+        CommErrorKind.NotConnected);
+
+    // 状态变化记 Information，每次操作记 Debug（含主题、字节数或数量、耗时），失败记 Warning（P6-C10）。只记摘要，不记正文。
+    private void LogOperation(CommResult outcome, string operation, string subject, int count, long elapsedMilliseconds)
+    {
+        if (outcome.IsSuccess)
+        {
+            logger.LogDebug("{Operation} on {Subject} ({Count} unit(s)) completed in {Elapsed} ms.", operation, subject, count, elapsedMilliseconds);
+            return;
+        }
+
+        logger.LogWarning("{Operation} on {Subject} failed after {Elapsed} ms: {Outcome}.", operation, subject, elapsedMilliseconds, outcome);
+    }
 
     private void ThrowIfDisposed()
     {

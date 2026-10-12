@@ -130,19 +130,19 @@ public sealed class MqttErrorMapTests
     [InlineData(SdkClient.MqttClientSubscribeResultCode.WildcardSubscriptionsNotSupported, 162)]
     public void SubscribeFailures_MapToRemoteError(SdkClient.MqttClientSubscribeResultCode code, int expected)
     {
-        AssertOutcome(MqttErrorMap.SubscribeOutcome(code, out _), CommErrorKind.RemoteError, expected);
+        AssertOutcome(MqttErrorMap.SubscribeOutcome(code), CommErrorKind.RemoteError, expected);
     }
 
     [Theory]
     [InlineData(SdkClient.MqttClientSubscribeResultCode.GrantedQoS0, MqttQos.AtMostOnce)]
     [InlineData(SdkClient.MqttClientSubscribeResultCode.GrantedQoS1, MqttQos.AtLeastOnce)]
     [InlineData(SdkClient.MqttClientSubscribeResultCode.GrantedQoS2, MqttQos.ExactlyOnce)]
-    public void GrantedSubscriptions_MapToSuccessWithTheGrantedQos(SdkClient.MqttClientSubscribeResultCode code, MqttQos expected)
+    public void GrantedSubscriptions_SucceedWithTheGrantedQos(SdkClient.MqttClientSubscribeResultCode code, MqttQos expected)
     {
-        CommResult outcome = MqttErrorMap.SubscribeOutcome(code, out MqttQos granted);
+        CommResult<MqttQos> outcome = MqttErrorMap.SubscribeOutcome(code);
 
         Assert.True(outcome.IsSuccess);
-        Assert.Equal(expected, granted);
+        Assert.Equal(expected, outcome.Data);
     }
 
     [Theory]
@@ -228,6 +228,9 @@ public sealed class MqttErrorMapTests
         AssertOutcome(outcome, CommErrorKind.InvalidRequest, null);
         Assert.Equal("The topic is not valid.", outcome.ErrorMessage);
     }
+
+    private static void AssertOutcome(CommResult<MqttQos> outcome, CommErrorKind kind, long? protocolErrorCode) =>
+        AssertOutcome(outcome.ToResult(), kind, protocolErrorCode);
 
     private static void AssertOutcome(CommResult outcome, CommErrorKind kind, long? protocolErrorCode)
     {

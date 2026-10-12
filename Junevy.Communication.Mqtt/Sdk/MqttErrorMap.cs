@@ -39,17 +39,13 @@ internal static class MqttErrorMap
                 $"The broker refused the published message: {code}.",
                 null);
 
-    /// <summary>SUBACK 的结果码 → 结果。</summary>
+    /// <summary>SUBACK 的结果码 → 结果（成功时带上 Broker 授予的 QoS）。</summary>
     /// <param name="code">SDK 的订阅结果码。</param>
-    /// <param name="grantedQos">Broker 授予的 QoS；只在结果成功时有意义。</param>
     /// <returns>Broker 授予 QoS 时成功，否则按映射表返回分类与原因码。</returns>
-    public static CommResult SubscribeOutcome(SdkClient.MqttClientSubscribeResultCode code, out MqttQos grantedQos)
-    {
-        grantedQos = GrantedQos(code);
-        return (int)code < FailureThreshold
-            ? CommResult.Success()
-            : Fail(CommErrorKind.RemoteError, (int)code, $"The broker rejected the subscription: {code}.", null);
-    }
+    public static CommResult<MqttQos> SubscribeOutcome(SdkClient.MqttClientSubscribeResultCode code) =>
+        (int)code < FailureThreshold
+            ? CommResult<MqttQos>.Success(GrantedQos(code))
+            : CommResult<MqttQos>.Fail($"The broker rejected the subscription: {code}.", CommErrorKind.RemoteError, (int)code);
 
     /// <summary>UNSUBACK 的结果码 → 结果。</summary>
     /// <param name="code">SDK 的退订结果码。</param>

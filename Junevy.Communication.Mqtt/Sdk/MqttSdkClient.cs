@@ -2,6 +2,7 @@ using Junevy.Communication.Core.Results;
 using Junevy.Communication.Core.Utils;
 using Microsoft.Extensions.Logging;
 using SdkClient = MQTTnet;
+using SdkPackets = MQTTnet.Packets;
 
 namespace Junevy.Communication.Mqtt.Sdk;
 
@@ -93,6 +94,78 @@ internal sealed class MqttSdkClient : IAsyncDisposable
         }
     }
 
+    /// <summary>发布一条消息。QoS 0 写出即成功，QoS 1 等 PUBACK，QoS 2 等 PUBCOMP（P61-D6）。</summary>
+    /// <param name="message">本库消息；调用方已校验过。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>发布结果；SDK 的异常就地翻译成结果，不重发。</returns>
+    public async Task<CommResult> PublishAsync(MqttMessage message, CancellationToken cancellationToken)
+    {
+        using TimeoutScope scope = TimeoutScope.Start(options.Timeout, cancellationToken);
+
+        try
+        {
+            SdkClient.MqttClientPublishResult result = await client
+                .PublishAsync(MqttSdkMessages.ToSdk(message), scope.Token)
+                .ConfigureAwait(false);
+
+            return MqttErrorMap.PublishOutcome(result.ReasonCode);
+        }
+        catch (Exception exception)
+        {
+            return MqttErrorMap.Runtime(exception, scope);
+        }
+    }
+
+    /// <summary>订阅一个主题过滤器。</summary>
+    /// <param name="topicFilter">主题过滤器；调用方已校验过。</param>
+    /// <param name="qos">请求的 QoS。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>Broker 授予的 QoS，或失败原因。</returns>
+    public async Task<CommResult<MqttQos>> SubscribeAsync(string topicFilter, MqttQos qos, CancellationToken cancellationToken)
+    {
+        using TimeoutScope scope = TimeoutScope.Start(options.Timeout, cancellationToken);
+
+        SdkPackets.MqttTopicFilter filter = new SdkClient.MqttTopicFilterBuilder()
+            .WithTopic(topicFilter)
+            .WithQualityOfServiceLevel(MqttSdkQos.ToSdk(qos))
+            .Build();
+
+        try
+        {
+            SdkClient.MqttClientSubscribeResult result = await client
+                .SubscribeAsync(new SdkClient.MqttClientSubscribeOptionsBuilder().WithTopicFilter(filter).Build(), scope.Token)
+                .ConfigureAwait(false);
+
+            return SubscribeOutcome(result);
+        }
+        catch (Exception exception)
+        {
+            return MqttErrorMap.Runtime(exception, scope).As<MqttQos>();
+        }
+    }
+
+    /// <summary>退订一个主题过滤器。</summary>
+    /// <param name="topicFilter">主题过滤器；调用方已校验过。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>退订结果。</returns>
+    public async Task<CommResult> UnsubscribeAsync(string topicFilter, CancellationToken cancellationToken)
+    {
+        using TimeoutScope scope = TimeoutScope.Start(options.Timeout, cancellationToken);
+
+        try
+        {
+            SdkClient.MqttClientUnsubscribeResult result = await client
+                .UnsubscribeAsync(new SdkClient.MqttClientUnsubscribeOptionsBuilder().WithTopicFilter(topicFilter).Build(), scope.Token)
+                .ConfigureAwait(false);
+
+            return UnsubscribeOutcome(result);
+        }
+        catch (Exception exception)
+        {
+            return MqttErrorMap.Runtime(exception, scope);
+        }
+    }
+
     /// <summary>尽力断开后释放 SDK 客户端，等待时间不超过选项里的 <c>Timeout</c>（P61-D11）。</summary>
     /// <returns>释放完成。</returns>
     public async ValueTask DisposeAsync()
@@ -122,7 +195,7 @@ internal sealed class MqttSdkClient : IAsyncDisposable
 
     private Task OnConnectedAsync(SdkClient.MqttClientConnectedEventArgs args)
     {
-        // 事件回调里不能抛，也不能重连（P61-D9）：重连由本包的后台循环负责。
+        // 事件回调里不能抛，也不能在这里重连（P61-D9）：重连由本包的后台循环负责。
         Connected?.Invoke();
         return Task.CompletedTask;
     }
@@ -137,5 +210,22 @@ internal sealed class MqttSdkClient : IAsyncDisposable
     {
         MessageReceived?.Invoke(MqttSdkMessages.FromSdk(args.ApplicationMessage));
         return Task.CompletedTask;
+    }
+
+    // SUBACK 逐项给结果码；我们一次只订阅一个过滤器，因此取第一项。
+    private static CommResult<MqttQos> SubscribeOutcome(SdkClient.MqttClientSubscribeResult result)
+    {
+        SdkClient.MqttClientSubscribeResultItem item = result.Items.FirstOrDefault()
+            ?? throw new InvalidOperationException("The broker answered SUBACK without any result item.");
+
+        return MqttErrorMap.SubscribeOutcome(item.ResultCode);
+    }
+
+    private static CommResult UnsubscribeOutcome(SdkClient.MqttClientUnsubscribeResult result)
+    {
+        SdkClient.MqttClientUnsubscribeResultItem item = result.Items.FirstOrDefault()
+            ?? throw new InvalidOperationException("The broker answered UNSUBACK without any result item.");
+
+        return MqttErrorMap.UnsubscribeOutcome(item.ResultCode);
     }
 }

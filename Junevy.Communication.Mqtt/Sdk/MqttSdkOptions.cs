@@ -1,7 +1,6 @@
 using System.Text;
 using SdkClient = MQTTnet;
 using SdkFormatter = MQTTnet.Formatter;
-using SdkProtocol = MQTTnet.Protocol;
 
 namespace Junevy.Communication.Mqtt.Sdk;
 
@@ -32,8 +31,7 @@ internal static class MqttSdkOptions
     }
 
     // MQTTnet 5 的 MqttClientOptions 上没有 AutoReconnect：重连由本包的后台循环负责（P61-D9），因此这里不设置。
-    private static SdkFormatter.MqttProtocolVersion ProtocolVersion(MqttProtocolVersion version) =>
-        version == MqttProtocolVersion.V500 ? SdkFormatter.MqttProtocolVersion.V500 : SdkFormatter.MqttProtocolVersion.V311;
+    private static SdkFormatter.MqttProtocolVersion ProtocolVersion(MqttProtocolVersion version) => MqttSdkMessages.SdkVersion(version);
 
     private static void ApplyKeepAlive(SdkClient.MqttClientOptionsBuilder builder, int seconds)
     {
@@ -89,14 +87,7 @@ internal static class MqttSdkOptions
         builder
             .WithWillTopic(options.WillTopic)
             .WithWillPayload(payload)
-            .WithWillQualityOfServiceLevel(QualityOfService(options.WillQos))
+            .WithWillQualityOfServiceLevel(MqttSdkQos.ToSdk(options.WillQos))
             .WithWillRetain(options.WillRetain);
     }
-
-    private static SdkProtocol.MqttQualityOfServiceLevel QualityOfService(MqttQos qos) => qos switch
-    {
-        MqttQos.AtLeastOnce => SdkProtocol.MqttQualityOfServiceLevel.AtLeastOnce,
-        MqttQos.ExactlyOnce => SdkProtocol.MqttQualityOfServiceLevel.ExactlyOnce,
-        _ => SdkProtocol.MqttQualityOfServiceLevel.AtMostOnce,
-    };
 }

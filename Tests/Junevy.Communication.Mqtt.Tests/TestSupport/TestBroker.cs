@@ -11,20 +11,22 @@ namespace Junevy.Communication.Mqtt.Tests.TestSupport;
 
 /// <summary>
 /// 进程内 MQTT Broker 的封装（计划第 7 节第 3 条、P6-C12）：起停、可选 TLS、凭据校验、持久会话、
-/// 从 Broker 侧注入消息、强制断开客户端、记录收到的报文、延迟 CONNECT 的应答、拒绝发布。
-/// 全部走 MQTTnet.Server 的公开 API，用例不需要直接接触 SDK 的事件类型。
+/// 从 Broker 侧注入消息、强制断开客户端、记录 CONNECT / SUBSCRIBE / PUBLISH、延迟 CONNECT 的应答、
+/// 拒绝发布与订阅。全部走 MQTTnet.Server 的公开 API，用例不需要直接接触 SDK 的事件类型。
 /// </summary>
 public sealed class TestBroker : IAsyncDisposable
 {
-private readonly MqttServer server;
+    private readonly MqttServer server;
     private readonly ConcurrentQueue<ObservedConnect> connects = new();
     private readonly ConcurrentQueue<SdkProtocolVersion> protocolVersions = new();
     private readonly ConcurrentQueue<ObservedSubscription> subscriptions = new();
+    private readonly ConcurrentQueue<MqttApplicationMessage> published = new();
     private readonly ConcurrentQueue<string> clientIds = new();
     private readonly TestCertificate? certificate;
     private readonly bool ownsCertificate;
     private TimeSpan connectDelay = TimeSpan.Zero;
     private MqttPubAckReasonCode? publishRejection;
+    private MqttSubscribeReasonCode? subscriptionRejection;
     private bool disposed;
 
     private TestBroker(MqttServerOptions options, int port, TestCertificate? certificate, bool ownsCertificate)
@@ -38,6 +40,7 @@ private readonly MqttServer server;
         server.ClientConnectedAsync += OnClientConnectedAsync;
         server.ClientSubscribedTopicAsync += OnClientSubscribedTopicAsync;
         server.InterceptingPublishAsync += OnInterceptingPublishAsync;
+        server.InterceptingSubscriptionAsync += OnInterceptingSubscriptionAsync;
     }
 
     /// <summary>Broker 监听的端口。</summary>
@@ -49,11 +52,14 @@ private readonly MqttServer server;
     /// <summary>期望的密码。</summary>
     public string? ExpectedPassword { get; private set; }
 
-    /// <summary>Broker 收到的 CONNECT，按到达顺序。凭据校验发生在握手之前，因此这里包含后来被拒绝的那些。</summary>
+    /// <summary>Broker 收到的 CONNECT，按到达顺序。凭据校验发生在 CONNACK 之前，因此这里包含后来被拒绝的那些。</summary>
     public IReadOnlyList<ObservedConnect> Connects => connects.ToArray();
 
     /// <summary>Broker 处理过的 SUBSCRIBE，按到达顺序。</summary>
     public IReadOnlyList<ObservedSubscription> Subscriptions => subscriptions.ToArray();
+
+    /// <summary>Broker 收到的发布报文，按到达顺序。</summary>
+    public IReadOnlyList<MqttApplicationMessage> Published => published.ToArray();
 
     /// <summary>完成过 CONNECT 的客户端标识，按到达顺序。</summary>
     public IReadOnlyList<string> ConnectedClientIds => clientIds.ToArray();
@@ -66,7 +72,7 @@ private readonly MqttServer server;
     public async Task<IReadOnlyList<string>> ActiveClientIdsAsync() =>
         (await server.GetClientsAsync()).Select(client => client.Id).ToArray();
 
-/// <summary>起一个普通 Broker：回环地址 + 随机端口。</summary>
+    /// <summary>起一个普通 Broker：回环地址 + 随机端口。</summary>
     /// <param name="persistentSessions">是否保留会话（客户端用 CleanSession = false 时需要）。</param>
     /// <returns>已启动的 Broker。</returns>
     public static async Task<TestBroker> StartAsync(bool persistentSessions = false)
@@ -105,7 +111,7 @@ private readonly MqttServer server;
         return broker;
     }
 
-    // 先向操作系统要一个空闲端口再停掉监听器：MQTTnet 的服务端不会把实际绑定的端口写回选项对象。
+    // 先向操作系统要一个空闲端口再停掉监听器：MQTTnet 的服务端不会把实际绑定的端口写回选项对象（摩擦记录 F10）。
     private static int FreePort()
     {
         var probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
@@ -141,6 +147,15 @@ private readonly MqttServer server;
     public TestBroker RejectNextPublish(MqttPubAckReasonCode reasonCode)
     {
         publishRejection = reasonCode;
+        return this;
+    }
+
+    /// <summary>拒绝下一次订阅：SUBACK 带上失败原因码（仅 MQTT 5 有效）。</summary>
+    /// <param name="reasonCode">要返回的原因码；仅下一次生效。</param>
+    /// <returns>同一个 Broker。</returns>
+    public TestBroker RejectSubscription(MqttSubscribeReasonCode reasonCode)
+    {
+        subscriptionRejection = reasonCode;
         return this;
     }
 
@@ -206,10 +221,10 @@ private readonly MqttServer server;
         }
     }
 
-private async Task OnValidatingConnectionAsync(ValidatingConnectionEventArgs args)
+    private async Task OnValidatingConnectionAsync(ValidatingConnectionEventArgs args)
     {
         // 这里就是服务端看到的 CONNECT：凭据校验发生在 CONNACK 之前，因此先记录再判定。
-        // 遗嘱的字段不在这个事件上暴露，遗嘱改由"订阅方收到遗嘱"那条端到端用例验证（计划第 8 节）。
+        // 遗嘱的字段不在这个事件上暴露，遗嘱改由"订阅方收到遗嘱"那条端到端用例验证（计划第 8 节，摩擦记录 F11）。
         connects.Enqueue(new ObservedConnect(
             args.ClientId,
             args.UserName,
@@ -247,6 +262,8 @@ private async Task OnValidatingConnectionAsync(ValidatingConnectionEventArgs arg
 
     private Task OnInterceptingPublishAsync(InterceptingPublishEventArgs args)
     {
+        published.Enqueue(args.ApplicationMessage);
+
         MqttPubAckReasonCode? rejection = publishRejection;
         if (rejection is not null)
         {
@@ -258,26 +275,18 @@ private async Task OnValidatingConnectionAsync(ValidatingConnectionEventArgs arg
 
         return Task.CompletedTask;
     }
-}
-/// <summary>Broker 看到的一次 CONNECT。CONNECT 报文的字段在这里被摊平成 SDK 无关的类型。</summary>
-/// <param name="ClientId">客户端标识。</param>
-/// <param name="UserName">用户名。</param>
-/// <param name="Password">密码。</param>
-/// <param name="CleanSession">Clean Session / Clean Start。</param>
-/// <param name="KeepAliveSeconds">保活周期（秒）。</param>
-/// <param name="SessionExpiryInterval">会话过期（秒）。</param>
-/// <param name="WillDelayInterval">遗嘱延迟（秒）。</param>
-public sealed record ObservedConnect(
-    string ClientId,
-    string? UserName,
-    string? Password,
-    bool? CleanSession,
-    ushort? KeepAliveSeconds,
-    uint SessionExpiryInterval,
-    uint WillDelayInterval);
 
-/// <summary>Broker 处理过的一次 SUBSCRIBE。</summary>
-/// <param name="ClientId">客户端标识。</param>
-/// <param name="Topic">主题过滤器。</param>
-/// <param name="Qos">请求的 QoS。</param>
-public sealed record ObservedSubscription(string ClientId, string Topic, int Qos);
+    private Task OnInterceptingSubscriptionAsync(InterceptingSubscriptionEventArgs args)
+    {
+        MqttSubscribeReasonCode? rejection = subscriptionRejection;
+        if (rejection is not null)
+        {
+            subscriptionRejection = null;
+            args.ProcessSubscription = false;
+            args.Response.ReasonCode = rejection.Value;
+            args.Response.ReasonString = "Rejected by the test broker.";
+        }
+
+        return Task.CompletedTask;
+    }
+}
