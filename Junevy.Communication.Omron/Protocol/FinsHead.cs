@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
+using Junevy.Communication.Core.Buffers;
 
 namespace Junevy.Communication.Omron.Protocol;
 
@@ -72,16 +73,16 @@ internal static class FinsHead
     /// <param name="sessionId">SID，同时用作应答的回显校验（P4-D8、P4-D17）。</param>
     public static void WriteRequest(IBufferWriter<byte> buffer, in FinsRoute route, byte sessionId)
     {
-        FinsFields.WriteUInt8(buffer, RequestIcf);
-        FinsFields.WriteUInt8(buffer, Reserved);
-        FinsFields.WriteUInt8(buffer, GroupCommandTimer);
-        FinsFields.WriteUInt8(buffer, route.DestinationNetwork);
-        FinsFields.WriteUInt8(buffer, route.DestinationNode);
-        FinsFields.WriteUInt8(buffer, route.DestinationUnit);
-        FinsFields.WriteUInt8(buffer, route.SourceNetwork);
-        FinsFields.WriteUInt8(buffer, route.SourceNode);
-        FinsFields.WriteUInt8(buffer, route.SourceUnit);
-        FinsFields.WriteUInt8(buffer, sessionId);
+        BigEndianFields.WriteUInt8(buffer, RequestIcf);
+        BigEndianFields.WriteUInt8(buffer, Reserved);
+        BigEndianFields.WriteUInt8(buffer, GroupCommandTimer);
+        BigEndianFields.WriteUInt8(buffer, route.DestinationNetwork);
+        BigEndianFields.WriteUInt8(buffer, route.DestinationNode);
+        BigEndianFields.WriteUInt8(buffer, route.DestinationUnit);
+        BigEndianFields.WriteUInt8(buffer, route.SourceNetwork);
+        BigEndianFields.WriteUInt8(buffer, route.SourceNode);
+        BigEndianFields.WriteUInt8(buffer, route.SourceUnit);
+        BigEndianFields.WriteUInt8(buffer, sessionId);
     }
 
     /// <summary>校验应答头并前移过它的 10 个字节。</summary>

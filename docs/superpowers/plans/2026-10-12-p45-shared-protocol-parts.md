@@ -276,6 +276,46 @@ public static class PlcComponentWiring
 
 ### 14.2 执行汇报与偏差（执行者填写）
 
+#### Task 2：S7 与 FINS 改用 `BigEndianFields`（F8）
+
+**新增**：无。
+**修改**：`Siemens/Protocol/` 的 `CotpFrames.cs`、`S7Message.cs`、`S7VarItem.cs`、`S7SetupCommunication.cs`、`S7StringFormat.cs`、`S7WriteVar.cs`；`Omron/Protocol/` 的 `FinsTcpFrame.cs`、`FinsHead.cs`、`FinsMemoryArea.cs`、`FinsNodeAddress.cs`；两个测试替身 `Tests/Junevy.Communication.Siemens.Tests/TestSupport/S7DeviceSimulator.cs`、`Tests/Junevy.Communication.Omron.Tests/TestSupport/FinsDeviceSimulator.cs`（P45-D8 允许）；`CHANGELOG.md`。
+**删除**：`Junevy.Communication.Siemens/Protocol/S7Fields.cs`（133 行）、`Junevy.Communication.Omron/Protocol/FinsFields.cs`（106 行）。
+
+**测试先红后绿的证据**：**纯迁移，没有新测试**。证据是"既有测试断言一个都没改且全绿"——`git status` 在本 Task 涉及的测试项目里只有两个 `TestSupport/` 替身文件，`dotnet test` 的 Siemens **316 / 316**、Omron **259 / 259**（net8.0 与 net472 各一次）与基线逐条相同；S7 与 FINS 的逐字节黄金向量用例（`V-S7-*`、`V-F-*`）原样通过，这就是**线上字节不变**（Q32）的直接证据。
+
+**第 2 节自查**：
+
+- **Q29 不留转发层**：两个旧类型整个删除，91 处 `S7Fields.*` 与 40 处 `FinsFields.*` 直接改调 `BigEndianFields`，没有薄包装。改名映射只有两个：`WriteRaw` → `WriteBytes`、`TryTakeRaw` → `TryTakeBytes`；宽度常量四个同名，无需改动。
+- **依赖方向**：两个协议包本来就引用 Core；新增的只是 `using Junevy.Communication.Core.Buffers;`（`S7VarItem.cs` 与 `FinsHead.cs` 原本没有，因为它们用的 `IBufferWriter<byte>` 在 `System.Buffers` 里）。**没有引入任何新的程序集引用**，架构测试 11 个用例照常全绿，IVT 仍为 2。
+- **行为不变**：`S7Fields` 手写的 `value >> 8` / `value >> 16` 与 `FinsFields` 用的 `BinaryPrimitives` 产出**完全相同的字节**，`BigEndianFields` 统一走 `BinaryPrimitives`（2 / 4 字节）与手写移位（3 字节，`UInt24` 没有 `BinaryPrimitives` 版本）。黄金向量全绿证明这一点。
+- **读取约定不变**：两个旧类型的 `TryTake*` 本来就是"字节不足返回 false、`value` 取默认值、不移动 `data`"，`BigEndianFields` 逐字沿用。
+- **无死代码**：随两个文件一起删掉的常量、成员全部有对应的新类型成员；`git grep` 确认生产与测试代码里已无 `S7Fields` / `FinsFields`（剩下的命中只在历史计划文档里）。
+- **文件 ≤ 300 行 / 方法 ≤ 60 行**：两个被删的文件本身是删除不新增；`methodlen.py 61` 对全部生产文件仍无输出。
+- **Q30**：`BigEndianFields` 里不含协议术语（见 Task 1 报告）；本 Task 也没有把旧文件里的协议注释搬回协议代码里——只有 `S7VarItem.cs:86` 的地址字段补了两行注释，保留**原来**在 `S7Fields.WriteUInt24` 注释里的那条依据（见下面第 3 条）。
+
+**计划第 6 节 Task 2 第 3 条要求的确认（`WriteUInt24` 的取值范围）**：
+
+- 唯一调用点是 `S7VarItem.WriteParameters` 的地址字段：`byteAddress * BitsPerByte + bitIndex`。
+- `byteAddress` 来自 `address.Number`，`S7AddressParser` 限 0–2097151；`bitIndex` 来自 `address.BitIndex ?? 0`，限 0–7（P4-D16）。
+- `S7Client.Hooks.ValidateRange` 在每次请求前算出**最后一个被触及的字节号**（字：`Number + 2 × count − 1`；字节：`Number + count − 1`；位：`(8 × Number + BitIndex + count − 1) / 8`），并与 `address.Device.MaxNumber`（= `0xFFFFFF / 8` = 2097151）比较，超出即返回 `InvalidRequest`（`The access on '…' ends at byte N, beyond the address field limit 2097151.`）。
+- 因此任何走到编码器的请求满足 `byteAddress × 8 + bitIndex ≤ 2097151 × 8 + 7 = 0xFFFFFF`——**恰好是 `UInt24` 的上限**，运行时不会触发新的越界校验。
+- 已在调用点写上这两行注释（**不是**再加一层校验，符合第 6 节第 3 条），把这个"上限由谁保证"的依据从被删文件里保住。
+
+**第 3 节度量**：
+
+| 指标 | Task 1 后 | Task 2 后 |
+|---|---|---|
+| 重复窗口（6 行） | 54 | **45**（−9，`FinsFields ↔ S7Fields` 集群消失，**新增窗口 0**） |
+| 其中 `BigEndianFields.cs` 文件内部 | 0 | **0** |
+| 超过 60 行的方法 | 0 | 0 |
+| 超过 300 行的文件 | 9 | 9 |
+| 有效行 | Siemens 1367、Omron 772 | **Siemens 1290（−77）、Omron 711（−61）** |
+
+**度量口径的一处修正**（记在 14.2，不是偏差）：第一次跑 `dupscan` 时我把 `BigEndianFields.cs` 手工追加进了 `git ls-files` 的结果，该文件因此被扫描两次，输出里出现一条假的 `70 windows … BigEndianFields.cs`。改用纯 `git ls-files`（344 个文件 = 345 − 2 删除 + 1 新增）后该集群消失。Task 1 报告里"`BigEndianFields` 未产生新的重复窗口"这句话当时**没有实测**，现已实测确认。
+
+**三条命令的结果**：`dotnet build -c Debug` 0 错误；`dotnet build -c Release` 0 错误、31 个警告（全部来自 `Tests/Junevy.Communication.Modbus.Tests` 与 `Junevy.Communication.Test` WPF 临时工程，与基线相同）；`dotnet test -c Debug` **24 个测试项目 / 目标组合全部通过，0 失败**（Core 147、Plc 245、Channels 278、Tcp 129、Udp 38、Serial 63+2 跳过、Melsec 184+1 跳过、Architecture 11、WebApi 732/733、Modbus 405、Siemens 316、Omron 259），与 Task 1 完全一致。
+
 #### Task 1：Core 的 `BigEndianFields`（P45-D2）
 
 **新增**：`Junevy.Communication.Core/Buffers/BigEndianFields.cs`（165 行）、`Tests/Junevy.Communication.Core.Tests/BigEndianFieldsTests.cs`。

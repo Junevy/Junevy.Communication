@@ -60,9 +60,9 @@ internal static class S7StringFormat
             return Invalid<byte[]>($"The value encodes to {characters.Length} byte(s), which does not fit a String[{maxLength}] field.");
 
         using var buffer = new ByteBufferWriter(field.Data);
-        S7Fields.WriteUInt8(buffer, (byte)maxLength);
-        S7Fields.WriteUInt8(buffer, (byte)characters.Length);
-        S7Fields.WriteRaw(buffer, characters);
+        BigEndianFields.WriteUInt8(buffer, (byte)maxLength);
+        BigEndianFields.WriteUInt8(buffer, (byte)characters.Length);
+        BigEndianFields.WriteBytes(buffer, characters);
         return CommResult<byte[]>.Success(buffer.ToArray());
     }
 
@@ -82,10 +82,10 @@ internal static class S7StringFormat
             return Invalid<byte[]>($"The value has {value.Length} character(s), which does not fit a WString[{maxLength}] field.");
 
         using var buffer = new ByteBufferWriter(field.Data);
-        S7Fields.WriteUInt16(buffer, (ushort)maxLength);
-        S7Fields.WriteUInt16(buffer, (ushort)value.Length);
+        BigEndianFields.WriteUInt16(buffer, (ushort)maxLength);
+        BigEndianFields.WriteUInt16(buffer, (ushort)value.Length);
         foreach (char character in value)
-            S7Fields.WriteUInt16(buffer, character);
+            BigEndianFields.WriteUInt16(buffer, character);
 
         return CommResult<byte[]>.Success(buffer.ToArray());
     }

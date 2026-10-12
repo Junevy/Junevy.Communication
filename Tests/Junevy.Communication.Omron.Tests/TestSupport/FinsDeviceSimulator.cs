@@ -199,18 +199,18 @@ internal sealed class FinsDeviceSimulator
 
     private byte[] Reply(byte[] request, byte major, byte minor, byte[] data)
     {
-        int bodyBytes = FinsHead.HeadBytes + FinsFields.UInt16Bytes * 2 + data.Length;   // 命令回显与结束码各 2 字节
+        int bodyBytes = FinsHead.HeadBytes + BigEndianFields.UInt16Bytes * 2 + data.Length;   // 命令回显与结束码各 2 字节
         using var buffer = new ByteBufferWriter(FinsTcpFrame.ShellBytes + bodyBytes);
         FinsTcpFrame.WriteShell(buffer, FinsTcpFrame.CommandFinsFrame, FinsErrors.NoError, bodyBytes);
-        FinsFields.WriteUInt8(buffer, ResponseIcf);
-        FinsFields.WriteRaw(buffer, request.AsSpan(ShellBytes + ReservedOffset, ReservedAndTimerBytes));
-        FinsFields.WriteRaw(buffer, request.AsSpan(ShellBytes + SourceOffset, RouteBlockBytes));
-        FinsFields.WriteRaw(buffer, request.AsSpan(ShellBytes + DestinationOffset, RouteBlockBytes));
-        FinsFields.WriteUInt8(buffer, ForeignSessionId ?? request[SidIndex]);
-        FinsFields.WriteRaw(buffer, request.AsSpan(CommandIndex, FinsFields.UInt16Bytes));
-        FinsFields.WriteUInt8(buffer, major);
-        FinsFields.WriteUInt8(buffer, minor);
-        FinsFields.WriteRaw(buffer, data);
+        BigEndianFields.WriteUInt8(buffer, ResponseIcf);
+        BigEndianFields.WriteBytes(buffer, request.AsSpan(ShellBytes + ReservedOffset, ReservedAndTimerBytes));
+        BigEndianFields.WriteBytes(buffer, request.AsSpan(ShellBytes + SourceOffset, RouteBlockBytes));
+        BigEndianFields.WriteBytes(buffer, request.AsSpan(ShellBytes + DestinationOffset, RouteBlockBytes));
+        BigEndianFields.WriteUInt8(buffer, ForeignSessionId ?? request[SidIndex]);
+        BigEndianFields.WriteBytes(buffer, request.AsSpan(CommandIndex, BigEndianFields.UInt16Bytes));
+        BigEndianFields.WriteUInt8(buffer, major);
+        BigEndianFields.WriteUInt8(buffer, minor);
+        BigEndianFields.WriteBytes(buffer, data);
         return buffer.ToArray();
     }
 

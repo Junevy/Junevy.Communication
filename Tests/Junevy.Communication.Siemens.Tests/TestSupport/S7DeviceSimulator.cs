@@ -221,16 +221,16 @@ internal sealed class S7DeviceSimulator
         using var buffer = new ByteBufferWriter(total);
         CotpFrames.WriteTpkt(buffer, total);
         CotpFrames.WriteDataTransfer(buffer);
-        S7Fields.WriteUInt8(buffer, ProtocolId);
-        S7Fields.WriteUInt8(buffer, AckDataRosctr);
-        S7Fields.WriteUInt16(buffer, 0);
-        S7Fields.WriteUInt16(buffer, reference);
-        S7Fields.WriteUInt16(buffer, checked((ushort)parameters.Length));
-        S7Fields.WriteUInt16(buffer, checked((ushort)data.Length));
-        S7Fields.WriteUInt8(buffer, errorClass);
-        S7Fields.WriteUInt8(buffer, errorCode);
-        S7Fields.WriteRaw(buffer, parameters);
-        S7Fields.WriteRaw(buffer, data);
+        BigEndianFields.WriteUInt8(buffer, ProtocolId);
+        BigEndianFields.WriteUInt8(buffer, AckDataRosctr);
+        BigEndianFields.WriteUInt16(buffer, 0);
+        BigEndianFields.WriteUInt16(buffer, reference);
+        BigEndianFields.WriteUInt16(buffer, checked((ushort)parameters.Length));
+        BigEndianFields.WriteUInt16(buffer, checked((ushort)data.Length));
+        BigEndianFields.WriteUInt8(buffer, errorClass);
+        BigEndianFields.WriteUInt8(buffer, errorCode);
+        BigEndianFields.WriteBytes(buffer, parameters);
+        BigEndianFields.WriteBytes(buffer, data);
         return buffer.ToArray();
     }
 

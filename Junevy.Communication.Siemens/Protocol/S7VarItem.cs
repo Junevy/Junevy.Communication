@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
+using Junevy.Communication.Core.Buffers;
 
 namespace Junevy.Communication.Siemens.Protocol;
 
@@ -73,16 +74,19 @@ internal static class S7VarItem
         int byteAddress,
         int bitIndex)
     {
-        S7Fields.WriteUInt8(buffer, service);
-        S7Fields.WriteUInt8(buffer, SingleItem);
-        S7Fields.WriteUInt8(buffer, SpecSignature);
-        S7Fields.WriteUInt8(buffer, SpecLength);
-        S7Fields.WriteUInt8(buffer, SpecSyntaxId);
-        S7Fields.WriteUInt8(buffer, requestTransportSize);
-        S7Fields.WriteUInt16(buffer, checked((ushort)quantity));
-        S7Fields.WriteUInt16(buffer, checked((ushort)dbNumber));
-        S7Fields.WriteUInt8(buffer, areaCode);
-        S7Fields.WriteUInt24(buffer, byteAddress * BitsPerByte + bitIndex);
+        BigEndianFields.WriteUInt8(buffer, service);
+        BigEndianFields.WriteUInt8(buffer, SingleItem);
+        BigEndianFields.WriteUInt8(buffer, SpecSignature);
+        BigEndianFields.WriteUInt8(buffer, SpecLength);
+        BigEndianFields.WriteUInt8(buffer, SpecSyntaxId);
+        BigEndianFields.WriteUInt8(buffer, requestTransportSize);
+        BigEndianFields.WriteUInt16(buffer, checked((ushort)quantity));
+        BigEndianFields.WriteUInt16(buffer, checked((ushort)dbNumber));
+        BigEndianFields.WriteUInt8(buffer, areaCode);
+
+        // 地址字段的上限由 S7Client.Hooks.ValidateRange 保证：字节号不超过 S7Device.MaxNumber（0xFFFFFF / 8），
+        // 位号不超过 7，因此字节号 × 8 + 位号 最大正好是 0xFFFFFF，落在 UInt24 的取值范围内。
+        BigEndianFields.WriteUInt24(buffer, byteAddress * BitsPerByte + bitIndex);
     }
 
     /// <summary>写数据项头：<c>00</c> 填充、传输尺寸与 2 字节长度（长度单位由 <paramref name="transportSize"/> 决定，见 17.3 节）。</summary>
@@ -91,9 +95,9 @@ internal static class S7VarItem
     /// <param name="length">长度数值。</param>
     public static void WriteDataUnitHeader(IBufferWriter<byte> buffer, byte transportSize, int length)
     {
-        S7Fields.WriteUInt8(buffer, DataUnitFiller);
-        S7Fields.WriteUInt8(buffer, transportSize);
-        S7Fields.WriteUInt16(buffer, checked((ushort)length));
+        BigEndianFields.WriteUInt8(buffer, DataUnitFiller);
+        BigEndianFields.WriteUInt8(buffer, transportSize);
+        BigEndianFields.WriteUInt16(buffer, checked((ushort)length));
     }
 
     /// <summary>
@@ -107,13 +111,13 @@ internal static class S7VarItem
         ReadOnlySpan<byte> parameters, byte expectedService, [NotNullWhen(false)] out string? violation)
     {
         ReadOnlySpan<byte> rest = parameters;
-        if (!S7Fields.TryTakeUInt8(ref rest, out byte service) || service != expectedService)
+        if (!BigEndianFields.TryTakeUInt8(ref rest, out byte service) || service != expectedService)
         {
             violation = $"The response parameters carry service 0x{service:X2}; expected 0x{expectedService:X2}.";
             return false;
         }
 
-        if (!S7Fields.TryTakeUInt8(ref rest, out byte itemCount) || itemCount != SingleItem)
+        if (!BigEndianFields.TryTakeUInt8(ref rest, out byte itemCount) || itemCount != SingleItem)
         {
             violation = $"The response carries {itemCount} item(s); this release sends one item per request (P4-D12).";
             return false;
@@ -148,9 +152,9 @@ internal static class S7VarItem
         length = 0;
 
         ReadOnlySpan<byte> rest = data;
-        if (!S7Fields.TryTakeUInt8(ref rest, out returnCode)
-            || !S7Fields.TryTakeUInt8(ref rest, out transportSize)
-            || !S7Fields.TryTakeUInt16(ref rest, out ushort unitLength))
+        if (!BigEndianFields.TryTakeUInt8(ref rest, out returnCode)
+            || !BigEndianFields.TryTakeUInt8(ref rest, out transportSize)
+            || !BigEndianFields.TryTakeUInt16(ref rest, out ushort unitLength))
         {
             violation = "The response data carries no complete item header (return code, transport size, length).";
             return false;
@@ -202,7 +206,7 @@ internal static class S7VarItem
     {
         payload = ReadOnlySpan<byte>.Empty;
 
-        if (!S7Fields.TryTakeRaw(ref data, payloadBytes, out ReadOnlySpan<byte> taken))
+        if (!BigEndianFields.TryTakeBytes(ref data, payloadBytes, out ReadOnlySpan<byte> taken))
         {
             violation = $"The response announces {payloadBytes} data byte(s) but carries {data.Length}.";
             return false;

@@ -32,11 +32,11 @@ internal static class S7SetupCommunication
     public static byte[] BuildRequest(ushort pduReference)
     {
         using var parameters = new ByteBufferWriter(ParameterBytes);
-        S7Fields.WriteUInt8(parameters, ServiceId);
-        S7Fields.WriteUInt8(parameters, ReservedByte);
-        S7Fields.WriteUInt16(parameters, MaxAmqCalling);
-        S7Fields.WriteUInt16(parameters, MaxAmqCalled);
-        S7Fields.WriteUInt16(parameters, checked((ushort)RequestedPduBytes));
+        BigEndianFields.WriteUInt8(parameters, ServiceId);
+        BigEndianFields.WriteUInt8(parameters, ReservedByte);
+        BigEndianFields.WriteUInt16(parameters, MaxAmqCalling);
+        BigEndianFields.WriteUInt16(parameters, MaxAmqCalled);
+        BigEndianFields.WriteUInt16(parameters, checked((ushort)RequestedPduBytes));
         return S7Message.BuildRequest(pduReference, parameters.WrittenSpan, ReadOnlySpan<byte>.Empty);
     }
 
@@ -61,8 +61,8 @@ internal static class S7SetupCommunication
             return S7Errors.Violation<int>($"The setup response carries service 0x{parameters[0]:X2}; expected 0x{ServiceId:X2}.");
 
         // 参数长度已校验为 8 字节，末尾 2 字节一定可读。
-        ReadOnlySpan<byte> tail = parameters.Slice(ParameterBytes - S7Fields.UInt16Bytes);
-        _ = S7Fields.TryTakeUInt16(ref tail, out ushort negotiated);
+        ReadOnlySpan<byte> tail = parameters.Slice(ParameterBytes - BigEndianFields.UInt16Bytes);
+        _ = BigEndianFields.TryTakeUInt16(ref tail, out ushort negotiated);
 
         // P4-D13：协商值过小时继续通信会写出超过 PDU 的字节，握手阶段就拒绝。
         if (negotiated < MinimumNegotiatedPduBytes)

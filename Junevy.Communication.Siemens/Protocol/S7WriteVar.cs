@@ -31,7 +31,7 @@ internal static class S7WriteVar
 
         using var data = new ByteBufferWriter(S7VarItem.ItemHeaderBytes + value.Length);
         S7VarItem.WriteDataUnitHeader(data, S7VarItem.DataByte, value.Length * S7VarItem.BitsPerByte);
-        S7Fields.WriteRaw(data, value);
+        BigEndianFields.WriteBytes(data, value);
 
         return S7Message.BuildRequest(pduReference, parameters.WrittenSpan, data.WrittenSpan);
     }
@@ -51,9 +51,9 @@ internal static class S7WriteVar
         S7VarItem.WriteParameters(
             parameters, S7VarItem.WriteService, S7VarItem.RequestBit, SingleBit, areaCode, dbNumber, byteAddress, bitIndex);
 
-        using var data = new ByteBufferWriter(S7VarItem.ItemHeaderBytes + S7Fields.UInt8Bytes);
+        using var data = new ByteBufferWriter(S7VarItem.ItemHeaderBytes + BigEndianFields.UInt8Bytes);
         S7VarItem.WriteDataUnitHeader(data, S7VarItem.DataBit, SingleBit);
-        S7Fields.WriteUInt8(data, value ? BitOn : BitOff);
+        BigEndianFields.WriteUInt8(data, value ? BitOn : BitOff);
 
         return S7Message.BuildRequest(pduReference, parameters.WrittenSpan, data.WrittenSpan);
     }
@@ -75,7 +75,7 @@ internal static class S7WriteVar
         if (!S7VarItem.TryTakeResponseParameters(parameters, S7VarItem.WriteService, out violation))
             return S7Errors.Violation(violation);
 
-        if (!S7Fields.TryTakeUInt8(ref data, out byte returnCode))
+        if (!BigEndianFields.TryTakeUInt8(ref data, out byte returnCode))
             return S7Errors.Violation("The write acknowledgement carries no item return code.");
 
         return returnCode == S7VarItem.Success

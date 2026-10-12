@@ -135,11 +135,11 @@ internal static class FinsMemoryArea
         if (!FinsHead.TryTakeResponse(ref body, expectedSessionId, out violation))
             return FinsErrors.Violation<byte[]>(violation);
 
-        if (!FinsFields.TryTakeUInt16(ref body, out ushort echoed) || echoed != expectedCommand)
+        if (!BigEndianFields.TryTakeUInt16(ref body, out ushort echoed) || echoed != expectedCommand)
             return FinsErrors.Violation<byte[]>(
                 $"The response echoes command 0x{echoed:X4}; the request used 0x{expectedCommand:X4}.");
 
-        if (!FinsFields.TryTakeUInt8(ref body, out byte major) || !FinsFields.TryTakeUInt8(ref body, out byte minor))
+        if (!BigEndianFields.TryTakeUInt8(ref body, out byte major) || !BigEndianFields.TryTakeUInt8(ref body, out byte minor))
             return FinsErrors.Violation<byte[]>("The FINS response carries no end code.");
 
         if (verifyEndCode)
@@ -166,19 +166,19 @@ internal static class FinsMemoryArea
         using var buffer = new ByteBufferWriter(FinsTcpFrame.ShellBytes + bodyBytes);
         FinsTcpFrame.WriteShell(buffer, FinsTcpFrame.CommandFinsFrame, error: 0, bodyBytes);
         FinsHead.WriteRequest(buffer, route, sessionId);
-        FinsFields.WriteUInt16(buffer, command);
+        BigEndianFields.WriteUInt16(buffer, command);
         WriteParameters(buffer, areaCode, wordAddress, bitNumber, count);
-        FinsFields.WriteRaw(buffer, data);
+        BigEndianFields.WriteBytes(buffer, data);
         return buffer.ToArray();
     }
 
     // 字与位共用的参数写入（第 18 节自查项）：数量单位由调用方决定，字地址与位号都是 2 字节与 1 字节字段。
     private static void WriteParameters(IBufferWriter<byte> buffer, byte areaCode, int wordAddress, int bitNumber, int count)
     {
-        FinsFields.WriteUInt8(buffer, areaCode);
-        FinsFields.WriteUInt16(buffer, checked((ushort)wordAddress));
-        FinsFields.WriteUInt8(buffer, checked((byte)bitNumber));
-        FinsFields.WriteUInt16(buffer, checked((ushort)count));
+        BigEndianFields.WriteUInt8(buffer, areaCode);
+        BigEndianFields.WriteUInt16(buffer, checked((ushort)wordAddress));
+        BigEndianFields.WriteUInt8(buffer, checked((byte)bitNumber));
+        BigEndianFields.WriteUInt16(buffer, checked((ushort)count));
     }
 
     private static byte[] EncodeBits(ReadOnlySpan<bool> values)
@@ -186,7 +186,7 @@ internal static class FinsMemoryArea
         using var buffer = new ByteBufferWriter(values.Length * BytesPerBitPoint);
         foreach (bool value in values)
         {
-            FinsFields.WriteUInt8(buffer, value ? BitOn : BitOff);
+            BigEndianFields.WriteUInt8(buffer, value ? BitOn : BitOff);
         }
 
         return buffer.ToArray();

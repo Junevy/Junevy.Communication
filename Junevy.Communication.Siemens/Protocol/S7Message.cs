@@ -31,14 +31,14 @@ internal static class S7Message
         using var buffer = new ByteBufferWriter(totalBytes);
         CotpFrames.WriteTpkt(buffer, totalBytes);
         CotpFrames.WriteDataTransfer(buffer);
-        S7Fields.WriteUInt8(buffer, ProtocolId);
-        S7Fields.WriteUInt8(buffer, RosctrJob);
-        S7Fields.WriteUInt16(buffer, ReservedWord);
-        S7Fields.WriteUInt16(buffer, pduReference);
-        S7Fields.WriteUInt16(buffer, checked((ushort)parameters.Length));
-        S7Fields.WriteUInt16(buffer, checked((ushort)data.Length));
-        S7Fields.WriteRaw(buffer, parameters);
-        S7Fields.WriteRaw(buffer, data);
+        BigEndianFields.WriteUInt8(buffer, ProtocolId);
+        BigEndianFields.WriteUInt8(buffer, RosctrJob);
+        BigEndianFields.WriteUInt16(buffer, ReservedWord);
+        BigEndianFields.WriteUInt16(buffer, pduReference);
+        BigEndianFields.WriteUInt16(buffer, checked((ushort)parameters.Length));
+        BigEndianFields.WriteUInt16(buffer, checked((ushort)data.Length));
+        BigEndianFields.WriteBytes(buffer, parameters);
+        BigEndianFields.WriteBytes(buffer, data);
         return buffer.ToArray();
     }
 
@@ -74,25 +74,25 @@ internal static class S7Message
         if (!CotpFrames.TryTakeDataTransfer(ref content, out violation))
             return false;
 
-        if (!S7Fields.TryTakeUInt8(ref content, out byte protocolId) || protocolId != ProtocolId)
+        if (!BigEndianFields.TryTakeUInt8(ref content, out byte protocolId) || protocolId != ProtocolId)
         {
             violation = "The response is not an S7 PDU (protocol id 0x32).";
             return false;
         }
 
-        if (!S7Fields.TryTakeUInt8(ref content, out byte rosctr) || rosctr is not (RosctrAck or RosctrAckData))
+        if (!BigEndianFields.TryTakeUInt8(ref content, out byte rosctr) || rosctr is not (RosctrAck or RosctrAckData))
         {
             violation = $"The response is not an acknowledgement (ROSCTR 0x{rosctr:X2}; expected 0x02 or 0x03).";
             return false;
         }
 
-        if (!S7Fields.TryTakeUInt16(ref content, out ushort reserved) || reserved != ReservedWord)
+        if (!BigEndianFields.TryTakeUInt16(ref content, out ushort reserved) || reserved != ReservedWord)
         {
             violation = "The S7 response header reserved word is not 0x0000.";
             return false;
         }
 
-        if (!S7Fields.TryTakeUInt16(ref content, out ushort pduReference))
+        if (!BigEndianFields.TryTakeUInt16(ref content, out ushort pduReference))
         {
             violation = "The S7 response header carries no PDU reference.";
             return false;
@@ -104,15 +104,15 @@ internal static class S7Message
             return false;
         }
 
-        if (!S7Fields.TryTakeUInt16(ref content, out ushort parameterLength)
-            || !S7Fields.TryTakeUInt16(ref content, out ushort dataLength))
+        if (!BigEndianFields.TryTakeUInt16(ref content, out ushort parameterLength)
+            || !BigEndianFields.TryTakeUInt16(ref content, out ushort dataLength))
         {
             violation = "The S7 response header carries no parameter or data length.";
             return false;
         }
 
         // 第 17.1 节说明段：ROSCTR 为 2 或 3 时都带错误类与错误码各 1 字节。
-        if (!S7Fields.TryTakeUInt8(ref content, out errorClass) || !S7Fields.TryTakeUInt8(ref content, out errorCode))
+        if (!BigEndianFields.TryTakeUInt8(ref content, out errorClass) || !BigEndianFields.TryTakeUInt8(ref content, out errorCode))
         {
             violation = "The S7 response header carries no error class or error code.";
             return false;

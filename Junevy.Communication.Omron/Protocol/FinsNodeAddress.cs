@@ -10,15 +10,15 @@ namespace Junevy.Communication.Omron.Protocol;
 internal static class FinsNodeAddress
 {
     /// <summary>应答体长度：客户端 4 字节 + 服务端 4 字节（V-F-2）。</summary>
-    public const int BodyBytes = FinsFields.UInt32Bytes * 2;
+    public const int BodyBytes = BigEndianFields.UInt32Bytes * 2;
 
     /// <summary>编码节点地址请求：<paramref name="clientNode"/> 为 0 时即 V-F-1（由 PLC 分配），固定节点号的写法见 P4-D20 ⑥。</summary>
     /// <param name="clientNode">期望使用的客户端节点号；0 表示由 PLC 分配。</param>
     /// <returns>完整的请求帧。</returns>
     public static byte[] BuildRequest(byte clientNode)
     {
-        using var body = new ByteBufferWriter(FinsFields.UInt32Bytes);
-        FinsFields.WriteUInt32(body, clientNode);
+        using var body = new ByteBufferWriter(BigEndianFields.UInt32Bytes);
+        BigEndianFields.WriteUInt32(body, clientNode);
         return FinsTcpFrame.Build(FinsTcpFrame.CommandNodeRequest, error: 0, body.WrittenSpan);
     }
 
@@ -43,8 +43,8 @@ internal static class FinsNodeAddress
                 $"The node address response carries {body.Length} body byte(s); expected {BodyBytes}.");
 
         // 体长已校验为 8 字节，两个节点字段一定可读。
-        _ = FinsFields.TryTakeUInt32(ref body, out uint clientNumber);
-        _ = FinsFields.TryTakeUInt32(ref body, out uint serverNumber);
+        _ = BigEndianFields.TryTakeUInt32(ref body, out uint clientNumber);
+        _ = BigEndianFields.TryTakeUInt32(ref body, out uint serverNumber);
 
         // 节点号本身是一个字节（P4-D18）；高位非 0 说明这一帧不是 FINS/TCP 节点应答的形状。
         if (clientNumber > byte.MaxValue || serverNumber > byte.MaxValue)

@@ -10,9 +10,14 @@
 
 ### 变更（Changed）
 
+- 2026-10-12 [Siemens] S7 的大端字段读写改用 Core 的 `BigEndianFields`（计划 Task 2，P45-D1 的 ①）：`Protocol/` 下的 6 个编解码文件与 `TestSupport/S7DeviceSimulator.cs` 的调用点全部改为直接调用 `BigEndianFields`（`WriteRaw` → `WriteBytes`、`TryTakeRaw` → `TryTakeBytes`），删除内部类型 `Protocol/S7Fields.cs`（133 行）。**线上字节完全不变**：原来手写的移位与 `BinaryPrimitives` 产出相同的字节，S7 的黄金向量与全部 316 个用例未修改并保持全绿。唯一的行为差别是 3 字节地址字段现在会校验取值范围（超出 0–0xFFFFFF 抛 `ArgumentOutOfRangeException`）；该值由 `S7Client.Hooks.ValidateRange` 与 `S7Device.MaxNumber` 保证不超过 `0xFFFFFF`，因此运行时不会触发。
+- 2026-10-12 [Omron] FINS 的大端字段读写改用 Core 的 `BigEndianFields`（计划 Task 2，P45-D1 的 ①）：`Protocol/` 下的 4 个编解码文件与 `TestSupport/FinsDeviceSimulator.cs` 的调用点全部改为直接调用 `BigEndianFields`（`WriteRaw` → `WriteBytes`），删除内部类型 `Protocol/FinsFields.cs`（106 行）。**线上字节完全不变**，FINS 的黄金向量与全部 259 个用例未修改并保持全绿。
+
 ### 破坏性变更（Breaking）
 
 ### 移除（Removed）
+
+- 2026-10-12 [Siemens, Omron] 移除内部的大端字段工具 `Protocol/S7Fields.cs` 与 `Protocol/FinsFields.cs`（计划 Task 2，P45-D1 的 ①；摩擦记录 F8）：两者都是 `internal`，不影响公开 API；调用点直接改用 Core 的 `BigEndianFields`，不保留任何转发层（P45 第 2 节 Q29）。
 
 ## [Unreleased] — PLC 协议 P4（Siemens / Omron 1.0.0-preview.1；Plc 套件扩展）
 

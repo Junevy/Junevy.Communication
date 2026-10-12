@@ -40,7 +40,7 @@ internal static class FinsTcpFrame
     {
         using var buffer = new ByteBufferWriter(ShellBytes + body.Length);
         WriteShell(buffer, command, error, body.Length);
-        FinsFields.WriteRaw(buffer, body);
+        BigEndianFields.WriteBytes(buffer, body);
         return buffer.ToArray();
     }
 
@@ -53,13 +53,13 @@ internal static class FinsTcpFrame
     /// <param name="bodyBytes">外壳之后将要写入的体长度。</param>
     public static void WriteShell(IBufferWriter<byte> buffer, uint command, uint error, int bodyBytes)
     {
-        FinsFields.WriteUInt8(buffer, MagicF);
-        FinsFields.WriteUInt8(buffer, MagicI);
-        FinsFields.WriteUInt8(buffer, MagicN);
-        FinsFields.WriteUInt8(buffer, MagicS);
-        FinsFields.WriteUInt32(buffer, checked((uint)(MagicAndLengthBytes + bodyBytes)));
-        FinsFields.WriteUInt32(buffer, command);
-        FinsFields.WriteUInt32(buffer, error);
+        BigEndianFields.WriteUInt8(buffer, MagicF);
+        BigEndianFields.WriteUInt8(buffer, MagicI);
+        BigEndianFields.WriteUInt8(buffer, MagicN);
+        BigEndianFields.WriteUInt8(buffer, MagicS);
+        BigEndianFields.WriteUInt32(buffer, checked((uint)(MagicAndLengthBytes + bodyBytes)));
+        BigEndianFields.WriteUInt32(buffer, command);
+        BigEndianFields.WriteUInt32(buffer, error);
     }
 
     /// <summary>校验外壳并切出体：魔数、壳长与长度字段都要对得上。</summary>
@@ -87,16 +87,16 @@ internal static class FinsTcpFrame
         }
 
         ReadOnlySpan<byte> rest = frame;
-        if (!FinsFields.TryTakeUInt8(ref rest, out byte magic0) || magic0 != MagicF
-            || !FinsFields.TryTakeUInt8(ref rest, out byte magic1) || magic1 != MagicI
-            || !FinsFields.TryTakeUInt8(ref rest, out byte magic2) || magic2 != MagicN
-            || !FinsFields.TryTakeUInt8(ref rest, out byte magic3) || magic3 != MagicS)
+        if (!BigEndianFields.TryTakeUInt8(ref rest, out byte magic0) || magic0 != MagicF
+            || !BigEndianFields.TryTakeUInt8(ref rest, out byte magic1) || magic1 != MagicI
+            || !BigEndianFields.TryTakeUInt8(ref rest, out byte magic2) || magic2 != MagicN
+            || !BigEndianFields.TryTakeUInt8(ref rest, out byte magic3) || magic3 != MagicS)
         {
             violation = "The frame does not start with the FINS/TCP magic 'FINS'.";
             return false;
         }
 
-        if (!FinsFields.TryTakeUInt32(ref rest, out uint declaredBytes))
+        if (!BigEndianFields.TryTakeUInt32(ref rest, out uint declaredBytes))
         {
             violation = "The FINS/TCP shell carries no length field.";
             return false;
@@ -108,13 +108,13 @@ internal static class FinsTcpFrame
             return false;
         }
 
-        if (!FinsFields.TryTakeUInt32(ref rest, out command))
+        if (!BigEndianFields.TryTakeUInt32(ref rest, out command))
         {
             violation = "The FINS/TCP shell carries no command.";
             return false;
         }
 
-        if (!FinsFields.TryTakeUInt32(ref rest, out error))
+        if (!BigEndianFields.TryTakeUInt32(ref rest, out error))
         {
             violation = "The FINS/TCP shell carries no error code.";
             return false;

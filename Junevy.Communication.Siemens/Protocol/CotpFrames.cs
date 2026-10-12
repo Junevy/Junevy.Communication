@@ -49,23 +49,23 @@ internal static class CotpFrames
     /// <returns>完整的 CR 帧。</returns>
     public static byte[] BuildConnectionRequest(int connectionType, int rack, int slot)
     {
-        const int TotalBytes = TpktHeaderBytes + S7Fields.UInt8Bytes + CrLengthBytes;
+        const int TotalBytes = TpktHeaderBytes + BigEndianFields.UInt8Bytes + CrLengthBytes;
         using var buffer = new ByteBufferWriter(TotalBytes);
         WriteTpkt(buffer, TotalBytes);
-        S7Fields.WriteUInt8(buffer, CrLengthBytes);
-        S7Fields.WriteUInt8(buffer, CrCode);
-        S7Fields.WriteUInt16(buffer, CrDestinationReference);
-        S7Fields.WriteUInt16(buffer, CrSourceReference);
-        S7Fields.WriteUInt8(buffer, CrClass);
-        S7Fields.WriteUInt8(buffer, ProtocolClassOption);
-        S7Fields.WriteUInt8(buffer, ProtocolClassLength);
-        S7Fields.WriteUInt8(buffer, ProtocolClassValue);
-        S7Fields.WriteUInt8(buffer, LocalTsapOption);
-        S7Fields.WriteUInt8(buffer, TsapLength);
-        S7Fields.WriteUInt16(buffer, LocalTsap);
-        S7Fields.WriteUInt8(buffer, RemoteTsapOption);
-        S7Fields.WriteUInt8(buffer, TsapLength);
-        S7Fields.WriteUInt16(buffer, RemoteTsap(connectionType, rack, slot));
+        BigEndianFields.WriteUInt8(buffer, CrLengthBytes);
+        BigEndianFields.WriteUInt8(buffer, CrCode);
+        BigEndianFields.WriteUInt16(buffer, CrDestinationReference);
+        BigEndianFields.WriteUInt16(buffer, CrSourceReference);
+        BigEndianFields.WriteUInt8(buffer, CrClass);
+        BigEndianFields.WriteUInt8(buffer, ProtocolClassOption);
+        BigEndianFields.WriteUInt8(buffer, ProtocolClassLength);
+        BigEndianFields.WriteUInt8(buffer, ProtocolClassValue);
+        BigEndianFields.WriteUInt8(buffer, LocalTsapOption);
+        BigEndianFields.WriteUInt8(buffer, TsapLength);
+        BigEndianFields.WriteUInt16(buffer, LocalTsap);
+        BigEndianFields.WriteUInt8(buffer, RemoteTsapOption);
+        BigEndianFields.WriteUInt8(buffer, TsapLength);
+        BigEndianFields.WriteUInt16(buffer, RemoteTsap(connectionType, rack, slot));
         return buffer.ToArray();
     }
 
@@ -77,10 +77,10 @@ internal static class CotpFrames
         if (!TryUnwrapTpkt(frame, out ReadOnlySpan<byte> content, out string? violation))
             return S7Errors.Violation(violation);
 
-        if (!S7Fields.TryTakeUInt8(ref content, out byte lengthBytes) || lengthBytes < S7Fields.UInt8Bytes)
+        if (!BigEndianFields.TryTakeUInt8(ref content, out byte lengthBytes) || lengthBytes < BigEndianFields.UInt8Bytes)
             return S7Errors.Violation("The COTP connection confirm carries no PDU type.");
 
-        if (!S7Fields.TryTakeUInt8(ref content, out byte pduType) || pduType != CcCode)
+        if (!BigEndianFields.TryTakeUInt8(ref content, out byte pduType) || pduType != CcCode)
             return S7Errors.Violation("The COTP response is not a connection confirm (PDU type 0xD0).");
 
         return CommResult.Success();
@@ -91,18 +91,18 @@ internal static class CotpFrames
     /// <param name="totalBytes">整帧字节数。</param>
     public static void WriteTpkt(IBufferWriter<byte> buffer, int totalBytes)
     {
-        S7Fields.WriteUInt8(buffer, TpktVersion);
-        S7Fields.WriteUInt8(buffer, TpktReserved);
-        S7Fields.WriteUInt16(buffer, checked((ushort)totalBytes));
+        BigEndianFields.WriteUInt8(buffer, TpktVersion);
+        BigEndianFields.WriteUInt8(buffer, TpktReserved);
+        BigEndianFields.WriteUInt16(buffer, checked((ushort)totalBytes));
     }
 
     /// <summary>写入 COTP DT 头 <c>02 F0 80</c>（第 17.1 节说明段）。</summary>
     /// <param name="buffer">目标缓冲。</param>
     public static void WriteDataTransfer(IBufferWriter<byte> buffer)
     {
-        S7Fields.WriteUInt8(buffer, DtLengthBytes);
-        S7Fields.WriteUInt8(buffer, DtCode);
-        S7Fields.WriteUInt8(buffer, DtCredit);
+        BigEndianFields.WriteUInt8(buffer, DtLengthBytes);
+        BigEndianFields.WriteUInt8(buffer, DtCode);
+        BigEndianFields.WriteUInt8(buffer, DtCredit);
     }
 
     /// <summary>校验 TPKT 并切出 COTP 协议数据：版本 3、保留字节 0、长度字段等于整帧长度。</summary>
@@ -115,19 +115,19 @@ internal static class CotpFrames
     {
         content = ReadOnlySpan<byte>.Empty;
         ReadOnlySpan<byte> rest = frame;
-        if (!S7Fields.TryTakeUInt8(ref rest, out byte version) || version != TpktVersion)
+        if (!BigEndianFields.TryTakeUInt8(ref rest, out byte version) || version != TpktVersion)
         {
             violation = "The response does not start with TPKT version 3.";
             return false;
         }
 
-        if (!S7Fields.TryTakeUInt8(ref rest, out byte reserved) || reserved != TpktReserved)
+        if (!BigEndianFields.TryTakeUInt8(ref rest, out byte reserved) || reserved != TpktReserved)
         {
             violation = "The TPKT reserved byte is not 0.";
             return false;
         }
 
-        if (!S7Fields.TryTakeUInt16(ref rest, out ushort totalBytes))
+        if (!BigEndianFields.TryTakeUInt16(ref rest, out ushort totalBytes))
         {
             violation = "The TPKT carries no length field.";
             return false;
@@ -153,19 +153,19 @@ internal static class CotpFrames
     /// <returns>是 DT 头返回 true。</returns>
     public static bool TryTakeDataTransfer(ref ReadOnlySpan<byte> content, [NotNullWhen(false)] out string? violation)
     {
-        if (!S7Fields.TryTakeUInt8(ref content, out byte lengthBytes) || lengthBytes != DtLengthBytes)
+        if (!BigEndianFields.TryTakeUInt8(ref content, out byte lengthBytes) || lengthBytes != DtLengthBytes)
         {
             violation = "The response is not framed by a COTP data transfer header (length 02).";
             return false;
         }
 
-        if (!S7Fields.TryTakeUInt8(ref content, out byte pduType) || pduType != DtCode)
+        if (!BigEndianFields.TryTakeUInt8(ref content, out byte pduType) || pduType != DtCode)
         {
             violation = "The response is not a COTP data transfer (PDU type F0).";
             return false;
         }
 
-        if (!S7Fields.TryTakeUInt8(ref content, out _))
+        if (!BigEndianFields.TryTakeUInt8(ref content, out _))
         {
             violation = "The COTP data transfer is shorter than its 3-byte header.";
             return false;
