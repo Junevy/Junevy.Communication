@@ -24,9 +24,7 @@ public static class Arrival
             throw new ArgumentNullException(nameof(pending));
         ValidateLimit(milliseconds);
 
-        await Task.WhenAny(pending, Task.Delay(milliseconds)).ConfigureAwait(false);
-        if (!pending.IsCompleted)
-            throw new TimeoutException($"The awaited operation did not complete within {milliseconds} ms.");
+        await WaitOrTimeoutAsync(pending, milliseconds).ConfigureAwait(false);
 
         // 这里不返回 WhenAny 的赢家，而是重新 await 原任务：这样任务自身的异常原样抛出，
         // 而不是被 WhenAny 吞掉或换成超时。
@@ -46,11 +44,16 @@ public static class Arrival
             throw new ArgumentNullException(nameof(pending));
         ValidateLimit(milliseconds);
 
+        await WaitOrTimeoutAsync(pending, milliseconds).ConfigureAwait(false);
+
+        await pending.ConfigureAwait(false);
+    }
+
+    private static async Task WaitOrTimeoutAsync(Task pending, int milliseconds)
+    {
         await Task.WhenAny(pending, Task.Delay(milliseconds)).ConfigureAwait(false);
         if (!pending.IsCompleted)
             throw new TimeoutException($"The awaited operation did not complete within {milliseconds} ms.");
-
-        await pending.ConfigureAwait(false);
     }
 
     private static void ValidateLimit(int milliseconds)
