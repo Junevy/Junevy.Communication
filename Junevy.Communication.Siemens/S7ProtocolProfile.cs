@@ -1,4 +1,5 @@
 using Junevy.Communication.Channels;
+using Junevy.Communication.Plc;
 using Junevy.Communication.Siemens.Framing;
 
 namespace Junevy.Communication.Siemens;
@@ -17,42 +18,23 @@ internal static class S7ProtocolProfile
     /// <param name="session">握手结果写入的会话状态。</param>
     /// <param name="delivery">通道的交付方式。</param>
     /// <returns>同一组件实例。</returns>
-    /// <exception cref="ArgumentException">组件中的同名属性已被设置；或通道交付数据报而不是字节流。</exception>
+    /// <exception cref="ArgumentException">通道交付数据报而不是字节流；或组件中的同名属性已被设置。</exception>
     public static TComponents Configure<TComponents>(TComponents components, S7ProtocolSettings settings, S7Session session, ChannelDelivery delivery)
         where TComponents : ChannelComponents
     {
-        RequireUnset(components);
+        // P4-D10：交付方式的规则属于协议，在接线之前检查；消息不变。
         if (delivery != ChannelDelivery.Stream)
             throw new ArgumentException("S7 runs over ISO-on-TCP and needs a stream so TPKT lengths can frame it; datagram transports carry no S7 stream.", nameof(delivery));
 
-        components.FrameCodec = S7Framing.Create();
-
         // P4-D8：握手帧（COTP CR / CC）没有关联键，因此按发送顺序匹配应答，引用号的一致性由协议层校验。
-        components.Correlation = CorrelationMode.Sequential;
-        components.Initializer = new S7Handshake(settings, session);
-
         // P4-D15：探测要经通道自身的 RequestAsync 发协议报文，因此用工厂形式拿到通道引用。
-        components.HealthProbeFactory = channel => new S7ReadProbe(channel);
-        return components;
+        return PlcComponentWiring.Apply(
+            components,
+            owner: nameof(S7ProtocolProfile),
+            frameCodec: S7Framing.Create(),
+            correlation: CorrelationMode.Sequential,
+            keyExtractor: null,
+            initializer: new S7Handshake(settings, session),
+            healthProbeFactory: channel => new S7ReadProbe(channel));
     }
-
-    private static void RequireUnset(ChannelComponents components)
-    {
-        if (components.FrameCodec != null)
-            ThrowAlreadySet(nameof(ChannelComponents.FrameCodec));
-        if (components.Correlation.HasValue)
-            ThrowAlreadySet(nameof(ChannelComponents.Correlation));
-        if (components.KeyExtractor != null)
-            ThrowAlreadySet(nameof(ChannelComponents.KeyExtractor));
-        if (components.Initializer != null)
-            ThrowAlreadySet(nameof(ChannelComponents.Initializer));
-        if (components.HealthProbe != null)
-            ThrowAlreadySet(nameof(ChannelComponents.HealthProbe));
-        if (components.HealthProbeFactory != null)
-            ThrowAlreadySet(nameof(ChannelComponents.HealthProbeFactory));
-    }
-
-    private static void ThrowAlreadySet(string property)
-        => throw new ArgumentException(
-            $"ChannelComponents.{property} is already set; S7ProtocolProfile sets it for S7 and does not override it.", "components");
 }

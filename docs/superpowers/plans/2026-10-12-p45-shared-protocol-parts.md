@@ -276,6 +276,61 @@ public static class PlcComponentWiring
 
 ### 14.2 执行汇报与偏差（执行者填写）
 
+#### Task 4：Plc 的 `PlcComponentWiring` 与三个 profile（P45-D4，F4、F9）
+
+**新增**：`Junevy.Communication.Plc/Factory/PlcComponentWiring.cs`（95 行）、`Tests/Junevy.Communication.Plc.Tests/PlcComponentWiringTests.cs`。
+**修改**：`Siemens/S7ProtocolProfile.cs`、`Omron/FinsProtocolProfile.cs`、`Melsec/McProtocolProfile.cs`、`Junevy.Communication.Plc/README.md`（"Writing a Protocol" 加 "Wiring the Components" 与 "Shared Parts" 两小节）、`CHANGELOG.md`。
+**删除**：无文件被删除，但三个 profile 里**总共 6 个私有方法**整体删除：`S7ProtocolProfile.RequireUnset` / `ThrowAlreadySet`、`FinsProtocolProfile.RequireUnset` / `ThrowAlreadySet`、`McProtocolProfile.RequireComponents` / `RequireUnset` / `ThrowAlreadySet` / `ApplyCorrelation`（后者连同它的注释一起拆进调用点）。
+
+**动手前的第 3 条前提核查（计划要求"若有就停下汇报"）**：
+
+- `McProtocolOptions.FrameType` 默认 `Frame3E`（`McClientOptions.cs:11`）。
+- 逐个核对 MELSEC 的 12 个 profile 用例：**没有任何一个同时触发"组件为 null 或已预设"与"帧类型非法"**。
+  - 5 个 `Configure_Stream_Rejects*SetByTheCaller` 与 `Configure_Datagram_RejectsACorrelationSetByTheCaller` 都用默认 `McClientOptions`（3E），Stream/Datagram + Network 都是 3E 合法组合 → 只有一种错误。
+  - `Configure_WithNullComponents_IsAnArgumentNullException` 用默认选项 + Stream + Network → 3E 合法 → 只有一种错误。
+  - `Configure_RejectsAFrameTheDeliveryOrMediumDoesNotCarry` 的 4 个组合用**全新**的 `ChannelComponents` → 只有一种错误。
+  - `Configure_WithAnUndefinedDelivery/Medium` 仍断言 `ArgumentOutOfRangeException`，`RequireFrame` 提前执行后不变。
+- S7 / FINS 的两个 profile 用例同样核对：交付方式的用例都用**全新**的 `ChannelComponents`（`S7ProtocolProfileTests.cs:52`、`FinsProtocolProfileTests.cs:53`），预设组件的用例都用 `ChannelDelivery.Stream`（合法）→ 也都没有双重错误，把交付方式检查提到前面不会改变任何断言。
+- 结论：**不需要停下汇报**，继续执行。
+
+**测试先红后绿的证据**：
+
+- 先只写 `PlcComponentWiringTests.cs` → `dotnet build Tests/Junevy.Communication.Plc.Tests` 报 **CS0103「当前上下文中不存在名称 PlcComponentWiring」**（两个目标）。
+- 写生产代码后：260 通过 / 2 失败。两条都是**我测试写错了**——`Apply_WithoutAFrameCodecAndKeyExtractor_LeavesBothNull` 用了默认带分帧的辅助方法（改为直接传 `frameCodec: null`）；`Apply_ChecksTheAlwaysOwnedPropertiesInTheDocumentedOrder` 用 `Assert.Equal` 比整条消息，而 `ArgumentException.Message` 会追加 " (Parameter 'components')"（改为 `Assert.StartsWith`，`ParamName` 另有断言）。
+- 最终 **262 通过 / 0 失败 / 0 跳过**（net8.0 与 net472 各一次），比基线的 245 多 **17** 条：三个参数异常（`owner` 用 Theory 覆盖 null / 空串 / 空白三种）、五项总是拥有的组件逐项预设、`Initializer` 的条件规则（两条）、守卫失败时零部分赋值（逐项断言 6 个属性都还是原值）、全部赋值正确、`frameCodec` / `keyExtractor` 为 null 时对应属性为 null、`ReconnectPolicy` 保留、返回同一实例、守卫顺序。
+
+三个 profile 的迁移**没有新测试**，以"既有测试一个都没改且全绿"为证据：Melsec **184 + 1 跳过**、Siemens **316**、Omron **259**（两个目标各自相同），与基线逐条一致。
+
+**第 2 节自查**：
+
+- **公开 API 与第 8 节逐条一致**：`public static class` + 唯一的 `Apply<TComponents>(...)`，七个参数的名字、顺序与可空标注逐条一致，**不多不少**。
+- **Q29 不留转发层**：三份 `RequireUnset` 与三份 `ThrowAlreadySet` 整个删除，profile 里一次都不出现。`git grep` 确认生产代码里已无这些符号。
+- **Q30 协议无关**：`PlcComponentWiring.cs` 的代码与 XML 注释里**没有** MELSEC、S7、FINS 的术语；注释只说"协议"、"协议包"。协议特有的内容（`nameof(McProtocolProfile)` 这类 owner 名、帧类型规则）都留在各自 profile 里。
+- **P45-D4 的语义逐条落实**：三个入口校验；五项总是拥有；`Initializer` 只在 `initializer` 非 null 时检查与赋值；检查顺序 `FrameCodec → Correlation → KeyExtractor → Initializer → HealthProbe → HealthProbeFactory`；**全部通过后才赋值**；`ReconnectPolicy` 不碰；返回同一实例。
+- **职责划分**：`RequireUnset` 这个私有辅助收 `object?` + 属性名 + owner，因此**三种调用点形态**（`CorrelationMode?` 的装箱、`IFrameCodecFactory`、委托）都能复用同一份逻辑，不会为了不同类型写六个重载。
+- **MELSEC 的两处变化（P45-D4 明示，写进 CHANGELOG 的"变更"）**：① 组件已设置时的消息去掉了 "for MELSEC"；② 双重错误的报告顺序反转，`RequireFrame` 先于 `Apply`。
+- **`McProtocolProfile` 的 XML 注释保持准确**（P45-D6）：公开重载的签名与 `<typeparamref>` / `<param>` / `<returns>` 未动；`<exception>` 的三条按新顺序重排为"未定义的枚举 → 帧类型与介质不匹配 → 组件已设置"，并把原来的"（以太网只接受 3E、4E，串口只接受 4C）；或数据报使用 4C"拆开表述，语义逐条核对无误。
+- **文件 ≤ 300 行 / 方法 ≤ 60 行**：三个 profile 从 58 / 58 / 89 行降到 **34 / 34 / 54 行**；`PlcComponentWiring.cs` 95 行，`Apply` 方法 42 行（含两段注释与空行），`methodlen.py 61` 对全部生产文件无输出。
+- **依赖方向**：`PlcComponentWiring` 在 Plc 包里，只引用 `Junevy.Communication.Channels`；Melsec / Siemens / Omron 本来就依赖 Plc，只是多了 `using Junevy.Communication.Plc;`。**没有新增程序集引用**，架构测试 11 个用例全绿，IVT 仍为 2。
+- **net472 禁用清单**：用了 `string.IsNullOrWhiteSpace` 与 `string.Format`，未用禁用清单里的任何一项；没有默认接口成员、`init`、`record`。
+- **不留死代码**：删除的 6 个私有方法逐个确认无其他调用点；`ApplyCorrelation` 里的关联规则注释搬到了 `McProtocolProfile` 的调用点旁。
+
+**第 3 节度量**：
+
+| 指标 | Task 3 后 | Task 4 后 | 目标 |
+|---|---|---|---|
+| 重复窗口（6 行） | 45 | **34** | ≤ 34 ✅ |
+| 其中跨协议窗口 | `FinsProfile ↔ S7Profile` 8、`Mc ↔ Fins ↔ S7` 3、`FinsFraming ↔ S7Framing` 1 | **只剩 `FinsFraming ↔ S7Framing` 1** | 只允许保留 1 ✅ |
+| 新增窗口 | — | **0** | 0 ✅ |
+| 超过 60 行的方法 | 0 | 0 | 0 ✅ |
+| 超过 300 行的文件 | 9 | 9 | 9 ✅ |
+| 生产程序集之间的 IVT | 2 | 2 | 2 ✅ |
+| 有效行 | Plc 1189、Melsec 1275、Siemens 1286、Omron 707 | **Plc 1231（+42）、Melsec 1247（−28）、Siemens 1271（−15）、Omron 692（−15）** | Core、Plc 增，其余减 ✅ |
+
+**三条命令的结果**：`dotnet build -c Debug` 0 错误；`dotnet build -c Release` 0 错误、31 个警告（同基线）；`dotnet test -c Debug` **23 个测试项目 / 目标组合全部通过，0 失败**——Core 157、Plc **262**、Channels 278、Tcp 129、Udp 38、Serial 63+2 跳过、Melsec 184+1 跳过、Architecture 11、WebApi 732 / 733、Modbus 405、Siemens 316、Omron 259。
+
+**顺带发现并修正**：Plc README 新增的两个示例里，`ProtocolWiringExample.Configure` 用了 `ArgumentException` 却漏了 `using System;`；在临时项目里经 net8.0 与 net472 编译验证时（CS0246）发现并补上。README 的 5 个示例现在**逐个**经两个目标编译通过（用带占位类型的临时工程，占位类型不进仓库）。
+
 #### Task 3：Core 的 `SequenceCounter` 与三个协议（P45-D3，F3）
 
 **新增**：`Junevy.Communication.Core/Utils/SequenceCounter.cs`（20 行）、`Tests/Junevy.Communication.Core.Tests/SequenceCounterTests.cs`。

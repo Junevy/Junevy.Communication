@@ -208,3 +208,67 @@ public static class ProtocolChannelExample
             loggerFactory);
 }
 ```
+
+### Wiring the Components
+
+`PlcComponentWiring.Apply` fills in the parts of `ChannelComponents` a protocol owns: how frames are delimited, how a reply is matched to its request, what to do right after the channel opens, and how to probe the link. It returns the same instance and refuses to overwrite a value the caller already set.
+
+```csharp
+using System;
+using Junevy.Communication.Channels;
+using Junevy.Communication.Plc;
+
+public static class ProtocolWiringExample
+{
+    public static ChannelComponents Configure(ChannelComponents components, MySettings settings, MySession session, ChannelDelivery delivery)
+    {
+        // Rules that depend on the transport belong to the protocol, and run before the wiring.
+        if (delivery != ChannelDelivery.Stream)
+            throw new ArgumentException("This protocol runs over a byte stream.", nameof(delivery));
+
+        return PlcComponentWiring.Apply(
+            components,
+            owner: "MyProtocolProfile",
+            frameCodec: MyFraming.Create(),
+            correlation: CorrelationMode.Sequential,
+            keyExtractor: null,
+            initializer: new MyHandshake(settings, session),
+            healthProbeFactory: channel => new MyReadProbe(channel));
+    }
+}
+```
+
+The rules:
+
+- The protocol always owns `FrameCodec`, `Correlation`, `KeyExtractor`, `HealthProbe` and `HealthProbeFactory`. If the caller has set any of them, `Apply` throws `ArgumentException` with `ParamName` `"components"` and a message naming the property — it never silently overrides the caller. Pass `frameCodec: null` when the protocol has no framing (a datagram transport), and `keyExtractor: null` when correlation is not `Keyed`.
+- `Initializer` belongs to the protocol **only when it supplies one**. With `initializer: null` the property is neither checked nor assigned, so a caller-provided handshake hook survives; with a non-null initializer a preset value is a conflict like the rest.
+- `ReconnectPolicy` is left alone — retry backoff is the host's choice, not the protocol's declaration.
+- Every guard runs before anything is assigned, so a rejected call leaves the components exactly as they were. The guards are checked in this order: `FrameCodec`, `Correlation`, `KeyExtractor`, `Initializer`, `HealthProbe`, `HealthProbeFactory`.
+- Rules that depend on the delivery or the medium (which framings a transport can carry, which frame types match which media) stay in the protocol's own profile, before the call.
+
+### Shared Parts
+
+Two more pieces of the plumbing live in Core so that a new protocol does not write them again:
+
+- `BigEndianFields` writes and takes the fixed-width fields of a header, most significant byte first. Reads return `false` and leave the span untouched when there are not enough bytes, so a decoder reports a structural error through its own result.
+- `SequenceCounter` hands out the incrementing values for the field that pairs a reply with its request. Keep one process-wide instance on the type that encodes that header field, so the client's requests and its heartbeat probes take numbers from the same source.
+
+```csharp
+using System.Buffers;
+using Junevy.Communication.Core.Buffers;
+using Junevy.Communication.Core.Utils;
+
+internal static class MyHead
+{
+    // Process-wide, on the type that writes the field: requests and heartbeat probes share it.
+    internal static readonly SequenceCounter Requests = new SequenceCounter();
+
+    public static void WriteRequest(IBufferWriter<byte> buffer, MyRoute route)
+    {
+        BigEndianFields.WriteUInt32(buffer, 0x00010000);       // length
+        BigEndianFields.WriteUInt16(buffer, 0x0102);            // command
+        BigEndianFields.WriteUInt8(buffer, route.Unit);
+        BigEndianFields.WriteUInt32(buffer, Requests.NextUInt16());
+    }
+}
+```
