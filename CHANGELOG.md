@@ -2,6 +2,26 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — 开发流程：按改动选择测试
+
+### 新增（Added）
+
+- 2026-10-13 [Build] 新增 `build/test-affected.ps1`：只运行受改动影响的测试项目，不再每个 Task 都跑全量（24 个测试宿主、约 5600 条）。
+  - **改动的范围**：`-Base` 与 HEAD 的分叉点之后的提交，加上工作区里未提交、未跟踪的文件。
+  - **选法**：把每个文件归到所在项目，再沿 `ProjectReference` 选出直接或间接引用它的测试项目。
+  - **不触发测试**：项目目录以外的文档、脚本与解决方案文件。
+  - **跑整个解决方案**：`build/` 下的 props、app.config、Polyfills 等共享构建输入改动时自动跑全部；`-All` 手动跑全部。
+  - **参数**：`-Repeat` 连续运行多遍，`-ListOnly` 只列出选中的项目，`-NoBuild` 跳过构建。
+  - **结果**：每遍汇总通过、失败、跳过数；任一测试宿主失败时退出码为 1，并打印该项目的完整输出。
+  - **已验证**：只改 Mqtt 时只选中 Architecture.Tests 与 Mqtt.Tests；只改 Plc 时选中 Plc、Melsec、Siemens、Omron 与 Architecture；改 Core 或 Channels 时选中除 Modbus 外的全部测试项目；临时加入一条必失败的用例时退出码为 1。
+
+### 变更（Changed）
+
+- 2026-10-13 [Docs] P5.1、P6.2、P6.3 计划的第三条命令改为 `pwsh build/test-affected.ps1 -Base <起点提交> -NoBuild`：
+  - 起点提交是 Task 0 开始时的 HEAD；
+  - Task 0 只构建、只测度量，不跑测试；
+  - 期末与审阅复跑用 `-Repeat 3`。
+
 ## [Unreleased] — P6.1（Mqtt 1.0.0-preview.1：MQTT 客户端）
 
 ### 新增（Added）
