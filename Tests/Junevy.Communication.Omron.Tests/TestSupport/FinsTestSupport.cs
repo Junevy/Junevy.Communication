@@ -7,8 +7,9 @@ namespace Junevy.Communication.Omron.Tests;
 /// <summary>
 /// FINS 协议层测试的共用内容：计划第 17.2 节的九条向量、向量里的字段位置，以及 <see cref="CommResult"/> 的断言辅助。
 /// 派生向量都注明派生来源与改动点，便于与 17.2 节逐字节对照。
+/// Task 13 的客户端与握手用例另用一部分内容，见 <c>FinsTestSupport.Client.cs</c>（同一个类的分部）。
 /// </summary>
-internal static class FinsTestSupport
+internal static partial class FinsTestSupport
 {
     /// <summary>17.2 节说明段：FINS/TCP 头为 "FINS" 4 + 长度 4 + 命令 4 + 错误码 4。</summary>
     public const int ShellBytes = 16;

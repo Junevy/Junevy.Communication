@@ -80,7 +80,7 @@ internal static class FinsMemoryArea
     /// <returns>读到的字节；结构错误为 <see cref="CommErrorKind.ProtocolViolation"/>，设备侧错误为 <see cref="CommErrorKind.RemoteError"/>。</returns>
     public static CommResult<byte[]> ReadResponse(ReadOnlySpan<byte> frame, byte expectedSessionId, int payloadBytes, ILogger? logger)
     {
-        CommResult<byte[]> opened = OpenResponse(frame, expectedSessionId, CommandRead, logger);
+        CommResult<byte[]> opened = OpenResponse(frame, expectedSessionId, CommandRead, verifyEndCode: true, logger);
         if (!opened.IsSuccess)
             return opened;
 
@@ -98,7 +98,7 @@ internal static class FinsMemoryArea
     /// <returns>结构错误为 <see cref="CommErrorKind.ProtocolViolation"/>，设备侧错误为 <see cref="CommErrorKind.RemoteError"/>。</returns>
     public static CommResult CheckWriteResponse(ReadOnlySpan<byte> frame, byte expectedSessionId, ILogger? logger)
     {
-        CommResult<byte[]> opened = OpenResponse(frame, expectedSessionId, CommandWrite, logger);
+        CommResult<byte[]> opened = OpenResponse(frame, expectedSessionId, CommandWrite, verifyEndCode: true, logger);
         if (!opened.IsSuccess)
             return opened.ToResult();
 
@@ -107,9 +107,19 @@ internal static class FinsMemoryArea
             : FinsErrors.Violation($"The FINS write acknowledgement carries {opened.Data.Length} data byte(s); it has none.");
     }
 
+    /// <summary>
+    /// P4-D15：心跳探测的应答判定——结构与 SID 必须对得上，结束码与数据长度都不参与判定（设备回了话就算健康）。
+    /// 外壳的错误码非 0 仍按 P4-D14 判为设备侧错误，探测不因它判健康。
+    /// </summary>
+    /// <param name="frame">完整的应答帧。</param>
+    /// <param name="expectedSessionId">探测请求使用的 SID。</param>
+    /// <returns>结构错误为 <see cref="CommErrorKind.ProtocolViolation"/>，头错误为 <see cref="CommErrorKind.RemoteError"/>，其余为成功。</returns>
+    public static CommResult CheckProbeResponse(ReadOnlySpan<byte> frame, byte expectedSessionId)
+        => OpenResponse(frame, expectedSessionId, CommandRead, verifyEndCode: false, logger: null).ToResult();
+
     // Task 12 第 5 条：命令必须是 2，ICF 的应答位必须置位，SID 与命令码回显必须一致，结束码按 P4-D14 屏蔽。
     // P4-D14 的头错误码排在结构判断之前：出错时 PLC 可以不带完整的 FINS 帧。
-    private static CommResult<byte[]> OpenResponse(ReadOnlySpan<byte> frame, byte expectedSessionId, ushort expectedCommand, ILogger? logger)
+    private static CommResult<byte[]> OpenResponse(ReadOnlySpan<byte> frame, byte expectedSessionId, ushort expectedCommand, bool verifyEndCode, ILogger? logger)
     {
         if (!FinsTcpFrame.TryUnwrap(frame, out uint command, out uint error, out ReadOnlySpan<byte> body, out string? violation))
             return FinsErrors.Violation<byte[]>(violation);
@@ -132,9 +142,12 @@ internal static class FinsMemoryArea
         if (!FinsFields.TryTakeUInt8(ref body, out byte major) || !FinsFields.TryTakeUInt8(ref body, out byte minor))
             return FinsErrors.Violation<byte[]>("The FINS response carries no end code.");
 
-        CommResult endCode = FinsErrors.CheckEndCode(major, minor, logger);
-        if (!endCode.IsSuccess)
-            return endCode.As<byte[]>();
+        if (verifyEndCode)
+        {
+            CommResult endCode = FinsErrors.CheckEndCode(major, minor, logger);
+            if (!endCode.IsSuccess)
+                return endCode.As<byte[]>();
+        }
 
         return CommResult<byte[]>.Success(body.ToArray());
     }

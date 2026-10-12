@@ -36,4 +36,9 @@ internal static class FinsDeviceTable
     public static readonly PlcAddressParser<FinsDevice, FinsAddress> AddressParser = new PlcAddressParser<FinsDevice, FinsAddress>(
         Devices,
         (device, number, bit, text) => new FinsAddress(device, number, bit, text));
+
+    /// <summary>数据内存区 D（<see cref="DataMemorySymbol"/>）：心跳探测读它的第一字（P4-D15）。区域代码与读写请求同源。</summary>
+    public static readonly FinsDevice DataMemory = Devices.Single(device => device.Symbol == DataMemorySymbol);
+
+    private const string DataMemorySymbol = "D";
 }
