@@ -26,6 +26,7 @@ public sealed class ArchitectureTests
     private const string UdpName = "Junevy.Communication.Udp";
     private const string SerialName = "Junevy.Communication.Serial";
     private const string PlcName = "Junevy.Communication.Plc";
+    private const string MqttName = "Junevy.Communication.Mqtt";
     private const string LibraryPrefix = "Junevy.Communication.";
     private const string TestsSuffix = ".Tests";
 
@@ -53,6 +54,19 @@ public sealed class ArchitectureTests
         // Omron 同样只有 FINS/TCP（端口 9600），因此允许表里没有 Udp 与 Serial（P4-D1）。
         (typeof(FinsAddress).Assembly, new[] { PlcName, ChannelsName, CoreName, TcpName }),
         (typeof(WebApiResult<>).Assembly, new[] { CoreName }),
+#if NET8_0_OR_GREATER
+        // SDK 适配包只面向 .NET 8（P6-C1），因此只在 net8.0 目标上参与检查；它不经过通道族，只允许引用 Core（P6-C6）。
+        (Assembly.Load(MqttName), new[] { CoreName }),
+#endif
+    };
+
+    // 第三方程序集白名单（P6-C6）：分层表只管 Junevy.Communication.* 的方向，第三方由这里把关。
+    // 未登记的程序集只允许 BCL 与微软一方的扩展包（System.*、Microsoft.*、netstandard、mscorlib）；登记在册的只有该包的 SDK 前缀。
+    private static readonly Dictionary<string, string[]> SdkPrefixes = new Dictionary<string, string[]>
+    {
+#if NET8_0_OR_GREATER
+        [MqttName] = new[] { "MQTTnet" },
+#endif
     };
 
     // 参与 InternalsVisibleTo 检查的程序集：分层表中的全部程序集，加上不在分层表中的 Modbus。Modbus 为旧库，只检查 InternalsVisibleTo，不检查引用。
@@ -94,4 +108,35 @@ public sealed class ArchitectureTests
 
         Assert.True(violations.Count == 0, $"References outside the layering table (assembly -> referenced): {string.Join(", ", violations)}");
     }
+
+    [Fact]
+    public void ProductionAssemblies_ReferenceOnlyAllowlistedThirdPartyAssemblies()
+    {
+        var violations = new List<string>();
+        foreach ((Assembly assembly, string[] libraries) in LayerTable)
+        {
+            string owner = assembly.GetName().Name!;
+            string[] sdkPrefixes = SdkPrefixes.TryGetValue(owner, out string[]? registered) ? registered : Array.Empty<string>();
+            foreach (AssemblyName reference in assembly.GetReferencedAssemblies())
+            {
+                string name = reference.Name!;
+                bool allowlisted = libraries.Contains(name)
+                    || sdkPrefixes.Any(prefix => name.StartsWith(prefix, StringComparison.Ordinal))
+                    || IsBaseRuntimeAssembly(name);
+                if (!allowlisted)
+                {
+                    violations.Add($"{owner} -> {name}");
+                }
+            }
+        }
+
+        Assert.True(violations.Count == 0, $"References outside the allow-list (assembly -> referenced): {string.Join(", ", violations)}");
+    }
+
+    private static bool IsBaseRuntimeAssembly(string name) =>
+        name.StartsWith("System.", StringComparison.Ordinal)
+        || name.StartsWith("Microsoft.", StringComparison.Ordinal)
+        || name == "System"
+        || name == "netstandard"
+        || name == "mscorlib";
 }

@@ -2,6 +2,18 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — P6.1（Mqtt 1.0.0-preview.1：MQTT 客户端）
+
+### 新增（Added）
+
+- 2026-10-12 [Mqtt] 新增库 `Junevy.Communication.Mqtt` 与测试项目 `Tests/Junevy.Communication.Mqtt.Tests`（计划 Task 1，P6-C1、P61-D1）：MQTT 客户端的 SDK 适配包，只做客户端，只支持 MQTT 3.1.1 与 5.0，**只面向 .NET 8**（MQTTnet 5 的 `lib/` 只有 `net8.0` 与 `net10.0`；其余包仍是 `net472;net8.0`）。依赖只有 `Junevy.Communication.Core` 与 `MQTTnet` 5.2.0.1603（MIT），不引用 Channels / Tcp 等传输包。生产项目只对测试项目开放 `InternalsVisibleTo`。测试项目另引 `MQTTnet.Server` 5.2.0.1603（进程内 Broker 替身，只出现在测试项目）与共享测试库 `Junevy.Communication.Testing`。Task 1 只建立骨架与架构守卫，生产程序集此时有意不含任何类型（第一个类型在 Task 2 引入），架构守卫因此用 `Assembly.Load` 定位程序集，并已用负控验证三条检查都会真的失败。
+- 2026-10-12 [Architecture] 架构测试新增四条守卫（计划 Task 1，P6-C4、C5、C6；P6.2、P6.3 各加一行登记即可复用）：
+  - `ArchitectureTests.ProductionAssemblies_ReferenceOnlyAllowlistedThirdPartyAssemblies`（**两个目标框架都运行**，覆盖分层表里的全部程序集）：生产程序集可以引用的第三方只有 `System.*` / `Microsoft.*` / `netstandard` / `mscorlib`、分层表允许的 `Junevy.Communication.*`，以及该包在 `ArchitectureTests.SdkPrefixes` 登记表里登记的 SDK 前缀（Mqtt → `MQTTnet`）。Modbus 为旧库，仍只做 InternalsVisibleTo 检查，不参加白名单。
+  - `SdkAdapterArchitectureTests`（新文件，只在 net8.0 编译）：`SdkAdapters_ReferenceOnlyCoreAmongTheLibraryAssemblies`、`SdkAdapters_PublicApiNeverMentionsSdkTypes`、`SdkAdapters_KeepSdkDependenciesInsideTheSdkNamespace`。登记表只有三列——适配程序集、SDK 程序集名前缀、SDK 唯一允许出现的命名空间。
+  - 公开 API 检查由 `SdkPublicApiWalker` 实现：用反射遍历导出类型的基类、接口，以及**公开与受保护**的字段、属性、方法（返回值、参数、泛型实参）、事件与构造函数，展开数组、指针、byref 与泛型实参后检查程序集名；私有成员不检查，因为 `Sdk/` 命名空间里的内部类型使用 SDK 类型是允许的。
+  - 命名空间检查用 NetArchTest 读 IL（方法体中的类型引用同样算数），因此根命名空间与 `DependencyInjection` 都不许碰 SDK。
+- 2026-10-12 [Architecture] `ArchitectureTests` 的分层表新增 Mqtt 一行，只在 `net8.0` 目标上参与检查（`#if NET8_0_OR_GREATER`），允许引用只有 Core；`Architecture.Tests.csproj` 对 Mqtt 的 `ProjectReference` 与两个 SDK 守卫文件同样按目标框架条件化。`Junevy.Communication.slnx` 加入两个新项目。
+
 ## [Unreleased] — P4.6（共享测试库整理）
 
 ### 变更（Changed）
