@@ -36,7 +36,7 @@ internal sealed class S7Handshake : IConnectionInitializer
         if (!connectionConfirm.IsSuccess)
             return connectionConfirm;
 
-        ushort pduReference = S7PduReferences.Next();
+        ushort pduReference = S7Message.PduReferences.NextUInt16();
         CommResult<byte[]> setup = await channel
             .RequestAsync(S7SetupCommunication.BuildRequest(pduReference), null, cancellationToken)
             .ConfigureAwait(false);

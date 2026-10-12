@@ -1,4 +1,5 @@
 using Junevy.Communication.Core.Results;
+using Junevy.Communication.Core.Utils;
 
 namespace Junevy.Communication.Melsec.Protocol;
 
@@ -8,6 +9,9 @@ namespace Junevy.Communication.Melsec.Protocol;
 /// </summary>
 internal sealed class McFrameExchange
 {
+    // 4E 序列号的进程级计数器（P2-D11）：本类型是唯一写这个字段的地方，客户端请求与心跳探测共用，同一通道上不会撞号。取低 16 位。
+    private static readonly SequenceCounter SerialNumbers = new SequenceCounter();
+
     private readonly McProtocolSettings settings;
     private readonly McFieldCodec codec;
     private readonly McEthernetFrame? ethernet;
@@ -99,7 +103,7 @@ internal sealed class McFrameExchange
         if (settings.Is4C)
             return serialFrame!.BuildRequest(settings.SerialRoute, body);
 
-        lastSerial = settings.Is4E ? McSerialNumbers.Next() : (ushort)0;
+        lastSerial = settings.Is4E ? SerialNumbers.NextUInt16() : (ushort)0;
         return ethernet!.BuildRequest(lastSerial, settings.MonitoringTimer, settings.EthernetRoute, body);
     }
 

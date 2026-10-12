@@ -26,7 +26,7 @@ internal sealed class S7ReadProbe : IHealthProbe
     /// <inheritdoc />
     public async Task<CommResult> ProbeAsync(CancellationToken cancellationToken)
     {
-        ushort pduReference = S7PduReferences.Next();
+        ushort pduReference = S7Message.PduReferences.NextUInt16();
         byte[] request = S7ReadVar.BuildRequest(
             pduReference, S7DeviceTable.Merkers.AreaCode, MerkerDbNumber, ProbeByteAddress, ProbeByteCount);
 

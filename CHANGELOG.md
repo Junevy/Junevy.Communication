@@ -7,6 +7,7 @@
 ### 新增（Added）
 
 - 2026-10-12 [Core] 新增公开静态类 `Junevy.Communication.Core.Buffers.BigEndianFields`（计划 Task 1，P45-D2）：把协议报文头的定长大端字段逐个写出或逐个取出，取代原先每个协议各写一份的同类工具。公开成员为宽度常量 `UInt8Bytes` / `UInt16Bytes` / `UInt24Bytes` / `UInt32Bytes`，写入 `WriteUInt8` / `WriteUInt16` / `WriteUInt24` / `WriteUInt32` / `WriteBytes`（目标是 `IBufferWriter<byte>`，多字节一律高位在前），读取 `TryTakeUInt8` / `TryTakeUInt16` / `TryTakeUInt24` / `TryTakeUInt32` / `TryTakeBytes`（从 `ref ReadOnlySpan<byte>` 头部取出并前移）。**读取在字节不足时返回 `false`，既不移动 `data`，`value` 也取默认值**，结构上的长度不足由解码器判定并走结果，不抛异常。参数错误抛异常：`output` 为 null → `ArgumentNullException`；`WriteUInt24` 的值不在 0–0xFFFFFF → `ArgumentOutOfRangeException`；`TryTakeBytes` 的长度为负 → `ArgumentOutOfRangeException`。与 `ByteTransform`（面向数据载荷与字序，长度不足抛异常）、`ByteSequenceReader`（面向 `ReadOnlySequence`）的分工见 Core README 的 "Buffers" 一节。
+- 2026-10-12 [Core] 新增公开密封类 `Junevy.Communication.Core.Utils.SequenceCounter`（计划 Task 3，P45-D3）：给协议报文中"把应答与请求配好"的字段（请求号、会话号、事务号一类）提供序号。线程安全（`Interlocked.Increment`），按宽度取低位回绕，**第一次取值是 1**：`NextUInt16()` 返回 1…65535、0、1…，`NextByte()` 返回 1…255、0、1…。一个实例只按一种宽度使用（两个方法读同一个计数器，混用会让 8 位序号每 256 次重复一次），要让多个通道不撞号就共用一个进程级实例；回绕不影响配对，因为应答按发送顺序匹配（`CorrelationMode.Sequential`）。
 
 ### 变更（Changed）
 
@@ -18,6 +19,9 @@
 ### 移除（Removed）
 
 - 2026-10-12 [Siemens, Omron] 移除内部的大端字段工具 `Protocol/S7Fields.cs` 与 `Protocol/FinsFields.cs`（计划 Task 2，P45-D1 的 ①；摩擦记录 F8）：两者都是 `internal`，不影响公开 API；调用点直接改用 Core 的 `BigEndianFields`，不保留任何转发层（P45 第 2 节 Q29）。
+- 2026-10-12 [Melsec] 移除内部类型 `Protocol/McSerialNumbers.cs`（计划 Task 3，P45-D1 的 ②；摩擦记录 F3）：4E 的序列号改由 `McFrameExchange` 上的进程级 `SequenceCounter` 产生。**序列号序列完全不变**（同一个算法：第一个是 1、递增、按低 16 位回绕），MELSEC 的测试一个都没改并保持全绿（184 通过 + 1 跳过）。
+- 2026-10-12 [Siemens] 移除内部类型 `Protocol/S7PduReferences.cs`（计划 Task 3，P45-D1 的 ②；摩擦记录 F3）：PDU 引用号改由报文头编码器 `S7Message` 上的 `internal static readonly SequenceCounter PduReferences` 产生，客户端请求、握手与心跳探测共用。取值序列不变，S7 的测试一个都没改并保持全绿（316 通过）。
+- 2026-10-12 [Omron] 移除内部类型 `Protocol/FinsSessionIds.cs`（计划 Task 3，P45-D1 的 ②；摩擦记录 F3）：SID 改由头编码器 `FinsHead` 上的 `internal static readonly SequenceCounter SessionIds` 产生，客户端请求与心跳探测共用。取值序列不变（低 8 位、每 256 帧回绕），FINS 的测试一个都没改并保持全绿（259 通过）。
 
 ## [Unreleased] — PLC 协议 P4（Siemens / Omron 1.0.0-preview.1；Plc 套件扩展）
 

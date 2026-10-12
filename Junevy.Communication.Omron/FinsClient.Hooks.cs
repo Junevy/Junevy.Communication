@@ -92,5 +92,5 @@ public sealed partial class FinsClient
             "The FINS route is unavailable because the node address handshake has not run on this channel.");
     }
 
-    private byte NextSessionId() => lastSessionId = FinsSessionIds.Next();
+    private byte NextSessionId() => lastSessionId = FinsHead.SessionIds.NextByte();
 }

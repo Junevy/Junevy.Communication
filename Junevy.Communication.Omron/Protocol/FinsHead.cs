@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using Junevy.Communication.Core.Buffers;
+using Junevy.Communication.Core.Utils;
 
 namespace Junevy.Communication.Omron.Protocol;
 
@@ -52,6 +53,13 @@ internal readonly struct FinsRoute
 /// </summary>
 internal static class FinsHead
 {
+    /// <summary>
+    /// SID 的进程级计数器（P4-D17）：本类型是写这个字段的头编码器，客户端请求、握手与心跳探测都从这里取号，
+    /// 因此同一通道上不会撞号。取低 8 位，因此每 256 帧回绕一次；SID 只用来把应答与请求配好顺序
+    /// （<c>CorrelationMode.Sequential</c>，P4-D8），回绕不改变配对。
+    /// </summary>
+    internal static readonly SequenceCounter SessionIds = new SequenceCounter();
+
     /// <summary>头的字节数：ICF、RSV、GCT、DNA、DA1、DA2、SNA、SA1、SA2、SID。</summary>
     public const int HeadBytes = 10;
 

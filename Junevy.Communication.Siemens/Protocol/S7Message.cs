@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Junevy.Communication.Core.Buffers;
+using Junevy.Communication.Core.Utils;
 
 namespace Junevy.Communication.Siemens.Protocol;
 
@@ -9,6 +10,12 @@ namespace Junevy.Communication.Siemens.Protocol;
 /// </summary>
 internal static class S7Message
 {
+    /// <summary>
+    /// PDU 引用号的进程级计数器（P4-D17）：本类型是写这个字段的报文头编码器，客户端请求、握手与心跳探测都从这里取号，
+    /// 同一通道上不会撞号。取低 16 位。
+    /// </summary>
+    internal static readonly SequenceCounter PduReferences = new SequenceCounter();
+
     private const byte ProtocolId = 0x32;
     private const byte RosctrJob = 0x01;
     private const byte RosctrAck = 0x02;

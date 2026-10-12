@@ -276,6 +276,33 @@ public static class PlcComponentWiring
 
 ### 14.2 执行汇报与偏差（执行者填写）
 
+#### Task 3：Core 的 `SequenceCounter` 与三个协议（P45-D3，F3）
+
+**新增**：`Junevy.Communication.Core/Utils/SequenceCounter.cs`（20 行）、`Tests/Junevy.Communication.Core.Tests/SequenceCounterTests.cs`。
+**修改**：`Siemens/Protocol/S7Message.cs`、`Siemens/S7Client.Hooks.cs`、`Siemens/S7Handshake.cs`、`Siemens/S7ReadProbe.cs`、`Omron/Protocol/FinsHead.cs`、`Omron/FinsClient.Hooks.cs`、`Omron/FinsReadProbe.cs`、`Melsec/Protocol/McFrameExchange.cs`；`Junevy.Communication.Core/README.md`（"Timeout Scope" 之后加 "Sequence Counter" 一节）；`CHANGELOG.md`。
+**删除**：`Siemens/Protocol/S7PduReferences.cs`、`Omron/Protocol/FinsSessionIds.cs`、`Melsec/Protocol/McSerialNumbers.cs`（三个都是 `internal`，各 13–14 行）。
+
+**测试先红后绿的证据**：先只写测试 → `dotnet build Tests/Junevy.Communication.Core.Tests` 报 **CS0246「未能找到类型或命名空间名 "SequenceCounter"」**（两个目标）。写生产代码后 156 通过 / 1 失败：`NextByte_FromConcurrentCallers_NeverRepeatsAValue` 期望 256、实际 255——**是我测试写错了**（8 × 32 = 256 次取值，序列是 1…256，256 截断成 0，所以最大字节是 255，不是 256）。改为断言"互不相同 256 个 + 最大值 255 + 恰好一个 0"，反而把"并发下正好绕回一次"也测到了。最终 **157 通过 / 0 失败 / 0 跳过**（net8.0 与 net472 各一次），比 Task 1 后多 10 条。
+
+三个协议的迁移**没有新测试**，以"既有测试一个都没改且全绿"为证据：Melsec **184 + 1 跳过**、Siemens **316**、Omron **259**（两个目标各自相同），与基线逐条一致。
+
+**第 2 节自查**：
+
+- **公开 API 与第 7 节逐条一致**：`public sealed class` + `NextUInt16()` + `NextByte()`，**不多不少**；`counter` 字段 `private`。
+- **算法与三份旧实现完全一致**：三份旧代码都是 `unchecked((ushort)Interlocked.Increment(ref counter))`，`SequenceCounter` 逐字沿用，只多一个 `(byte)` 版本的截断。因此**序列取值一字不差**（第一个 1、递增、到界回绕），`int` 溢出的问题与原来一样由 unchecked 截断处理。`int` 溢出后 `unchecked` 的截断结果与从 0 重新计数一致，已在字段注释里写明。
+- **Q30 协议无关**：`SequenceCounter.cs` 的代码与 XML 注释里没有 MELSEC、S7、FINS 的术语（注释只说"协议报文中用来把应答与请求配好的字段"）；具体协议的位置与决策出处留在各自协议包里。
+- **P45-D3 的"实例位置"**：跟着"谁写这个字段"走——`McFrameExchange`（`private static readonly SerialNumbers`，唯一使用者）、`S7Message`（`internal static readonly PduReferences`，报文头编码器）、`FinsHead`（`internal static readonly SessionIds`，头编码器）。三个都是**进程级单例**，因此"客户端请求与心跳探测共用"的原有语义不变。
+- **XML 注释保留原决策出处**：三个字段的注释都保留了 P2-D11 / P4-D17 的出处，以及"请求与心跳共用、进程级、回绕不改变配对"的理由（FINS 的 8 位回绕说明也一并保留）。
+- **Q29 不留转发层**：三个旧类型整个删除，5 个调用点直接改调 `S7Message.PduReferences` / `FinsHead.SessionIds` / `SerialNumbers`，没有薄包装。
+- **依赖方向**：三个协议包本来就引用 Core，只多了 `using Junevy.Communication.Core.Utils;`；没有新增程序集引用，架构测试 11 个用例全绿，IVT 仍为 2。
+- **文件 ≤ 300 行 / 方法 ≤ 60 行**：`methodlen.py 61` 对全部生产文件仍无输出；`SequenceCounter.cs` 只有 20 行。
+- **net472 禁用清单**：`Parallel.For` 是 net472 上就有的 API，未使用禁用清单里的任何一项。
+- **测试确定**：除并发用例外全是确定性断言；并发用例本身也是确定的——计数器的契约就是"每个并发调用拿到不同的值"，`Distinct()` 的计数是确定的，不依赖调度顺序（8 个任务 × 1000 个 16 位值不会回绕；8 × 32 个 8 位值只绕一次，断言也按此写死）。
+
+**第 3 节度量**：重复窗口仍是 **45**（Task 2 后未变）——三份旧计数器每个只有 3 行有效代码（其余是注释与空行），扫描器剥掉后不足 6 行，本来就不计入窗口；新文件 20 行、内部 0 窗口。超过 60 行的方法 0；超过 300 行的文件 9。有效行：Core 1088 → **1095（+7）**、Siemens 1290 → **1286（−4）**、Omron 711 → **707（−4）**、Melsec 1275 → **1271（−4）**。
+
+**三条命令的结果**：`dotnet build -c Debug` 0 错误 0 警告（增量）；`dotnet build -c Release` 0 错误、31 个警告（同基线，全部来自 Modbus 测试与 WPF 临时工程）；`dotnet test -c Debug` **23 个测试项目 / 目标组合全部通过，0 失败**——Core 157、Plc 245、Channels 278、Tcp 129、Udp 38、Serial 63+2 跳过、Melsec 184+1 跳过、Architecture 11、WebApi 732 / 733、Modbus 405、Siemens 316、Omron 259。除 Core 外与 Task 2 完全一致。
+
 #### Task 2：S7 与 FINS 改用 `BigEndianFields`（F8）
 
 **新增**：无。

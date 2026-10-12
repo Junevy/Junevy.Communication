@@ -34,7 +34,7 @@ internal sealed class FinsReadProbe : IHealthProbe
         if (route is null)
             return CommResult.Fail("The FINS probe has no node address because the handshake has not run on this channel.", CommErrorKind.Unspecified);
 
-        byte sessionId = FinsSessionIds.Next();
+        byte sessionId = FinsHead.SessionIds.NextByte();
         byte[] request = FinsMemoryArea.BuildReadRequest(route.Value, sessionId, FinsDeviceTable.DataMemory.WordAreaCode,
                                                          ProbeWordAddress, bitNumber: 0, ProbeWordCount);
 

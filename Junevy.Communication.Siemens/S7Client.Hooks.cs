@@ -126,5 +126,5 @@ public sealed partial class S7Client
         return snapshot;
     }
 
-    private ushort NextReference() => lastPduReference = S7PduReferences.Next();
+    private ushort NextReference() => lastPduReference = S7Message.PduReferences.NextUInt16();
 }

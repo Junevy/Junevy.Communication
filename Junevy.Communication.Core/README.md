@@ -115,6 +115,21 @@ using (TimeoutScope scope = TimeoutScope.Start(timeout: 2000, userToken: Cancell
 
 The optional `onAbort` callback runs at most once, when the scope is aborted by its timeout or by the caller token.
 
+## Sequence Counter
+
+`SequenceCounter` hands out the incrementing values a protocol puts in the field that pairs a reply with its request (a request number, a session id, a transaction number). It is thread safe, truncates to the width of the field and starts at 1: `NextUInt16` goes 1, 2, … 65535, 0, 1 …; `NextByte` goes 1, 2, … 255, 0, 1 ….
+
+```csharp
+using Junevy.Communication.Core.Utils;
+
+var counter = new SequenceCounter();
+
+ushort first = counter.NextUInt16();     // 1
+byte second = counter.NextByte();        // 2 (the same instance, narrowed to 8 bits)
+```
+
+Use **one instance per width**: both methods read the same underlying counter, so mixing them makes the narrow one repeat. To keep several channels from colliding, share a single process-wide instance per protocol — the counter is kept on the type that encodes the header field, and both the client's requests and its heartbeat probes take numbers from it. A wrap is harmless because the reply is paired by send order (`CorrelationMode.Sequential`), not by the number matching.
+
 ## Named Registry
 
 `NamedRegistry<T>` maps names to instances and supports aliases. Aliases share the target instance. Removing a name removes the aliases that point to it and disposes the instance once.
