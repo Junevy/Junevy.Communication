@@ -45,13 +45,9 @@ internal sealed class S7DeviceSimulator
     /// <summary>替身里每个内存块的字节数；块的末地址越界检查以此为准。</summary>
     private const int BlockBytes = 512;
 
-    private readonly Dictionary<(S7Area, int), byte[]> blocks = new Dictionary<(S7Area, int), byte[]>
-    {
-        { (S7Area.Inputs, 0), new byte[BlockBytes] },
-        { (S7Area.Outputs, 0), new byte[BlockBytes] },
-        { (S7Area.Merkers, 0), new byte[BlockBytes] },
-        { (S7Area.DataBlock, 1), new byte[BlockBytes] },
-    };
+    // 块的存储与越界判定交给共享库（P46-D6）：区名用 S7Area 的名称，块不存在与越过块尾分别对应
+    // NoSuchBlock 与 BeyondEnd，替身只把它们翻译成 0x0A 与 0x05。
+    private readonly PlcByteMemory memory = NewMemory();
 
     private readonly List<byte[]> requests = new List<byte[]>();
     private readonly byte[] connectionConfirm = ToBytes(V_S7_2);
@@ -59,6 +55,16 @@ internal sealed class S7DeviceSimulator
 
     private TaskCompletionSource<byte[]>? nextRequest;
     private int connectionRequestCount;
+
+    private static PlcByteMemory NewMemory()
+    {
+        var created = new PlcByteMemory();
+        created.Define(nameof(S7Area.Inputs), 0, BlockBytes);
+        created.Define(nameof(S7Area.Outputs), 0, BlockBytes);
+        created.Define(nameof(S7Area.Merkers), 0, BlockBytes);
+        created.Define(nameof(S7Area.DataBlock), 1, BlockBytes);
+        return created;
+    }
 
     /// <summary>创建替身。<paramref name="negotiatedPduBytes"/> 写进 Setup 应答（P4-D13 的下限是 64）。</summary>
     public S7DeviceSimulator(int negotiatedPduBytes = 240) => NegotiatedPduBytes = negotiatedPduBytes;
@@ -85,7 +91,7 @@ internal sealed class S7DeviceSimulator
     }
 
     /// <summary>取某个区的内存块：用例用它预置数据，或核对设备侧真正收到的字节。I、Q、M 区的 DB 号为 0。</summary>
-    public byte[] Block(S7Area area, int dbNumber) => blocks[(area, dbNumber)];
+    public byte[] Block(S7Area area, int dbNumber) => memory.Block(area.ToString(), dbNumber);
 
     /// <summary>把替身接到 Testing 的设备宿主上：按 TPKT 长度分帧，逐帧应答。</summary>
     public DeviceSimulator ToDevice() => new DeviceSimulator(S7Framing.Create(), Handle);
@@ -181,17 +187,21 @@ internal sealed class S7DeviceSimulator
         block[byteAddress] = Payload(frame)[0] != 0 ? (byte)(value | mask) : (byte)(value & ~mask);
     }
 
-    private byte AccessCheck(byte[] frame, int length, out byte[] block)
+private byte AccessCheck(byte[] frame, int length, out byte[] block)
     {
         block = Array.Empty<byte>();
-        var key = ((S7Area)(AreaCode(frame) - FirstAreaCode), DbNumber(frame));
-        if (!blocks.TryGetValue(key, out byte[]? found))
-            return ItemDoesNotExist;
+        string area = ((S7Area)(AreaCode(frame) - FirstAreaCode)).ToString();
+        int dbNumber = DbNumber(frame);
+        int byteAddress = ByteAddress(frame);
 
-        if (ByteAddress(frame) + length > found.Length)
+        // 一次 TryRead 就分清两种失败：不存在的块给 NoSuchBlock，越过块尾给 BeyondEnd。
+        PlcByteAccess access = memory.TryRead(area, dbNumber, byteAddress, length, out _);
+        if (access == PlcByteAccess.NoSuchBlock)
+            return ItemDoesNotExist;
+        if (access != PlcByteAccess.Ok)
             return InvalidAddress;
 
-        block = found;
+        block = memory.Block(area, dbNumber);
         return S7VarItem.Success;
     }
 

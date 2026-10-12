@@ -24,7 +24,7 @@ public sealed class FinsEndToEndTests
     public async Task TypedValuesRoundTrip_InTheCdabWordOrder()
     {
         await using FinsConnectedPlc plc = await FinsConnectedPlc.StartAsync();
-        PlcMemory memory = plc.Device.Memory;
+        FinsSimulatorMemory memory = plc.Device.Memory;
 
         Succeeded(await plc.Client.WriteInt16Async("D0", -1234));
         Succeeded(await plc.Client.WriteInt32Async("D10", 0x12345678));
@@ -47,7 +47,7 @@ public sealed class FinsEndToEndTests
     public async Task BitReadsCoverWholeWords_AndNativeBitWritesContinueIntoTheNextWord()
     {
         await using FinsConnectedPlc plc = await FinsConnectedPlc.StartAsync();
-        PlcMemory memory = plc.Device.Memory;
+        FinsSimulatorMemory memory = plc.Device.Memory;
         memory.SetWords("D", 0, 0x8000, 0x0002);   // D0 的位 15 与 D1 的位 1（绝对位号 16 之后）
 
         // P4-D6：FINS 没有位软元件，读位由套件改成读覆盖的字，所以设备收到的仍是 D 字区的 2 字读。
@@ -75,7 +75,7 @@ public sealed class FinsEndToEndTests
     public async Task StringsLandAsAsciiBytesInConsecutiveWords()
     {
         await using FinsConnectedPlc plc = await FinsConnectedPlc.StartAsync();
-        PlcMemory memory = plc.Device.Memory;
+        FinsSimulatorMemory memory = plc.Device.Memory;
 
         Succeeded(await plc.Client.WriteStringAsync("D100", "AB"));
 

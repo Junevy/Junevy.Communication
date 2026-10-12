@@ -36,6 +36,7 @@ internal sealed class FinsDeviceSimulator
     // FINS 的软元件一律按字寻址，位号 0–15 落在这 16 位里，位 0 是大端字的最低位（P4-D6）。
     private const int BitsPerWord = 16;
 
+
     private const byte BitOn = 0x01;
     private const byte BitOff = 0x00;
     private const byte AutoAssignedNode = 0x00;
@@ -66,8 +67,12 @@ internal sealed class FinsDeviceSimulator
     /// <summary>不应答：节点握手照常，之后的读写请求一律不回复（心跳与 Dispose 用例）。</summary>
     public bool Silent { get; set; }
 
-    /// <summary>设备侧的字内存：用例用它预置数据，或核对设备真正收到的值。键是软元件符号（"D"、"CIO"、"E2_" …）。</summary>
-    public PlcMemory Memory { get; } = new PlcMemory();
+    /// <summary>设备侧的存储：用例用它预置数据，或核对设备真正收到的值。键是软元件符号（"D"、"CIO"、"E2_" …）。</summary>
+    /// <remarks>
+    /// 物理存储与越界判定在共享库的 <c>PlcByteMemory</c> 里，FINS 的大端字与位换算在
+    /// <see cref="FinsSimulatorMemory"/> 里（P46-D6）；这里只做帧的翻译。
+    /// </remarks>
+    public FinsSimulatorMemory Memory { get; } = new FinsSimulatorMemory(AreaCapacity, AreaSymbols.Values);
 
     /// <summary>收到的读写请求帧，按顺序。静默与错误注入时收到的帧同样记录。</summary>
     public IReadOnlyList<byte[]> Requests
@@ -143,21 +148,19 @@ internal sealed class FinsDeviceSimulator
         int word = WordAddressOf(request);
         int count = QuantityOf(request);
 
-        // 位访问的最后一个字由起始位号与点数推出：跨过 16 位的点落在下一字上。
-        int lastWord = bits ? word + (BitNumberOf(request) + count - 1) / BitsPerWord : word + count - 1;
-        if (lastWord >= AreaCapacity)
-            return Reject(request);
-
-        return bits ? Points(request, symbol, word, read) : Words(request, symbol, word, read);
+        // 越界由存储层判定（P46-D6）：它知道 FINS 的大端字与位的字节布局，这里只交出请求里的四个数。
+        return Memory.FitsRequest(symbol, bits, word, BitNumberOf(request), count)
+            ? (bits ? Points(request, symbol, word, read) : Words(request, symbol, word, read))
+            : Reject(request);
     }
 
     // 字访问：数量按字计，数据每字 2 字节（V-F-3、V-F-5）。
     private byte[] Words(byte[] request, string symbol, int word, bool read)
     {
         if (read)
-            return Ack(request, BigEndian(Memory.GetWords(symbol, word, QuantityOf(request))));
+            return Ack(request, Memory.ReadWordBytes(symbol, word, QuantityOf(request)));
 
-        Memory.SetWords(symbol, word, FromBigEndian(request.AsSpan(RequestPayloadIndex)));
+        Memory.WriteWordBytes(symbol, word, request.AsSpan(RequestPayloadIndex));
         return Ack(request, Array.Empty<byte>());
     }
 
@@ -168,28 +171,16 @@ internal sealed class FinsDeviceSimulator
         if (!read)
         {
             foreach (byte value in request.AsSpan(RequestPayloadIndex))
-                SetPoint(symbol, absolute++, value != BitOff);
+                Memory.SetPoint(symbol, absolute++, value != BitOff);
 
             return Ack(request, Array.Empty<byte>());
         }
 
         var data = new byte[QuantityOf(request) * FinsMemoryArea.BytesPerBitPoint];
         for (int point = 0; point < data.Length; point++)
-            data[point] = IsPointSet(symbol, absolute + point) ? BitOn : BitOff;
+            data[point] = Memory.IsPointSet(symbol, absolute + point) ? BitOn : BitOff;
 
         return Ack(request, data);
-    }
-
-    // 位读写都改写字内存里覆盖的那个字：替身只有一份物理存储（F7 的变通）。
-    private bool IsPointSet(string symbol, int absoluteBit)
-        => (Memory.GetWords(symbol, absoluteBit / BitsPerWord, 1)[0] >> absoluteBit % BitsPerWord & 1) != 0;
-
-    private void SetPoint(string symbol, int absoluteBit, bool value)
-    {
-        int number = absoluteBit / BitsPerWord;
-        ushort word = Memory.GetWords(symbol, number, 1)[0];
-        ushort mask = (ushort)(1 << absoluteBit % BitsPerWord);
-        Memory.SetWords(symbol, number, value ? (ushort)(word | mask) : (ushort)(word & ~mask));
     }
 
     private byte[] Ack(byte[] request, byte[] data)
@@ -215,23 +206,6 @@ internal sealed class FinsDeviceSimulator
     }
 
     // 字数据每字 2 字节、高位在前（V-F-5 的数据 00 FF）。
-    private static byte[] BigEndian(ushort[] words)
-    {
-        var data = new byte[words.Length * FinsMemoryArea.WordBytes];
-        for (int i = 0; i < words.Length; i++)
-            BinaryPrimitives.WriteUInt16BigEndian(data.AsSpan(i * FinsMemoryArea.WordBytes), words[i]);
-
-        return data;
-    }
-
-    private static ushort[] FromBigEndian(ReadOnlySpan<byte> payload)
-    {
-        var words = new ushort[payload.Length / FinsMemoryArea.WordBytes];
-        for (int i = 0; i < words.Length; i++)
-            words[i] = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(i * FinsMemoryArea.WordBytes));
-
-        return words;
-    }
 
     private void Record(byte[] frame)
     {
