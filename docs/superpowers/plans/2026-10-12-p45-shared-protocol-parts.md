@@ -273,6 +273,18 @@ public static class PlcComponentWiring
 
 | Task | 结论 | 说明 |
 |---|---|---|
+| 0 | 通过 | 基线与第 3 节一致；P45-D5 的前提复核正确（`Success(null/default)` 的 5 处命中都是 `WebApiResult<T>`） |
+| 1 | 通过 | 公开成员与第 5 节逐条一致；变异 ①–⑧ 全部被抓住 |
+| 2 | 通过 | 只有机械替换；S7、FINS 测试只改了两个替身的调用点，断言未动；黄金向量全绿 |
+| 3 | 通过（审阅者修正注释） | 算法与三份旧实现一致，变异 ⑨⑩ 被抓住。`SequenceCounter` 的注释、Core README、CHANGELOG 有两处不准确：说"混用两种宽度会让 8 位序号重复"（实际是两种宽度都跳号）；说"回绕不影响配对，因为应答按发送顺序匹配"（MELSEC 4E 按序列号匹配，理由不成立）。已改为"同一个号在它的应答返回之前不会再被取到"。README 示例在同一个实例上混用两种宽度，与紧接着的建议矛盾，已改为两个实例 |
+| 4 | 通过（审阅者修正 CHANGELOG） | 语义逐条符合 P45-D4，变异 ⑪–⑯ 全部被抓住；MELSEC 测试未改且全绿。CHANGELOG 把三条 profile 改动放进了"移除"，已移到"变更"；S7、FINS 两条写着"is already set 的消息文本保持原样"，实际上 "for S7"、"for FINS" 同样被去掉，已改正；设计文档 20.6 节"错误消息都不变"的说法同步改正 |
+| 5 | 通过 | Channels、Tcp、Udp 的 13 处改动逐行核对，只去掉了 `!`；生产代码已无 `.Data!`；去掉 `MemberNotNullWhen` 后 Plc 构建报 CS8600 / CS8602 / CS8604，去掉 null 守卫后 Core 测试失败 |
+| 6 | 通过（审阅者修正示例） | Core README 的 `HeaderExample` 缩进错乱、`TryTake*` 的说明写成"值保持不变"（实际是取默认值），Plc README 的示例把 16 位序号写进 4 字节字段，均已改正 |
+| 7 | 通过 | 审阅者复算：343 个文件、重复窗口 34（只剩 `FinsFraming ↔ S7Framing` 1 个跨协议窗口）、超长方法 0、超过 300 行的文件 9、有效行逐项一致；五个被删类型在代码中无残留 |
+
+**复跑**：Debug / Release（`--no-incremental`）构建均为 0 错误（31 条既有警告）；`dotnet test -c Debug --no-build` 连续三次，每次 23 个测试宿主全部通过，合计 5270 通过、6 跳过、0 失败。
+
+**变异检查**（18 条，跑完逐条恢复原文件）：① `WriteUInt16` 字节序（Core）② 同上（S7 向量，73 个失败）③ `WriteUInt24` 字节序（Core）④ 同上（S7 向量，22 个失败）⑤ `WriteUInt32` 字节序（Core）⑥ 同上（FINS 向量，48 个失败）⑦ 读取失败时移动了切片 ⑧ `WriteUInt24` 不校验范围 ⑨ `NextByte` 取错字节 ⑩ 起始值不是 1 ⑪ 漏掉 `KeyExtractor` 守卫（Plc）⑫ 同上（S7 profile）⑬ `Initializer` 无条件检查 ⑭ 不赋值 `Initializer`（Plc）⑮ 同上（FINS，32 个失败）⑯ 守卫未全部通过就赋值 ⑰ 去掉 `MemberNotNullWhen`（Plc 构建失败）⑱ 去掉 `Success` 的 null 守卫。**18 条全部被抓住**。
 
 ### 14.2 执行汇报与偏差（执行者填写）
 

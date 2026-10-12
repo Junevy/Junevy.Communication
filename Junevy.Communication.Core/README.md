@@ -147,13 +147,15 @@ The optional `onAbort` callback runs at most once, when the scope is aborted by 
 ```csharp
 using Junevy.Communication.Core.Utils;
 
-var counter = new SequenceCounter();
+var requestNumbers = new SequenceCounter();
+ushort first = requestNumbers.NextUInt16();    // 1
+ushort second = requestNumbers.NextUInt16();   // 2
 
-ushort first = counter.NextUInt16();     // 1
-byte second = counter.NextByte();        // 2 (the same instance, narrowed to 8 bits)
+var sessionIds = new SequenceCounter();        // a separate instance for an 8-bit field
+byte id = sessionIds.NextByte();               // 1
 ```
 
-Use **one instance per width**: both methods read the same underlying counter, so mixing them makes the narrow one repeat. To keep several channels from colliding, share a single process-wide instance per protocol — the counter is kept on the type that encodes the header field, and both the client's requests and its heartbeat probes take numbers from it. A wrap is harmless because the reply is paired by send order (`CorrelationMode.Sequential`), not by the number matching.
+Use **one instance per width**: both methods advance the same underlying count, so mixing them makes both sequences skip values. To keep several channels from colliding, share a single process-wide instance per protocol — the counter is kept on the type that encodes the header field, and both the client's requests and its heartbeat probes take numbers from it. A wrap is harmless as long as a number is not handed out again while the request that carries it still waits for its reply; with only a few requests in flight per channel, the old number has long been answered.
 
 ## Named Registry
 
@@ -263,7 +265,7 @@ public static class HeaderExample
         BigEndianFields.WriteUInt8(output, 0x7F);
     }
 
-public static bool TryReadAddress(ReadOnlySpan<byte> data, out int address)
+    public static bool TryReadAddress(ReadOnlySpan<byte> data, out int address)
     {
         if (!BigEndianFields.TryTakeUInt32(ref data, out _)
             || !BigEndianFields.TryTakeUInt16(ref data, out _))
@@ -277,7 +279,7 @@ public static bool TryReadAddress(ReadOnlySpan<byte> data, out int address)
 }
 ```
 
-`TryTake*` returns `false` when there are not enough bytes and then leaves both `data` and the value untouched, so a decoder can bail out and report a structural error through its own result instead of catching an exception. Passing a null `output`, a `UInt24` outside 0–0xFFFFFF or a negative length is a programming error and throws `ArgumentNullException` / `ArgumentOutOfRangeException`.
+`TryTake*` returns `false` when there are not enough bytes, leaves `data` where it was and sets the value to its default, so a decoder can bail out and report a structural error through its own result instead of catching an exception. Passing a null `output`, a `UInt24` outside 0–0xFFFFFF or a negative length is a programming error and throws `ArgumentNullException` / `ArgumentOutOfRangeException`.
 
 ## Creator Catalog and Named Factory
 

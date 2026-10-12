@@ -268,7 +268,7 @@ internal static class MyHead
         BigEndianFields.WriteUInt32(buffer, 0x00010000);       // length
         BigEndianFields.WriteUInt16(buffer, 0x0102);            // command
         BigEndianFields.WriteUInt8(buffer, route.Unit);
-        BigEndianFields.WriteUInt32(buffer, Requests.NextUInt16());
+        BigEndianFields.WriteUInt16(buffer, Requests.NextUInt16());
     }
 }
 ```
