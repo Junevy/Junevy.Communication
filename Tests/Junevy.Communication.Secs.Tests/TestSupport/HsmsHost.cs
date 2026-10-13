@@ -6,7 +6,7 @@ using Junevy.Communication.Testing;
 
 namespace Junevy.Communication.Secs.Tests;
 
-/// <summary>主机收到的一帧：连接序号、十六进制原文与解析结果。</summary>
+/// <summary>主机收到的一帧：连接序号、十六进制原文、字节与解析结果。</summary>
 internal sealed class HsmsHostFrame
 {
     /// <summary>记录一帧。</summary>
@@ -15,6 +15,7 @@ internal sealed class HsmsHostFrame
     internal HsmsHostFrame(int connection, byte[] bytes)
     {
         Connection = connection;
+        Bytes = bytes;
         Text = HexVector.ToText(bytes);
         Message = HsmsTestFrames.Parse(bytes);
     }
@@ -24,6 +25,9 @@ internal sealed class HsmsHostFrame
 
     /// <summary>十六进制原文。</summary>
     internal string Text { get; }
+
+    /// <summary>完整报文（带 4 字节长度前缀）。</summary>
+    internal byte[] Bytes { get; }
 
     /// <summary>解析结果。</summary>
     internal HsmsMessage Message { get; }
@@ -41,6 +45,19 @@ internal sealed class HsmsHostInbox
 
     /// <summary>还没取走的帧数。</summary>
     internal int Count => frames.Count;
+
+    /// <summary>已收到但还没取走的帧（十六进制文本，按到达顺序）。</summary>
+    internal IReadOnlyList<string> Texts
+    {
+        get
+        {
+            var snapshot = new List<string>();
+            foreach (HsmsHostFrame frame in frames)
+                snapshot.Add(frame.Text);
+
+            return snapshot;
+        }
+    }
 
     /// <summary>取下一帧；<paramref name="milliseconds"/> 内没有新帧则抛出超时。</summary>
     /// <param name="milliseconds">等待上限（毫秒）。</param>
@@ -91,6 +108,9 @@ internal sealed class HsmsHostConnector : IAsyncDisposable
 
     /// <summary>还没取走的帧数。</summary>
     internal int ReceivedCount => inbox.Count;
+
+    /// <summary>已收到但还没取走的帧（十六进制文本，按到达顺序）。</summary>
+    internal IReadOnlyList<string> ReceivedTexts => inbox.Texts;
 
     /// <summary>取下一帧；<paramref name="milliseconds"/> 内没有新帧则抛出超时。</summary>
     /// <param name="milliseconds">等待上限（毫秒）。</param>

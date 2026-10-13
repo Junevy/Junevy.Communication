@@ -52,6 +52,15 @@
   - **Linktest 探测**（内部 `IHealthProbe`，超时 T6）：`LinktestInterval > 0` 时启用心跳，间隔用它、`MaxFailures = 1`、只在空闲时探测，因此一次探测失败就断链重连。
   - **状态单一来源（Q35）**：状态只在一个内部类型里变化，事件按发生顺序在锁外派发，订阅者抛异常只记 Error，不影响状态机；重复的同状态变化不发事件。
   - **握手等帧的节奏是 200 毫秒轮询**，而不是"一次长等"：① `IByteChannel.ReceiveAsync` 不给超时就用通道的 `RequestTimeout`（TCP 默认 2000 毫秒），比 T7（默认 10000 毫秒）小，主机合法地晚一点 Select 会被误判为失败；② 握手积压与接收等待者注册之间有通道侧的竞态，落在窗口里的帧要等下一次注册才被取回（见下面的摩擦记录）。
+- 2026-10-13 [Secs] 新增设备端 `HsmsEquipment`（Passive）与消息派发（计划 Task 6，P51-D12、D13、D14、D15、D16）。
+  - **公开类型**：`SecsMessageHandler` 委托、`HsmsEquipment`（`Create` / `State` / `StateChanged` / `StartAsync` / `StopAsync` / `SetHandler` / `RemoveHandler` / `SendAsync` / `Dispose` / `DisposeAsync`）、`HsmsEquipmentOptions`、`SecsError` 与 `SecsResult`。
+  - **派发按到达顺序逐个处理**（同一连接上不并发）：控制消息按 E37 应答（`Linktest.req` → `Linktest.rsp`；重复的 `Select.req` → 状态 1；`Deselect.req` → `Reject.req` 原因 1；`Separate.req` → 不应答立即断开；无主的 `*.rsp` → 原因 3；未分配的 SType → 原因 1），数据主消息按 **① 会话号 → ② 正文 → ③ 处理器 → ④ 调用处理器** 的顺序处理。
+  - **S9 消息**：会话号不对 → S9F1；正文解码失败 → S9F7；没有该 Stream 的处理器 → S9F3；有 Stream 没有该 Function → S9F5；带 W 位的主消息超过 T3 → S9F9（正文是我方主消息的 10 字节头）。S9 的正文一律是被涉及消息的 10 字节头。
+  - **处理器三种答不上来的情况**（返回 null、返回不匹配的应答、抛异常）都记 Error 并回 `SxF0` 中止事务；不带 W 位时忽略处理器的返回值（记 Warning）。
+  - **`SendAsync`**：带 W 位按 T3 等应答——正常 / `SxF0` → `Aborted` / `Reject.req` → `Rejected`（带原因码）/ 超时 → 先发 S9F9 再 `ReplyTimeout` / 应答不合法 → 先发 S9F7 再 `InvalidReply`；不带 W 位只发送。允许并发（关联键是 System Bytes）。未选中时 `NotSelected` 且不发送；停止或释放后 `ConnectionLost`。
+  - **`SecsResult`** 的构造只经内部工厂，`CommErrorKind` 由 `SecsError` 唯一决定（映射写在一处）。
+  - **停止与释放（P51-D15、D19）**：已选中时停止会先尽力发一条 `Separate.req`（不等应答）再断开；**停止不是释放**——`StopAsync` 之后可以再 `StartAsync`，可重复多轮；释放后 `StartAsync` 抛 `ObjectDisposedException`、`SendAsync` 返回 `ConnectionLost`、`StopAsync` / 重复释放 / 处理器表的增删都不抛。停止时传给处理器的令牌被取消，停止等当前处理器返回才完成，处理器此后返回的应答不发送；处理器内部调用 `StopAsync` 不会死锁（通道的派发上下文已经处理了这一层）。
+  - **日志**：状态变化记 Information，每条收发记 Debug（方向、S/F、W 位、System Bytes，不含正文），异常记 Error。
 
 ### 变更（Changed）
 
@@ -62,6 +71,7 @@
 
 ### 修复（Fixed）
 
+- 2026-10-13 [Secs] 设备端把**没有正文的数据消息**当成"正文解码失败"（计划 Task 6 的用例发现）：S1F1 W、S5F2 之类没有正文的消息在 SEMI E5 里完全合法，但解码器对空正文会失败，于是设备端一律回 S9F7（收到的消息）或 `InvalidReply`（发出的主消息）。现在空正文解析成"没有正文"，只有**非空且解不出来**才算非法数据。
 - 2026-10-13 [Secs] 被动端握手在三类情况下会丢掉或误判主机行为（计划 Task 5 的用例发现）：
   - **握手被通道的请求超时打断**：`ReceiveAsync` 不带超时时用 `RequestTimeout`（TCP 默认 2000 毫秒），小于 T7，因此主机在 T7 之内沉默就会被当成握手失败而断开。现在按 200 毫秒轮询等帧，超时只表示"还没到，继续等"，取消与其它失败仍然结束握手。
   - **`Separate.req` 的应答与已选中后的处理不一致**：握手期间收到 `Separate.req` 会回一条 `Separate.req`，而 P51-D12 要求"不应答，立即断开"。现在握手路径同样不应答，直接让握手失败并断开。

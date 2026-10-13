@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Sockets;
+using Junevy.Communication.Core.Buffers;
 using Junevy.Communication.Secs.Hsms;
 using Junevy.Communication.Secs.Protocol;
 using Junevy.Communication.Testing;
@@ -95,6 +98,19 @@ internal sealed class HsmsStateChange
     internal string? Reason { get; }
 }
 
+/// <summary>空闲端口：服务端配置要求端口在 1..65535，因此借一个——临时套接字绑定端口 0，读出端口号后立即释放。</summary>
+internal static class HsmsPorts
+{
+    /// <summary>取一个当前空闲的回环端口。</summary>
+    /// <returns>端口号。</returns>
+    internal static int Free()
+    {
+        using var probe = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        probe.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        return ((IPEndPoint)probe.LocalEndPoint!).Port;
+    }
+}
+
 /// <summary>状态序列的断言：P51-D10 的规则只有一条，因此断言也只有一份（两种模式共用）。</summary>
 internal static class HsmsStateAsserts
 {
@@ -114,8 +130,8 @@ internal static class HsmsStateAsserts
 /// <summary>报文的解析与黄金向量取用。</summary>
 internal static class HsmsTestFrames
 {
-    /// <summary>System Bytes 占报文的最后 4 个字节（P51-D6）。</summary>
-    private const int SystemBytesBytes = 4;
+    /// <summary>System Bytes 在完整报文里的偏移：长度前缀 4 + 会话号 2 + 头字节 2 + 头字节 3 + PType 1 + SType 1。</summary>
+    private const int SystemBytesOffset = HsmsMessage.LengthPrefixBytes + 6;
 
     /// <summary>解析一条主机收到或发出的完整报文；结构不合法时抛出并带上十六进制原文。</summary>
     /// <param name="frame">完整报文（带 4 字节长度前缀）。</param>
@@ -128,17 +144,40 @@ internal static class HsmsTestFrames
             : throw new InvalidOperationException($"The frame cannot be parsed ({parsed.ErrorMessage}): {HexVector.ToText(frame)}");
     }
 
+    /// <summary>把数据项编码成字节（给"收到的正文等于期望项"这类断言用）。</summary>
+    /// <param name="item">数据项。</param>
+    /// <returns>编码结果。</returns>
+    internal static byte[] Encode(SecsItem item)
+    {
+        using var buffer = new ByteBufferWriter();
+        SecsItemCodec.Encode(buffer, item);
+        return buffer.ToArray();
+    }
+
+    /// <summary>取一条报文头部的 10 个字节——S9 消息的正文就是被涉及消息的这 10 个字节（SEMI E5）。</summary>
+    /// <param name="frame">完整报文（带 4 字节长度前缀）。</param>
+    /// <returns>头部的 10 个字节。</returns>
+    internal static byte[] HeaderBytes(byte[] frame)
+    {
+        var header = new byte[HsmsMessage.HeaderBytes];
+        Array.Copy(frame, HsmsMessage.LengthPrefixBytes, header, 0, HsmsMessage.HeaderBytes);
+        return header;
+    }
+
     /// <summary>
     /// 把向量的 System Bytes 换成 <paramref name="systemBytes"/>：设备端发出的请求的号由进程级计数器产生，
     /// 因此比对前替换（第 17 节的说明）。
     /// </summary>
-    /// <param name="vector">黄金向量；末尾 4 个字节是 System Bytes。</param>
+    /// <param name="vector">黄金向量。</param>
     /// <param name="systemBytes">实际使用的 System Bytes。</param>
     /// <returns>替换后的十六进制文本。</returns>
     internal static string WithSystemBytes(string vector, uint systemBytes)
     {
         byte[] frame = HexVector.ToBytes(vector);
-        int start = frame.Length - SystemBytesBytes;
+
+        // System Bytes 在报文头里的固定位置（长度前缀 4 + 会话号 2 + 头字节 2 + 头字节 3 + PType + SType），
+        // 因此控制消息（它是末尾 4 个字节）与带正文的数据消息都替换得对。
+        int start = SystemBytesOffset;
         frame[start] = (byte)(systemBytes >> 24);
         frame[start + 1] = (byte)(systemBytes >> 16);
         frame[start + 2] = (byte)(systemBytes >> 8);

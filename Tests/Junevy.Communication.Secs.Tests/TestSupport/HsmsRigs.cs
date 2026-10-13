@@ -1,5 +1,3 @@
-using System.Net;
-using System.Net.Sockets;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Secs.Protocol;
@@ -60,7 +58,7 @@ internal sealed class HsmsPassiveRig : IAsyncDisposable
         var config = new TcpServerConfig
         {
             ListenAddress = LoopbackTcp.Host,
-            Port = FreePort(),
+            Port = HsmsPorts.Free(),
             MaxSessions = 1,
             SessionHandshakeTimeout = timers.T7,
             PartialFrameTimeout = timers.T8,
@@ -86,14 +84,6 @@ internal sealed class HsmsPassiveRig : IAsyncDisposable
 
     /// <summary>停止监听并释放服务端。可重复调用。</summary>
     public async ValueTask DisposeAsync() => await server.DisposeAsync().ConfigureAwait(false);
-
-    // 服务端配置要求端口在 1..65535，因此借一个空闲端口：临时套接字绑定端口 0，读出端口号后立即释放。
-    private static int FreePort()
-    {
-        using var probe = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        probe.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-        return ((IPEndPoint)probe.LocalEndPoint!).Port;
-    }
 }
 
 /// <summary>
