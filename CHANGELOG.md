@@ -45,6 +45,13 @@
   - **关联键（P51-D7、Q34）**：`CorrelationMode.Keyed`，键是 System Bytes，**只有应答类消息取应答键**——数据消息中偶数 Function 的、`*.rsp` 与 `Reject.req`。主消息与 `*.req` 不取应答键，否则对方主消息的 System Bytes 碰巧等于我方在途请求时会被错认成应答。
   - **分帧**：`LengthField`，偏移 0、宽 4、大端、修正值 0，剥除 0 字节——帧交给协议层时仍带 4 字节长度；最大帧长取 `MaxMessageLength`。
   - 黄金向量：第 17.1 节 V-H-1 至 V-H-18 全部双向逐字节通过。
+- 2026-10-13 [Secs] 新增 HSMS 会话层：被动端与主动端的握手、Linktest 探测与 HSMS 状态（计划 Task 5，P51-D9、D10、D11、Q35）。
+  - **公开类型**：`HsmsState`（`NotConnected` / `NotSelected` / `Selected`）与 `HsmsStateChangedEventArgs`（前后状态与一句原因）。状态不压成通道的 `ConnectionState`——TCP 连上只说明字节流通了。
+  - **被动端握手**（内部 `IConnectionInitializer`，在 T7 内循环）：收到 `Select.req` → 回 `Select.rsp` 状态 0 并进入 `Selected`；`Linktest.req` → 回 `Linktest.rsp`；数据消息 → 回 `Reject.req` 原因 4；`Deselect.req` 等其余控制消息 → 回 `Reject.req` 原因 1；`Separate.req` → 不应答、握手失败并断开（与已选中后的处理一致，P51-D12）。这些消息都取不到应答键，因此由 `ReceiveAsync` 按到达顺序逐个处理。
+  - **主动端握手**：发 `Select.req`（超时 T6）并校验应答的种类、System Bytes 与状态码；只有状态 0 算选中，答非所问、被拒（`Reject.req`）、超时都算握手失败，通道按 T5 重连。握手失败（含取消）把状态复位成 `NotConnected`。
+  - **Linktest 探测**（内部 `IHealthProbe`，超时 T6）：`LinktestInterval > 0` 时启用心跳，间隔用它、`MaxFailures = 1`、只在空闲时探测，因此一次探测失败就断链重连。
+  - **状态单一来源（Q35）**：状态只在一个内部类型里变化，事件按发生顺序在锁外派发，订阅者抛异常只记 Error，不影响状态机；重复的同状态变化不发事件。
+  - **握手等帧的节奏是 200 毫秒轮询**，而不是"一次长等"：① `IByteChannel.ReceiveAsync` 不给超时就用通道的 `RequestTimeout`（TCP 默认 2000 毫秒），比 T7（默认 10000 毫秒）小，主机合法地晚一点 Select 会被误判为失败；② 握手积压与接收等待者注册之间有通道侧的竞态，落在窗口里的帧要等下一次注册才被取回（见下面的摩擦记录）。
 
 ### 变更（Changed）
 
@@ -52,6 +59,13 @@
   - 起点提交是 Task 0 开始时的 HEAD；
   - Task 0 只构建、只测度量，不跑测试；
   - 期末与审阅复跑用 `-Repeat 3`。
+
+### 修复（Fixed）
+
+- 2026-10-13 [Secs] 被动端握手在三类情况下会丢掉或误判主机行为（计划 Task 5 的用例发现）：
+  - **握手被通道的请求超时打断**：`ReceiveAsync` 不带超时时用 `RequestTimeout`（TCP 默认 2000 毫秒），小于 T7，因此主机在 T7 之内沉默就会被当成握手失败而断开。现在按 200 毫秒轮询等帧，超时只表示"还没到，继续等"，取消与其它失败仍然结束握手。
+  - **`Separate.req` 的应答与已选中后的处理不一致**：握手期间收到 `Separate.req` 会回一条 `Separate.req`，而 P51-D12 要求"不应答，立即断开"。现在握手路径同样不应答，直接让握手失败并断开。
+  - **握手失败后状态不复位**：Select 被拒、T6 超时、握手窗口到期之后，状态会停在 `NotSelected`，让调用方以为会话还能用。现在失败与取消都复位成 `NotConnected`，原因写进日志与事件参数。
 
 ## [Unreleased] — P4.6（共享测试库整理）
 
