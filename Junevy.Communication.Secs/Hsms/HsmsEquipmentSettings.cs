@@ -20,16 +20,20 @@ internal sealed class HsmsEquipmentSettings
     private const int MinimumPort = 1;
     private const int MaximumPort = 65535;
 
-    private HsmsEquipmentSettings(string listenAddress, int port, ushort deviceId, HsmsEquipmentTimers timers)
+    private HsmsEquipmentSettings(HsmsConnectionMode mode, string? address, int port, ushort deviceId, HsmsEquipmentTimers timers)
     {
-        ListenAddress = listenAddress;
+        Mode = mode;
+        Address = address;
         Port = port;
         DeviceId = deviceId;
         Timers = timers;
     }
 
-    /// <summary>监听地址（被动端；Task 7 的主动端用它作为对端地址）。</summary>
-    internal string ListenAddress { get; }
+    /// <summary>设备端在 HSMS 层的角色。</summary>
+    internal HsmsConnectionMode Mode { get; }
+
+    /// <summary>地址：被动端是监听地址，主动端是对端地址（已校验非空）。</summary>
+    internal string? Address { get; }
 
     /// <summary>端口。</summary>
     internal int Port { get; }
@@ -43,10 +47,17 @@ internal sealed class HsmsEquipmentSettings
     /// <summary>校验并取快照。</summary>
     /// <param name="options">调用方的选项。</param>
     /// <returns>快照。</returns>
-    /// <exception cref="ArgumentException">任一属性越界或地址非法。</exception>
+    /// <exception cref="ArgumentException">任一属性越界、角色未知或地址非法。</exception>
     internal static HsmsEquipmentSettings Validate(HsmsEquipmentOptions options)
     {
-        string listenAddress = ValidateAddress(options.Host);
+        if (!Enum.IsDefined(typeof(HsmsConnectionMode), options.Mode))
+        {
+            throw new ArgumentException(
+                $"Mode must be Passive or Active, but it is {options.Mode}.",
+                nameof(HsmsEquipmentOptions.Mode));
+        }
+
+        string? address = ValidateAddress(options);
         Require(options.Port, MinimumPort, MaximumPort, nameof(HsmsEquipmentOptions.Port));
         Require(options.DeviceId, 0, MaximumDeviceId, nameof(HsmsEquipmentOptions.DeviceId));
         Require(options.T3, 1, int.MaxValue, nameof(HsmsEquipmentOptions.T3));
@@ -66,19 +77,30 @@ internal sealed class HsmsEquipmentSettings
             options.LinktestInterval,
             options.MaxMessageLength);
 
-        return new HsmsEquipmentSettings(listenAddress, options.Port, options.DeviceId, timers);
+        return new HsmsEquipmentSettings(options.Mode, address, options.Port, options.DeviceId, timers);
     }
 
-    // null 表示所有地址（只有 IP，不接受主机名：设备端的监听地址来自配置，不该依赖 DNS）。
-    private static string ValidateAddress(string? host)
+    // 被动端：null 表示所有地址。主动端：必须给出对端地址。只接受 IP，不做 DNS（配置不该依赖解析）。
+    private static string? ValidateAddress(HsmsEquipmentOptions options)
     {
-        if (host is null)
+        if (options.Mode == HsmsConnectionMode.Active && string.IsNullOrWhiteSpace(options.Host))
+        {
+            throw new ArgumentException(
+                "Host is required in the active mode: it is the address of the host to connect to.",
+                nameof(HsmsEquipmentOptions.Host));
+        }
+
+        if (options.Host is null)
             return AnyAddress;
 
-        if (string.IsNullOrWhiteSpace(host) || !System.Net.IPAddress.TryParse(host, out _))
-            throw new ArgumentException("Host must be an IP address, or null to listen on every address.", nameof(HsmsEquipmentOptions.Host));
+        if (!System.Net.IPAddress.TryParse(options.Host, out _))
+        {
+            throw new ArgumentException(
+                "Host must be an IP address, or null to listen on every address.",
+                nameof(HsmsEquipmentOptions.Host));
+        }
 
-        return host;
+        return options.Host;
     }
 
     private static void Require(int value, int min, int max, string name)

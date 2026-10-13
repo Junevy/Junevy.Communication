@@ -13,6 +13,9 @@ namespace Junevy.Communication.Secs.Hsms;
 /// </summary>
 public sealed partial class HsmsEquipment
 {
+    /// <summary>当前执行流是否正在派发消息：处理器里停止时靠它避免等自己（P51-D19）。</summary>
+    private static readonly AsyncLocal<bool> inDispatch = new AsyncLocal<bool>();
+
     /// <summary>每秒一条的 Debug 日志不带正文（计划第 0 节 P51-D16）：这里只记方向、S/F、W 位与 System Bytes。</summary>
     private void OnSessionConnected(object? sender, TcpSessionEventArgs args)
     {
@@ -38,21 +41,65 @@ public sealed partial class HsmsEquipment
         session.Reset($"The session {args.Session.Id} closed ({args.Reason}).");
     }
 
-    private async void OnFrameReceived(object? sender, FrameReceivedEventArgs args)
+    // 主动端：任何"不再是 Connected"的状态（断开、重连中、已释放）都意味着会话不可用（P51-D10）。
+    // Connected 时状态由握手钩子推进（NotSelected → Selected），这里只挂上当前连接。
+    private void OnClientStateChanged(object? sender, ConnectionStateChangedEventArgs args)
     {
-        try
+        lock (sync)
         {
-            await DispatchAsync(args.Data).ConfigureAwait(false);
+            current = args.CurrentState == ConnectionState.Connected ? sender as IByteChannel : null;
+            if (current != null || args.CurrentState == ConnectionState.Connected)
+                return;
         }
-        catch (Exception ex)
+
+        session.Reset($"The channel changed to {args.CurrentState} ({args.Reason}).");
+    }
+
+    // 通道的帧事件是"逐个隔离异常地调用"而不是等待，因此这里自己把消息串起来：
+    // P51-D13 要求按到达顺序逐个处理，处理器可以慢，但不能与下一条并行。
+    private void OnFrameReceived(object? sender, FrameReceivedEventArgs args)
+    {
+        lock (dispatchGate)
         {
-            // 派发回调里抛出的异常会被通道记 Error，但设备端自己也要留一条并继续处理后续消息。
-            logger.LogError(ex, "Dispatching an HSMS frame failed.");
+            dispatchTail = dispatchTail
+                .ContinueWith(_ => DispatchAsync(args.Data), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default)
+                .Unwrap();
         }
+    }
+
+    // 停止时等在途的派发跑完（P51-D19：处理器必须响应令牌，因此这一等是有界的）。
+    private async Task DrainDispatchAsync()
+    {
+        Task pending;
+        lock (dispatchGate)
+        {
+            pending = dispatchTail;
+        }
+
+        await pending.ConfigureAwait(false);
     }
 
     // 入口：解析失败只记 Warning 并丢弃（P51-D13 的 ② 之后没有可用的头部，S9 消息无法引用它）。
     private async Task DispatchAsync(byte[] frame)
+    {
+        // 派发上下文：处理器里调用 StopAsync 时靠它认出"自己在派发里"，从而不等自己（P51-D19）。
+        inDispatch.Value = true;
+        try
+        {
+            await DispatchFrameAsync(frame).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // 处理器与通道的异常都不能终止派发循环：记 Error 之后继续处理后面的消息。
+            logger.LogError(ex, "Dispatching an HSMS frame failed.");
+        }
+        finally
+        {
+            inDispatch.Value = false;
+        }
+    }
+
+    private async Task DispatchFrameAsync(byte[] frame)
     {
         CommResult<HsmsMessage> parsed = HsmsMessage.Read(frame, settings.Timers.MaxMessageLength);
         if (!parsed.IsSuccess)
@@ -127,15 +174,8 @@ public sealed partial class HsmsEquipment
         }
 
         // ① 会话号不是本设备：S9F1，不回应答（SEMI E5）。
-        if (incoming.SessionId != settings.DeviceId)
-        {
-            logger.LogWarning(
-                "The host used the device id {SessionId} instead of {DeviceId}; answering S9F1.",
-                incoming.SessionId,
-                settings.DeviceId);
-            await SendDataAsync(HsmsSystemMessages.UnrecognizedDeviceId(incoming), incoming.SystemBytes, token).ConfigureAwait(false);
+        if (await AnswerSystemAsync(incoming, token).ConfigureAwait(false))
             return;
-        }
 
         // ② 正文解码失败：S9F7。没有正文是合法的（SEMI E5 的 S1F1 W 就常常没有正文）。
         SecsItem? body = null;
@@ -234,17 +274,19 @@ public sealed partial class HsmsEquipment
     private HsmsMessage Reject(HsmsMessage incoming, HsmsRejectReason reason)
         => HsmsControl.Reject(HsmsMessage.AnySession, incoming.SType, reason, incoming.SystemBytes);
 
-    // Separate.req 不应答，立即断开（P51-D12）。关闭会话之后由 OnSessionClosed 复位状态。
+    // Separate.req 不应答，立即断开（P51-D12）。被动端关会话，主动端断开通道。
     private async Task CloseCurrentAsync()
     {
-        ITcpSession? attached;
+        IByteChannel? attached;
         lock (sync)
         {
             attached = current;
         }
 
-        if (attached != null)
-            await attached.CloseAsync().ConfigureAwait(false);
+        if (attached is IConnectable client)
+            await client.DisconnectAsync().ConfigureAwait(false);
+        else if (attached is ITcpSession session)
+            await session.CloseAsync().ConfigureAwait(false);
     }
 
     // 处理器拿到的令牌：停止或释放时取消（P51-D19）。停止之后还没有开始过时用默认令牌。

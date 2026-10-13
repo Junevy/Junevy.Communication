@@ -181,52 +181,84 @@ internal delegate byte[]? HsmsHostScript(int connection, byte[] frame);
 /// </summary>
 internal sealed class HsmsHostListener : IDisposable
 {
-    private readonly ScriptedTcpServer server;
+    private readonly HsmsHostInbox inbox;
+    private readonly SemaphoreSlim writeGate = new SemaphoreSlim(1, 1);
+    private ScriptedTcpServer? server;
+    private Stream? outbound;
 
-    private HsmsHostListener(ScriptedTcpServer server, HsmsHostInbox inbox)
-    {
-        this.server = server;
-        Inbox = inbox;
-    }
+    private HsmsHostListener(HsmsHostInbox inbox) => this.inbox = inbox;
 
     /// <summary>收到的帧队列。</summary>
-    internal HsmsHostInbox Inbox { get; }
+    internal HsmsHostInbox Inbox => inbox;
 
     /// <summary>监听的端口（回环地址，随机分配）。</summary>
-    internal int Port => server.Port;
+    internal int Port => server!.Port;
 
     /// <summary>已接受的连接数。</summary>
-    internal int AcceptedCount => server.AcceptedConnectionCount;
+    internal int AcceptedCount => server!.AcceptedConnectionCount;
 
-    /// <summary>开始监听。</summary>
-    /// <param name="script">应答脚本。</param>
+    /// <summary>开始监听；每条连接各有一份分帧与应答。</summary>
+    /// <param name="script">应答脚本；参数是连接序号（从 0 开始）与收到的帧。</param>
     /// <returns>主机一侧；调用方负责释放。</returns>
     internal static HsmsHostListener Listen(HsmsHostScript script)
     {
-        var inbox = new HsmsHostInbox();
-        ScriptedTcpServer server = ScriptedTcpServer.Start(
-            (index, stream, token) => new DeviceSimulator(
+        var host = new HsmsHostListener(new HsmsHostInbox());
+        host.server = ScriptedTcpServer.Start((index, stream, token) =>
+        {
+            // 出站流跟着连接走：设备端重连之后主机仍然能发。
+            host.outbound = stream;
+            return new DeviceSimulator(
                     HsmsFraming.Create(HsmsTimers.MaxMessageLength),
                     frame =>
                     {
-                        inbox.Add(index, frame);
+                        host.inbox.Add(index, frame);
                         return script(index, frame);
                     })
-                .RunAsync(stream, token));
-        return new HsmsHostListener(server, inbox);
+                .RunAsync(stream, token);
+        });
+
+        return host;
+    }
+
+    /// <summary>发一条报文给设备端（写当前那条连接）。
+    /// 用例应在一轮往返结束之后再发下一条：脚本的自动应答与它可能在同一时刻写同一条连接。</summary>
+    /// <param name="frame">完整报文（带 4 字节长度前缀）。</param>
+    /// <returns>发送结束后的任务。</returns>
+    internal Task SendAsync(byte[] frame)
+    {
+        Stream? stream = outbound;
+        if (stream == null)
+            throw new InvalidOperationException("The host has no connection to the equipment.");
+
+        return WriteAsync(stream, frame);
     }
 
     /// <summary>取下一帧；<paramref name="milliseconds"/> 内没有新帧则抛出超时。</summary>
     /// <param name="milliseconds">等待上限（毫秒）。</param>
     /// <returns>最早到达的那一帧。</returns>
-    internal Task<HsmsHostFrame> NextFrameAsync(int milliseconds) => Inbox.TakeAsync(milliseconds);
+    internal Task<HsmsHostFrame> NextFrameAsync(int milliseconds) => inbox.TakeAsync(milliseconds);
 
     /// <summary>主动断开第 <paramref name="index"/> 个连接（按接受顺序，从 0 开始）。</summary>
     /// <param name="index">连接序号。</param>
-    internal void DropConnection(int index) => server.CloseConnection(index);
+    internal void DropConnection(int index) => server!.CloseConnection(index);
 
     /// <summary>停止监听并关闭全部连接。可重复调用。</summary>
-    public void Dispose() => server.Dispose();
+    public void Dispose() => server?.Dispose();
+
+    // 用例自己的发送一次只走一帧；脚本的自动应答在它之外（见 SendAsync 的注释）。
+    private async Task WriteAsync(Stream stream, byte[] frame)
+    {
+        await writeGate.WaitAsync();
+        try
+        {
+            await stream.WriteAsync(frame, 0, frame.Length);
+            await stream.FlushAsync();
+        }
+        finally
+        {
+            writeGate.Release();
+        }
+    }
 }
 
 /// <summary>主机的应答脚本库。</summary>

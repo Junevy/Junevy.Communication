@@ -61,6 +61,14 @@
   - **`SecsResult`** 的构造只经内部工厂，`CommErrorKind` 由 `SecsError` 唯一决定（映射写在一处）。
   - **停止与释放（P51-D15、D19）**：已选中时停止会先尽力发一条 `Separate.req`（不等应答）再断开；**停止不是释放**——`StopAsync` 之后可以再 `StartAsync`，可重复多轮；释放后 `StartAsync` 抛 `ObjectDisposedException`、`SendAsync` 返回 `ConnectionLost`、`StopAsync` / 重复释放 / 处理器表的增删都不抛。停止时传给处理器的令牌被取消，停止等当前处理器返回才完成，处理器此后返回的应答不发送；处理器内部调用 `StopAsync` 不会死锁（通道的派发上下文已经处理了这一层）。
   - **日志**：状态变化记 Information，每条收发记 Debug（方向、S/F、W 位、System Bytes，不含正文），异常记 Error。
+- 2026-10-13 [Secs] 新增设备端的主动端模式（计划 Task 7，P51-D9、D11）。
+  - **公开类型**：`HsmsConnectionMode`（`Passive` / `Active`），`HsmsEquipmentOptions.Mode` 默认 `Passive`。
+  - **Active 走 `TcpClientChannel`**：设备端去连主机，用主动端握手发 `Select.req`（超时 T6）；`ReconnectOptions` 固定间隔 T5，掉线后自动重连并重新 Select；`HandshakeTimeout = T6`、`PartialFrameTimeout = T8`、`ResetOnRequestTimeout = false`（T3 超时是事务失败不是链路失败）、关联键 Keyed、心跳与被动端一致。连接本身的上限用 5 秒，握手窗口在它之后才开始计时。
+  - **只有"怎么拿到当前连接"和"怎么断开"不同**（`ITcpSession.CloseAsync` 对 `IConnectable.DisconnectAsync`）：派发、发送、状态、日志、`SecsResult`、处理器表全部共用同一份代码（Q26）。
+  - **模式校验**：`Active` 必须给 `Host`（对端地址，只接受 IP 字面量，主机名解析留给后续任务）；`Passive` 下 `Host` 是监听地址（null 表示所有地址）；`Mode` 不是两个枚举值之一抛 `ArgumentException`。
+  - **打开失败不抛异常**：`StartAsync` 返回失败结果（`session.Reset` 回到 `NotConnected`，记一条 Warning），半成品的通道被解订阅、释放、字段复位；之后可再 `StartAsync`。
+  - **派发串行化（P51-D13）**：通道的帧事件是"逐个隔离异常地调用"而不等待，因此设备端自己按到达顺序把消息串起来（同一连接上不并发）。停止会等在途的派发跑完（处理器必须响应取消令牌）；处理器内部调用 `StopAsync` 时靠 `AsyncLocal` 认出派发上下文、跳过这一等，不会死锁。
+  - **验证**：新增 6 条主动端用例（连接→Select→双向收发、主机断开后按 T5 重连并重新 Select、Select 被拒持续重试、停止后再启动仍能重连、连上但不回 Select 时 `StartAsync` 返回失败、主动端必须给地址）；Secs.Tests 222 条（net8.0 与 net472 各 222）、受影响测试 466 条全绿；关掉 `Reconnect` 时 3 条重试用例必失败、放宽 Select 状态校验时 `ARejectedSelect` 必失败（变异验证）。度量：生产重复窗口 34（9 集群，与 Task 0 基线一致，无任何集群涉及 `Junevy.Communication.Secs/`）、测试重复窗口 43 集群 / 171 窗口（与基线一致）、超过 60 行的方法 0、超过 300 行的文件 9（全部在 Core / Channels / Tcp）、Secs 有效行 1973。
 
 ### 变更（Changed）
 

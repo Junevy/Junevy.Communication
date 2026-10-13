@@ -37,9 +37,6 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
     /// <summary>HSMS-SS 是单会话：同一时刻只允许一个主机（计划第 0 节 P51-D9）。</summary>
     private const int SingleSession = 1;
 
-    /// <summary>不发 Linktest 时心跳用的占位间隔（不会被用到，只是给出一个合法值）。</summary>
-    private const int PlaceholderHeartbeatInterval = 1000;
-
     private readonly HsmsEquipmentSettings settings;
     private readonly HsmsSessionState session;
     private readonly SecsHandlerTable handlers = new SecsHandlerTable();
@@ -47,8 +44,11 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
     private readonly object sync = new object();
 
     private ITcpServer? server;
-    private ITcpSession? current;
+    private TcpClientChannel? client;
+    private IByteChannel? current;
     private CancellationTokenSource? running;
+    private Task dispatchTail = Task.CompletedTask;
+    private readonly object dispatchGate = new object();
     private bool started;
     private bool disposed;
 
@@ -106,7 +106,9 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
 
         try
         {
-            CommResult result = await StartListeningAsync(cancellationToken).ConfigureAwait(false);
+            CommResult result = settings.Mode == HsmsConnectionMode.Passive
+                ? await StartListeningAsync(cancellationToken).ConfigureAwait(false)
+                : await StartConnectingAsync(cancellationToken).ConfigureAwait(false);
             if (!result.IsSuccess)
                 await StopInternalAsync(signals, CancellationToken.None).ConfigureAwait(false);
 
@@ -200,10 +202,13 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
 
     // 停止：先告诉处理器"要停了"（它们必须响应令牌），再尽力告知对端，最后断开连接并停止监听。
     // 重复调用安全：第一次把 started 置否，之后的调用直接返回。
+    // 停止：先告诉处理器"要停了"（它们必须响应令牌），再尽力告知对端，最后断开连接并停止监听或重连。
+    // 重复调用安全：第一次把 started 置否，之后的调用直接返回。
     private async Task StopInternalAsync(CancellationTokenSource? signals, CancellationToken cancellationToken)
     {
         ITcpServer? listening;
-        ITcpSession? attached;
+        TcpClientChannel? connecting;
+        IByteChannel? attached;
         lock (sync)
         {
             if (!started)
@@ -212,6 +217,7 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
             started = false;
             running = null;
             listening = server;
+            connecting = client;
             attached = current;
         }
 
@@ -220,30 +226,55 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
         if (signals != null)
             CancelQuietly(signals);
 
-        if (listening != null && attached != null && session.State == HsmsState.Selected)
-        {
-            try
-            {
-                await attached
-                    .SendAsync(HsmsControl.SeparateRequest(HsmsSystemBytes.Next()).ToArray(), cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug(ex, "Sending Separate.req while stopping failed; the connection is closed anyway.");
-            }
-        }
+        if (attached != null && session.State == HsmsState.Selected)
+            await SayGoodbyeAsync(attached, cancellationToken).ConfigureAwait(false);
 
         lock (sync)
         {
             current = null;
             server = null;
+            client = null;
         }
+
+        // 等在途的处理器返回：处理器必须响应取消令牌（P51-D19），因此这一等是有界的；
+        // 它的应答已在派发里按令牌跳过，这里只保证停止不与处理器并发。
+        // 例外：处理器自己调用 StopAsync 时不能等自己，否则死锁。
+        if (inDispatch.Value)
+            logger.LogDebug("The equipment is stopping from inside a handler; the in-flight dispatch is not awaited.");
+        else
+            await DrainDispatchAsync().ConfigureAwait(false);
 
         if (listening != null)
             await listening.StopAsync(cancellationToken).ConfigureAwait(false);
 
+        if (connecting != null)
+            await CloseClientAsync(connecting, cancellationToken).ConfigureAwait(false);
+
         session.Reset("The equipment was stopped.");
+    }
+
+    // 告别：尽力发一条 Separate.req（已选中时、不等应答）；发不出去也照样停止。
+    private async Task SayGoodbyeAsync(IByteChannel attached, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await attached
+                .SendAsync(HsmsControl.SeparateRequest(HsmsSystemBytes.Next()).ToArray(), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Sending Separate.req while stopping failed; the connection is closed anyway.");
+        }
+    }
+
+    // 主动端：先解订阅再断开（DisconnectAsync 标记"用户主动断开"，重连循环因此永久停下），最后释放。
+    private async Task CloseClientAsync(TcpClientChannel connecting, CancellationToken cancellationToken)
+    {
+        connecting.FrameReceived -= OnFrameReceived;
+        connecting.StateChanged -= OnClientStateChanged;
+        await connecting.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+        await connecting.DisposeAsync().ConfigureAwait(false);
     }
 
     private static void CancelQuietly(CancellationTokenSource signals)
@@ -257,66 +288,4 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
             // 令牌源已被释放：没有需要取消的订阅者。
         }
     }
-
-    // 被动端：TcpServer + 被动端握手 + Linktest 探测；组成通道配置时按 P51-D9 映射计时器。
-    private async Task<CommResult> StartListeningAsync(CancellationToken cancellationToken)
-    {
-        HsmsEquipmentTimers timers = settings.Timers;
-        var config = new TcpServerConfig
-        {
-            ListenAddress = settings.ListenAddress,
-            Port = settings.Port,
-            MaxSessions = SingleSession,
-            SessionHandshakeTimeout = timers.T7,
-            PartialFrameTimeout = timers.T8,
-            Correlation = CorrelationMode.Keyed,
-            ResetOnRequestTimeout = false,
-            Heartbeat = HsmsHeartbeat(timers),
-        };
-
-        // 分帧与关联由 HSMS 自己提供，服务端配置里的 Framing / Correlation 保持传输层的默认值。
-        var components = new TcpChannelComponents
-        {
-            FrameCodec = HsmsFraming.Create(timers.MaxMessageLength),
-            KeyExtractor = new HsmsKeyExtractor(),
-            Initializer = new HsmsPassiveHandshake(session, timers, logger),
-            HealthProbeFactory = channel => new HsmsLinktestProbe(channel, timers),
-        };
-
-        var listening = new TcpServer(config, null, components);
-        listening.SessionConnected += OnSessionConnected;
-        listening.SessionClosed += OnSessionClosed;
-
-        lock (sync)
-        {
-            server = listening;
-        }
-
-        CommResult result = await listening.StartAsync(cancellationToken).ConfigureAwait(false);
-        if (!result.IsSuccess)
-        {
-            listening.SessionConnected -= OnSessionConnected;
-            listening.SessionClosed -= OnSessionClosed;
-            await listening.DisposeAsync().ConfigureAwait(false);
-            lock (sync)
-            {
-                server = null;
-            }
-
-            session.Reset($"The equipment could not listen: {result.ErrorMessage}");
-            logger.LogWarning("The HSMS equipment did not start: {Result}", result);
-        }
-
-        return result;
-    }
-
-    // P51-D9：LinktestInterval > 0 才启用心跳；间隔用它、超时用 T6、MaxFailures = 1、只在空闲时探测。
-    private HeartbeatOptions HsmsHeartbeat(HsmsEquipmentTimers timers) => new HeartbeatOptions
-    {
-        Enabled = timers.LinktestInterval > 0,
-        Interval = timers.LinktestInterval > 0 ? timers.LinktestInterval : PlaceholderHeartbeatInterval,
-        Timeout = timers.T6,
-        MaxFailures = 1,
-        OnlyWhenIdle = true,
-    };
 }

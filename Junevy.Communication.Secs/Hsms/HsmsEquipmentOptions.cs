@@ -6,7 +6,13 @@ namespace Junevy.Communication.Secs.Hsms;
 /// </summary>
 public sealed class HsmsEquipmentOptions
 {
-    /// <summary>监听地址；null 表示所有地址。</summary>
+    /// <summary>设备端在 HSMS 层的角色；默认 <see cref="HsmsConnectionMode.Passive"/>（监听）。</summary>
+    public HsmsConnectionMode Mode { get; set; } = HsmsConnectionMode.Passive;
+
+    /// <summary>
+    /// 地址：<see cref="HsmsConnectionMode.Passive"/> 下是监听地址（null 表示所有地址），
+    /// <see cref="HsmsConnectionMode.Active"/> 下是对端地址（必填）。只能是 IP，不接受主机名。
+    /// </summary>
     public string? Host { get; set; }
 
     /// <summary>端口，1–65535；默认 5000（SEMI E37 的标准端口）。</summary>
