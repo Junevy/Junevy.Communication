@@ -385,6 +385,81 @@ public sealed class FrameRouterTests
     }
 
     [Fact]
+    public async Task Handshake_OneDecisionNeverLeavesAFrameBothPendingAndBacklogged()
+    {
+        // 判定只有一步（关联表在同一把锁下认领并决定去向），因此接收等待者与握手积压不可能同时"在等同一帧"：
+        // 等待者先注册就被当场认领，帧先到就进积压等它来取。分两步判定时存在第三种可能——
+        // 等待者恰好注册在两步之间，看到空的积压后把自己挂进等待者列表，帧随后才被放进积压，
+        // 双方互不可见，帧一直躺到握手结束（握手期逐帧消费的协议会丢掉整条消息）。
+        await using var rig = new RouterRig(CorrelationMode.Sequential);
+        rig.Start();
+        rig.Table.BeginHandshake();
+
+        // 顺序一：帧先到（进积压），等待者后注册 → 注册时扫描积压，把帧取走。
+        await rig.Router.RouteAsync(Ascii("late-receiver"), null, CancellationToken.None);
+        using PendingRequest late = rig.Table.Register(ReadOnlyMemory<byte>.Empty, null, 2000, null, CancellationToken.None);
+
+        Assert.Equal(TaskStatus.RanToCompletion, late.Completion.Status);
+        Assert.Equal(Ascii("late-receiver"), (await late.Completion).Data);
+        Assert.Empty(rig.Table.EndHandshake());
+
+        // 顺序二：等待者先注册，帧后到 → 当场被认领，积压始终是空的。
+        using PendingRequest early = rig.Table.Register(ReadOnlyMemory<byte>.Empty, null, 2000, null, CancellationToken.None);
+        await rig.Router.RouteAsync(Ascii("early-receiver"), null, CancellationToken.None);
+
+        Assert.Equal(Ascii("early-receiver"), (await early.Completion).Data);
+        Assert.Empty(rig.Table.EndHandshake());
+    }
+
+    [Fact]
+    public async Task Handshake_FrameOfferedWhileAReceiverRegisters_IsNeverLost()
+    {
+        // 上一条用例钉住的是两种顺序；这一条是并发下的"看门狗"：一帧与一个接收等待者同时到达时，
+        // 不变量仍然成立（等待者拿到帧，或者帧在积压里等它），两者不会同时落空。
+        // 窗口窄到很难稳定命中，因此按压力用例来跑——修好之后这里永远是 0。
+        const int Rounds = 500;
+        int lost = 0;
+
+        for (int round = 0; round < Rounds; round++)
+        {
+            await using var rig = new RouterRig(CorrelationMode.Sequential);
+            rig.Start();
+            rig.Table.BeginHandshake();
+
+            using var gate = new Barrier(2);
+            Task<PendingRequest> receiver = Task.Factory.StartNew(
+                () =>
+                {
+                    gate.SignalAndWait();
+                    return rig.Table.Register(ReadOnlyMemory<byte>.Empty, null, 2000, null, CancellationToken.None);
+                },
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+            Task routed = Task.Factory.StartNew(
+                async () =>
+                {
+                    gate.SignalAndWait();
+                    await rig.Router.RouteAsync(Ascii("race"), null, CancellationToken.None);
+                },
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default).Unwrap();
+
+            await Task.WhenAll(receiver, routed);
+            using PendingRequest waiter = await receiver;
+
+            // 认领在 RouteAsync 的线程上同步完成，因此这里不需要等待：要么当场完成，要么帧在积压里。
+            bool delivered = waiter.Completion.Status == TaskStatus.RanToCompletion;
+            int backlogged = rig.Table.EndHandshake().Count;
+            if (!delivered && backlogged == 0)
+                lost++;
+        }
+
+        Assert.Equal(0, lost);
+    }
+
+    [Fact]
     public async Task Handshake_BacklogOverflow_Throws()
     {
         await using var rig = new RouterRig(CorrelationMode.Sequential);

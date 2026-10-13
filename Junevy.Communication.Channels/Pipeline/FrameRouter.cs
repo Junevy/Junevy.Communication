@@ -1,6 +1,7 @@
 using System.Net;
 using System.Threading.Channels;
 using Junevy.Communication.Channels.Framing;
+using Junevy.Communication.Core.Results;
 using Microsoft.Extensions.Logging;
 
 namespace Junevy.Communication.Channels.Pipeline;
@@ -87,7 +88,8 @@ internal sealed class FrameRouter : IAsyncDisposable
     }
 
     /// <summary>
-    /// 路由一帧：在途请求认领 → 迟到应答丢弃 → 接收等待者认领 → 握手积压或派发队列（计划 7.2 规则 1，经修订）。
+    /// 路由一帧：由关联表在一次加锁的判定里给出去向——在途请求认领 → 迟到应答丢弃 → 接收等待者认领 →
+    /// 握手积压（握手期间）或有界派发队列（计划 7.2 规则 1，经修订）。
     /// Wait 模式下队列满时挂起直到有空位（背压）。
     /// </summary>
     /// <param name="frame">入站帧（调用方已复制为独立数组）。</param>
@@ -104,22 +106,25 @@ internal sealed class FrameRouter : IAsyncDisposable
         await routeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            switch (table.TryComplete(frame, remote))
+            // 判定与去向在关联表的同一把锁下完成：等待者的注册也取那把锁，因此不会有"判定时无人认领、
+            // 决定去向时等待者刚注册"的窗口（那会让双方互不可见，帧一直躺到握手结束）。
+            FrameRoute route = table.Route(frame, remote, out PendingRequest? claimed);
+            switch (route)
             {
-                case ClaimOutcome.Claimed:
+                case FrameRoute.Claimed:
+                    // 完成在锁外触发：等待者的完成回调可能同步执行。
+                    claimed!.TryFinish(CommResult<byte[]>.Success(frame));
                     return;
 
-                case ClaimOutcome.LateReply:
+                case FrameRoute.LateReply:
+                    logger.LogWarning("Dropped a late reply of {Length} bytes that arrived after its request timed out.", frame.Length);
                     statistics.IncrementFramesDropped();
                     return;
-            }
 
-            switch (table.ClassifyUnclaimed(frame, remote))
-            {
-                case UnclaimedFrameTarget.Backlog:
+                case FrameRoute.Backlog:
                     return;
 
-                case UnclaimedFrameTarget.BacklogFull:
+                case FrameRoute.BacklogFull:
                     throw new FrameDecodeException(
                         $"The handshake backlog is full ({PendingRequestTable.MaxHandshakeBacklog} frames); the peer sent too many frames before the handshake completed.");
 

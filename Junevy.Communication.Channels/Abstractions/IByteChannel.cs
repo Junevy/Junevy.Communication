@@ -23,6 +23,12 @@ public interface IByteChannel
     Task<CommResult<byte[]>> RequestAsync(ReadOnlyMemory<byte> payload, RequestOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>不发送，只等待下一个匹配帧（例如等设备主动上报 "READY"）。</summary>
+    /// <remarks>
+    /// 等待者从注册时开始计时，<paramref name="options"/> 为 null 时超时取配置中的 <c>RequestTimeout</c>
+    /// （TCP 默认 2000 毫秒）。等待时长由协议自己规定的窗口约束时（例如在握手窗口内等某条消息），
+    /// 请显式给 <see cref="RequestOptions.Timeout"/>：否则等待会在 <c>RequestTimeout</c> 处以
+    /// <see cref="CommErrorKind.Timeout"/> 结束，比协议窗口早。
+    /// </remarks>
     /// <param name="options">单次接收选项；为 null 时使用配置默认值。</param>
     /// <param name="cancellationToken">用户取消令牌。</param>
     /// <returns>匹配的帧或失败结果。</returns>
