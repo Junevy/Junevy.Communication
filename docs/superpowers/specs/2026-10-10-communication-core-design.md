@@ -1446,6 +1446,27 @@ P4.5（计划 `docs/superpowers/plans/2026-10-12-p45-shared-protocol-parts.md`�
 - **20.5 第 3 条标记为"本期只记录、未抽取"的四项**里，F3、F4/F9、F8 在本期完成抽取；F7、F10 转入 P5（测试基建整理）。
 - **`CommResult` 的可空性（第 4 行）是本期唯一的运行时行为变化**（消息文本与双重错误顺序见上），因此本期被 P45-D8 限定为"S7、FINS、MELSEC 的测试断言不改且全绿"——它们三者的 316 / 259 / 184 条用例全部原样通过，正是行为不变的证据。
 
+### 20.7 实施修订（P5.1）
+
+P5.1（计划 `docs/superpowers/plans/2026-10-12-p51-secs-hsms.md`，Task 0–12）实现了第 14.1 节的前半段：**SECS-II 消息 + HSMS-SS 会话，只做设备端**。范围之外的两项（SECS-I、GEM）由用户 2026-10-13 决定移出本期——SECS-I 过于老旧不值得投入，GEM 改为 P5.2；第 19 节分期表与 14.1 里的 SECS-I 行已在 `feat/sdk-p6` 上改过，本分支不再重复改，合并时以那边为准。"原设计"列为本文件原文的要点，"原因"列指向计划第 0 节的决策编号（P51-D 编号）或计划 20.2 节的扩展性摩擦记录（F 编号）。
+
+| # | 章节 | 原设计 | 实际实现 | 原因 |
+|---|---|---|---|---|
+| 1 | 14.1 标题、第 19 节 | "SECS/GEM"，含 SECS-I（RS-232 块传输）与 GEM 的通讯 / 控制状态 | 只做 SECS-II + HSMS-SS 设备端。公开状态只有 `HsmsState`（`NotConnected` / `NotSelected` / `Selected`），没有 GEM 状态机；SECS-I 的 `SerialChannel` 行整体删除 | 用户 2026-10-13 决定；P51-D1。本期只做"通信层"，GEM 是 P5.2 的主题 |
+| 2 | 14.1 映射表 "System Bytes（事务号）→ `Keyed` 关联" | 只说用 `Keyed`，没说键怎么取 | 键是 System Bytes，取键规则由 HSMS 自己的 `IFrameKeyExtractor` 给出（`Junevy.Communication.Secs.Protocol`）：**只有应答类消息取应答键**（偶数 Function 的数据消息、`Select.rsp` / `Deselect.rsp` / `Linktest.rsp` / `Reject.req`），主消息与 `*.req` 控制消息一律取请求键 | P51-D7（Q34）。若主消息也取应答键，对方的 `Select.req` 恰好带着与我在途请求相同的 System Bytes 时，这条主消息会被关联表当成应答吃掉，业务消息凭空消失 |
+| 3 | 14.1 映射表 "Select.req / Select.rsp → `IConnectionInitializer`（主动端发起，被动端对每个会话执行）" | 被动端执行初始化器，看起来是一次性的握手 | 被动端的初始化器是**在 T7 窗口内的循环**：收到 `Select.req` → 回 `Select.rsp` 状态 0 并握手成功；`Linktest.req` → 回 `Linktest.rsp` 继续等；数据消息 → 回 `Reject.req` 原因 4 继续等；`Separate.req` → 不应答、握手失败并断开；其余 → `Reject.req` 原因 1。取帧用 `ReceiveAsync` 的 **200 毫秒轮询**（超时只表示"还没到"），而不是一次长等 | P51-D11（Q35）。通道的握手积压与接收等待者注册之间有竞态（计划 F1），且 `ReceiveAsync` 不给超时时用通道的 `RequestTimeout`（2000 毫秒）小于 T7（F2），一次长等会在主机合法沉默时被误判为失败。主动端则是发 `Select.req` 并校验应答的种类、System Bytes 与状态码，非 0 / 超时 / `Reject.req` 都算握手失败并按 T5 重连 |
+| 4 | 14.1 映射表 "T3 / T5 / T6 / T7 / T8 → `RequestTimeout` / 重连固定间隔 / `HandshakeTimeout` / `SessionHandshakeTimeout` / `PartialFrameTimeout`" | T3 映射到通道的 `RequestTimeout` | T3 **不用** `RequestTimeout`：它是每个带 W 位的主消息各自的 `RequestOptions.Timeout`，且两种模式都设 `ResetOnRequestTimeout = false`——T3 超时是事务失败（回 S9F9、`ReplyTimeout`），不是链路失败。T5 → Active 的 `ReconnectOptions`（固定间隔）、T6 → `HandshakeTimeout` 与 Select / Linktest 请求的超时、T7 → `SessionHandshakeTimeout`、T8 → `PartialFrameTimeout`，与原设计一致。主动端的**连接超时**另给 5 秒常量，不占用 T6 | P51-D9（Q35）；计划偏差 D21。`RequestTimeout` 恰恰是 F2 里那个"小于协议窗口"的默认值 |
+| 5 | 14.1 "双方都会主动发主消息并等待应答（如 S5F1 报警、S6F11 事件）→ `FrameReceived` + 客户端或会话上的 `RequestAsync`" | `FrameReceived` 派发 + `RequestAsync` | 部件不变，但**派发的串行化要自己补**：两条通道的帧事件都是"逐个隔离异常地调用"而**不等待**（`TcpSession.RaiseFrame` 与 `StreamClientChannel.RaiseFrameReceived` 都是 `InvokeEach` 后返回已完成任务），因此处理器本体不在通道的串行区内。设备端自己用一条 `Task` 链把派发串起来（同一连接上不并发），停止时排空这条链，并用 `AsyncLocal` 识别"处理器内部调用 `StopAsync`"以免等自己 | 计划 P51-D13 与偏差 D20。这是本条设计里唯一一处"部件复用了但语义没完全免费"的地方 |
+| 6 | 14.1 "不实现 `IPlcClient`，也不把 HSMS 状态压成 `ConnectionState`" | 公开面最小 | 与原设计一致：公开类型只有 `SecsItem` / `SecsFormat` / `SecsMessage` / `SecsResult` / `SecsError` / `SecsMessageHandler` / `HsmsState` / `HsmsStateChangedEventArgs` / `HsmsConnectionMode` / `HsmsEquipment` / `HsmsEquipmentOptions` / `HsmsEquipmentFactory` / `SecsServiceCollectionExtensions`。状态机只有 `HsmsState`（14.1 里的 GEM 状态见第 1 行） | P51-D2；P51-D17（DI 与 Plc 同形：`NamedFactory` + `AddSecs()`） |
+| 7 | 14.1 "SECS 的结果类型自带 `ErrorKind` 字段（取 `CommErrorKind`），同时保留自己的完整错误语义" | 结果类型既有 `CommErrorKind` 又有自己的语义 | 与原设计一致，并收紧为**单一映射**：`SecsResult` 的构造只经内部工厂，`CommErrorKind` 由 `SecsError` 唯一决定（映射写在一处）。线路上的失败都是结果，只有编程错误抛异常 | P51-D16 计划的 Q9；与 20.6 第 4 行的可空性标注一致 |
+
+**对 14.1 的影响**：
+
+- **14.1 的映射表基本成立**，而且比设计预期的更彻底：除 SECS-I 那一行外，通道族**一行都没有改**，新增的 SECS 生产代码只用了 Core 的 `BigEndianFields` / `SequenceCounter` / `CommResult` / `NamedFactory`、Channels 的分帧与关联与握手积压与心跳、Tcp 的服务端会话与客户端通道。
+- **需要补记的两条设计细节**是第 2 行（取键规则）与第 3 行（被动端握手循环）——它们在 14.1 里只有一句话，实际实现里有必须遵守的规则，否则会出现"主消息被错认成应答"和"主机合法沉默被判失败"两类难以定位的问题。
+- **第 1 行是范围变更而不是设计错误**：14.1 写 SECS/GEM 是对的，分期把它拆成本期（通信层）与 P5.2（GEM）后，通信层的部分不需要为 GEM 提前让步。
+- 本期的摩擦记录只有两条（计划 20.2 节 F1、F2），两条都出在"握手期间逐帧消费报文"这一个用法上，都已由分支 `fix/channels-handshake-backlog-race` 修掉（合并顺序上 Channels 先合，本分支保留 200 毫秒轮询）。最终的度量与扩展性结论见计划 20.4 节。
+
 ## 21. 决策记录
 
 ### 21.1 已确认（2026-10-10）
