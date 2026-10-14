@@ -41,6 +41,7 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
     private readonly HsmsSessionState session;
     private readonly SecsHandlerTable handlers = new SecsHandlerTable();
     private readonly ILogger logger;
+    private readonly ILoggerFactory loggerFactory;
     private readonly object sync = new object();
 
     private ITcpServer? server;
@@ -52,11 +53,12 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
     private bool started;
     private bool disposed;
 
-    private HsmsEquipment(HsmsEquipmentSettings settings, HsmsSessionState session, ILogger logger)
+    private HsmsEquipment(HsmsEquipmentSettings settings, HsmsSessionState session, ILoggerFactory loggerFactory)
     {
         this.settings = settings;
         this.session = session;
-        this.logger = logger;
+        this.loggerFactory = loggerFactory;
+        logger = loggerFactory.CreateLogger<HsmsEquipment>();
     }
 
     /// <summary>会话状态（SEMI E37）：<c>NotConnected</c> / <c>NotSelected</c> / <c>Selected</c>。</summary>
@@ -77,9 +79,8 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
             throw new ArgumentNullException(nameof(options));
 
         ILoggerFactory factory = loggerFactory ?? NullLoggerFactory.Instance;
-        ILogger logger = factory.CreateLogger<HsmsEquipment>();
-        var state = new HsmsSessionState(logger);
-        var equipment = new HsmsEquipment(HsmsEquipmentSettings.Validate(options), state, logger);
+        var state = new HsmsSessionState(factory.CreateLogger<HsmsEquipment>());
+        var equipment = new HsmsEquipment(HsmsEquipmentSettings.Validate(options), state, factory);
         state.StateChanged += equipment.RaiseStateChanged;
         return equipment;
     }

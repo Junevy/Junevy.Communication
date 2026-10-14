@@ -112,7 +112,7 @@ Invalid values throw `ArgumentException` from `Create` (and from the factory) wi
 | `NotSelected` | The TCP connection is up, but the host has not selected the session yet |
 | `Selected` | The session is selected and data messages flow |
 
-`StateChanged` reports every change in order with a reason. TCP being connected only means bytes flow, which is why `NotSelected` is a state of its own and is not folded into the channel's `ConnectionState`.
+`StateChanged` reports every change in order with a reason. TCP being connected only means bytes flow, which is why `NotSelected` is a state of its own and is not folded into the channel's `ConnectionState`. `Selected` is reported once the selected link has been taken over — when the client channel reports it is connected (`Active`) or the server reports the session (`Passive`) — right after the `Select` exchange, so a late notice about an old link can never overwrite the state of a newer one.
 
 ## Handlers
 

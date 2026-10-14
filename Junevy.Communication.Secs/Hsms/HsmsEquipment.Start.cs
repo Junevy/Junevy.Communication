@@ -45,7 +45,8 @@ public sealed partial class HsmsEquipment
             HealthProbeFactory = channel => new HsmsLinktestProbe(channel, timers),
         };
 
-        var listening = new TcpServer(config, null, components);
+        // 通道的日志（连接、握手、心跳、会话失败）与设备端用同一个日志工厂，宿主才看得到链路层的原因。
+        var listening = new TcpServer(config, loggerFactory.CreateLogger<TcpServer>(), components);
         listening.SessionConnected += OnSessionConnected;
         listening.SessionClosed += OnSessionClosed;
 
@@ -99,12 +100,16 @@ public sealed partial class HsmsEquipment
             HealthProbeFactory = channel => new HsmsLinktestProbe(channel, timers),
         };
 
-        var connecting = new TcpClientChannel(config, null, components);
+        var connecting = new TcpClientChannel(config, loggerFactory.CreateLogger<TcpClientChannel>(), components);
         connecting.FrameReceived += OnFrameReceived;
         connecting.StateChanged += OnClientStateChanged;
+
+        // 主动端的当前连接就是这条通道：不等 Connected 事件再挂（事件排队送达，主机的第一条主消息可能先到），
+        // 链路不在时通道的发送本身就返回失败结果。
         lock (sync)
         {
             client = connecting;
+            current = connecting;
         }
 
         // 握手失败（Select 被拒、T6 超时、连不上）就是"打开失败"：不在这里重试，

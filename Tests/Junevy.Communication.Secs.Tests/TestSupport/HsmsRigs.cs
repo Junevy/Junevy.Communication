@@ -75,6 +75,10 @@ internal sealed class HsmsPassiveRig : IAsyncDisposable
             states,
             config.Port);
 
+        // 与设备端一样：Selected 由服务端报告会话时给出，会话关闭交给会话状态判断（事件可能晚到）。
+        rig.server.SessionConnected += (sender, args) => session.LinkAttached(args.Session.IsConnected, "The session connected.");
+        rig.server.SessionClosed += (sender, args) => session.LinkLost(stillConnected: false, "The session closed.");
+
         CommResult started = await Arrival.WithinAsync(rig.server.StartAsync(), 10000).ConfigureAwait(false);
         if (!started.IsSuccess)
             throw new InvalidOperationException($"The passive rig did not start: {started.ErrorMessage}");
@@ -142,11 +146,11 @@ internal sealed class HsmsActiveRig : IAsyncDisposable
             },
         };
 
-        return new HsmsActiveRig(
-            new TcpClientChannel(config, logger.CreateLogger<TcpClientChannel>(), HsmsChannelParts.Components(timers, new HsmsActiveHandshake(session, timers, logger))),
-            session,
-            logger,
-            states);
+        var channel = new TcpClientChannel(config, logger.CreateLogger<TcpClientChannel>(), HsmsChannelParts.Components(timers, new HsmsActiveHandshake(session, timers, logger)));
+
+        // 与设备端一样：通道的状态事件交给会话状态判断，Selected 在通道报告 Connected 时给出。
+        channel.StateChanged += (sender, args) => session.ApplyClientEvent(args, channel.State);
+        return new HsmsActiveRig(channel, session, logger, states);
     }
 
     /// <summary>断开并释放通道。可重复调用。</summary>

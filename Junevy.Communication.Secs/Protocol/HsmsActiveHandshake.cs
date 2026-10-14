@@ -37,7 +37,7 @@ internal sealed class HsmsActiveHandshake : IConnectionInitializer
     /// <inheritdoc />
     public async Task<CommResult> InitializeAsync(IByteChannel channel, CancellationToken cancellationToken)
     {
-        session.MoveTo(HsmsState.NotSelected, "The peer accepted the connection.");
+        session.BeginHandshake("The peer accepted the connection.");
         try
         {
             return await SelectAsync(channel, cancellationToken).ConfigureAwait(false);
@@ -74,7 +74,8 @@ internal sealed class HsmsActiveHandshake : IConnectionInitializer
         if (answer.Status != HsmsControl.SelectOk)
             return Fail($"Select.rsp reports status {answer.Status}.");
 
-        session.MoveTo(HsmsState.Selected, "Select.rsp 0 (ok) was received.");
+        // Selected 等通道报告 Connected 时再报（见 HsmsSessionState 的类型注释）。
+        session.EndHandshake();
         return CommResult.Success();
     }
 

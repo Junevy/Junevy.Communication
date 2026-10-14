@@ -49,7 +49,7 @@ internal sealed class HsmsPassiveHandshake : IConnectionInitializer
     public async Task<CommResult> InitializeAsync(IByteChannel channel, CancellationToken cancellationToken)
     {
         // TCP 连上就进入 NotSelected（P51-D10）：握手钩子开始时报告，早于服务端的 SessionConnected。
-        session.MoveTo(HsmsState.NotSelected, "The peer connected.");
+        session.BeginHandshake("The peer connected.");
         try
         {
             CommResult result = await WaitForSelectAsync(channel, cancellationToken).ConfigureAwait(false);
@@ -115,7 +115,8 @@ internal sealed class HsmsPassiveHandshake : IConnectionInitializer
         if (!sent.IsSuccess)
             return sent;
 
-        session.MoveTo(HsmsState.Selected, "Select.rsp 0 (ok) was sent.");
+        // Selected 等服务端报告 SessionConnected 时再报（见 HsmsSessionState 的类型注释）。
+        session.EndHandshake();
         return CommResult.Success();
     }
 

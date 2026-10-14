@@ -16,9 +16,13 @@ public sealed partial class HsmsEquipment
     /// <summary>当前执行流是否正在派发消息：处理器里停止时靠它避免等自己（P51-D19）。</summary>
     private static readonly AsyncLocal<bool> inDispatch = new AsyncLocal<bool>();
 
-    // 被动端：服务端在握手成功（已选中）之后才报告会话，这时挂上当前连接与它的帧事件。
+    // 被动端：服务端在握手成功之后才报告会话（且先于它的任何帧），这时挂上当前连接并报告 Selected。
+    // 服务端的事件是排队送达的：会话若已经断了，就不挂接，它的 SessionClosed 随后就到。
     private void OnSessionConnected(object? sender, TcpSessionEventArgs args)
     {
+        if (!args.Session.IsConnected)
+            return;
+
         lock (sync)
         {
             current = args.Session;
@@ -26,9 +30,11 @@ public sealed partial class HsmsEquipment
 
         args.Session.FrameReceived += OnFrameReceived;
         logger.LogDebug("HSMS session {Session} connected from {Remote}.", args.Session.Id, args.Session.RemoteEndPoint);
+        session.LinkAttached(args.Session.IsConnected, "Select.rsp 0 (ok) was sent and the session is connected.");
     }
 
-    // 连接断了即回到 NotConnected（P51-D10）；正在等应答的请求由通道以失败结果结束，不会泄漏。
+    // 会话断了即回到 NotConnected（P51-D10），除非新会话的握手已经开始（晚到的事件）。
+    // 正在等应答的请求由通道以失败结果结束，不会泄漏。
     private void OnSessionClosed(object? sender, TcpSessionClosedEventArgs args)
     {
         args.Session.FrameReceived -= OnFrameReceived;
@@ -38,21 +44,14 @@ public sealed partial class HsmsEquipment
                 current = null;
         }
 
-        session.Reset($"The session {args.Session.Id} closed ({args.Reason}).");
+        session.LinkLost(stillConnected: false, $"The session {args.Session.Id} closed ({args.Reason}).");
     }
 
-    // 主动端：任何"不再是 Connected"的状态（断开、重连中、已释放）都意味着会话不可用（P51-D10）。
-    // Connected 时状态由握手钩子推进（NotSelected → Selected），这里只挂上当前连接。
+    // 主动端：当前连接就是客户端通道本身（启动时已挂上），这里只把状态事件交给会话状态判断（事件可能晚到）。
     private void OnClientStateChanged(object? sender, ConnectionStateChangedEventArgs args)
     {
-        lock (sync)
-        {
-            current = args.CurrentState == ConnectionState.Connected ? sender as IByteChannel : null;
-            if (current != null || args.CurrentState == ConnectionState.Connected)
-                return;
-        }
-
-        session.Reset($"The channel changed to {args.CurrentState} ({args.Reason}).");
+        if (sender is IConnectable channel)
+            session.ApplyClientEvent(args, channel.State);
     }
 
     // 通道的帧事件是"逐个隔离异常地调用"而不是等待，因此这里自己把消息串起来：

@@ -1467,6 +1467,7 @@ P5.1（计划 `docs/superpowers/plans/2026-10-12-p51-secs-hsms.md`，Task 0–12
 | 9 | 14.1 映射表（PType 未单列） | — | **PType 不是 0 的报文**选中前后都回 `Reject.req` 原因 2（头字节 2 是那个 PType），关联键提取器对它两种键都不取（验收修正：执行时被静默丢弃） | P51-D12；SEMI E37 的 Reject 原因 2 |
 | 10 | 14.1 "Active / Passive 连接模式 → `TcpClientChannel` / `TcpServer`" | 只写了部件 | **主动端收到 `Separate.req` 后按 T5 再连**：通道的 `DisconnectAsync` 会永久停止重连，所以设备端断开之后等 T5 自己再连一次，再失败由通道按 T5 继续（`ReconnectOptions.OnInitialFailure = true`；首次启动失败时通道随即被释放，`StartAsync` 语义不变）。主动端的 `Host` 可以是主机名，被动端只接受 IP（验收修正） | 设备端仍处于"已启动"，不能停在永远不再连接的状态（与 P6.1 验收缺陷 R1 同类） |
 | 11 | 14.1（生命周期未单列） | — | **停止与释放取消进行中的启动**：启动与停止共用一个取消信号，主动端等第一个 `Select.rsp` 时停止，`StartAsync` 立刻返回 `ConnectionClosed`，而不是让停止等满 T6；调用方取消启动返回 `Cancelled`。停止与启动失败共用一个收尾方法（解订阅、断开、释放） | P51-D19（验收修正） |
+| 12 | 14.1 映射表 "Select.req / Select.rsp → `IConnectionInitializer`" 与 P51-D10 | "Select 成功即 Selected" | **`Selected` 在链路被接管时报告**：握手只报 `NotSelected`（开始）或复位（失败）；主动端收到 `Connected` 且通道此刻确实连着、被动端收到 `SessionConnected` 且会话还在时才报 `Selected`；断开只在没有新的握手进行、链路此刻也不在时复位（合并后修正） | 通道与服务端的事件是排队派发的，可能晚于下一条链路的握手；原实现把晚到的 `Connecting` 当断开，全量并行下主动端的会话被复位成 `NotConnected` |
 
 **对 14.1 的影响**：
 
