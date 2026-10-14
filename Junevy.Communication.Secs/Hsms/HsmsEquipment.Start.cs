@@ -67,8 +67,9 @@ public sealed partial class HsmsEquipment
     {
         HsmsEquipmentTimers timers = settings.Timers;
 
-        // P51-D9：T6 → 握手超时、T5 → 固定间隔重连、T8 → 字符间隔超时；
-        // ResetOnRequestTimeout = false 是因为 T3 超时是事务失败，不是链路失败。
+        // P51-D9：T6 → 握手超时、T5 → 固定间隔重连、T8 → 字符间隔超时。
+        // T3 超时是事务失败，不是链路失败：Keyed 关联下请求超时本来就不重建连接（ResetOnRequestTimeout 只作用于
+        // Sequential），这里仍显式写 false，免得日后换关联方式时把 T3 超时变成断链。被动端同理。
         var config = new TcpClientChannelConfig
         {
             Host = settings.Address!,
@@ -79,11 +80,14 @@ public sealed partial class HsmsEquipment
             Correlation = CorrelationMode.Keyed,
             ResetOnRequestTimeout = false,
             Heartbeat = HsmsHeartbeat(timers),
+            // OnInitialFailure：Separate.req 之后的再连若失败，也交给通道按 T5 继续重连（见 ReconnectAfterSeparateAsync）。
+            // 首次启动失败时通道随即被释放，因此 StartAsync 的"打开失败就返回失败"不受影响。
             Reconnect = new ReconnectOptions
             {
                 Enabled = true,
                 Mode = ReconnectMode.FixedInterval,
                 Interval = timers.T5,
+                OnInitialFailure = true,
             },
         };
 
@@ -116,7 +120,27 @@ public sealed partial class HsmsEquipment
         return result;
     }
 
-    // 启动失败时把半成品收干净：解订阅、断开、释放，字段也复位。
+    // 主动端收到 Separate.req：断开（P51-D12）。DisconnectAsync 会让通道永久停止重连，
+    // 而设备端仍处于启动状态，所以等 T5 之后自己再连一次；再失败由通道按 T5 继续（OnInitialFailure）。
+    // 停止或释放会取消 token，这时既不等满 T5 也不再连接。
+    private async Task ReconnectAfterSeparateAsync(IConnectable client, CancellationToken token)
+    {
+        await client.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await Task.Delay(settings.Timers.T5, token).ConfigureAwait(false);
+            CommResult reconnected = await client.ConnectAsync(token).ConfigureAwait(false);
+            if (!reconnected.IsSuccess)
+                logger.LogWarning("Reconnecting after Separate.req failed; the channel keeps retrying every T5: {Result}", reconnected);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            logger.LogDebug("The equipment stopped before reconnecting after Separate.req.");
+        }
+    }
+
+    // 收尾（启动失败与停止共用）：解订阅、断开、释放。主动端先 DisconnectAsync（标记"用户主动断开"，
+    // 重连循环因此永久停下）再释放。字段只在仍指向被释放的对象时才清空：停止之后可能已经开始了新的一轮启动。
     private async Task ReleaseAsync(ITcpServer? listening, TcpClientChannel? connecting)
     {
         if (listening != null)
@@ -130,14 +154,20 @@ public sealed partial class HsmsEquipment
         {
             connecting.FrameReceived -= OnFrameReceived;
             connecting.StateChanged -= OnClientStateChanged;
+            await connecting.DisconnectAsync().ConfigureAwait(false);
             await connecting.DisposeAsync().ConfigureAwait(false);
         }
 
         lock (sync)
         {
-            server = null;
-            client = null;
-            current = null;
+            if (ReferenceEquals(server, listening))
+                server = null;
+            if (ReferenceEquals(client, connecting))
+            {
+                client = null;
+                if (ReferenceEquals(current, connecting))
+                    current = null;
+            }
         }
     }
 

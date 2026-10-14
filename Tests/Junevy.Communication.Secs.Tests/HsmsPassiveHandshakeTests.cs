@@ -1,7 +1,6 @@
 using Junevy.Communication.Secs.Hsms;
 using Junevy.Communication.Secs.Protocol;
 using Junevy.Communication.Testing;
-using Microsoft.Extensions.Logging;
 
 namespace Junevy.Communication.Secs.Tests;
 
@@ -74,21 +73,21 @@ public sealed class HsmsPassiveHandshakeTests
     }
 
     [Fact(Timeout = 30000)]
-    public async Task AFrameWithAnUnsupportedPType_IsDroppedWithAWarningAndTheHandshakeKeepsWaiting()
+    public async Task AFrameWithAnUnsupportedPType_IsRejectedWithReasonTwoAndTheHandshakeKeepsWaiting()
     {
         await using HsmsPassiveRig rig = await HsmsPassiveRig.StartAsync(HsmsTimers.Fast(t7: 8000));
         await using HsmsHostConnector host = await HsmsHostConnector.ConnectAsync(rig.Port);
         await Polling.WaitUntilAsync(() => rig.Session.State == HsmsState.NotSelected, 5000);
 
-        // 头里的 PType 不是 0 时报文根本进不了派发（Task 4 的解析器按结构错误处理），因此不会回 Reject.req 原因 2。
+        // PType 不是 0 → Reject.req 原因 2，头字节 2 是那个 PType（SEMI E37、V-H-9 的形状）。
+        // 这一帧的 SType 恰好是 1：不能因此被当成 Select.req。
         await host.SendAsync(HexVector.ToBytes("00 00 00 0A FF FF 00 00 05 01 00 00 00 0A"));
+        Assert.Equal("00 00 00 0A FF FF 05 02 00 07 00 00 00 0A", (await host.NextFrameAsync(5000)).Text);
 
-        // 随后发一条 Linktest.req：它是主机收到的第一帧，说明前面那条被丢弃而不是被拒绝。
+        // 握手继续等：随后的 Linktest.req 照常应答，状态仍是 NotSelected。
         await host.SendAsync(HsmsControl.LinktestRequest(11).ToArray());
         Assert.Equal("00 00 00 0A FF FF 00 00 00 06 00 00 00 0B", (await host.NextFrameAsync(5000)).Text);
-
         Assert.Equal(HsmsState.NotSelected, rig.Session.State);
-        Assert.Contains(rig.Logger.GetEntries(LogLevel.Warning), entry => entry.Message.Contains("PType"));
     }
 
     [Fact(Timeout = 30000)]

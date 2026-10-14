@@ -173,22 +173,22 @@ internal sealed class HsmsMessage
 
     /// <summary>读出头部字段但不复制，供只关心几个字段的调用方（例如关联键提取器）使用。</summary>
     /// <param name="frame">完整报文。</param>
-    /// <param name="byte2">读到的头字节 2。</param>
-    /// <param name="byte3">读到的头字节 3。</param>
+    /// <param name="byte3">读到的头字节 3（数据消息的 Function）。</param>
+    /// <param name="pType">读到的 PType。</param>
     /// <param name="sType">读到的 SType。</param>
     /// <returns>头部长度足够返回 true。</returns>
-    internal static bool TryPeekHeader(ReadOnlySpan<byte> frame, out byte byte2, out byte byte3, out byte sType)
+    internal static bool TryPeekHeader(ReadOnlySpan<byte> frame, out byte byte3, out byte pType, out byte sType)
     {
         if (!TryGetHeader(frame, out ReadOnlySpan<byte> header))
         {
-            byte2 = 0;
             byte3 = 0;
+            pType = 0;
             sType = 0;
             return false;
         }
 
-        byte2 = header[2];
         byte3 = header[3];
+        pType = header[4];
         sType = header[5];
         return true;
     }
@@ -205,9 +205,33 @@ internal sealed class HsmsMessage
             return false;
         }
 
-        systemBytes = (uint)((header[6] << 24) | (header[7] << 16) | (header[8] << 8) | header[9]);
+        systemBytes = SystemBytesOf(header);
         return true;
     }
+
+    /// <summary>
+    /// 头部完整、但 PType 不是 <see cref="SupportedPType"/> 时取出拒绝它要用的字段（<see cref="Read"/> 不接受这种报文）。
+    /// </summary>
+    /// <param name="frame">完整报文。</param>
+    /// <param name="sessionId">读到的会话号。</param>
+    /// <param name="pType">读到的 PType。</param>
+    /// <param name="systemBytes">读到的 System Bytes。</param>
+    /// <returns>头部完整且 PType 不受支持时返回 true。</returns>
+    internal static bool TryPeekUnsupportedPType(ReadOnlySpan<byte> frame, out ushort sessionId, out byte pType, out uint systemBytes)
+    {
+        sessionId = 0;
+        systemBytes = 0;
+        if (!TryPeekHeader(frame, out byte _, out pType, out byte _) || pType == SupportedPType)
+            return false;
+
+        ReadOnlySpan<byte> header = frame.Slice(LengthPrefixBytes, HeaderBytes);
+        sessionId = (ushort)((header[0] << 8) | header[1]);
+        systemBytes = SystemBytesOf(header);
+        return true;
+    }
+
+    private static uint SystemBytesOf(ReadOnlySpan<byte> header)
+        => (uint)((header[6] << 24) | (header[7] << 16) | (header[8] << 8) | header[9]);
 
     // 关联键提取器拿到的是整条报文，帧比长度前缀还短时连切都不能切。
     private static bool TryGetHeader(ReadOnlySpan<byte> frame, out ReadOnlySpan<byte> header)
@@ -251,7 +275,6 @@ internal sealed class HsmsMessage
     private static void WriteLengthPrefix(IBufferWriter<byte> output, int declaredLength)
         => BigEndianFields.WriteUInt32(output, (uint)declaredLength);
 
-    // 正文的长度必须先算出来才能写长度字段，因此这里把正文先编码到临时缓冲。
     private static CommResult<HsmsMessage> Invalid(string message)
         => CommResult<HsmsMessage>.Fail(message, CommErrorKind.ProtocolViolation);
 }

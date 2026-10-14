@@ -17,6 +17,7 @@ namespace Junevy.Communication.Secs.Protocol;
 /// <item><c>Select.req</c> → 回 <c>Select.rsp</c> 状态 0，握手成功；</item>
 /// <item><c>Linktest.req</c> → 回 <c>Linktest.rsp</c>，继续等；</item>
 /// <item>数据消息 → 回 <c>Reject.req</c> 原因 4（未选中），继续等；</item>
+/// <item>PType 不是 0 → 回 <c>Reject.req</c> 原因 2，继续等；</item>
 /// <item><c>Separate.req</c> → 不应答，握手失败（断开），与已选中后的处理一致（P51-D12）；</item>
 /// <item>其余控制消息 → <c>Reject.req</c> 原因 1，继续等。</item>
 /// </list>
@@ -98,7 +99,10 @@ internal sealed class HsmsPassiveHandshake : IConnectionInitializer
             CommResult<HsmsMessage> parsed = HsmsMessage.Read(received.Data, timers.MaxMessageLength);
             if (!parsed.IsSuccess)
             {
-                logger.LogWarning("Dropped an HSMS frame that cannot be parsed: {Error}", parsed.ErrorMessage);
+                CommResult rejected = await RejectOrDropAsync(channel, received.Data, parsed.ErrorMessage, cancellationToken).ConfigureAwait(false);
+                if (!rejected.IsSuccess)
+                    return rejected;
+
                 continue;
             }
 
@@ -122,6 +126,17 @@ internal sealed class HsmsPassiveHandshake : IConnectionInitializer
             return sent;
 
         session.MoveTo(HsmsState.Selected, "Select.rsp 0 (ok) was sent.");
+        return CommResult.Success();
+    }
+
+    // 读不出来的帧：PType 不是 0 时回 Reject.req 原因 2（SEMI E37，与选中之后一致），其余只记 Warning 并丢弃。
+    private async Task<CommResult> RejectOrDropAsync(IByteChannel channel, byte[] frame, string error, CancellationToken cancellationToken)
+    {
+        HsmsMessage? reject = HsmsControl.RejectUnsupportedPType(frame);
+        if (reject != null)
+            return await channel.SendAsync(reject.ToArray(), cancellationToken).ConfigureAwait(false);
+
+        logger.LogWarning("Dropped an HSMS frame that cannot be parsed: {Error}", error);
         return CommResult.Success();
     }
 

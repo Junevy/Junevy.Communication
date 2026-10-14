@@ -156,12 +156,10 @@ public sealed partial class HsmsEquipment
             : throw new InvalidOperationException($"The header of the primary cannot be read back: {parsed.ErrorMessage}");
     }
 
-    private async Task SendNoticeAsync(SecsMessage notice, CancellationToken cancellationToken)
-    {
-        IByteChannel? channel = CurrentChannel();
-        if (channel != null)
-            await channel.SendAsync(HsmsMessage.Write(notice, settings.DeviceId, HsmsSystemBytes.Next()), cancellationToken).ConfigureAwait(false);
-    }
+    // S9 消息是我方新发起的主消息（不带 W 位）：取新的 System Bytes，不能沿用被涉及消息的号——
+    // 那样主机会把它当成那条主消息的应答（第 17.1 节 V-H-14、V-H-16、V-H-17、V-H-18）。
+    private Task SendNoticeAsync(SecsMessage notice, CancellationToken cancellationToken)
+        => SendDataAsync(notice, HsmsSystemBytes.Next(), cancellationToken);
 
     private async Task SendDataAsync(SecsMessage message, uint systemBytes, CancellationToken cancellationToken)
     {

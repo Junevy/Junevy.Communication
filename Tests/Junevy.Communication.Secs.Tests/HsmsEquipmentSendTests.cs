@@ -96,6 +96,11 @@ public sealed class HsmsEquipmentSendTests
         Assert.Equal(
             HsmsTestFrames.Encode(SecsItem.B(HsmsTestFrames.HeaderBytes(request.Bytes))),
             notice.Message.Body.ToArray());
+
+        // T3 是事务失败，不是链路失败（ResetOnRequestTimeout = false）：会话仍然选中，链路照常往返。
+        Assert.Equal(HsmsState.Selected, rig.State);
+        await host.SendAsync(HsmsControl.LinktestRequest(12).ToArray());
+        Assert.Equal("00 00 00 0A FF FF 00 00 00 06 00 00 00 0C", (await host.NextFrameAsync(5000)).Text);
     }
 
     [Fact(Timeout = 30000)]

@@ -2,6 +2,7 @@ using Junevy.Communication.Core.Results;
 using Junevy.Communication.Secs.Hsms;
 using Junevy.Communication.Secs.Protocol;
 using Junevy.Communication.Testing;
+using Microsoft.Extensions.Logging;
 
 namespace Junevy.Communication.Secs.Tests;
 
@@ -137,6 +138,119 @@ public sealed class HsmsEquipmentActiveTests
         // 释放之后仍然安静：不抛异常，可重复调用。
         await rig.Equipment.DisposeAsync();
         await rig.Equipment.DisposeAsync();
+    }
+
+    [Fact(Timeout = 40000)]
+    public async Task AfterTheHostSendsSeparate_ItReconnectsPerT5AndSelectsAgain()
+    {
+        using HsmsHostListener host = HsmsHostListener.Listen(HsmsHostScripts.SelectAndLinktest);
+        await using HsmsEquipmentRig rig = await HsmsEquipmentRig.StartActiveAsync(host.Port);
+        Assert.Equal(HsmsControlKind.SelectRequest, (await host.NextFrameAsync(5000)).Message.Kind);
+        await Polling.WaitUntilAsync(() => rig.State == HsmsState.Selected, 5000);
+
+        // P51-D12：Separate.req 不应答、立即断开。主动端仍是"已启动"的连接发起方，因此按 T5 再连（P51-D9），
+        // 而不是停在"已启动却永远不再连接"的状态（那样只能先停止再启动）。
+        await host.SendAsync(HsmsControl.SeparateRequest(2).ToArray());
+
+        await Polling.WaitUntilAsync(() => host.AcceptedCount >= 2, 10000);
+        HsmsHostFrame again = await host.NextFrameAsync(10000);
+        Assert.Equal(HsmsControlKind.SelectRequest, again.Message.Kind);
+        Assert.Equal(1, again.Connection);
+        await Polling.WaitUntilAsync(() => rig.State == HsmsState.Selected, 10000);
+    }
+
+    [Fact(Timeout = 40000)]
+    public async Task AfterASeparate_AFailedReconnectKeepsRetryingPerT5()
+    {
+        // 第一条连接选中成功，之后的 Select 一律被拒（状态 2）：Separate 之后那一次再连失败了，通道仍按 T5 继续试。
+        using HsmsHostListener host = HsmsHostListener.Listen(HsmsHostScripts.SelectThenRejectWithStatus(2));
+        await using HsmsEquipmentRig rig = await HsmsEquipmentRig.StartActiveAsync(host.Port);
+        await Polling.WaitUntilAsync(() => rig.State == HsmsState.Selected, 5000);
+
+        await host.SendAsync(HsmsControl.SeparateRequest(2).ToArray());
+
+        await Polling.WaitUntilAsync(() => host.AcceptedCount >= 3, 20000);
+        Assert.NotEqual(HsmsState.Selected, rig.State);
+    }
+
+    [Fact(Timeout = 30000)]
+    public async Task StoppingRightAfterASeparate_DoesNotConnectAgain()
+    {
+        using HsmsHostListener host = HsmsHostListener.Listen(HsmsHostScripts.SelectAndLinktest);
+        await using HsmsEquipmentRig rig = await HsmsEquipmentRig.StartActiveAsync(host.Port, o => o.T5 = 1000);
+        await Polling.WaitUntilAsync(() => rig.State == HsmsState.Selected, 5000);
+
+        await host.SendAsync(HsmsControl.SeparateRequest(2).ToArray());
+        await Polling.WaitUntilAsync(() => rig.State == HsmsState.NotConnected, 5000);
+
+        // 停止发生在 T5 的等待之内：停止要立刻完成，之后也不再连接。
+        await Arrival.WithinAsync(rig.Equipment.StopAsync(), 3000);
+        await Task.Delay(1500);
+        Assert.Equal(1, host.AcceptedCount);
+        Assert.Equal(HsmsState.NotConnected, rig.State);
+    }
+
+    [Fact(Timeout = 30000)]
+    public async Task ActiveMode_ConnectsToAHostName()
+    {
+        // 主动端的 Host 是对端地址：与其他 TCP 客户端一样交给通道解析。
+        using HsmsHostListener host = HsmsHostListener.Listen(HsmsHostScripts.SelectAndLinktest);
+        await using HsmsEquipmentRig rig = await HsmsEquipmentRig.StartActiveAsync(host.Port, o => o.Host = "localhost");
+
+        Assert.True(rig.StartResult.IsSuccess, rig.StartResult.ErrorMessage);
+        await Polling.WaitUntilAsync(() => rig.State == HsmsState.Selected, 5000);
+    }
+
+    [Fact(Timeout = 30000)]
+    public async Task DisposingWhileTheFirstSelectIsPending_EndsTheStartAtOnce()
+    {
+        // 主机只接受连接、从不应答，T6 取 20 秒：释放不能等满 T6，进行中的 StartAsync 返回失败结果。
+        using SilentTcpServer silent = SilentTcpServer.Start();
+        HsmsEquipmentOptions options = HsmsEquipmentRig.FastOptions();
+        options.Mode = HsmsConnectionMode.Active;
+        options.Port = silent.Port;
+        options.T6 = 20000;
+        var logger = new TestLogger();
+        HsmsEquipment equipment = HsmsEquipment.Create(options, logger);
+
+        Task<CommResult> starting = equipment.StartAsync();
+        await Polling.WaitUntilAsync(() => equipment.State == HsmsState.NotSelected, 5000);
+
+        await Arrival.WithinAsync(equipment.DisposeAsync().AsTask(), 3000);
+        CommResult started = await Arrival.WithinAsync(starting, 3000);
+
+        Assert.False(started.IsSuccess);
+        Assert.Equal(CommErrorKind.ConnectionClosed, started.ErrorKind);
+        Assert.Equal(HsmsState.NotConnected, equipment.State);
+        Assert.Empty(logger.GetEntries(LogLevel.Error));
+    }
+
+    [Fact(Timeout = 30000)]
+    public async Task CancellingTheStart_ReportsCancelledAndLeavesTheEquipmentStartable()
+    {
+        using SilentTcpServer silent = SilentTcpServer.Start();
+        HsmsEquipmentOptions options = HsmsEquipmentRig.FastOptions();
+        options.Mode = HsmsConnectionMode.Active;
+        options.Port = silent.Port;
+        options.T6 = 20000;
+        var logger = new TestLogger();
+        await using HsmsEquipment equipment = HsmsEquipment.Create(options, logger);
+        using var cancellation = new CancellationTokenSource();
+
+        Task<CommResult> starting = equipment.StartAsync(cancellation.Token);
+        await Polling.WaitUntilAsync(() => equipment.State == HsmsState.NotSelected, 5000);
+        cancellation.Cancel();
+
+        // 调用方取消：返回 Cancelled 的失败结果（不抛、不记 Error），设备端回到未启动，可以再启动。
+        CommResult started = await Arrival.WithinAsync(starting, 3000);
+        Assert.Equal(CommErrorKind.Cancelled, started.ErrorKind);
+        Assert.Equal(HsmsState.NotConnected, equipment.State);
+        Assert.Empty(logger.GetEntries(LogLevel.Error));
+
+        Task<CommResult> again = equipment.StartAsync();
+        await Polling.WaitUntilAsync(() => silent.AcceptedConnectionCount >= 2, 5000);
+        await equipment.StopAsync();
+        Assert.False((await Arrival.WithinAsync(again, 3000)).IsSuccess);
     }
 
     [Fact(Timeout = 30000)]

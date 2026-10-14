@@ -70,18 +70,23 @@ public sealed class HsmsEquipmentOptionsTests
     }
 
     [Fact]
-    public void AHostThatIsNotAnIpAddress_IsRejected()
+    public void APassiveListenAddressThatIsNotAnIpAddress_IsRejected()
     {
-        // 不做 DNS：配置来自 appsettings，不该依赖名字解析。
+        // 被动端的 Host 是本机的监听地址，只能是 IP（或 null 表示所有地址）。
         AssertRejected(options => options.Host = "host.example.com", "Host");
+    }
 
-        AssertRejected(
-            options =>
-            {
-                options.Mode = HsmsConnectionMode.Active;
-                options.Host = "localhost";
-            },
-            "Host");
+    [Fact]
+    public void AnActiveHost_MayBeAHostName()
+    {
+        // 主动端的 Host 是对端地址，与其他 TCP 客户端一样由通道解析主机名（连接用例见 HsmsEquipmentActiveTests）。
+        HsmsEquipmentOptions options = HsmsEquipmentRig.FastOptions();
+        options.Mode = HsmsConnectionMode.Active;
+        options.Host = "host.example.com";
+
+        using HsmsEquipment equipment = HsmsEquipment.Create(options);
+
+        Assert.Equal(HsmsState.NotConnected, equipment.State);
     }
 
     [Theory]

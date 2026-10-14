@@ -11,6 +11,9 @@ namespace Junevy.Communication.Secs.Protocol;
 /// <c>Reject.req</c>（它拒绝的是我们发出的消息，带同样的 System Bytes）。
 /// </para>
 /// <para>
+/// PType 不是 0 的帧不属于 SECS-II，两种键都不取：它作为主动消息到达派发，由派发回 <c>Reject.req</c> 原因 2。
+/// </para>
+/// <para>
 /// 不取应答键的：主消息（奇数 Function）与所有 <c>*.req</c> 控制消息。<strong>这一步是关键</strong>：
 /// System Bytes 只在发送方内唯一，对方完全可以把它的主消息的号设成与我方在途请求相同的值。
 /// 若主消息也取应答键，这条主动消息就会被误当成应答而吞掉。
@@ -49,9 +52,9 @@ internal sealed class HsmsKeyExtractor : IFrameKeyExtractor
     private static bool TryGetKey(ReadOnlySpan<byte> frame, Func<byte, byte, bool> qualifies, out long key)
     {
         key = 0;
-        if (!HsmsMessage.TryPeekHeader(frame, out byte _, out byte function, out byte sType))
+        if (!HsmsMessage.TryPeekHeader(frame, out byte function, out byte pType, out byte sType))
             return false;
-        if (!qualifies(function, sType))
+        if (pType != HsmsMessage.SupportedPType || !qualifies(function, sType))
             return false;
         if (!HsmsMessage.TryTakeSystemBytes(frame, out uint systemBytes))
             return false;

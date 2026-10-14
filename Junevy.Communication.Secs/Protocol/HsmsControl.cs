@@ -48,6 +48,17 @@ internal static class HsmsControl
     internal static HsmsMessage Reject(ushort sessionId, byte offendingType, HsmsRejectReason reason, uint systemBytes)
         => HsmsMessage.Control(sessionId, offendingType, (byte)reason, HsmsControlKind.RejectRequest, systemBytes);
 
+    /// <summary>
+    /// 拒绝一条 PType 不是 0 的报文：<c>Reject.req</c> 原因 2，头字节 2 是它的 PType，会话号与 System Bytes 原样回送
+    /// （SEMI E37、P51-D12）。头部不完整或 PType 就是 0 时返回 null。
+    /// </summary>
+    /// <param name="frame">读不出来的完整报文。</param>
+    /// <returns>拒绝报文；不适用时为 null。</returns>
+    internal static HsmsMessage? RejectUnsupportedPType(byte[] frame)
+        => HsmsMessage.TryPeekUnsupportedPType(frame, out ushort sessionId, out byte pType, out uint systemBytes)
+            ? Reject(sessionId, pType, HsmsRejectReason.PTypeNotSupported, systemBytes)
+            : null;
+
     /// <summary><c>Separate.req</c>：会话分离，不等应答。</summary>
     internal static HsmsMessage SeparateRequest(uint systemBytes)
         => HsmsMessage.Control(HsmsMessage.AnySession, 0, 0, HsmsControlKind.SeparateRequest, systemBytes);

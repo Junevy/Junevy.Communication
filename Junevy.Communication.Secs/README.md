@@ -62,7 +62,7 @@ public static class EquipmentExample
 }
 ```
 
-`HsmsEquipment.Create` only builds the object: it does not listen or connect. `StartAsync` opens the session and returns a result; a failure (port in use, host unreachable, handshake refused) is a failed `CommResult`, never an exception.
+`HsmsEquipment.Create` only builds the object: it does not listen or connect. `StartAsync` opens the session and returns a result; a failure (port in use, host unreachable, handshake refused) is a failed `CommResult`, never an exception. Stopping or disposing the equipment while `StartAsync` is still waiting — for example for the first `Select.rsp` in `Active` mode — ends it at once with `ConnectionClosed`; cancelling its token gives `Cancelled`.
 
 ### Active Mode
 
@@ -82,7 +82,7 @@ public static class ActiveEquipmentExample
 }
 ```
 
-In `Active` mode the equipment dials the host, sends `Select.req` and waits for T6. A dropped link is retried every T5, and every reconnect sends `Select.req` again, so the session becomes `Selected` again by itself.
+In `Active` mode the equipment dials the host, sends `Select.req` and waits for T6. A dropped link is retried every T5, and every reconnect sends `Select.req` again, so the session becomes `Selected` again by itself. The same holds when the host ends the session with `Separate.req`: the equipment closes the connection without answering, dials again after T5 and keeps retrying every T5 until the host selects it again.
 
 ## Options
 
@@ -91,7 +91,7 @@ In `Active` mode the equipment dials the host, sends `Select.req` and waits for 
 | Property | Default | Meaning |
 |---|---|---|
 | `Mode` | `Passive` | `Passive` listens and waits for the host; `Active` dials the host and sends `Select.req` |
-| `Host` | `null` | `Passive`: the address to listen on, `null` for every address. `Active`: the address of the host, **required**. An IP literal only, host names are not resolved |
+| `Host` | `null` | `Passive`: the local IP address to listen on, `null` for every address. `Active`: the address of the host, **required** — an IP address or a host name |
 | `Port` | `5000` | 1–65535; 5000 is the standard HSMS port |
 | `DeviceId` | `0` | The equipment's HSMS session id, 0–32767. It is the session id of every data message that carries a body |
 | `T3` | `45000` ms | Reply timeout: how long a primary with the W bit waits for its reply |
@@ -162,7 +162,9 @@ A host expects these answers from an equipment. They are sent by the package, no
 | S9F9 | A primary with the W bit timed out after T3 |
 | `SxF0` | The handler could not answer a primary with the W bit |
 
-The body of an S9 message is the 10-byte header of the message it is about, as a binary item.
+The body of an S9 message is the 10-byte header of the message it is about, as a binary item. An S9 message is a new primary of the equipment, so it carries system bytes of its own — never those of the message it is about, which the host could take for a reply.
+
+A message whose header has a `PType` other than 0 is not SECS-II: it is answered with `Reject.req` reason 2, before and after selection, and never reaches a handler.
 
 ## SML Text
 

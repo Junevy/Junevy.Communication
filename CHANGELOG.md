@@ -55,30 +55,30 @@
 - 2026-10-13 [Secs] 新增设备端 `HsmsEquipment`（Passive）与消息派发（计划 Task 6，P51-D12、D13、D14、D15、D16）。
   - **公开类型**：`SecsMessageHandler` 委托、`HsmsEquipment`（`Create` / `State` / `StateChanged` / `StartAsync` / `StopAsync` / `SetHandler` / `RemoveHandler` / `SendAsync` / `Dispose` / `DisposeAsync`）、`HsmsEquipmentOptions`、`SecsError` 与 `SecsResult`。
   - **派发按到达顺序逐个处理**（同一连接上不并发）：控制消息按 E37 应答（`Linktest.req` → `Linktest.rsp`；重复的 `Select.req` → 状态 1；`Deselect.req` → `Reject.req` 原因 1；`Separate.req` → 不应答立即断开；无主的 `*.rsp` → 原因 3；未分配的 SType → 原因 1），数据主消息按 **① 会话号 → ② 正文 → ③ 处理器 → ④ 调用处理器** 的顺序处理。
-  - **S9 消息**：会话号不对 → S9F1；正文解码失败 → S9F7；没有该 Stream 的处理器 → S9F3；有 Stream 没有该 Function → S9F5；带 W 位的主消息超过 T3 → S9F9（正文是我方主消息的 10 字节头）。S9 的正文一律是被涉及消息的 10 字节头。
+  - **S9 消息**：会话号不对 → S9F1；正文解码失败 → S9F7；没有该 Stream 的处理器 → S9F3；有 Stream 没有该 Function → S9F5；带 W 位的主消息超过 T3 → S9F9（正文是我方主消息的 10 字节头）。S9 的正文一律是被涉及消息的 10 字节头；S9 是设备端新发起的主消息，System Bytes 取自己的计数器。
   - **处理器三种答不上来的情况**（返回 null、返回不匹配的应答、抛异常）都记 Error 并回 `SxF0` 中止事务；不带 W 位时忽略处理器的返回值（记 Warning）。
   - **`SendAsync`**：带 W 位按 T3 等应答——正常 / `SxF0` → `Aborted` / `Reject.req` → `Rejected`（带原因码）/ 超时 → 先发 S9F9 再 `ReplyTimeout` / 应答不合法 → 先发 S9F7 再 `InvalidReply`；不带 W 位只发送。允许并发（关联键是 System Bytes）。未选中时 `NotSelected` 且不发送；停止或释放后 `ConnectionLost`。
   - **`SecsResult`** 的构造只经内部工厂，`CommErrorKind` 由 `SecsError` 唯一决定（映射写在一处）。
-  - **停止与释放（P51-D15、D19）**：已选中时停止会先尽力发一条 `Separate.req`（不等应答）再断开；**停止不是释放**——`StopAsync` 之后可以再 `StartAsync`，可重复多轮；释放后 `StartAsync` 抛 `ObjectDisposedException`、`SendAsync` 返回 `ConnectionLost`、`StopAsync` / 重复释放 / 处理器表的增删都不抛。停止时传给处理器的令牌被取消，停止等当前处理器返回才完成，处理器此后返回的应答不发送；处理器内部调用 `StopAsync` 不会死锁（通道的派发上下文已经处理了这一层）。
+  - **停止与释放（P51-D15、D19）**：已选中时停止会先尽力发一条 `Separate.req`（不等应答）再断开；**停止不是释放**——`StopAsync` 之后可以再 `StartAsync`，可重复多轮；释放后 `StartAsync` 抛 `ObjectDisposedException`、`SendAsync` 返回 `ConnectionLost`、`StopAsync` / 重复释放 / 处理器表的增删都不抛。停止时传给处理器的令牌被取消，停止等当前处理器返回才完成，处理器此后返回的应答不发送；处理器内部调用 `StopAsync` 不会死锁（见 Task 7 的派发串行化）。
   - **日志**：状态变化记 Information，每条收发记 Debug（方向、S/F、W 位、System Bytes，不含正文），异常记 Error。
 - 2026-10-13 [Secs] 新增设备端的主动端模式（计划 Task 7，P51-D9、D11）。
   - **公开类型**：`HsmsConnectionMode`（`Passive` / `Active`），`HsmsEquipmentOptions.Mode` 默认 `Passive`。
   - **Active 走 `TcpClientChannel`**：设备端去连主机，用主动端握手发 `Select.req`（超时 T6）；`ReconnectOptions` 固定间隔 T5，掉线后自动重连并重新 Select；`HandshakeTimeout = T6`、`PartialFrameTimeout = T8`、`ResetOnRequestTimeout = false`（T3 超时是事务失败不是链路失败）、关联键 Keyed、心跳与被动端一致。连接本身的上限用 5 秒，握手窗口在它之后才开始计时。
   - **只有"怎么拿到当前连接"和"怎么断开"不同**（`ITcpSession.CloseAsync` 对 `IConnectable.DisconnectAsync`）：派发、发送、状态、日志、`SecsResult`、处理器表全部共用同一份代码（Q26）。
-  - **模式校验**：`Active` 必须给 `Host`（对端地址，只接受 IP 字面量，主机名解析留给后续任务）；`Passive` 下 `Host` 是监听地址（null 表示所有地址）；`Mode` 不是两个枚举值之一抛 `ArgumentException`。
+  - **模式校验**：`Active` 必须给 `Host`（对端地址，IP 或主机名，与其他 TCP 客户端一样由通道解析）；`Passive` 下 `Host` 是本机监听地址，只接受 IP（null 表示所有地址）；`Mode` 不是两个枚举值之一抛 `ArgumentException`。
   - **打开失败不抛异常**：`StartAsync` 返回失败结果（`session.Reset` 回到 `NotConnected`，记一条 Warning），半成品的通道被解订阅、释放、字段复位；之后可再 `StartAsync`。
   - **派发串行化（P51-D13）**：通道的帧事件是"逐个隔离异常地调用"而不等待，因此设备端自己按到达顺序把消息串起来（同一连接上不并发）。停止会等在途的派发跑完（处理器必须响应取消令牌）；处理器内部调用 `StopAsync` 时靠 `AsyncLocal` 认出派发上下文、跳过这一等，不会死锁。
   - **验证**：新增 6 条主动端用例（连接→Select→双向收发、主机断开后按 T5 重连并重新 Select、Select 被拒持续重试、停止后再启动仍能重连、连上但不回 Select 时 `StartAsync` 返回失败、主动端必须给地址）；Secs.Tests 222 条（net8.0 与 net472 各 222）、受影响测试 466 条全绿；关掉 `Reconnect` 时 3 条重试用例必失败、放宽 Select 状态校验时 `ARejectedSelect` 必失败（变异验证）。度量：生产重复窗口 34（9 集群，与 Task 0 基线一致，无任何集群涉及 `Junevy.Communication.Secs/`）、测试重复窗口 43 集群 / 171 窗口（与基线一致）、超过 60 行的方法 0、超过 300 行的文件 9（全部在 Core / Channels / Tcp）、Secs 有效行 1973。
 - 2026-10-13 [Secs] 新增设备端工厂与依赖注入（P51-D17）。
   - **`HsmsEquipmentFactory`**（`Junevy.Communication.Secs.DependencyInjection`）：继承 Core 的 `NamedFactory<HsmsEquipment>`，`GetOrAdd(name, options)` 按名称复用实例、别名共享实例、移除与释放工厂会释放设备端；同名再取时新的 `options` 不生效（`Create` 只建对象，不监听也不连接）。
   - **`AddSecs()`**：以单例（`TryAddSingleton`）注册工厂，容器里没有 `ILoggerFactory` 时设备端不输出日志；重复调用幂等。
-  - **选项校验逐条落地**（实现随 Task 6 / Task 7 提前，见计划 D16）：`Mode` 必须是 `Passive` / `Active`；`Active` 必须给 `Host`；`Host` 只接受 IP 字面量；`Port` 1–65535；`DeviceId` 0–32767；T3 / T5 / T6 / T7 / T8 均大于 0；`LinktestInterval` ≥ 0；`MaxMessageLength` ≥ 1024。非法时 `Create` 与 `GetOrAdd` 抛 `ArgumentException`，消息写明属性名与范围，且不注册任何实例。
+  - **选项校验逐条落地**（实现随 Task 6 / Task 7 提前，见计划 D16）：`Mode` 必须是 `Passive` / `Active`；`Active` 必须给 `Host`（IP 或主机名）；`Passive` 的 `Host` 只接受 IP；`Port` 1–65535；`DeviceId` 0–32767；T3 / T5 / T6 / T7 / T8 均大于 0；`LinktestInterval` ≥ 0；`MaxMessageLength` ≥ 1024。非法时 `Create` 与 `GetOrAdd` 抛 `ArgumentException`，消息写明属性名与范围，且不注册任何实例。
   - **选项是快照**：`Create` 之后改 `HsmsEquipmentOptions` 不影响已建好的设备端；`HsmsEquipmentOptions` 全是简单属性（含枚举），可直接从 appsettings 绑定（`Mode` 绑 `"Active"`），库本身不依赖绑定器。
   - **验证**：新增 29 条用例（17 条选项校验与快照 + 12 条工厂与 DI）；Secs.Tests 251 条（net8.0 与 net472 各 251）、受影响测试 524 条全绿；变异检查抓到"工厂不按名称复用"（5 条失败）、"`AddSecs` 用 `AddSingleton`"（1 条失败）、"去掉 `MaxMessageLength` 下限"（1 条失败）、"启动时重新读调用方选项"（快照用例失败）。度量：生产重复窗口 34（9 集群，无 Secs 集群）、测试重复窗口 43 / 171、方法 >60 行 0、文件 >300 行 9、Secs 有效行 2008。
 - 2026-10-13 [Docs] SECS 包的 README（打包进 NuGet）换成完整英文文档，并新增 Skill `using-junevy-secs`（计划 Task 9）。
   - **`Junevy.Communication.Secs/README.md`**：定位与范围（设备端、HSMS-SS、本期不做 SECS-I / GEM / 主机端）、快速上手（被动端注册 S1F1 处理器并发 S5F1）、主动端示例、选项与计时器表、状态与事件、处理器规则（返回 null / 形状不符 / 抛异常 → `SxF0`，令牌必须响应）、发送规则与 `SecsResult` 对照表、S9 消息、SML、DI 与 appsettings、日志脱敏、"未经真机 / 真主机验证"清单（P51-D18）。
   - **示例已编译验证**：README 的四个代码块逐字放进临时项目，先做负控（故意把 `SecsItem.B(0x00)` 写错，net8.0 与 net472 都编译失败），修正后两个目标 0 错误。
-  - **新 Skill `Skills/using-junevy-secs/SKILL.md`**：何时使用、何时不使用、最小可用代码、选项与计时器、处理器规则、`SecsResult` 对照表、S9、DI、未验证清单，以及 12 条常见错误（忘了注册处理器得到 S9F3 / S9F5、`Create` 不监听、刚 `StartAsync` 就发消息、处理器里阻塞或忽略令牌、把 T3 当链路故障、只接受 IP 字面量等）。
+  - **新 Skill `Skills/using-junevy-secs/SKILL.md`**：何时使用、何时不使用、最小可用代码、选项与计时器、处理器规则、`SecsResult` 对照表、S9、DI、未验证清单，以及 12 条常见错误（忘了注册处理器得到 S9F3 / S9F5、`Create` 不监听、刚 `StartAsync` 就发消息、处理器里阻塞或忽略令牌、把 T3 当链路故障、在被动端的 `Host` 写主机名等）。
   - **根 `readme.md`**：协议表加 SECS 一行，并在说明段写清它是"非地址型、直接用通道族、只做设备端、未经真机验证"。
   - **设计文档**新增第 20.7 节"实施修订（P5.1）"：逐条记录与第 14.1 节的七处差异，重点是取键规则（只有应答类消息取应答键）与被动端握手循环（T7 窗口内 200 毫秒轮询）。第 19 节分期表与删去 SECS-I 的几处已在 `feat/sdk-p6` 上改过，本分支不重复改。
 - 2026-10-13 [Tests] P5.1 终值与结论（计划 Task 12）：Secs.Tests **251 条**（net8.0 与 net472 各一遍），`pwsh build/test-affected.ps1 -Base 0e8e3cb -NoBuild -Repeat 3` **三遍一致，每遍通过 524、失败 0**（Architecture 11 + 11，Secs.Tests 251 + 251）；Debug 与 Release 全解 0 错误，Secs 相关项目零警告。
@@ -100,6 +100,14 @@
   - **握手被通道的请求超时打断**：`ReceiveAsync` 不带超时时用 `RequestTimeout`（TCP 默认 2000 毫秒），小于 T7，因此主机在 T7 之内沉默就会被当成握手失败而断开。现在按 200 毫秒轮询等帧，超时只表示"还没到，继续等"，取消与其它失败仍然结束握手。
   - **`Separate.req` 的应答与已选中后的处理不一致**：握手期间收到 `Separate.req` 会回一条 `Separate.req`，而 P51-D12 要求"不应答，立即断开"。现在握手路径同样不应答，直接让握手失败并断开。
   - **握手失败后状态不复位**：Select 被拒、T6 超时、握手窗口到期之后，状态会停在 `NotSelected`，让调用方以为会话还能用。现在失败与取消都复位成 `NotConnected`，原因写进日志与事件参数。
+- 2026-10-14 [Secs] 验收发现：**S9F1 / S9F3 / S9F5 / S9F7 沿用了被涉及消息的 System Bytes**。S9 是设备端新发起的主消息，第 17.1 节 V-H-14、V-H-17、V-H-18 的 System Bytes 都与被涉及消息不同；沿用主机那条主消息的号，主机会把 S9 当成那条主消息的应答。现在一律取设备端自己的计数器。原用例只比对 S/F 与正文，没有比对报文自己的 System Bytes，因此没发现；用例改为同时断言会话号与"号不等于被涉及消息"（被涉及消息的号取 0x10000 以上，计数器只用低 16 位，两者不可能碰巧相等），`SxF0` 的用例改为逐字比对 V-H-15（它是应答，必须回送主消息的号）。
+- 2026-10-14 [Secs] 验收发现：**PType 不是 0 的报文被静默丢弃**，而 P51-D12 要求回 `Reject.req` 原因 2（头字节 2 是那个 PType，V-H-9）。执行时记为"派发层不可达"（偏差 D13）并写明会回 S9F7，代码实际是丢弃。现在选中前后都回 `Reject.req` 原因 2，会话号与 System Bytes 原样回送；关联键提取器对这种帧两种键都不取，因此它不会认领在途请求（哪怕 SType 像 `Select.rsp`），也不会被当成 `Select.req`。`HsmsMessage.Read` 仍然拒绝 PType ≠ 0，拒绝报文由新的 `HsmsControl.RejectUnsupportedPType` 构造。
+- 2026-10-14 [Secs] 验收发现：**某个 Stream 的处理器全部登记在 Function 128 以上时，未知 Function 回的是 S9F3 而不是 S9F5**。判断"这个 Stream 有没有处理器"时只查了 Function 0–127（循环上界误用了 Stream 的上限 127），现在按处理器表的键判断。
+- 2026-10-14 [Secs] 验收发现：**主动端收到主机的 `Separate.req` 之后再也不连**。断开用的是通道的 `DisconnectAsync`，它会让重连循环永久停下，而设备端仍处于"已启动"：状态停在 `NotConnected`，`StartAsync` 又报"已启动"，只能先停止再启动（与 P6.1 验收缺陷 R1 同类）。现在主动端断开之后等 T5 再连一次；那次再连失败时由通道按 T5 继续重试（主动端的 `ReconnectOptions.OnInitialFailure = true`，首次启动失败时通道随即被释放，`StartAsync` 的语义不变）。停止或释放发生在 T5 的等待之内时，立刻结束且不再连接。
+- 2026-10-14 [Secs] 验收发现：**主动端正在等第一个 `Select.rsp` 时停止或释放，要等满 T6**（连接本身最多再加 5 秒）：停止流程的 `DisconnectAsync` 要等通道正在进行的 `ConnectAsync` 退出，而启动没有收到停止的信号。现在启动使用与停止共用的取消信号，停止与释放立刻结束进行中的启动，`StartAsync` 返回 `ConnectionClosed` 的失败结果；调用方取消启动时返回 `Cancelled`（原来落进兜底分支，记一条 Error 并返回 `Unspecified`）。
+- 2026-10-14 [Secs] 验收发现：**主动端的 `Host` 只接受 IP 字面量**。计划只要求"对端地址、必填"，这条限制没有记为偏差，而且与 Melsec / S7 / FINS 等经 `TcpClientChannel` 连接的包不一致（通道本来就解析主机名）。现在主动端可以写主机名；被动端的 `Host` 是本机监听地址，仍只接受 IP。
+- 2026-10-14 [Secs] 验收发现：**停止时只调用了 `TcpServer.StopAsync`，没有释放服务端，也没有解除对它的事件订阅**；停止与启动失败各有一份收尾代码。现在两条路径共用一个收尾方法：解订阅、断开、释放，字段只在仍指向被释放的对象时才清空。
+- 2026-10-14 [Tests] 验收补充的用例与复跑：Secs.Tests 251 → **264**（S9 的号与判断顺序、PType 拒绝、Function 128 以上、主动端 `Separate` 后重连与重连失败后继续、停止打断 T5 等待、主机名、释放与取消打断启动、T3 超时后链路仍在）。`pwsh build/test-affected.ps1 -Base 0e8e3cb -NoBuild -Repeat 3` 三遍一致，每遍通过 550、失败 0；变异检查 30 条中 28 条被抓，存活的 2 条是等价变异（`ResetOnRequestTimeout` 只作用于 `Sequential` 关联）。
 
 ## [Unreleased] — P4.6（共享测试库整理）
 

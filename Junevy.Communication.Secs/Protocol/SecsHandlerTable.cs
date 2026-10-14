@@ -47,21 +47,16 @@ internal sealed class SecsHandlerTable
     /// <returns>有返回 true。</returns>
     internal bool HasStream(byte stream)
     {
+        // Function 是一个完整的字节（1–255），因此按键里的 Stream 判断，而不是逐个 Function 去查。
         lock (sync)
-        {
-            for (int index = 0; index <= MaxStream; index++)
-            {
-                if (handlers.ContainsKey(KeyOf(stream, (byte)index)))
-                    return true;
-            }
-
-            return false;
-        }
+            return handlers.Keys.Any(key => StreamOf(key) == stream);
     }
 
-    /// <summary>SEMI E5 的 Stream 上界：头字节 2 的最高位是 W 位，不属于 Stream。</summary>
-    private const byte MaxStream = 127;
-
     // 一个 int 装下 Stream 与 Function：处理器表可能有几百项，键小一点省内存也省哈希开销。
-    private static int KeyOf(byte stream, byte function) => (stream << 8) | function;
+    private static int KeyOf(byte stream, byte function) => (stream << StreamShift) | function;
+
+    private static int StreamOf(int key) => key >> StreamShift;
+
+    /// <summary>键的高字节是 Stream，低字节是 Function。</summary>
+    private const int StreamShift = 8;
 }

@@ -11,7 +11,7 @@ public sealed class HsmsEquipmentOptions
 
     /// <summary>
     /// 地址：<see cref="HsmsConnectionMode.Passive"/> 下是监听地址（null 表示所有地址），
-    /// <see cref="HsmsConnectionMode.Active"/> 下是对端地址（必填）。只能是 IP，不接受主机名。
+    /// <see cref="HsmsConnectionMode.Active"/> 下是对端地址（必填，可以是 IP 或主机名）。被动端只接受 IP。
     /// </summary>
     public string? Host { get; set; }
 

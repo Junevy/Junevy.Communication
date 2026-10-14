@@ -16,7 +16,7 @@ public sealed partial class HsmsEquipment
     /// <summary>当前执行流是否正在派发消息：处理器里停止时靠它避免等自己（P51-D19）。</summary>
     private static readonly AsyncLocal<bool> inDispatch = new AsyncLocal<bool>();
 
-    /// <summary>每秒一条的 Debug 日志不带正文（计划第 0 节 P51-D16）：这里只记方向、S/F、W 位与 System Bytes。</summary>
+    // 被动端：服务端在握手成功（已选中）之后才报告会话，这时挂上当前连接与它的帧事件。
     private void OnSessionConnected(object? sender, TcpSessionEventArgs args)
     {
         lock (sync)
@@ -101,10 +101,11 @@ public sealed partial class HsmsEquipment
 
     private async Task DispatchFrameAsync(byte[] frame)
     {
+        CancellationToken token = HandlerToken();
         CommResult<HsmsMessage> parsed = HsmsMessage.Read(frame, settings.Timers.MaxMessageLength);
         if (!parsed.IsSuccess)
         {
-            logger.LogWarning("Dropped an HSMS frame that cannot be parsed: {Error}", parsed.ErrorMessage);
+            await RejectOrDropAsync(frame, parsed.ErrorMessage, token).ConfigureAwait(false);
             return;
         }
 
@@ -117,7 +118,6 @@ public sealed partial class HsmsEquipment
             incoming.ReplyExpected,
             incoming.SystemBytes);
 
-        CancellationToken token = HandlerToken();
         if (incoming.Kind == HsmsControlKind.None)
             await HandlePrimaryAsync(incoming, token).ConfigureAwait(false);
         else
@@ -142,7 +142,7 @@ public sealed partial class HsmsEquipment
                 return;
 
             case HsmsControlKind.SeparateRequest:
-                await CloseCurrentAsync().ConfigureAwait(false);
+                await CloseCurrentAsync(token).ConfigureAwait(false);
                 return;
 
             // *.rsp 与 Reject.req 只有在有对应在途事务时才会被关联表认领，因此到这里的一定是无主的：原因 3。
@@ -185,7 +185,7 @@ public sealed partial class HsmsEquipment
             if (!decoded.IsSuccess)
             {
                 logger.LogWarning("The body of the received primary cannot be decoded: {Error}", decoded.ErrorMessage);
-                await SendDataAsync(HsmsSystemMessages.IllegalData(incoming), incoming.SystemBytes, token).ConfigureAwait(false);
+                await SendNoticeAsync(HsmsSystemMessages.IllegalData(incoming), token).ConfigureAwait(false);
                 return;
             }
 
@@ -198,7 +198,7 @@ public sealed partial class HsmsEquipment
             SecsMessage unhandled = handlers.HasStream(primary.Stream)
                 ? HsmsSystemMessages.UnknownFunction(incoming)
                 : HsmsSystemMessages.UnknownStream(incoming);
-            await SendDataAsync(unhandled, incoming.SystemBytes, token).ConfigureAwait(false);
+            await SendNoticeAsync(unhandled, token).ConfigureAwait(false);
             return;
         }
 
@@ -274,8 +274,8 @@ public sealed partial class HsmsEquipment
     private HsmsMessage Reject(HsmsMessage incoming, HsmsRejectReason reason)
         => HsmsControl.Reject(HsmsMessage.AnySession, incoming.SType, reason, incoming.SystemBytes);
 
-    // Separate.req 不应答，立即断开（P51-D12）。被动端关会话，主动端断开通道。
-    private async Task CloseCurrentAsync()
+    // Separate.req 不应答，立即断开（P51-D12）。被动端关会话、继续监听；主动端断开通道之后按 T5 再连。
+    private async Task CloseCurrentAsync(CancellationToken token)
     {
         IByteChannel? attached;
         lock (sync)
@@ -284,7 +284,7 @@ public sealed partial class HsmsEquipment
         }
 
         if (attached is IConnectable client)
-            await client.DisconnectAsync().ConfigureAwait(false);
+            await ReconnectAfterSeparateAsync(client, token).ConfigureAwait(false);
         else if (attached is ITcpSession session)
             await session.CloseAsync().ConfigureAwait(false);
     }

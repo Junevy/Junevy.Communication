@@ -38,8 +38,8 @@ public sealed class HsmsEquipmentDispatchTests
         rig.Equipment.SetHandler(1, 1, (primary, token) => Task.FromResult<SecsMessage?>(primary.CreateReply()));
         await using HsmsHostConnector host = await HsmsEquipmentRig.SelectAsync(rig, 1);
 
-        // ① 会话号不是设备号 → S9F1，不回应答（SEMI E5）。
-        byte[] offending = HsmsMessage.Write(SecsMessage.Create(1, 1, replyExpected: true), 2, 6);
+        // ① 会话号不是设备号 → S9F1，不回应答（SEMI E5）。System Bytes 见 AssertSystemMessage 的说明。
+        byte[] offending = HsmsMessage.Write(SecsMessage.Create(1, 1, replyExpected: true), 2, 0x10006);
         await host.SendAsync(offending);
 
         // V-H-17：正文是被拒消息的 10 字节头（会话号 2、W 位、S1F1）。
@@ -54,7 +54,7 @@ public sealed class HsmsEquipmentDispatchTests
         await using HsmsHostConnector host = await HsmsEquipmentRig.SelectAsync(rig, 1);
 
         // ③ 这个 Stream 一个处理器都没有 → S9F3。
-        byte[] offending = HsmsMessage.Write(SecsMessage.Create(7, 1, replyExpected: true), DeviceId, 5);
+        byte[] offending = HsmsMessage.Write(SecsMessage.Create(7, 1, replyExpected: true), DeviceId, 0x10005);
         await host.SendAsync(offending);
 
         AssertSystemMessage(await host.NextFrameAsync(5000), 3, offending);
@@ -68,7 +68,7 @@ public sealed class HsmsEquipmentDispatchTests
         await using HsmsHostConnector host = await HsmsEquipmentRig.SelectAsync(rig, 1);
 
         // ③ 这个 Stream 有处理器，但没有这个 Function → S9F5（V-H-14）。
-        byte[] offending = HsmsMessage.Write(SecsMessage.Create(1, 99, replyExpected: true), DeviceId, 4);
+        byte[] offending = HsmsMessage.Write(SecsMessage.Create(1, 99, replyExpected: true), DeviceId, 0x10004);
         await host.SendAsync(offending);
 
         AssertSystemMessage(await host.NextFrameAsync(5000), 5, offending);
@@ -81,11 +81,27 @@ public sealed class HsmsEquipmentDispatchTests
         await using HsmsHostConnector host = await HsmsEquipmentRig.SelectAsync(rig, 1);
 
         // ② 正文解码失败（这里是非法的格式字节 0x45 = J）→ S9F7（V-H-18）。报文手写：编码器不会产出非法正文。
-        byte[] offending = HexVector.ToBytes("00 00 00 0D 00 01 82 29 00 00 00 00 00 07 45 01 41");
+        byte[] offending = HexVector.ToBytes("00 00 00 0D 00 01 82 29 00 00 00 01 00 07 45 01 41");
         await host.SendAsync(offending);
 
         AssertSystemMessage(await host.NextFrameAsync(5000), 7, offending);
         Assert.Contains(rig.Logger.GetEntries(LogLevel.Warning), entry => entry.Message.Contains("cannot be decoded"));
+    }
+
+    [Theory(Timeout = 30000)]
+    [InlineData(2, 7, 1)]  // 会话号不对且正文非法：① 先于 ②，回 S9F1
+    [InlineData(1, 7, 7)]  // Stream 7 没有处理器且正文非法：② 先于 ③，回 S9F7
+    public async Task TheS9ChecksRunInTheOrderDeviceIdBodyHandler(ushort sessionId, byte stream, byte expectedFunction)
+    {
+        await using HsmsEquipmentRig rig = await HsmsEquipmentRig.StartAsync();
+        rig.Equipment.SetHandler(1, 1, (primary, token) => Task.FromResult<SecsMessage?>(primary.CreateReply()));
+        await using HsmsHostConnector host = await HsmsEquipmentRig.SelectAsync(rig, 1);
+
+        // 正文 45 01 41 是 J 格式（不支持）；System Bytes 取 0x10009，见 AssertSystemMessage 的说明。
+        byte[] offending = HexVector.ToBytes($"00 00 00 0D {sessionId >> 8:X2} {sessionId & 0xFF:X2} {0x80 | stream:X2} 01 00 00 00 01 00 09 45 01 41");
+        await host.SendAsync(offending);
+
+        AssertSystemMessage(await host.NextFrameAsync(5000), expectedFunction, offending);
     }
 
     [Theory(Timeout = 30000)]
@@ -100,9 +116,23 @@ public sealed class HsmsEquipmentDispatchTests
 
         await host.SendAsync(HsmsMessage.Write(SecsMessage.Create(2, 41, replyExpected: true), DeviceId, 5));
 
-        // V-H-15 的形状：中止事务的 S2F0（System Bytes 由设备端的计数器分配）。
-        AssertFrame(await host.NextFrameAsync(5000), "00 00 00 0A 00 01 02 00 00 00 00 00 00 05");
+        // V-H-15：中止事务的 S2F0 是应答，原样回送主消息的 System Bytes（5）。
+        Assert.Equal("00 00 00 0A 00 01 02 00 00 00 00 00 00 05", (await host.NextFrameAsync(5000)).Text);
         Assert.Contains(rig.Logger.GetEntries(LogLevel.Error), entry => entry.Message.Contains(logFragment));
+    }
+
+    [Fact(Timeout = 30000)]
+    public async Task AStreamWhoseHandlersAllUseFunctionsAbove127_AnswersAnUnknownFunctionWithS9F5()
+    {
+        await using HsmsEquipmentRig rig = await HsmsEquipmentRig.StartAsync();
+        rig.Equipment.SetHandler(2, 201, (primary, token) => Task.FromResult<SecsMessage?>(primary.CreateReply()));
+        await using HsmsHostConnector host = await HsmsEquipmentRig.SelectAsync(rig, 1);
+
+        // Function 是一个完整的字节（1–255）：Stream 2 有处理器，只是没有 F99，因此是 S9F5 而不是 S9F3。
+        byte[] offending = HsmsMessage.Write(SecsMessage.Create(2, 99, replyExpected: true), DeviceId, 0x10008);
+        await host.SendAsync(offending);
+
+        AssertSystemMessage(await host.NextFrameAsync(5000), 5, offending);
     }
 
     [Fact(Timeout = 30000)]
@@ -179,6 +209,19 @@ public sealed class HsmsEquipmentDispatchTests
     }
 
     [Fact(Timeout = 30000)]
+    public async Task WhileSelected_AMessageWithAnUnsupportedPType_IsRejectedWithReasonTwo()
+    {
+        await using HsmsEquipmentRig rig = await HsmsEquipmentRig.StartAsync();
+        await using HsmsHostConnector host = await HsmsEquipmentRig.SelectAsync(rig, 1);
+
+        // P51-D12：PType ≠ 0 → Reject.req 原因 2，头字节 2 是那个 PType（V-H-9）；会话保持选中。
+        await host.SendAsync(HexVector.ToBytes("00 00 00 0A FF FF 00 00 05 00 00 00 00 0A"));
+
+        Assert.Equal("00 00 00 0A FF FF 05 02 00 07 00 00 00 0A", (await host.NextFrameAsync(5000)).Text);
+        Assert.Equal(HsmsState.Selected, rig.State);
+    }
+
+    [Fact(Timeout = 30000)]
     public async Task WhileSelected_ALateDataReply_IsDroppedWithAWarning()
     {
         await using HsmsEquipmentRig rig = await HsmsEquipmentRig.StartAsync();
@@ -227,15 +270,14 @@ public sealed class HsmsEquipmentDispatchTests
         Assert.Equal("00 00 00 0A FF FF 00 00 00 06 00 00 00 09", (await first.NextFrameAsync(5000)).Text);
     }
 
-    // System Bytes 由设备端的进程级计数器分配，比对时把向量里的号换成实际值（第 17 节的说明）。
-    private static void AssertFrame(HsmsHostFrame frame, string vector)
-        => Assert.Equal(HsmsTestFrames.WithSystemBytes(vector, frame.Message.SystemBytes), frame.Text);
-
     // S9 消息：Stream 9、Function 给定、不带 W 位，正文是被涉及消息的 10 字节头。
-    // 逐字节比较正文而不是拼十六进制向量：S9 消息里有两个 System Bytes（它自己的与被涉及消息的），
-    // 都不由主机决定（第 17.1 节的 V-H-14、V-H-16、V-H-17、V-H-18 正是这个形状）。
+    // S9 是设备端新发起的主消息：会话号是本设备号，System Bytes 取自己的计数器，**不能沿用被涉及消息的号**，
+    // 否则主机会把它当成那条主消息的应答（第 17.1 节 V-H-14、V-H-17、V-H-18 的 System Bytes 都与被涉及消息不同）。
+    // 计数器只用低 16 位（P51-D8），因此用例里被涉及消息的号都取 0x10000 以上，两者不可能碰巧相等。
     private static void AssertSystemMessage(HsmsHostFrame frame, byte function, byte[] offending)
     {
+        Assert.Equal(DeviceId, frame.Message.SessionId);
+        Assert.NotEqual(HsmsTestFrames.Parse(offending).SystemBytes, frame.Message.SystemBytes);
         Assert.Equal(9, frame.Message.Stream);
         Assert.Equal(function, frame.Message.Function);
         Assert.False(frame.Message.ReplyExpected);

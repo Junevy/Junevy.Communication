@@ -52,6 +52,16 @@ public sealed class HsmsKeyExtractorTests
         AssertKey(KeyOf(hex), hex, isRequest: false, isResponse: true);
     }
 
+    [Theory]
+    [InlineData("00 00 00 0A FF FF 00 00 05 02 00 00 00 01")]
+    [InlineData("00 00 00 0A 00 01 01 02 05 00 00 00 00 03")]
+    public void AFrameWithAnUnsupportedPTypeCarriesNoKeyAtAll(string hex)
+    {
+        // PType ≠ 0 的帧不属于 SECS-II：既不能认领在途请求（哪怕它的 SType 像 Select.rsp、Function 像应答），
+        // 也不占在途事务；它作为主动消息到达派发，由派发回 Reject.req 原因 2（P51-D12）。
+        AssertKey(KeyOf(hex), hex, isRequest: false, isResponse: false);
+    }
+
     [Fact]
     public void APrimaryMessageWhoseSystemBytesCollidesWithAnInFlightRequestIsNotAKeyedReply()
     {

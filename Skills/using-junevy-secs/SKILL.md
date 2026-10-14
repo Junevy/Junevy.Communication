@@ -31,7 +31,7 @@ using Junevy.Communication.Secs.Hsms;
 
 await using var equipment = HsmsEquipment.Create(new HsmsEquipmentOptions
 {
-    Host = "0.0.0.0",   // null = every address; IP literal only, host names are not resolved
+    Host = "0.0.0.0",   // passive: the local IP to listen on, null = every address
     Port = 5000,
     DeviceId = 1,
 });
@@ -66,14 +66,14 @@ HsmsEquipment.Create(new HsmsEquipmentOptions
 });
 ```
 
-The equipment dials the host, sends `Select.req` (timeout T6) and keeps reconnecting every T5 after a drop; **every reconnect sends `Select.req` again**, so the session returns to `Selected` on its own. A refused or unanswered `Select` is a failed `StartAsync` result, not an exception.
+The equipment dials the host, sends `Select.req` (timeout T6) and keeps reconnecting every T5 after a drop **or after the host's `Separate.req`**; **every reconnect sends `Select.req` again**, so the session returns to `Selected` on its own. A refused or unanswered first `Select` is a failed `StartAsync` result, not an exception; stopping or disposing during it ends `StartAsync` at once (`ConnectionClosed`).
 
 ## Options and Timers
 
 | Property | Default | Meaning |
 |---|---|---|
 | `Mode` | `Passive` | `Passive` listens; `Active` dials the host and initiates `Select` |
-| `Host` | `null` | `Passive`: listen address (`null` = all). `Active`: host address, required. IP literal only |
+| `Host` | `null` | `Passive`: local IP to listen on (`null` = all). `Active`: host address, required — IP or host name |
 | `Port` | `5000` | 1–65535 (5000 is the HSMS standard port) |
 | `DeviceId` | `0` | HSMS session id, 0–32767; the session id carried by your data messages |
 | `T3` | `45000` ms | Reply timeout for a primary with the W bit |
@@ -120,7 +120,7 @@ equipment.SetHandler(6, 11, async (primary, token) =>
 
 ## S9 System Messages
 
-Sent by the package, never by handlers: S9F1 (wrong session id), S9F3 (no handler for the stream), S9F5 (no handler for that function), S9F7 (body undecodable or over a decode limit), S9F9 (a primary with the W bit timed out). The body is the 10-byte header of the offending message as a binary item.
+Sent by the package, never by handlers: S9F1 (wrong session id), S9F3 (no handler for the stream), S9F5 (no handler for that function), S9F7 (body undecodable or over a decode limit), S9F9 (a primary with the W bit timed out). Each S9 message has system bytes of its own, not those of the message it reports. A header with `PType` other than 0 is answered with `Reject.req` reason 2 instead. The body is the 10-byte header of the offending message as a binary item.
 
 ## SML Text
 
@@ -155,7 +155,7 @@ State changes at `Information`, every frame at `Debug` (direction, stream, funct
 | Long blocking work inside a handler | Handlers run one at a time; the next message waits. Hand off to your own queue and honour `token` |
 | Ignoring `token` in a handler | Stopping waits for it; the reply is then dropped. Pass the token to every await |
 | Treating T3 expiry as a broken link | T3 is a transaction timeout (`ReplyTimeout`); the session stays up |
-| Using a host name in `Host` | Only IP literals are accepted; resolve names yourself |
+| Using a host name in `Host` in `Passive` mode | The passive `Host` is a local listen address: an IP, or `null` for every address. Host names are for `Active` |
 | Changing `HsmsEquipmentOptions` after `Create` | It is a snapshot; rebuild the equipment to change it |
 | Calling `StopAsync` and expecting the equipment to be unusable | Stop is restartable; `Dispose` is the permanent end |
 | Treating `Selected` as "TCP connected" | `NotSelected` means connected but not selected — `HsmsState` is the HSMS truth |

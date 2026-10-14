@@ -104,15 +104,27 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
             running = signals;
         }
 
+        // 停止与释放取消 signals：进行中的启动（尤其是等 T6 的主动端 Select）随之结束，而不是让停止等它（P51-D19）。
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, signals.Token);
         try
         {
             CommResult result = settings.Mode == HsmsConnectionMode.Passive
-                ? await StartListeningAsync(cancellationToken).ConfigureAwait(false)
-                : await StartConnectingAsync(cancellationToken).ConfigureAwait(false);
+                ? await StartListeningAsync(linked.Token).ConfigureAwait(false)
+                : await StartConnectingAsync(linked.Token).ConfigureAwait(false);
             if (!result.IsSuccess)
                 await StopInternalAsync(signals, CancellationToken.None).ConfigureAwait(false);
 
-            return result;
+            return signals.IsCancellationRequested ? StoppedWhileStarting() : result;
+        }
+        catch (OperationCanceledException) when (signals.IsCancellationRequested)
+        {
+            // 停止或释放的那一方负责收尾，这里只报告结果。
+            return StoppedWhileStarting();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await StopInternalAsync(signals, CancellationToken.None).ConfigureAwait(false);
+            return CommResult.Fail("Starting the HSMS equipment was cancelled.", CommErrorKind.Cancelled);
         }
         catch (Exception ex)
         {
@@ -187,6 +199,9 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
         session.Reset("The equipment was disposed.");
     }
 
+    private static CommResult StoppedWhileStarting()
+        => CommResult.Fail("The equipment was stopped while it was starting.", CommErrorKind.ConnectionClosed);
+
     private void ThrowIfDisposed()
     {
         lock (sync)
@@ -200,8 +215,6 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
     private void RaiseStateChanged(object? sender, HsmsStateChangedEventArgs args)
         => EventSubscribers.InvokeEach(StateChanged, this, args, logger, nameof(StateChanged));
 
-    // 停止：先告诉处理器"要停了"（它们必须响应令牌），再尽力告知对端，最后断开连接并停止监听。
-    // 重复调用安全：第一次把 started 置否，之后的调用直接返回。
     // 停止：先告诉处理器"要停了"（它们必须响应令牌），再尽力告知对端，最后断开连接并停止监听或重连。
     // 重复调用安全：第一次把 started 置否，之后的调用直接返回。
     private async Task StopInternalAsync(CancellationTokenSource? signals, CancellationToken cancellationToken)
@@ -247,9 +260,7 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
         if (listening != null)
             await listening.StopAsync(cancellationToken).ConfigureAwait(false);
 
-        if (connecting != null)
-            await CloseClientAsync(connecting, cancellationToken).ConfigureAwait(false);
-
+        await ReleaseAsync(listening, connecting).ConfigureAwait(false);
         session.Reset("The equipment was stopped.");
     }
 
@@ -266,15 +277,6 @@ public sealed partial class HsmsEquipment : IDisposable, IAsyncDisposable
         {
             logger.LogDebug(ex, "Sending Separate.req while stopping failed; the connection is closed anyway.");
         }
-    }
-
-    // 主动端：先解订阅再断开（DisconnectAsync 标记"用户主动断开"，重连循环因此永久停下），最后释放。
-    private async Task CloseClientAsync(TcpClientChannel connecting, CancellationToken cancellationToken)
-    {
-        connecting.FrameReceived -= OnFrameReceived;
-        connecting.StateChanged -= OnClientStateChanged;
-        await connecting.DisconnectAsync(cancellationToken).ConfigureAwait(false);
-        await connecting.DisposeAsync().ConfigureAwait(false);
     }
 
     private static void CancelQuietly(CancellationTokenSource signals)

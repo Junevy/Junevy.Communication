@@ -8,7 +8,7 @@ namespace Junevy.Communication.Secs.Hsms;
 /// </summary>
 internal sealed class HsmsEquipmentSettings
 {
-    /// <summary>SEMI E37 的默认端口。</summary>
+    /// <summary>设备号的上限（SEMI E37：会话号的最高位留给控制消息的 0xFFFF）。</summary>
     private const ushort MaximumDeviceId = 32767;
 
     /// <summary>监听地址缺省值：所有地址。</summary>
@@ -80,14 +80,20 @@ internal sealed class HsmsEquipmentSettings
         return new HsmsEquipmentSettings(options.Mode, address, options.Port, options.DeviceId, timers);
     }
 
-    // 被动端：null 表示所有地址。主动端：必须给出对端地址。只接受 IP，不做 DNS（配置不该依赖解析）。
+    // 被动端：本机的监听地址，只能是 IP，null 表示所有地址。
+    // 主动端：对端地址，必填；与其他 TCP 客户端一样可以是主机名，由通道解析。
     private static string? ValidateAddress(HsmsEquipmentOptions options)
     {
-        if (options.Mode == HsmsConnectionMode.Active && string.IsNullOrWhiteSpace(options.Host))
+        if (options.Mode == HsmsConnectionMode.Active)
         {
-            throw new ArgumentException(
-                "Host is required in the active mode: it is the address of the host to connect to.",
-                nameof(HsmsEquipmentOptions.Host));
+            if (string.IsNullOrWhiteSpace(options.Host))
+            {
+                throw new ArgumentException(
+                    "Host is required in the active mode: it is the address of the host to connect to.",
+                    nameof(HsmsEquipmentOptions.Host));
+            }
+
+            return options.Host;
         }
 
         if (options.Host is null)
@@ -96,7 +102,7 @@ internal sealed class HsmsEquipmentSettings
         if (!System.Net.IPAddress.TryParse(options.Host, out _))
         {
             throw new ArgumentException(
-                "Host must be an IP address, or null to listen on every address.",
+                "In the passive mode Host is the local address to listen on: an IP address, or null for every address.",
                 nameof(HsmsEquipmentOptions.Host));
         }
 
