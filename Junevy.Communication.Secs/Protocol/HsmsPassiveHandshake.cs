@@ -30,17 +30,6 @@ namespace Junevy.Communication.Secs.Protocol;
 /// </remarks>
 internal sealed class HsmsPassiveHandshake : IConnectionInitializer
 {
-    /// <summary>
-    /// 等一帧的最长节奏：握手整体由 T7 约束，这里只是"这一小段时间没等到就再问一次"。
-    /// </summary>
-    /// <remarks>
-    /// 两点都要用它而不是"一次长等"：① <c>ReceiveAsync</c> 不给超时就用通道的
-    /// <c>RequestTimeout</c>（TCP 默认 2000 毫秒），比 T7（默认 10000 毫秒）小，主机合法地晚一点 Select 就会被误判；
-    /// ② 握手积压与接收等待者的注册之间有一个通道侧的竞态（计划第 20.2 节 F1），
-    /// 落在窗口里的帧会被留在积压里等下一次注册，因此短节奏轮询能把它取回来。
-    /// </remarks>
-    private const int ReceivePollMilliseconds = 200;
-
     private readonly HsmsSessionState session;
     private readonly HsmsEquipmentTimers timers;
     private readonly ILogger logger;
@@ -84,16 +73,17 @@ internal sealed class HsmsPassiveHandshake : IConnectionInitializer
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var options = new RequestOptions { Timeout = ReceivePollMilliseconds };
+
+            // 超时必须显式给：不给就用通道的 RequestTimeout（TCP 默认 2000 毫秒），比 T7 小，
+            // 主机合法地晚一点 Select 就会被误判（计划第 20.2 节 F2）。给 T7 即可——整个握手窗口由通道的
+            // SessionHandshakeTimeout（同样是 T7）兜底，到期时取消本钩子。
+            var options = new RequestOptions { Timeout = timers.T7 };
             CommResult<byte[]> received = await channel.ReceiveAsync(options, cancellationToken).ConfigureAwait(false);
             if (!received.IsSuccess)
             {
                 // 取消交给上层：通道与握手窗口都会这样结束会话。
                 cancellationToken.ThrowIfCancellationRequested();
-                if (received.ErrorKind != CommErrorKind.Timeout)
-                    return received.ToResult();
-
-                continue;
+                return received.ToResult();
             }
 
             CommResult<HsmsMessage> parsed = HsmsMessage.Read(received.Data, timers.MaxMessageLength);

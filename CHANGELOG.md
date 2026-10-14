@@ -51,7 +51,7 @@
   - **主动端握手**：发 `Select.req`（超时 T6）并校验应答的种类、System Bytes 与状态码；只有状态 0 算选中，答非所问、被拒（`Reject.req`）、超时都算握手失败，通道按 T5 重连。握手失败（含取消）把状态复位成 `NotConnected`。
   - **Linktest 探测**（内部 `IHealthProbe`，超时 T6）：`LinktestInterval > 0` 时启用心跳，间隔用它、`MaxFailures = 1`、只在空闲时探测，因此一次探测失败就断链重连。
   - **状态单一来源（Q35）**：状态只在一个内部类型里变化，事件按发生顺序在锁外派发，订阅者抛异常只记 Error，不影响状态机；重复的同状态变化不发事件。
-  - **握手等帧的节奏是 200 毫秒轮询**，而不是"一次长等"：① `IByteChannel.ReceiveAsync` 不给超时就用通道的 `RequestTimeout`（TCP 默认 2000 毫秒），比 T7（默认 10000 毫秒）小，主机合法地晚一点 Select 会被误判为失败；② 握手积压与接收等待者注册之间有通道侧的竞态，落在窗口里的帧要等下一次注册才被取回（见下面的摩擦记录）。
+  - **握手等帧的节奏是 200 毫秒轮询**，而不是"一次长等"：① `IByteChannel.ReceiveAsync` 不给超时就用通道的 `RequestTimeout`（TCP 默认 2000 毫秒），比 T7（默认 10000 毫秒）小，主机合法地晚一点 Select 会被误判为失败；② 握手积压与接收等待者注册之间有通道侧的竞态，落在窗口里的帧要等下一次注册才被取回（见下面的摩擦记录）。2026-10-14 合入通道修复后改为一次等待，见"变更"。
 - 2026-10-13 [Secs] 新增设备端 `HsmsEquipment`（Passive）与消息派发（计划 Task 6，P51-D12、D13、D14、D15、D16）。
   - **公开类型**：`SecsMessageHandler` 委托、`HsmsEquipment`（`Create` / `State` / `StateChanged` / `StartAsync` / `StopAsync` / `SetHandler` / `RemoveHandler` / `SendAsync` / `Dispose` / `DisposeAsync`）、`HsmsEquipmentOptions`、`SecsError` 与 `SecsResult`。
   - **派发按到达顺序逐个处理**（同一连接上不并发）：控制消息按 E37 应答（`Linktest.req` → `Linktest.rsp`；重复的 `Select.req` → 状态 1；`Deselect.req` → `Reject.req` 原因 1；`Separate.req` → 不应答立即断开；无主的 `*.rsp` → 原因 3；未分配的 SType → 原因 1），数据主消息按 **① 会话号 → ② 正文 → ③ 处理器 → ④ 调用处理器** 的顺序处理。
@@ -92,6 +92,7 @@
   - 起点提交是 Task 0 开始时的 HEAD；
   - Task 0 只构建、只测度量，不跑测试；
   - 期末与审阅复跑用 `-Repeat 3`。
+- 2026-10-14 [Secs] 合入通道族的握手积压竞态修复（master `5f50ebe`，见下面"Channels：握手积压与接收等待者的竞态"一节）之后，被动端握手不再每 200 毫秒轮询一次，改为每次等一帧都显式给超时 T7（整个握手窗口仍由通道的 `SessionHandshakeTimeout` = T7 兜底）。显式给超时是摩擦记录 F2 的要求，必须保留：去掉它时 `ASilentHostWithinT7_KeepsTheHandshakeWaiting` 失败。受影响测试三遍一致，每遍通过 550、失败 0。
 
 ### 修复（Fixed）
 
