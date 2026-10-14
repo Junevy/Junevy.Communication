@@ -50,6 +50,8 @@ tags: [协议细节, Junevy.Communication, Secs, 通道族]
 
 状态只有三态（[HsmsState.cs](file://Junevy.Communication.Secs/Hsms/HsmsState.cs)）：`NotConnected`（无会话 / 停止 / 握手失败）、`NotSelected`（TCP 已通但主机还没 Select）、`Selected`（已选中，收发数据消息）。TCP 连上只说明字节流通了，因此 `NotSelected` 是独立状态。状态变化经 `StateChanged` 按顺序发出并带原因，订阅者抛异常不影响状态机。
 
+**状态从哪里来（2026-10-14 合并后修正，见 [HsmsSessionState.cs](file://Junevy.Communication.Secs/Protocol/HsmsSessionState.cs)）**：通道的 `StateChanged` 与服务端的 `SessionConnected` / `SessionClosed` 由各自的派发任务**排队送出**，可能晚于实际变化，甚至晚于下一条链路的握手。所以握手只报 `NotSelected`（开始）或复位（失败）；`Selected` 在链路被接管时才报——主动端收到 `Connected` 且通道此刻确实连着，被动端收到 `SessionConnected` 且会话还在（服务端保证它先于该会话的任何帧）；断开只在没有新的握手进行、链路此刻也确实不在时复位。原实现把主动端任何"不是 Connected"的事件都当断开：首次连接时晚到的 `Connecting` 会把 `NotSelected`、甚至 `Selected` 打回 `NotConnected`，之后 `SendAsync` 一律 `NotSelected`。这个缺陷只在全量并行（net8.0）下出现，单独跑 Secs 从不出现，用例 `HsmsLinkEventTests` 不依赖套接字逐个复现这些顺序。主动端的当前连接在启动时就挂上通道本身，不等 `Connected` 事件。
+
 计时器映射（`HsmsEquipmentOptions`，全部可配）：
 
 | 计时器 | 默认 | 用在哪 |
