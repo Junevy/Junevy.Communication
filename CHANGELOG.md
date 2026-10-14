@@ -69,6 +69,12 @@
   - **打开失败不抛异常**：`StartAsync` 返回失败结果（`session.Reset` 回到 `NotConnected`，记一条 Warning），半成品的通道被解订阅、释放、字段复位；之后可再 `StartAsync`。
   - **派发串行化（P51-D13）**：通道的帧事件是"逐个隔离异常地调用"而不等待，因此设备端自己按到达顺序把消息串起来（同一连接上不并发）。停止会等在途的派发跑完（处理器必须响应取消令牌）；处理器内部调用 `StopAsync` 时靠 `AsyncLocal` 认出派发上下文、跳过这一等，不会死锁。
   - **验证**：新增 6 条主动端用例（连接→Select→双向收发、主机断开后按 T5 重连并重新 Select、Select 被拒持续重试、停止后再启动仍能重连、连上但不回 Select 时 `StartAsync` 返回失败、主动端必须给地址）；Secs.Tests 222 条（net8.0 与 net472 各 222）、受影响测试 466 条全绿；关掉 `Reconnect` 时 3 条重试用例必失败、放宽 Select 状态校验时 `ARejectedSelect` 必失败（变异验证）。度量：生产重复窗口 34（9 集群，与 Task 0 基线一致，无任何集群涉及 `Junevy.Communication.Secs/`）、测试重复窗口 43 集群 / 171 窗口（与基线一致）、超过 60 行的方法 0、超过 300 行的文件 9（全部在 Core / Channels / Tcp）、Secs 有效行 1973。
+- 2026-10-13 [Secs] 新增设备端工厂与依赖注入（P51-D17）。
+  - **`HsmsEquipmentFactory`**（`Junevy.Communication.Secs.DependencyInjection`）：继承 Core 的 `NamedFactory<HsmsEquipment>`，`GetOrAdd(name, options)` 按名称复用实例、别名共享实例、移除与释放工厂会释放设备端；同名再取时新的 `options` 不生效（`Create` 只建对象，不监听也不连接）。
+  - **`AddSecs()`**：以单例（`TryAddSingleton`）注册工厂，容器里没有 `ILoggerFactory` 时设备端不输出日志；重复调用幂等。
+  - **选项校验逐条落地**（实现随 Task 6 / Task 7 提前，见计划 D16）：`Mode` 必须是 `Passive` / `Active`；`Active` 必须给 `Host`；`Host` 只接受 IP 字面量；`Port` 1–65535；`DeviceId` 0–32767；T3 / T5 / T6 / T7 / T8 均大于 0；`LinktestInterval` ≥ 0；`MaxMessageLength` ≥ 1024。非法时 `Create` 与 `GetOrAdd` 抛 `ArgumentException`，消息写明属性名与范围，且不注册任何实例。
+  - **选项是快照**：`Create` 之后改 `HsmsEquipmentOptions` 不影响已建好的设备端；`HsmsEquipmentOptions` 全是简单属性（含枚举），可直接从 appsettings 绑定（`Mode` 绑 `"Active"`），库本身不依赖绑定器。
+  - **验证**：新增 29 条用例（17 条选项校验与快照 + 12 条工厂与 DI）；Secs.Tests 251 条（net8.0 与 net472 各 251）、受影响测试 524 条全绿；变异检查抓到"工厂不按名称复用"（5 条失败）、"`AddSecs` 用 `AddSingleton`"（1 条失败）、"去掉 `MaxMessageLength` 下限"（1 条失败）、"启动时重新读调用方选项"（快照用例失败）。度量：生产重复窗口 34（9 集群，无 Secs 集群）、测试重复窗口 43 / 171、方法 >60 行 0、文件 >300 行 9、Secs 有效行 2008。
 
 ### 变更（Changed）
 

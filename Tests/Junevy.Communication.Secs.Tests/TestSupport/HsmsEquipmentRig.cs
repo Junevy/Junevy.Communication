@@ -69,14 +69,22 @@ internal sealed class HsmsEquipmentRig : IAsyncDisposable
     /// <param name="systemBytes">Select.req 用的 System Bytes。</param>
     /// <returns>已选中的主机一侧；调用方负责释放。</returns>
     internal static async Task<HsmsHostConnector> SelectAsync(HsmsEquipmentRig rig, uint systemBytes = 1)
+        => await SelectAsync(rig.Equipment, rig.Port, systemBytes).ConfigureAwait(false);
+
+    /// <summary>主机连上给定的设备端并完成 Select（例如工厂创建的实例）。</summary>
+    /// <param name="equipment">设备端。</param>
+    /// <param name="port">设备端监听的端口。</param>
+    /// <param name="systemBytes">Select.req 用的 System Bytes。</param>
+    /// <returns>已选中的主机一侧；调用方负责释放。</returns>
+    internal static async Task<HsmsHostConnector> SelectAsync(HsmsEquipment equipment, int port, uint systemBytes = 1)
     {
-        HsmsHostConnector host = await HsmsHostConnector.ConnectAsync(rig.Port).ConfigureAwait(false);
+        HsmsHostConnector host = await HsmsHostConnector.ConnectAsync(port).ConfigureAwait(false);
         await host.SendAsync(HsmsControl.SelectRequest(systemBytes).ToArray()).ConfigureAwait(false);
         HsmsHostFrame answer = await host.NextFrameAsync(5000).ConfigureAwait(false);
         if (answer.Message.Kind != HsmsControlKind.SelectResponse || answer.Message.Status != HsmsControl.SelectOk)
             throw new InvalidOperationException($"The equipment did not select the session: {answer.Text}");
 
-        await Polling.WaitUntilAsync(() => rig.State == HsmsState.Selected, 5000).ConfigureAwait(false);
+        await Polling.WaitUntilAsync(() => equipment.State == HsmsState.Selected, 5000).ConfigureAwait(false);
         return host;
     }
 
