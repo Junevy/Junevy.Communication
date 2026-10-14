@@ -109,6 +109,20 @@
 - 2026-10-14 [Secs] 验收发现：**停止时只调用了 `TcpServer.StopAsync`，没有释放服务端，也没有解除对它的事件订阅**；停止与启动失败各有一份收尾代码。现在两条路径共用一个收尾方法：解订阅、断开、释放，字段只在仍指向被释放的对象时才清空。
 - 2026-10-14 [Tests] 验收补充的用例与复跑：Secs.Tests 251 → **264**（S9 的号与判断顺序、PType 拒绝、Function 128 以上、主动端 `Separate` 后重连与重连失败后继续、停止打断 T5 等待、主机名、释放与取消打断启动、T3 超时后链路仍在）。`pwsh build/test-affected.ps1 -Base 0e8e3cb -NoBuild -Repeat 3` 三遍一致，每遍通过 550、失败 0；变异检查 30 条中 28 条被抓，存活的 2 条是等价变异（`ResetOnRequestTimeout` 只作用于 `Sequential` 关联）。
 
+## [Unreleased] — Channels：握手积压与接收等待者的竞态
+
+### 修复（Fixed）
+
+- 2026-10-13 [Channels] **握手期间可能丢一帧**：`FrameRouter.RouteAsync` 判定一帧时分两步——先在途请求认领 / 迟到应答判定 / 接收等待者认领（`PendingRequestTable.TryComplete`），再决定未被认领的帧去积压还是去派发（`ClassifyUnclaimed`）——两步**各自加锁**，而接收等待者的注册（`Register`）取的是同一把锁。因此一帧可以落在两次加锁之间：等待者恰好注册在这两步之间时，它看到空的积压、把自己挂进等待者列表，随后这一帧才被放进积压，**双方互不可见**。这一帧一直躺到握手结束（`EndHandshakeAsync` 才把它倒进派发队列），对握手期逐帧消费的协议就是丢消息：`IConnectionInitializer` 文档点名的场景（"服务端对每个新会话执行同一接口，例如 HSMS 被动端等待 Select.req 并应答"）中，握手器拿到的是 `StreamChannelView`，它**静默忽略** `FrameReceived` 订阅，因此帧被倒进派发队列后没有任何人消费。
+  - **复现**：手工交错三步即可 100 % 复现（先 `TryComplete` 得到"未认领"、再 `Register` 一个接收等待者、最后 `ClassifyUnclaimed`）——等待者仍在等、帧进了积压。P5.1 计划的摩擦记录 F1（`docs/superpowers/plans/2026-10-12-p51-secs-hsms.md` 第 20.2 节）在 SECS 侧观察到同一现象。
+  - **修复**：两个方法合并为一次加锁的判定 `PendingRequestTable.Route(frame, remote, out claimed)`，返回 `FrameRoute`（`Claimed` / `LateReply` / `Backlog` / `BacklogFull` / `Dispatch`）；`ClaimOutcome` 与 `UnclaimedFrameTarget` 随之删除（无其他调用方）。四步判定顺序、迟到应答先于接收等待者的规则、积压上限（D8 第 65 帧）与 `EndHandshake` 的顺序保证都不变；**认领的完成仍在锁外触发**。迟到应答的 Warning 从关联表移到 `FrameRouter`（原本也在锁外记）。
+  - **用例**：`FrameRouterTests` 新增两条——`Handshake_OneDecisionNeverLeavesAFrameBothPendingAndBacklogged`（钉住可达的两种顺序：帧先到则等待者注册时取走、等待者先到则当场认领，积压始终为空）与 `Handshake_FrameOfferedWhileAReceiverRegisters_IsNeverLost`（500 轮并发看门狗）。原有的握手积压用例（`Handshake_BacklogClaimedByLaterReceive`、`Handshake_EndReturnsRemainingInOrder`、`Handshake_BacklogOverflow_Throws`、`Handshake_BacklogDispatchedAfterEnd`）未改动并全部通过。
+  - **度量**：Channels 有效行 4779 → 4766；`PendingRequestTable` 455 → 448 行，`FrameRouter` 321 → 326 行；生产重复窗口 34（9 集群）不变，测试重复窗口 43 集群 / 171 窗口不变。
+
+### 变更（Changed）
+
+- 2026-10-13 [Channels] 文档补齐 `IByteChannel.ReceiveAsync` 与 `RequestOptions.Timeout` 的默认超时语义（摩擦记录 F2，行为不变）：等待者**从注册时**开始计时，`options` 为 null 时超时取配置中的 `RequestTimeout`（TCP 默认 2000 毫秒）。等待时长由协议自己规定的窗口约束时（例如在握手窗口 T7 内等某条消息）必须显式给 `RequestOptions.Timeout`，否则等待会在 `RequestTimeout` 处以 `Timeout` 结束，比协议窗口早。`RequestOptions.Timeout` 的说明由"应答超时"改为"等待超时"（`RequestAsync` 是等应答，`ReceiveAsync` 是等下一帧），`StreamChannel` 与 `RequestCoordinator` 的 `ReceiveAsync` 注释同步写明默认取 `RequestTimeout`。
+
 ## [Unreleased] — P4.6（共享测试库整理）
 
 ### 变更（Changed）

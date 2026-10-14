@@ -92,9 +92,9 @@ internal sealed class RequestCoordinator
     }
 
     /// <summary>
-    /// 不发送，只等待下一个匹配的入站帧（计划 8.2 接收流程）。接收等待者在注册时开始计时。
+    /// 不发送，只等待下一个匹配的入站帧（计划 8.2 接收流程）。接收等待者在注册时开始计时，options 为 null 时超时取 RequestTimeout。
     /// </summary>
-    /// <param name="options">超时与匹配器；为 null 时使用默认值。</param>
+    /// <param name="options">超时与匹配器；为 null 时使用配置的 RequestTimeout 与默认匹配。</param>
     /// <param name="cancellationToken">用户取消令牌。</param>
     /// <returns>匹配的帧或失败结果。</returns>
     public async Task<CommResult<byte[]>> ReceiveAsync(RequestOptions? options, CancellationToken cancellationToken)

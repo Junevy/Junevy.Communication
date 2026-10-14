@@ -159,44 +159,59 @@ internal sealed class PendingRequestTable
     }
 
     /// <summary>
-    /// 由解析循环调用，按以下顺序判定一个入站帧（计划 7.2 规则 1，经修订）：
-    /// ① 在途请求认领；② 迟到应答判定（Sequential 窗口内未匹配的帧，或 Keyed 命中近期超时键）；③ 接收等待者（FIFO）。
+    /// 由解析循环调用，判定一个入站帧的去向（计划 7.2 规则 1，经修订）：
+    /// ① 在途请求认领；② 迟到应答判定（Sequential 窗口内未匹配的帧，或 Keyed 命中近期超时键）；③ 接收等待者（FIFO）；
+    /// ④ 都没认领则进入握手积压（握手期间）或交给调用方派发。
     /// 迟到应答先于接收等待者判定，因此无 Matcher 的 ReceiveAsync 等待者不会拿走超时请求的迟到应答。
-    /// 认领在调用线程上同步完成，不经过派发队列。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 四步在<strong>同一把锁下</strong>完成，缺一不可：接收等待者的注册（<see cref="Register"/>）也取同一把锁，
+    /// 因此这一帧要么被当时已在等的等待者认领，要么进积压等后来注册的等待者来取。
+    /// 分两步判定（先认领、再决定去向）会留下一个窗口：等待者恰好注册在这两步之间时，
+    /// 它看到空的积压而把自己挂进等待者列表，随后这一帧才被放进积压——双方互不可见，
+    /// 帧一直躺到握手结束。握手期逐帧消费的协议（例如 SECS 被动端等 Select.req）会丢掉整条消息。
+    /// </para>
+    /// <para>
+    /// 认领在调用线程上同步完成，不经过派发队列；<paramref name="claimed"/> 的完成由调用方在锁外触发。
+    /// </para>
+    /// </remarks>
     /// <param name="frame">入站帧。</param>
     /// <param name="remote">来源地址；无来源概念的传输为 null。</param>
+    /// <param name="claimed">被认领的等待者；<see cref="FrameRoute.Claimed"/> 时非 null，由调用方完成它。</param>
     /// <returns>
-    /// <see cref="ClaimOutcome.Claimed"/>：已被在途请求或接收等待者认领；
-    /// <see cref="ClaimOutcome.LateReply"/>：迟到应答（已记 Warning），调用方丢弃并计入 FramesDropped；
-    /// <see cref="ClaimOutcome.Unclaimed"/>：未认领，由调用方决定积压或派发。
+    /// <see cref="FrameRoute.Claimed"/>：已被在途请求或接收等待者认领；
+    /// <see cref="FrameRoute.LateReply"/>：迟到应答，调用方丢弃并计入 FramesDropped；
+    /// <see cref="FrameRoute.Backlog"/>：进入握手积压；
+    /// <see cref="FrameRoute.BacklogFull"/>：握手积压已满（D8），调用方应断开；
+    /// <see cref="FrameRoute.Dispatch"/>：交给调用方派发。
     /// </returns>
-    public ClaimOutcome TryComplete(byte[] frame, EndPoint? remote)
+    internal FrameRoute Route(byte[] frame, EndPoint? remote, out PendingRequest? claimed)
     {
-        PendingRequest? claimed;
-        ClaimOutcome outcome = ClaimOutcome.Unclaimed;
         lock (gate)
         {
             claimed = TakeRequest(frame, remote);
             if (claimed == null)
             {
                 if (IsLateUnclaimed(frame, Stopwatch.GetTimestamp()))
-                    outcome = ClaimOutcome.LateReply;
-                else
-                    claimed = TakeReceiver(frame, remote);
+                    return FrameRoute.LateReply;
+
+                claimed = TakeReceiver(frame, remote);
+                if (claimed == null)
+                {
+                    if (!handshaking)
+                        return FrameRoute.Dispatch;
+
+                    if (backlog.Count >= MaxHandshakeBacklog)
+                        return FrameRoute.BacklogFull;
+
+                    backlog.Add((frame, remote));
+                    return FrameRoute.Backlog;
+                }
             }
+
+            return FrameRoute.Claimed;
         }
-
-        if (claimed != null)
-        {
-            claimed.TryFinish(CommResult<byte[]>.Success(frame));
-            return ClaimOutcome.Claimed;
-        }
-
-        if (outcome == ClaimOutcome.LateReply)
-            logger.LogWarning("Dropped a late reply of {Length} bytes that arrived after its request timed out.", frame.Length);
-
-        return outcome;
     }
 
     // 调用方必须持有 gate。判断未认领的帧是否属于迟到应答：Sequential 处于丢弃窗口内，或 Keyed 命中近期超时键。
@@ -271,27 +286,6 @@ internal sealed class PendingRequestTable
             (byte[] Frame, EndPoint? Remote)[] remaining = backlog.ToArray();
             backlog.Clear();
             return remaining;
-        }
-    }
-
-    /// <summary>
-    /// 未被认领的帧的去向：派发队列、握手积压，或积压已满。判定与入积压在同一把锁下完成，保证与 <see cref="EndHandshake"/> 不交错。
-    /// </summary>
-    /// <param name="frame">未被认领且不是迟到应答的帧。</param>
-    /// <param name="remote">来源地址。</param>
-    /// <returns>去向。</returns>
-    internal UnclaimedFrameTarget ClassifyUnclaimed(byte[] frame, EndPoint? remote)
-    {
-        lock (gate)
-        {
-            if (!handshaking)
-                return UnclaimedFrameTarget.Dispatch;
-
-            if (backlog.Count >= MaxHandshakeBacklog)
-                return UnclaimedFrameTarget.BacklogFull;
-
-            backlog.Add((frame, remote));
-            return UnclaimedFrameTarget.Backlog;
         }
     }
 
@@ -510,8 +504,8 @@ internal sealed class PendingRequestTable
     }
 }
 
-/// <summary>入站帧经关联表判定后的结果（<see cref="PendingRequestTable.TryComplete"/>）。</summary>
-internal enum ClaimOutcome
+/// <summary>入站帧经关联表判定后的去向（<see cref="PendingRequestTable.Route"/>）。</summary>
+internal enum FrameRoute
 {
     /// <summary>已被在途请求或接收等待者认领。</summary>
     Claimed,
@@ -519,19 +513,12 @@ internal enum ClaimOutcome
     /// <summary>迟到应答，应丢弃并计入 FramesDropped。</summary>
     LateReply,
 
-    /// <summary>未认领，由调用方决定进入握手积压或派发队列。</summary>
-    Unclaimed,
-}
-
-/// <summary>未被认领的帧的去向（<see cref="PendingRequestTable.ClassifyUnclaimed"/>）。</summary>
-internal enum UnclaimedFrameTarget
-{
-    /// <summary>进入派发队列。</summary>
-    Dispatch,
-
-    /// <summary>进入握手积压。</summary>
+    /// <summary>进入握手积压，等接收等待者来取（见 <see cref="PendingRequestTable.Register"/>）。</summary>
     Backlog,
 
     /// <summary>握手积压已满（D8）。</summary>
     BacklogFull,
+
+    /// <summary>进入派发队列。</summary>
+    Dispatch,
 }
