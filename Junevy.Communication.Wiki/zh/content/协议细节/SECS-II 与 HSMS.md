@@ -65,7 +65,7 @@ tags: [协议细节, Junevy.Communication, Secs, 通道族]
 
 ## Select 与 Linktest（P51-D11）
 
-- **Passive**（[HsmsPassiveHandshake.cs](file://Junevy.Communication.Secs/Protocol/HsmsPassiveHandshake.cs)，`IConnectionInitializer`）：握手是**在 T7 窗口内的循环**——收到 `Select.req` → 回 `Select.rsp` 状态 0 并握手成功；`Linktest.req` → 回 `Linktest.rsp` 继续等；数据消息 → 回 `Reject.req` 原因 4 继续等；`Separate.req` → 不应答、握手失败并断开；其余控制消息 → `Reject.req` 原因 1。取帧用 `ReceiveAsync` 的 **200 毫秒轮询**（超时只表示"还没到，继续等"），不是一次长等：通道的握手积压与接收等待者注册之间有竞态，且 `ReceiveAsync` 不给超时时用通道的 `RequestTimeout`（默认 2000 毫秒）小于 T7（计划 20.2 节 F1 / F2）。
+- **Passive**（[HsmsPassiveHandshake.cs](file://Junevy.Communication.Secs/Protocol/HsmsPassiveHandshake.cs)，`IConnectionInitializer`）：握手是**在 T7 窗口内的循环**——收到 `Select.req` → 回 `Select.rsp` 状态 0 并握手成功；`Linktest.req` → 回 `Linktest.rsp` 继续等；数据消息 → 回 `Reject.req` 原因 4 继续等；`Separate.req` → 不应答、握手失败并断开；其余控制消息 → `Reject.req` 原因 1。取帧时每次等一帧都**显式给超时 T7**（整个握手窗口由通道的 `SessionHandshakeTimeout` 兜底）。执行时用的是 200 毫秒轮询，2026-10-14 通道修复（F1）合入后改掉；显式超时仍是必须的（F2）。当初需要变通的原因：通道的握手积压与接收等待者注册之间有竞态，且 `ReceiveAsync` 不给超时时用通道的 `RequestTimeout`（默认 2000 毫秒）小于 T7（计划 20.2 节 F1 / F2）。
 - **Active**（[HsmsActiveHandshake.cs](file://Junevy.Communication.Secs/Protocol/HsmsActiveHandshake.cs)）：发 `Select.req`（T6）并校验应答的**种类、System Bytes、状态码**；非 0、被 `Reject.req`、超时、答非所问或号不对都算握手失败 → 状态复位成 `NotConnected` → 通道按 T5 重连，**每次重连都重新 Select**。
 - **Active 收到主机的 `Separate.req`**（2026-10-14 验收修正）：不应答、断开，**等 T5 之后再连**；那次再连失败由通道按 T5 继续（主动端的 `ReconnectOptions.OnInitialFailure = true`）。原因：通道的 `DisconnectAsync` 会让重连循环永久停下，而设备端仍处于"已启动"，原实现因此停在"永远不再连接"的状态，只能先停止再启动。停止或释放发生在 T5 的等待之内时立刻结束、不再连接。
 - **停止与释放会取消进行中的启动**（同日修正）：启动与停止共用一个取消信号，主动端等第一个 `Select.rsp` 时停止，`StartAsync` 立刻返回 `ConnectionClosed`，而不是让停止等满 T6；调用方取消启动返回 `Cancelled`。
