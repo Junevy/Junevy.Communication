@@ -75,6 +75,11 @@
   - **选项校验逐条落地**（实现随 Task 6 / Task 7 提前，见计划 D16）：`Mode` 必须是 `Passive` / `Active`；`Active` 必须给 `Host`；`Host` 只接受 IP 字面量；`Port` 1–65535；`DeviceId` 0–32767；T3 / T5 / T6 / T7 / T8 均大于 0；`LinktestInterval` ≥ 0；`MaxMessageLength` ≥ 1024。非法时 `Create` 与 `GetOrAdd` 抛 `ArgumentException`，消息写明属性名与范围，且不注册任何实例。
   - **选项是快照**：`Create` 之后改 `HsmsEquipmentOptions` 不影响已建好的设备端；`HsmsEquipmentOptions` 全是简单属性（含枚举），可直接从 appsettings 绑定（`Mode` 绑 `"Active"`），库本身不依赖绑定器。
   - **验证**：新增 29 条用例（17 条选项校验与快照 + 12 条工厂与 DI）；Secs.Tests 251 条（net8.0 与 net472 各 251）、受影响测试 524 条全绿；变异检查抓到"工厂不按名称复用"（5 条失败）、"`AddSecs` 用 `AddSingleton`"（1 条失败）、"去掉 `MaxMessageLength` 下限"（1 条失败）、"启动时重新读调用方选项"（快照用例失败）。度量：生产重复窗口 34（9 集群，无 Secs 集群）、测试重复窗口 43 / 171、方法 >60 行 0、文件 >300 行 9、Secs 有效行 2008。
+- 2026-10-13 [Docs] SECS 包的 README（打包进 NuGet）换成完整英文文档，并新增 Skill `using-junevy-secs`（计划 Task 9）。
+  - **`Junevy.Communication.Secs/README.md`**：定位与范围（设备端、HSMS-SS、本期不做 SECS-I / GEM / 主机端）、快速上手（被动端注册 S1F1 处理器并发 S5F1）、主动端示例、选项与计时器表、状态与事件、处理器规则（返回 null / 形状不符 / 抛异常 → `SxF0`，令牌必须响应）、发送规则与 `SecsResult` 对照表、S9 消息、SML、DI 与 appsettings、日志脱敏、"未经真机 / 真主机验证"清单（P51-D18）。
+  - **示例已编译验证**：README 的四个代码块逐字放进临时项目，先做负控（故意把 `SecsItem.B(0x00)` 写错，net8.0 与 net472 都编译失败），修正后两个目标 0 错误。
+  - **新 Skill `Skills/using-junevy-secs/SKILL.md`**：何时使用、何时不使用、最小可用代码、选项与计时器、处理器规则、`SecsResult` 对照表、S9、DI、未验证清单，以及 12 条常见错误（忘了注册处理器得到 S9F3 / S9F5、`Create` 不监听、刚 `StartAsync` 就发消息、处理器里阻塞或忽略令牌、把 T3 当链路故障、只接受 IP 字面量等）。
+  - **根 `readme.md`**：协议表加 SECS 一行，并在说明段写清它是"非地址型、直接用通道族、只做设备端、未经真机验证"。
 
 ### 变更（Changed）
 
