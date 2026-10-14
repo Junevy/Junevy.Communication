@@ -18,6 +18,15 @@
     <ProjectReference Include="..\..\Junevy.Communication.Modbus\Junevy.Communication.Modbus.csproj" />
   </ItemGroup>
 
+  <!-- P6-C1：SDK 适配包只有 net8.0 目标，net472 下无法引用，因此项目引用与 SDK 守卫都只在 net8.0 上存在。 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <ProjectReference Include="..\..\Junevy.Communication.Mqtt\Junevy.Communication.Mqtt.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
+    <Compile Remove="SdkAdapterArchitectureTests.cs" />
+    <Compile Remove="SdkPublicApiWalker.cs" />
+  </ItemGroup>
+
   <!-- 命名空间分层检查需要看到方法体中的类型引用，反射做不到；该包只出现在测试项目（P3-D18）。 -->
   <ItemGroup>
     <PackageReference Include="NetArchTest.Rules" Version="1.3.2" />

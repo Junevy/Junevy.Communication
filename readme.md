@@ -2,7 +2,7 @@
 
 Asynchronous .NET communication libraries for industrial equipment and factory systems. The repository provides one package per protocol or transport, so an application references only what it uses.
 
-- Targets .NET Framework 4.7.2 (`net472`) and .NET 8 (`net8.0`).
+- Targets .NET Framework 4.7.2 (`net472`) and .NET 8 (`net8.0`). The three SDK adapter packages — `Junevy.Communication.Mqtt`, and the OPC UA and FTP adapters planned for the same phase — target **.NET 8 only**, because the SDKs they adapt no longer support .NET Framework.
 - Async APIs with explicit timeouts, cancellation, reconnect and retry options.
 - Failures come back as results with a machine-readable error kind (`CommResult`, `WebApiResult<T>`), so the application decides what to do.
 - Factories and Microsoft dependency-injection registration for managing several devices or endpoints by name.
@@ -17,8 +17,9 @@ Asynchronous .NET communication libraries for industrial equipment and factory s
 | Omron FINS | `Junevy.Communication.Omron` | preview | FINS over TCP (port 9600): `CIO`, `W`, `H`, `A`, `D` and `EM` areas, typed reads and writes by address such as `D100` or `W10.03`, node-address handshake, native bit writes | [Omron README](Junevy.Communication.Omron/README.md) |
 | SECS-II / HSMS (SECS/GEM equipment) | `Junevy.Communication.Secs` | preview | Equipment side of a SECS-II link over HSMS-SS: SECS-II items and messages, Select and Linktest keepalive, passive or active session, handler dispatch with S9 system messages, transactions and reconnect | [Secs README](Junevy.Communication.Secs/README.md) |
 | MES WebApi (REST, SOAP) | `Junevy.Communication.WebApi` | preview | Reporting to a MES over HTTP: a REST client with JSON and business-envelope support, and a SOAP 1.1 / 1.2 client; retries that respect idempotency, availability tracking, events and interceptors (signing, token refresh) | [WebApi README](Junevy.Communication.WebApi/README.md) |
+| MQTT | `Junevy.Communication.Mqtt` | preview | MQTT 3.1.1 and 5.0 client (client only, .NET 8 only): connect, publish, subscribe and receive, TLS, MQTT 5 properties, last will and testament, reconnect that restores the subscriptions | [Mqtt README](Junevy.Communication.Mqtt/README.md) |
 
-MELSEC, S7 and FINS are built on the protocol-neutral PLC suite, which other address-based PLC protocols reuse ([Plc README](Junevy.Communication.Plc/README.md)). S7 and FINS are preview packages that have not been verified against real CPUs. SECS-II and HSMS-SS are not address-based: they use the channel family directly, cover the equipment side only, and have not been verified against real equipment or a real host. The MES WebApi package currently covers the client side; the HTTP server side, where the MES sends requests to the device, is planned.
+MELSEC, S7 and FINS are built on the protocol-neutral PLC suite, which other address-based PLC protocols reuse ([Plc README](Junevy.Communication.Plc/README.md)). S7 and FINS are preview packages that have not been verified against real CPUs. SECS-II and HSMS-SS are not address-based: they use the channel family directly, cover the equipment side only, and have not been verified against real equipment or a real host. The MES WebApi package currently covers the client side; the HTTP server side, where the MES sends requests to the device, is planned. The MQTT package is a thin adapter over [MQTTnet](https://github.com/dotnet/MQTTnet) and currently targets .NET 8 only; it has been verified against an in-process broker, not against a real one such as Mosquitto or EMQX.
 
 ## Transports and building blocks
 

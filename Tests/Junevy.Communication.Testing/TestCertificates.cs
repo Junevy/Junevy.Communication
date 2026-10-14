@@ -16,7 +16,23 @@ public static class TestCertificates
     /// </summary>
     /// <param name="subject">证书主题，默认 <c>CN=localhost</c>。</param>
     /// <returns>测试证书。</returns>
-    public static TestCertificate CreateSelfSigned(string subject = "CN=localhost")
+    public static TestCertificate CreateSelfSigned(string subject = "CN=localhost") =>
+        Create(subject, names =>
+        {
+            names.AddDnsName("localhost");
+            names.AddIpAddress(IPAddress.Loopback);
+        });
+
+    /// <summary>
+    /// 生成只对 <paramref name="dnsName"/> 有效的自签名测试证书：SAN 只有这一个 DNS 名，不含 IP 地址。
+    /// 用于验证"主机名不符"：客户端用 <c>localhost</c> 或 <c>127.0.0.1</c> 连接时，名称校验必然失败。
+    /// </summary>
+    /// <param name="dnsName">证书唯一有效的 DNS 名。</param>
+    /// <returns>测试证书。</returns>
+    public static TestCertificate CreateSelfSignedFor(string dnsName) =>
+        Create("CN=" + dnsName, names => names.AddDnsName(dnsName));
+
+    private static TestCertificate Create(string subject, Action<SubjectAlternativeNameBuilder> addNames)
     {
         using RSA rsa = RSA.Create(2048);
         var request = new CertificateRequest(subject, rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -25,8 +41,7 @@ public static class TestCertificates
             new OidCollection { new Oid("1.3.6.1.5.5.7.3.1"), new Oid("1.3.6.1.5.5.7.3.2") }, critical: false));
 
         var names = new SubjectAlternativeNameBuilder();
-        names.AddDnsName("localhost");
-        names.AddIpAddress(IPAddress.Loopback);
+        addNames(names);
         request.CertificateExtensions.Add(names.Build());
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
