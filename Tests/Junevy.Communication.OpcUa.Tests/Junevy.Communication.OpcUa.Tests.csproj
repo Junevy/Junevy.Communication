@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\build\Junevy.Communication.Tests.props" />
+
+  <!-- P6-C1：SDK 适配包只面向 .NET 8，测试项目同样只有一个目标（Import 的默认值是 net8.0;net472）。 -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0</TargetFrameworks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Junevy.Communication.OpcUa\Junevy.Communication.OpcUa.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
+  </ItemGroup>
+
+  <!-- P6-C12：测试替身用官方 Server 包的进程内服务器；只出现在测试项目，不进生产包。
+       P62-D1：SDK 把 Microsoft.Extensions.* 带到 10.0.12 以上，这里把直接用到的两个提到同一版本，避免 NU1605 降级错误。 -->
+  <ItemGroup>
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Server" Version="2.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageReference Update="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+    <!-- 用 appsettings 真正用的那条绑定路径验证选项（P6-C9）。 -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.12" />
+  </ItemGroup>
+
+</Project>

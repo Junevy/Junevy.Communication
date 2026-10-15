@@ -18,6 +18,7 @@ public sealed class SdkAdapterArchitectureTests
     private static readonly (string AssemblyName, string SdkPrefix, string SdkNamespace)[] Adapters =
     {
         ("Junevy.Communication.Mqtt", "MQTTnet", "Junevy.Communication.Mqtt.Sdk"),
+        ("Junevy.Communication.OpcUa", "Opc.Ua", "Junevy.Communication.OpcUa.Sdk"),
     };
 
     [Fact]

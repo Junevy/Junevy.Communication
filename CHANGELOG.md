@@ -2,6 +2,17 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — P6.2（OpcUa 1.0.0-preview.1：OPC UA 客户端）
+
+### 新增（Added）
+
+- 2026-10-15 [OpcUa] 新增库 `Junevy.Communication.OpcUa` 与测试项目 `Tests/Junevy.Communication.OpcUa.Tests`：OPC UA 2.0.1（OPC Foundation .NET Standard Stack）客户端薄适配层。
+  - **Task 1（骨架）**：生产项目只引用 Core 与 `OPCFoundation.NetStandard.Opc.Ua.Client` 2.0.1，只面向 net8.0（P6-C1），英文 README 打包；`InternalsVisibleTo` 只给本包的测试项目。
+  - 命名空间 `Junevy.Communication.OpcUa`（对外）、`.DependencyInjection`（Task 8）、`.Sdk`（内部，P6-C5）。
+  - 测试项目另加 `OPCFoundation.NetStandard.Opc.Ua.Server` 2.0.1 作为进程内测试服务器（P6-C12）。
+  - **依赖影响**：SDK 把 `Microsoft.Extensions.*` 带到 10.0.12 以上，测试项目按 P62-D1 用 `PackageReference Update` 把 `Microsoft.Extensions.DependencyInjection` 提到同一版本，避免 `NU1605` 降级错误；README 开头写明这一影响。
+- 2026-10-15 [Architecture] SDK 适配守卫登记表加 `Junevy.Communication.OpcUa`（SDK 前缀 `Opc.Ua`，`Sdk` 命名空间 `Junevy.Communication.OpcUa.Sdk`），同时登记 `SdkAdapterArchitectureTests.Adapters`、`ArchitectureTests.SdkPrefixes`、`ArchitectureTests.LayerTable`（`#if NET8_0_OR_GREATER`）与 `Architecture.Tests.csproj` 的 net8.0 条件项目引用。
+
 ## [Unreleased] — 开发流程：按改动选择测试
 
 ### 新增（Added）

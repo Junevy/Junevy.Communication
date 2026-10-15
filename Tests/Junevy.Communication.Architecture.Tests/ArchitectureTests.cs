@@ -28,6 +28,7 @@ public sealed class ArchitectureTests
     private const string SerialName = "Junevy.Communication.Serial";
     private const string PlcName = "Junevy.Communication.Plc";
     private const string MqttName = "Junevy.Communication.Mqtt";
+    private const string OpcUaName = "Junevy.Communication.OpcUa";
     private const string LibraryPrefix = "Junevy.Communication.";
     private const string TestsSuffix = ".Tests";
 
@@ -60,6 +61,7 @@ public sealed class ArchitectureTests
 #if NET8_0_OR_GREATER
         // SDK 适配包只面向 .NET 8（P6-C1），因此只在 net8.0 目标上参与检查；它不经过通道族，只允许引用 Core（P6-C6）。
         (Assembly.Load(MqttName), new[] { CoreName }),
+        (Assembly.Load(OpcUaName), new[] { CoreName }),
 #endif
     };
 
@@ -69,6 +71,7 @@ public sealed class ArchitectureTests
     {
 #if NET8_0_OR_GREATER
         [MqttName] = new[] { "MQTTnet" },
+        [OpcUaName] = new[] { "Opc.Ua" },
 #endif
     };
 
