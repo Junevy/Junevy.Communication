@@ -18,6 +18,18 @@
     - 写入不做类型转换：`byte[]` 按 ByteString 写出（与读出的 Byte 数组歧义见 README）。
     - **实现要点**：两张映射表按 `Type` 的**精确相等**分派。.NET 7 起 C# 支持"扩展数组转换"，`sbyte[]` 在 `is byte[]` 下为真，硬转换也成功；用类型模式会把 `sbyte[]` 误判成 ByteString。`ExtendedArrayCastingTests` 钉住这条。
   - 2026-10-15 [Architecture] SDK 适配守卫登记表加 `Junevy.Communication.OpcUa`（SDK 前缀 `Opc.Ua`，`Sdk` 命名空间 `Junevy.Communication.OpcUa.Sdk`），同时登记 `SdkAdapterArchitectureTests.Adapters`、`ArchitectureTests.SdkPrefixes`、`ArchitectureTests.LayerTable`（`#if NET8_0_OR_GREATER`）与 `Architecture.Tests.csproj` 的 net8.0 条件项目引用。
+- 2026-10-16 [OpcUa] **Task 3（连接、状态与释放）**：`OpcUaClient` 的连接、断开、状态与释放跑通；新增 `OpcUaSessionStateChangedEventArgs`，SDK 侧新增 `Sdk/OpcUaSdkConnection`（配置、遥测、会话都关在 SDK 边界内，P6-C5）、`OpcUaSdkSession`、`OpcUaSdkConfiguration`、`OpcUaSdkConfigurationSet`。
+  - 端点选择按 P62-D3：只接受安全模式 `None` + 安全策略 `None` + 提供匿名身份令牌的端点，否则 `NotSupported`；选择不上任何端点时区分"服务器没报端点"（`ConnectionClosed`）与"没有 None + 匿名端点"（`NotSupported`）。
+  - 连接、断开、释放都走同一把异步锁串行；已是 `Connected` 时重复连接直接成功；**并发连接立刻返回 `InvalidRequest`**，不排队等上一次连完再自己连一遍。
+  - 状态只在对 `OpcUaClient.StateChanged` 报一次，顺序与实际变化一致；订阅者抛异常不影响状态机与其他订阅者。
+  - 释放可重复调用；释放后每个操作返回 `ConnectionClosed`；释放不释放仍可能被使用的异步锁（P6.1 验收发现 R3）。
+  - **实现要点**：
+    - **超时**：SDK 的 `ManagedSession.ConnectAsync` 没有超时参数，端点发现更是完全不理会取消令牌（F23）。因此连接过程自带 `TimeoutScope`，并用 `Task.WaitAsync` 先把调用方摘出去——超时、取消、释放都立刻有结果，SDK 那条后台任务继续跑完且不留未观察异常；摘出去之后连上的会话会被当场关掉，不挂到已释放的客户端上。
+    - **SDK 边界**：`OpcUaLifecycle` 只管串行化、状态与释放策略，所有 `Opc.Ua` 类型都关在 `Sdk/` 命名空间内，由 `SdkAdapterArchitectureTests` 守住。
+    - **端点地址**：P62-D3 ④（服务器报告的主机名与配置不同）不需要本库改写——SDK 2.0.1 自己就把端点地址钉回发现地址（F19），原先的 `RewriteHost` 已删除。
+    - **测试服务器**：`AddNodeManager` 的回调是在宿主启动期间调用的，此时地址空间还没建好，连上去会拿到 `BadServerHalted`；`AddStartupTask` 注册的回调不会被调用（F20），测试服务器因此在启动后先用一次真实会话探路。嵌套文件夹不能按浏览路径从命名空间根解析（`Sub/Leaf` 找不到），要按父节点的 `NodeId` 定位（F21）。多维数组封不进 `Variant`，测试节点改用 `QualifiedName` 与 `Variant[]` 表示"不受支持的内置类型"（F22）。
+  - **验证**：新增 23 条用例（连接、并发、超时、取消、端点选择、状态事件、释放），OPC UA 测试项目共 243 条通过；`build/test-affected.ps1 -Base 9597c33 -NoBuild` 选中 3 个项目共 270 条通过；Debug 与 Release 构建 0 错误、无新增警告；生产代码无超过 60 行的方法、无超过 300 行的文件。
+    - **变异**：N1（去掉超时作用域）、N2（跳过 `None` 策略检查）、N3（跳过匿名检查）、N5（连接忽略取消令牌）、N6（不拒绝并发连接）、N7（断开不回 `Disconnected`）均被测试杀死。N8（`shuttingDown.Cancel()`）、N9（`finally` 里不释放锁）、N10（不释放 SDK 会话）、N11（不订阅 SDK 状态事件）在本 Task 的可观测范围内是等价变异体：N8/N9 要到"释放时正好有连接排在锁后面"才可达，N10 的 SDK 会话释放只能从 socket 回收上看（Task 4 的 `ReadAsync` 可读服务器的 `SessionCount` 后补齐），N11 只影响 SDK 断线事件（Task 7 重连用例补齐）。原计划的"改写端点主机名"变异体 N4 已无对象：那段逻辑按 F19 删除。
 
 ## [Unreleased] — 开发流程：按改动选择测试
 
