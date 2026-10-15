@@ -11,7 +11,13 @@
   - 命名空间 `Junevy.Communication.OpcUa`（对外）、`.DependencyInjection`（Task 8）、`.Sdk`（内部，P6-C5）。
   - 测试项目另加 `OPCFoundation.NetStandard.Opc.Ua.Server` 2.0.1 作为进程内测试服务器（P6-C12）。
   - **依赖影响**：SDK 把 `Microsoft.Extensions.*` 带到 10.0.12 以上，测试项目按 P62-D1 用 `PackageReference Update` 把 `Microsoft.Extensions.DependencyInjection` 提到同一版本，避免 `NU1605` 降级错误；README 开头写明这一影响。
-- 2026-10-15 [Architecture] SDK 适配守卫登记表加 `Junevy.Communication.OpcUa`（SDK 前缀 `Opc.Ua`，`Sdk` 命名空间 `Junevy.Communication.OpcUa.Sdk`），同时登记 `SdkAdapterArchitectureTests.Adapters`、`ArchitectureTests.SdkPrefixes`、`ArchitectureTests.LayerTable`（`#if NET8_0_OR_GREATER`）与 `Architecture.Tests.csproj` 的 net8.0 条件项目引用。
+- **Task 2（值模型与映射）**：`OpcUaSessionState`、`OpcUaNodeClass`、`OpcUaStatusCode`、`OpcUaValue`、`OpcUaWriteValue`、`OpcUaReference`、`OpcUaClientOptions`、`OpcUaSubscriptionOptions`；`Sdk/` 下 `StatusNames`、`OpcUaSdkValues`（值映射）、`OpcUaSdkNodeId`（NodeId 文本）、`OpcUaSdkErrorMap`（错误映射）。
+    - 公开 API 之外只多了计划批准的 `OpcUaClientOptions.PkiRoot`（默认 `%LocalAppData%\Junevy.Communication\OpcUa\pki`）：调研确认 `None` 策略下 SDK 不要求客户端证书，但构造客户端配置仍需要一个 pki 根目录。
+    - NodeId 接受 `i=`、`ns=`、`nsu=`（按命名空间 URI，推荐用于配置）五种形式；空串与语法错误返回 `InvalidRequest`，不会发送。
+    - 值映射：标量与一维数组映射为 .NET 基本类型；`Guid`/`DateTime` 从 SDK 的 `Uuid`/`DateTimeUtc` 换回 BCL 类型；结构体、多维数组、异构数组等 `Value` 为 null 且 `UnsupportedType` 给出类型名；写入只接受映射表"写"列中的类型，其余 `InvalidRequest`。
+    - 写入不做类型转换：`byte[]` 按 ByteString 写出（与读出的 Byte 数组歧义见 README）。
+    - **实现要点**：两张映射表按 `Type` 的**精确相等**分派。.NET 7 起 C# 支持"扩展数组转换"，`sbyte[]` 在 `is byte[]` 下为真，硬转换也成功；用类型模式会把 `sbyte[]` 误判成 ByteString。`ExtendedArrayCastingTests` 钉住这条。
+  - 2026-10-15 [Architecture] SDK 适配守卫登记表加 `Junevy.Communication.OpcUa`（SDK 前缀 `Opc.Ua`，`Sdk` 命名空间 `Junevy.Communication.OpcUa.Sdk`），同时登记 `SdkAdapterArchitectureTests.Adapters`、`ArchitectureTests.SdkPrefixes`、`ArchitectureTests.LayerTable`（`#if NET8_0_OR_GREATER`）与 `Architecture.Tests.csproj` 的 net8.0 条件项目引用。
 
 ## [Unreleased] — 开发流程：按改动选择测试
 
