@@ -134,6 +134,10 @@ internal sealed class OpcUaSdkSession : IAsyncDisposable
         return response.Results;
     }
 
+    /// <summary>把 SDK 的订阅挂到会话上（重连时由 SDK 自己转移）。</summary>
+    /// <param name="subscription">SDK 的订阅。</param>
+    public void AddSubscription(Subscription subscription) => session.AddSubscription(subscription);
+
     /// <summary>
     /// 浏览与续取引用。继续点不在请求里，在响应里，续取用 <see cref="BrowseNextAsync"/>（F14）。
     /// </summary>

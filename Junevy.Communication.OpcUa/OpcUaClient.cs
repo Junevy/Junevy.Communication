@@ -136,12 +136,24 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
     /// <param name="options">订阅选项；为 null 时用默认值。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>订阅；逐项创建状态在 <see cref="OpcUaSubscription.ItemStatuses"/>。</returns>
-    public Task<CommResult<OpcUaSubscription>> SubscribeAsync(
+    public async Task<CommResult<OpcUaSubscription>> SubscribeAsync(
         IReadOnlyList<string> nodeIds,
         EventHandler<OpcUaDataChangedEventArgs> handler,
         OpcUaSubscriptionOptions? options = null,
         CancellationToken cancellationToken = default)
-        => throw new NotSupportedException("Implemented in Task 6.");
+    {
+        ArgumentNullException.ThrowIfNull(nodeIds);
+        ArgumentNullException.ThrowIfNull(handler);
+
+        if (!TryBeginOperation(out CommResult failure))
+        {
+            return failure.As<OpcUaSubscription>();
+        }
+
+        return await lifecycle.Connection
+            .SubscribeAsync(this, nodeIds, handler, options ?? new OpcUaSubscriptionOptions(), cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     /// <summary>
     /// 释放（同步）。等价于 <see cref="DisposeAsync"/> 的阻塞版本；两者都可以重复调用。

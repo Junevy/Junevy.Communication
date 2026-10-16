@@ -311,9 +311,15 @@ private void Build(INodeManagerBuilder builder)
         AddRaw(builder, writable, "Writable", "DateTimeArray", ArrayOf.ToArrayOf<DateTimeUtc>(new[] { DateTimeUtc.From(new DateTime(2026, 5, 6, 7, 8, 9, DateTimeKind.Utc)) }));
         AddRaw(builder, writable, "Writable", "GuidArray", ArrayOf.ToArrayOf<Uuid>(new[] { new Uuid(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")) }));
 
-        var counterBox = new Counter();
-        Add<int>(builder, test, "Test", "Counter", () => counterBox.Value, value => counterBox.Value = value);
-        counters["Test/Counter"] = counterBox;
+        var counterBox = new Counter.Box();
+        (IVariableBuilder<int> CounterVariable, IValueUpdater<int> CounterUpdater) = Add<int>(
+            builder,
+            test,
+            "Test",
+            "Counter",
+            () => counterBox.Value,
+            value => counterBox.Value = value);
+        counters["Test/Counter"] = new Counter(counterBox, CounterUpdater);
 
         Add<int>(builder, test, "Test", "ReadOnly", () => 9, null);
 
@@ -326,7 +332,7 @@ private void Build(INodeManagerBuilder builder)
         Add<int>(builder, sub, "Sub", "Leaf", () => 5, _ => { });
     }
 
-    private void Add<T>(
+    private (IVariableBuilder<T> Variable, IValueUpdater<T> Updater) Add<T>(
         INodeManagerBuilder builder,
         INodeBuilder parent,
         string parentPath,
@@ -353,6 +359,18 @@ string path = parentPath + "/" + browseName;
         }
 
         Record(path, created.Node.NodeId);
+        return (variable, updater);
+    }
+
+    /// <summary>改计数器的值：订阅用例用它触发数据变更。</summary>
+    /// <param name="browsePath">计数器的浏览路径。</param>
+    /// <param name="value">新值。</param>
+    public void SetCounter(string browsePath, int value)
+    {
+        if (counters.TryGetValue(browsePath, out Counter? counter))
+        {
+            counter.Set(value);
+        }
     }
 
     private void Record(string browseName, NodeId nodeId) => ids[browseName] = nodeId;
@@ -389,13 +407,59 @@ string path = parentPath + "/" + browseName;
         Record(path, created.Node.NodeId);
     }
 
-    /// <summary>计数器：测试要能改值、服务器要从它读值。</summary>
+    /// <summary>计数器：测试要能改值，服务器要从它读值，改完还要通知订阅（F29）。</summary>
     private sealed class Counter
     {
+        private readonly Box box;
+        private readonly IValueUpdater<int> updater;
+
+        public Counter(Box box, IValueUpdater<int> updater)
+        {
+            this.box = box;
+            this.updater = updater;
+        }
+
+        /// <summary>构造一个只带值的计数器（不需要通知）。</summary>
+        /// <param name="box">值。</param>
+        public Counter(Box box)
+            : this(box, null!)
+        {
+        }
+
         /// <summary>当前值。</summary>
-        public int Value { get; set; }
+        public int Value
+        {
+            get => box.Value;
+            set => box.Value = value;
+        }
+
+        /// <summary>改值并通知服务器，监控项下一次采样就能看到。</summary>
+        /// <param name="value">新值。</param>
+        public void Set(int value)
+        {
+            updater.SetValue(value);
+            updater.NotifyChange();
+        }
+
+        /// <summary>值本身。</summary>
+        public sealed class Box
+        {
+            /// <summary>当前值。</summary>
+            public int Value { get; set; }
+        }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 

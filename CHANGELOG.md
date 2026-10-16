@@ -49,6 +49,19 @@
     - 测试服务器把 `MaxNodesPerBrowse` 压到 2，强制产生继续点，结果仍完整。
     - **验证**：新增 9 条用例（文件夹全量子节点、返回的 NodeId 可直接读、Objects 文件夹看得到 `Test`、未知节点、非法 NodeId 三种、未连接、继续点），OPC UA 测试项目共 **275 条通过**；`build/test-affected.ps1 -Base 9597c33 -NoBuild` 选中 3 个项目共 **304 条通过**；构建 0 错误、无新增警告。
     - **变异**：B2（浏览不校验 NodeId）、B3（引用不带节点类别）、B4（不再追完继续点）、B5（未连接时不拒绝浏览）均被测试杀死。B1（引用类型换成 `References`）在本 Task 的可观测范围内是等价变异体：进程内服务器的 `HasTypeDefinition` 引用无论按哪种引用类型过滤都会回来，过滤是否生效只能靠真实服务器验证，已按"未验证"记录。
+- 2026-10-16 [OpcUa] **Task 6（订阅）**：`OpcUaClient.SubscribeAsync` 与 `OpcUaSubscription` 全部落地（P62-D10）；新增 `Sdk/OpcUaSdkSubscription`。
+    - 空列表或重复 NodeId 直接返回 `InvalidRequest`；NodeId 语法错误返回 `InvalidRequest`；未连接返回 `NotConnected`。订阅内**逐项**创建状态在 `ItemStatuses`：一项 Bad 不影响其余项，其余项照常收通知。
+    - 数据变更在 SDK 的回调线程上逐条交给处理器；处理器抛异常只记一条 Error，后续通知照常交付。
+    - `DisposeAsync` 删除服务器上的订阅、断开后再调用不抛异常、可以重复调用。
+    - **实现要点**：
+      - 2.0 的 `SubscriptionOptions.PublishingEnabled` **默认 false**，不显式打开就一个通知都不会来（F28）。
+      - 必须先 `session.AddSubscription(...)` 再 `CreateAsync`，否则 `CreateAsync` 直接抛异常。
+      - 监控项是否创建成功看 `MonitoredItem.Status.Created` / `Status.Error`，不是 `MonitoredItem.Created`。
+      - 通知值是 `MonitoredItemNotification`（`IEncodeable`），里面的 `Value` 才是 `DataValue`（F27）；`DataValue` 在 2.0 是 struct 且**不实现** `IEncodeable`。
+      - 重连时的订阅转移交给 `ManagedSession`（`WithTransferSubscriptionsOnRecreate`），本库不写重连逻辑。
+    - **测试服务器的已知限制**：进程内服务器的监控项不一定每次写都发通知，且后续通知里的值与状态不可靠（F30）。因此"初始值 + UTC 时间戳"用真实值断言，"变更后再来一条"用反复写入直到满足条件的写法断言，并已在用例里注明。
+    - **验证**：新增 7 条用例（初始值与变更、批内一项坏、处理器抛异常、释放与重复释放、断开后释放、空列表与重复、未连接），OPC UA 测试项目共 **282 条通过**；`build/test-affected.ps1 -Base 9597c33 -NoBuild` 选中 3 个项目共 **309 条通过**；构建 0 错误、无新增警告。
+    - **变异**：S1（不开 `PublishingEnabled`）、S3（逐项状态不再报创建失败）、S4（处理器异常继续往上抛）、S6（重复 NodeId 被接受）被杀死。S2（不等待监控项创建完成）与 S5（释放时不删服务器上的订阅）在当前可观测范围内是等价变异体：`CreateAsync` 返回时监控项已经建好；`DetachNotificationEventHandlers` 已经让客户端不再投递，服务器端订阅数要等 Task 4 的服务器诊断读取才能核对。
 
 ## [Unreleased] — 开发流程：按改动选择测试
 
