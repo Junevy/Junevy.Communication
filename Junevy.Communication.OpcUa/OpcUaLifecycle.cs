@@ -58,7 +58,7 @@ internal sealed class OpcUaLifecycle : IAsyncDisposable
     /// <returns>连接结果。</returns>
     public async Task<CommResult> ConnectAsync(CancellationToken cancellationToken)
     {
-ObjectDisposedException.ThrowIf(IsDisposed, owner);
+        ObjectDisposedException.ThrowIf(IsDisposed, owner);
 
         if (stateMachine.State == OpcUaSessionState.Connected)
         {
@@ -151,8 +151,8 @@ ObjectDisposedException.ThrowIf(IsDisposed, owner);
             return;
         }
 
-// 先让排队中的连接失败退出，而不是等它连上再断；
-// 已经在连的那条也要立刻叫停，否则释放会干等到 ConnectTimeout（F14）。
+        // 先让排队中的连接失败退出，而不是等它连上再断；
+        // 已经在连的那条也要立刻叫停，否则释放会干等到 ConnectTimeout（F14）。
         shuttingDown.Cancel();
         connection.AbortConnect();
 
@@ -176,5 +176,3 @@ ObjectDisposedException.ThrowIf(IsDisposed, owner);
         return await connection.CloseAsync(scope.Token).ConfigureAwait(false);
     }
 }
-
-

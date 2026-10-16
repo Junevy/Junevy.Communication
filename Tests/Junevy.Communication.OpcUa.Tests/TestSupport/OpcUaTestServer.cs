@@ -42,7 +42,7 @@ public sealed class OpcUaTestServerOptions
 /// <summary>
 /// 进程内托管的官方 OPC UA 服务器（<c>OPCFoundation.NetStandard.Opc.Ua.Server</c> 2.0.1）。
 /// 按调研结论用**通用宿主**启动：<c>OpcUaServerHostedService</c> 才是真正监听端口的那一步，
-/// 单�� <c>IOpcUaServerFactory.CreateServer</c> 不会监听（计划第 19.2.12 节）。
+/// 单独调 <c>IOpcUaServerFactory.CreateServer</c> 不会监听（计划第 19.2.12 节）。
 /// </summary>
 public sealed class OpcUaTestServer : IAsyncDisposable
 {
@@ -84,7 +84,7 @@ public sealed class OpcUaTestServer : IAsyncDisposable
     /// <param name="options">配置。</param>
     /// <param name="loggerFactory">日志工厂；为 null 时静默。</param>
     /// <returns>已启动的服务器。</returns>
-public static async Task<OpcUaTestServer> StartAsync(OpcUaTestServerOptions options, ILoggerFactory? loggerFactory = null)
+    public static async Task<OpcUaTestServer> StartAsync(OpcUaTestServerOptions options, ILoggerFactory? loggerFactory = null)
     {
         var server = new OpcUaTestServer(
             options,
@@ -175,7 +175,7 @@ public static async Task<OpcUaTestServer> StartAsync(OpcUaTestServerOptions opti
                 },
                 probeLoggerFactory);
 
-CommResult result = await probe.ConnectAsync().ConfigureAwait(false);
+            CommResult result = await probe.ConnectAsync().ConfigureAwait(false);
 
             // 成功即就绪；被策略挡住（无匿名 / 无 None 端点）同样说明服务器已应答，不是"还没起来"。
             if (result.IsSuccess
@@ -224,7 +224,7 @@ CommResult result = await probe.ConnectAsync().ConfigureAwait(false);
         }
     }
 
-private void Build(INodeManagerBuilder builder)
+    private void Build(INodeManagerBuilder builder)
     {
         NamespaceIndex = builder.DefaultNamespaceIndex;
 
@@ -340,7 +340,7 @@ private void Build(INodeManagerBuilder builder)
         Func<T> read,
         Action<T>? write)
     {
-string path = parentPath + "/" + browseName;
+        string path = parentPath + "/" + browseName;
         IVariableBuilder<T> variable = builder.AddVariable<T>(browseName, parent.Node.NodeId);
 
         // OnRead 单独用不够，服务器会一直回 BadWaitingForInitialData；必须 Bind + SetValue（F11）。
@@ -449,22 +449,3 @@ string path = parentPath + "/" + browseName;
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

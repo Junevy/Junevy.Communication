@@ -47,7 +47,7 @@ public sealed class OpcUaStatusCodeTests
         // 0x0FFF0000 不在 SDK 的表里；0x80AB0000 是 BadInvalidArgument，不是未知码（计划第 6 节的例子需要更正）。
         var status = new OpcUaStatusCode(0x0FFF0000u);
 
-Assert.Equal("0x0FFF0000", status.SymbolicName);
+        Assert.Equal("0x0FFF0000", status.SymbolicName);
 
         // 计划第 6 节举的"未知码" 0x80AB0000 其实有名字，这里一并更正。
         Assert.Equal("BadInvalidArgument", new OpcUaStatusCode(0x80AB0000u).SymbolicName);

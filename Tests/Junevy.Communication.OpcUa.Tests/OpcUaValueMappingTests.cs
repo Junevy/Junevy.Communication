@@ -442,7 +442,7 @@ public sealed class OpcUaValueMappingTests
     }
 
     // Variant 的 object 构造函数已过时。先走写入方向的映射（那些类型两边都支持），
-// 只读类型与不支持的类型各自显式构造——这里同样不能用类型模式，见 F19。
+    // 只读类型与不支持的类型各自显式构造——这里同样不能用类型模式，见 F19。
     private static Variant WrapVariant(object? value)
     {
         // 服务器侧的 DateTime / Guid 是 DateTimeUtc / Uuid；其余保持不变。

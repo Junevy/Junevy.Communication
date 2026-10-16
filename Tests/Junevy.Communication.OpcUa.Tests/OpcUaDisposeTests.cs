@@ -36,7 +36,7 @@ public sealed class OpcUaDisposeTests
         options.ConnectTimeout = 20000;
         await using OpcUaClient client = OpcUaClient.Create(options, loggerFactory);
 
-Task<CommResult> connecting = client.ConnectAsync();
+        Task<CommResult> connecting = client.ConnectAsync();
         DateTime disposedAt = DateTime.UtcNow;
         await client.DisposeAsync();
         CommResult result = await connecting;
@@ -49,7 +49,7 @@ Task<CommResult> connecting = client.ConnectAsync();
         Assert.InRange(elapsed.TotalMilliseconds, 0, 5000);
     }
 
-[Fact]
+    [Fact]
     public async Task Operations_AfterDispose_ReportConnectionClosed()
     {
         await using OpcUaTestServer server = await OpcUaTestServerFactory.StartOwnAsync(loggerFactory: loggerFactory);

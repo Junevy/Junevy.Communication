@@ -16,7 +16,7 @@ internal sealed class OpcUaSdkConnection : IAsyncDisposable
     private readonly OpcUaClientOptions options;
     private readonly ILoggerFactory? loggerFactory;
     private readonly ILogger logger;
-private readonly OpcUaSessionStateMachine stateMachine;
+    private readonly OpcUaSessionStateMachine stateMachine;
 
     /// <summary>释放与"连接被摘出去"共用：SDK 不理会取消令牌，只能靠它把后台那条连接叫停（F14）。</summary>
     private readonly CancellationTokenSource aborting = new CancellationTokenSource();
@@ -71,7 +71,7 @@ private readonly OpcUaSessionStateMachine stateMachine;
             $"The OPC UA session is not connected; call ConnectAsync first on {owner}.");
     }
 
-/// <summary>建立会话：建一次配置，按 P62-D3 选端点，然后建会话。</summary>
+    /// <summary>建立会话：建一次配置，按 P62-D3 选端点，然后建会话。</summary>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>连接结果。</returns>
     public async Task<CommResult> OpenAsync(CancellationToken cancellationToken)
@@ -145,7 +145,7 @@ private readonly OpcUaSessionStateMachine stateMachine;
         return CommResult.Success();
     }
 
-/// <summary>
+    /// <summary>
     /// 读若干个节点。NodeId 与逐项映射交给 <see cref="OpcUaSdkOperations"/>；空列表直接成功。
     /// </summary>
     /// <param name="owner">调用方，用于异常信息。</param>
@@ -169,7 +169,7 @@ private readonly OpcUaSessionStateMachine stateMachine;
                 cancellationToken);
     }
 
-/// <summary>
+    /// <summary>
     /// 订阅若干个节点的值变化（P62-D10）。NodeId 先全部解析，任何一项不合法就整批失败。
     /// </summary>
     /// <param name="owner">调用方，用于异常信息。</param>
@@ -313,7 +313,7 @@ private readonly OpcUaSessionStateMachine stateMachine;
             return;
         }
 
-await CloseAsync(CancellationToken.None).ConfigureAwait(false);
+        await CloseAsync(CancellationToken.None).ConfigureAwait(false);
         aborting.Cancel();
         aborting.Dispose();
     }
@@ -330,8 +330,3 @@ await CloseAsync(CancellationToken.None).ConfigureAwait(false);
         _ => OpcUaSessionState.Disconnected,
     };
 }
-
-
-
-
-

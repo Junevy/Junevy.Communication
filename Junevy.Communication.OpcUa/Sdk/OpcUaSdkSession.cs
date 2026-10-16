@@ -94,7 +94,7 @@ internal sealed class OpcUaSdkSession : IAsyncDisposable
         }
     }
 
-/// <summary>
+    /// <summary>
     /// 读若干个节点的值。分批由 SDK 按服务器的 <c>MaxNodesPerRead</c> 自动完成，本库不写第二份。
     /// </summary>
     /// <param name="nodeIds">已解析的节点。</param>
@@ -205,5 +205,3 @@ internal sealed class OpcUaSdkSession : IAsyncDisposable
     private void OnConnectionStateChanged(object? sender, ConnectionStateChangedEventArgs e)
         => ConnectionStateChanged?.Invoke(this, e);
 }
-
-

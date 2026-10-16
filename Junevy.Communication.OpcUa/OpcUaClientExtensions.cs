@@ -58,7 +58,7 @@ public static class OpcUaClientExtensions
         return SingleStatus(statuses, nodeId);
     }
 
-private static CommResult<OpcUaValue> SingleValue(CommResult<IReadOnlyList<OpcUaValue>> result, string nodeId)
+    private static CommResult<OpcUaValue> SingleValue(CommResult<IReadOnlyList<OpcUaValue>> result, string nodeId)
     {
         if (!result.IsSuccess)
         {
@@ -83,14 +83,14 @@ private static CommResult<OpcUaValue> SingleValue(CommResult<IReadOnlyList<OpcUa
                 decided.Exception);
     }
 
-private static CommResult SingleStatus(CommResult<IReadOnlyList<OpcUaStatusCode>> result, string nodeId)
+    private static CommResult SingleStatus(CommResult<IReadOnlyList<OpcUaStatusCode>> result, string nodeId)
     {
         if (!result.IsSuccess)
         {
             return result.ToResult();
         }
 
-return result.Data.Count == 1
+        return result.Data.Count == 1
             ? Decide(result.Data[0], nodeId)
             : CommResult.Fail(
                 $"Expected exactly one result for {nodeId} but got {result.Data.Count}.",
@@ -109,4 +109,3 @@ return result.Data.Count == 1
             ? OpcUaSdkErrorMap.FromStatus(status, $"The server returned {status} for {nodeId}.")
             : CommResult.Success();
 }
-

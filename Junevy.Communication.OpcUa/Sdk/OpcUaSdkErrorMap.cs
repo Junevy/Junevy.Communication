@@ -142,7 +142,7 @@ internal static class OpcUaSdkErrorMap
             StatusCodes.BadCertificateIssuerUseNotAllowed,
             StatusCodes.BadCertificatePolicyCheckFailed,
             StatusCodes.BadCertificateRevocationUnknown,
-StatusCodes.BadCertificateRevoked,
+        StatusCodes.BadCertificateRevoked,
             StatusCodes.BadCertificateChainIncomplete,
             StatusCodes.BadCertificateTimeInvalid,
             StatusCodes.BadCertificateIssuerRevocationUnknown,

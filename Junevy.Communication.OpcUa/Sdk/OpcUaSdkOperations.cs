@@ -238,14 +238,3 @@ internal static class OpcUaSdkOperations
         return statuses;
     }
 }
-
-
-
-
-
-
-
-
-
-
-

@@ -91,7 +91,7 @@ internal static class OpcUaSdkConfiguration
             .GetEndpointsAsync(ArrayOf<string>.Null, cancellationToken)
             .ConfigureAwait(false);
 
-var collection = new ConfiguredEndpointCollection(configuration);
+        var collection = new ConfiguredEndpointCollection(configuration);
         foreach (EndpointDescription description in endpoints)
         {
             if (IsNonePolicy(description) && AllowsAnonymous(description))
@@ -125,9 +125,7 @@ var collection = new ConfiguredEndpointCollection(configuration);
         return false;
     }
 
-private static bool IsNonePolicy(EndpointDescription description)
+    private static bool IsNonePolicy(EndpointDescription description)
         => description.SecurityMode == MessageSecurityMode.None
            && string.Equals(description.SecurityPolicyUri, SecurityPolicyNone, StringComparison.Ordinal);
 }
-
-

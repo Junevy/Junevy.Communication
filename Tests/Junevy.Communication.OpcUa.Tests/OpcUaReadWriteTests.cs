@@ -294,7 +294,7 @@ public sealed class OpcUaReadWriteTests
         CommResult status = await client.WriteAsync(nodeId, local);
         Assert.True(status.IsSuccess, status.ToString());
 
-CommResult<OpcUaValue> readBack = await client.ReadAsync(nodeId);
+        CommResult<OpcUaValue> readBack = await client.ReadAsync(nodeId);
         Assert.True(readBack.IsSuccess, readBack.ToString());
         Assert.NotNull(readBack.Data.Value);
         var stored = (DateTime)readBack.Data.Value!;
@@ -389,7 +389,7 @@ CommResult<OpcUaValue> readBack = await client.ReadAsync(nodeId);
         Assert.Equal(CommErrorKind.RemoteError, bad.ErrorKind);
     }
 
-[Fact]
+    [Fact]
     public async Task SingleNodeExtensions_BadItemStatus_BecomesAFailureCarryingTheServerCode()
     {
         await using OpcUaTestServer server = await StartServerAsync();
@@ -492,6 +492,3 @@ CommResult<OpcUaValue> readBack = await client.ReadAsync(nodeId);
         }
     }
 }
-
-
-

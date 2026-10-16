@@ -85,7 +85,3 @@ public sealed class OpcUaBrowseTests
         Assert.Equal(CommErrorKind.NotConnected, result.ErrorKind);
     }
 }
-
-
-
-

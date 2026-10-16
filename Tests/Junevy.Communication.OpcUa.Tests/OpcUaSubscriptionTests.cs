@@ -287,10 +287,3 @@ public sealed class OpcUaSubscriptionTests
         }
     }
 }
-
-
-
-
-
-
-

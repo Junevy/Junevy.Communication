@@ -142,7 +142,7 @@ internal sealed class OpcUaSdkSubscription : IAsyncDisposable
             return;
         }
 
-foreach (MonitoredItem item in items)
+        foreach (MonitoredItem item in items)
         {
             item.DetachNotificationEventHandlers();
         }
@@ -181,7 +181,7 @@ foreach (MonitoredItem item in items)
             return;
         }
 
-DataValue dataValue;
+            DataValue dataValue;
         try
         {
             dataValue = default;
@@ -204,7 +204,7 @@ DataValue dataValue;
         }
     }
 
-private static OpcUaStatusCode StatusOf(MonitoredItem item)
+    private static OpcUaStatusCode StatusOf(MonitoredItem item)
     {
         ServiceResult? error = item.Status.Error;
         return item.Status.Created || error is null ? default : new OpcUaStatusCode(error.StatusCode.Code);
@@ -222,14 +222,3 @@ private static OpcUaStatusCode StatusOf(MonitoredItem item)
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-

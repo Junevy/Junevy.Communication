@@ -139,7 +139,7 @@ public sealed class OpcUaConnectTests
         Assert.InRange(elapsed.TotalMilliseconds, 500, 15000);
     }
 
-[Fact]
+    [Fact]
     public async Task Connect_WhileAnotherConnectIsInProgress_ReturnsInvalidRequest()
     {
         using var silent = new SilentOpcUaPort();
@@ -231,7 +231,7 @@ public sealed class OpcUaConnectTests
         Assert.True((await client.ConnectAsync()).IsSuccess);
         Assert.True((await client.DisconnectAsync()).IsSuccess);
 
-Assert.Equal(3, changes.Count);
+        Assert.Equal(3, changes.Count);
         Assert.Equal(OpcUaSessionState.Disconnected, changes[0].Previous);
         Assert.Equal(OpcUaSessionState.Connecting, changes[0].Current);
         Assert.Equal(OpcUaSessionState.Connecting, changes[1].Previous);
