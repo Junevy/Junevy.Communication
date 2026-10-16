@@ -235,6 +235,9 @@ private void Build(INodeManagerBuilder builder)
         Record("Sub", sub.Node.NodeId);
         Record("Writable", writable.Node.NodeId);
 
+        // 一条**非层级**的正向引用：浏览"只取正向层级引用"时它不该出现，用来钉住这条过滤。
+        ReferenceBuilderExtensions.AddReference(test, sub.Node.NodeId, true, ReferenceTypeIds.GeneratesEvent);
+
         // 只读节点：读矩阵用，类型各一项。
         Add<bool>(builder, test, "Test", "Bool", () => true, null);
         Add<sbyte>(builder, test, "Test", "SByte", () => -1, null);
@@ -393,6 +396,8 @@ string path = parentPath + "/" + browseName;
         public int Value { get; set; }
     }
 }
+
+
 
 
 

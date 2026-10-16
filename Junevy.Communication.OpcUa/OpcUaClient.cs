@@ -114,10 +114,19 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
     /// <param name="nodeId">起点 NodeId 文本。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>完整的引用列表。</returns>
-    public Task<CommResult<IReadOnlyList<OpcUaReference>>> BrowseAsync(
+    public async Task<CommResult<IReadOnlyList<OpcUaReference>>> BrowseAsync(
         string nodeId,
         CancellationToken cancellationToken = default)
-        => throw new NotSupportedException("Implemented in Task 5.");
+    {
+        ArgumentNullException.ThrowIfNull(nodeId);
+
+        if (!TryBeginOperation(out CommResult failure))
+        {
+            return failure.As<IReadOnlyList<OpcUaReference>>();
+        }
+
+        return await lifecycle.Connection.BrowseAsync(this, nodeId, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// 订阅一个或多个节点的值变化（P62-D10）。

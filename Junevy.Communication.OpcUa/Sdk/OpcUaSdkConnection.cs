@@ -169,6 +169,19 @@ private readonly OpcUaSessionStateMachine stateMachine;
                 cancellationToken);
     }
 
+/// <summary>
+    /// 浏览一个节点的正向层级引用。继续点由 <see cref="OpcUaSdkOperations"/> 追完。
+    /// </summary>
+    /// <param name="owner">调用方，用于异常信息。</param>
+    /// <param name="nodeId">起点 NodeId 文本。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>完整的引用列表。</returns>
+    public Task<CommResult<IReadOnlyList<OpcUaReference>>> BrowseAsync(
+        object owner,
+        string nodeId,
+        CancellationToken cancellationToken)
+        => OpcUaSdkOperations.BrowseAsync(RequireSession(owner), options.EndpointUrl, logger, nodeId, cancellationToken);
+
     /// <summary>
     /// 写若干个节点。NodeId、值与逐项映射交给 <see cref="OpcUaSdkOperations"/>；空列表直接成功。
     /// </summary>

@@ -43,6 +43,12 @@
     - **无法用进程内服务器验证的规则**："Uncertain 逐项状态算成功"在真实服务器上才会出现，测试服务器产生不出来，因此这条规则单独由 `OpcUaClientExtensions.Decide` 的单元测试钉住，集成用例覆盖 Bad 的真实路径。
     - **验证**：新增 26 条用例（读矩阵、时间戳、结构体、部分失败、`nsu=`、非法 NodeId、空列表、超限批量、未连接、写矩阵、本地时间往返、类型不符、只读节点、不支持的类型、超限写入、单节点扩展方法、日志无值），OPC UA 测试项目共 **269 条通过**；`build/test-affected.ps1 -Base 9597c33 -NoBuild` 选中 3 个项目共 **296 条通过**；构建 0 错误、无新增警告。
     - **变异**：R1（读不校验 NodeId）、R2（`nsu=` 不走长形式）、R3（空列表也发请求）、R4（读不出 `Uuid`）、R5（时间戳不保持 UTC）、R6（结构体不标记为不受支持类型）、R7（写入接受任意 .NET 类型）、R8（写入的 `DateTime` 不按 UTC 存）、R9（Bad 逐项状态算成功）、R10（Uncertain 算失败）、R11（未连接不报 `NotConnected`）、R12（读只取第一个节点）—— 12 个全部被测试杀死。
+- 2026-10-16 [OpcUa] **Task 5（浏览）**：`OpcUaClient.BrowseAsync(nodeId)` 返回一个节点的正向层级引用，继续点由本库追完（P62-D9）。返回的 `OpcUaReference` 带 NodeId、浏览名、显示名与节点类别，NodeId 可以直接拿去读；浏览不存在的节点返回服务器给的 `BadNodeIdUnknown`；NodeId 语法错误返回 `InvalidRequest`；未连接返回 `NotConnected`。
+    - **实现要点**：遍历交给 SDK 的 `Opc.Ua.Client.Browser`（`MaxNodesPerBrowse` 决定每次请求的引用数，`BrowseAsync` 自己把继续点追完）。本库**不手写** `BrowseNextAsync` 循环：在 2.0 里那样做，第一次续取就会被判成 `BadContinuationPointInvalid`（F25）。
+    - `BrowserOptions.NodeClassMask` 必须给 **-1**（`0xFFFFFFFF`）。给 `int.MaxValue` 时服务器回上来的 `NodeClass` 全是 `Unspecified`（F26）。
+    - 测试服务器把 `MaxNodesPerBrowse` 压到 2，强制产生继续点，结果仍完整。
+    - **验证**：新增 9 条用例（文件夹全量子节点、返回的 NodeId 可直接读、Objects 文件夹看得到 `Test`、未知节点、非法 NodeId 三种、未连接、继续点），OPC UA 测试项目共 **275 条通过**；`build/test-affected.ps1 -Base 9597c33 -NoBuild` 选中 3 个项目共 **304 条通过**；构建 0 错误、无新增警告。
+    - **变异**：B2（浏览不校验 NodeId）、B3（引用不带节点类别）、B4（不再追完继续点）、B5（未连接时不拒绝浏览）均被测试杀死。B1（引用类型换成 `References`）在本 Task 的可观测范围内是等价变异体：进程内服务器的 `HasTypeDefinition` 引用无论按哪种引用类型过滤都会回来，过滤是否生效只能靠真实服务器验证，已按"未验证"记录。
 
 ## [Unreleased] — 开发流程：按改动选择测试
 

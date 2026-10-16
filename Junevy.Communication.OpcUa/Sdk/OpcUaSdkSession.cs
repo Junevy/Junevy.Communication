@@ -32,6 +32,9 @@ internal sealed class OpcUaSdkSession : IAsyncDisposable
     /// <summary>服务器上报的操作上限（P62-D7）。</summary>
     public OperationLimits OperationLimits => session.OperationLimits;
 
+    /// <summary>底层客户端：SDK 的 <c>Browser</c> 等高层助手需要它（<c>ISessionClient</c>）。</summary>
+    public ISessionClient SessionClient => session;
+
     /// <summary>是否已连接。</summary>
     public bool Connected => session.Connected;
 
@@ -131,6 +134,40 @@ internal sealed class OpcUaSdkSession : IAsyncDisposable
         return response.Results;
     }
 
+    /// <summary>
+    /// 浏览与续取引用。继续点不在请求里，在响应里，续取用 <see cref="BrowseNextAsync"/>（F14）。
+    /// </summary>
+    /// <param name="requestHeader">请求头，null 表示由 SDK 填。</param>
+    /// <param name="view">视图。</param>
+    /// <param name="requestedMaxReferencesPerNode">每次请求的引用数上限。</param>
+    /// <param name="nodesToBrowse">要浏览的节点。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>浏览响应，结果在 <c>Results</c> 里。</returns>
+    public async Task<BrowseResponse> BrowseAsync(
+        RequestHeader? requestHeader,
+        ViewDescription view,
+        uint requestedMaxReferencesPerNode,
+        ArrayOf<BrowseDescription> nodesToBrowse,
+        CancellationToken cancellationToken)
+        => await session
+            .BrowseAsync(requestHeader, view, requestedMaxReferencesPerNode, nodesToBrowse, cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>续取一批继续点的引用。</summary>
+    /// <param name="requestHeader">请求头，null 表示由 SDK 填。</param>
+    /// <param name="releaseContinuationPoints">是否在取完后释放继续点。</param>
+    /// <param name="continuationPoints">继续点。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>续取响应，结果在 <c>Results</c> 里。</returns>
+    public async Task<BrowseNextResponse> BrowseNextAsync(
+        RequestHeader? requestHeader,
+        bool releaseContinuationPoints,
+        ArrayOf<ByteString> continuationPoints,
+        CancellationToken cancellationToken)
+        => await session
+            .BrowseNextAsync(requestHeader, releaseContinuationPoints, continuationPoints, cancellationToken)
+            .ConfigureAwait(false);
+
     /// <summary>关闭会话：先让服务器删除会话上的订阅。</summary>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>关闭结果；尽力而为，不抛异常。</returns>
@@ -164,3 +201,5 @@ internal sealed class OpcUaSdkSession : IAsyncDisposable
     private void OnConnectionStateChanged(object? sender, ConnectionStateChangedEventArgs e)
         => ConnectionStateChanged?.Invoke(this, e);
 }
+
+
