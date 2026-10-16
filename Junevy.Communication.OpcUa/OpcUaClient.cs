@@ -171,7 +171,7 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
     /// <returns>客户端与当前状态。</returns>
     public override string ToString() => $"OpcUaClient({options.EndpointUrl}, {State})";
 
-    // 释放后是 ConnectionClosed，没会话是 NotConnected（P62-D2 的四个操作共用这条规则）。
+    // 释放后是 ConnectionClosed；没连上、正在重连也是 NotConnected（P62-D2 的四个操作共用这条规则）。
     private bool TryBeginOperation(out CommResult failure)
     {
         if (lifecycle.IsDisposed)
@@ -180,9 +180,10 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
             return false;
         }
 
-        if (!lifecycle.Connection.HasSession)
+        if (stateMachine.State != OpcUaSessionState.Connected || !lifecycle.Connection.HasSession)
         {
-            failure = OpcUaSdkErrorMap.NotConnected("The OPC UA client is not connected.");
+            failure = OpcUaSdkErrorMap.NotConnected(
+                $"The OPC UA client is not connected (state: {stateMachine.State}).");
             return false;
         }
 
