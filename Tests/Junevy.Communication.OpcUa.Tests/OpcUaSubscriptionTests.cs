@@ -56,8 +56,13 @@ public sealed class OpcUaSubscriptionTests
         Assert.Single(subscription.NodeIds);
         Assert.True(subscription.ItemStatuses[0].IsGood);
 
-        await WaitUntilAsync(() => Count(received) >= 1, "the initial value");
-        Assert.Equal(server.Id("Test/Counter").ToString(), received[0].NodeId);
+await WaitUntilAsync(() => Count(received) >= 1, "the initial value");
+Assert.Equal(server.Id("Test/Counter").ToString(), received[0].NodeId);
+
+        // 通知里带的是真的数据值，不是一个空的 DataValue（F27：值在 MonitoredItemNotification.Value 上）。
+        Assert.Equal(0, received[0].Value.Value);
+        Assert.True(received[0].Value.Status.IsGood, received[0].Value.Status.ToString());
+        Assert.Equal(DateTimeKind.Utc, received[0].Value.SourceTimestamp?.Kind);
 
         // 用一次真实的写入触发数据变更：服务器侧的 OnWrite 会更新值并通知监控项。
         // 注意：进程内服务器后续通知里的值是空的（F30），因此这里只验证"又来了一条通知"。

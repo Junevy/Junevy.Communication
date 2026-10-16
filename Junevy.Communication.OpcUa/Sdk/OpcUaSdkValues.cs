@@ -103,8 +103,6 @@ internal static class OpcUaSdkValues
     /// <returns>状态为 Bad、或者内置类型不受支持时 <see cref="OpcUaValue.Value"/> 为 null。</returns>
     public static OpcUaValue FromSdk(DataValue dataValue)
     {
-        ArgumentNullException.ThrowIfNull(dataValue);
-
         OpcUaStatusCode status = new OpcUaStatusCode(dataValue.StatusCode.Code);
         DateTime? source = Stamp(dataValue.SourceTimestamp);
         DateTime? server = Stamp(dataValue.ServerTimestamp);

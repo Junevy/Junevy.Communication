@@ -181,21 +181,16 @@ internal sealed class OpcUaSdkSubscription : IAsyncDisposable
             return;
         }
 
-            DataValue dataValue;
-        try
+        // 通知值是 IEncodeable，里面装的是 MonitoredItemNotification，真正的 DataValue 在它的 Value 上（F27）。
+        // 事件型监控项装的是别的东西，本期只做数据变更，忽略即可。
+        if (args.NotificationValue is not MonitoredItemNotification notification)
         {
-            dataValue = default;
-            _ = args.NotificationValue;
-        }
-        catch (InvalidCastException)
-        {
-            // 事件型监控项的 NotificationValue 不是 DataValue，本期只做数据变更，忽略即可。
             return;
         }
 
         try
         {
-            handler(handler, new OpcUaDataChangedEventArgs(nodeId, OpcUaSdkValues.FromSdk(dataValue)));
+            handler(handler, new OpcUaDataChangedEventArgs(nodeId, OpcUaSdkValues.FromSdk(notification.Value)));
         }
         catch (Exception exception)
         {
