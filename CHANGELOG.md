@@ -63,6 +63,19 @@
     - **验证**：新增 7 条用例（初始值与变更、批内一项坏、处理器抛异常、释放与重复释放、断开后释放、空列表与重复、未连接），OPC UA 测试项目共 **282 条通过**；`build/test-affected.ps1 -Base 9597c33 -NoBuild` 选中 3 个项目共 **309 条通过**；构建 0 错误、无新增警告。
     - **变异**：S1（不开 `PublishingEnabled`）、S3（逐项状态不再报创建失败）、S4（处理器异常继续往上抛）、S6（重复 NodeId 被接受）被杀死。S2（不等待监控项创建完成）与 S5（释放时不删服务器上的订阅）在当前可观测范围内是等价变异体：`CreateAsync` 返回时监控项已经建好；`DetachNotificationEventHandlers` 已经让客户端不再投递，服务器端订阅数要等 Task 4 的服务器诊断读取才能核对。
 
+- 2026-10-16 [OpcUa] **修正：数据变更通知里的值一直是空的**（Task 7 过程中发现）。`Deliver` 把 `DataValue` 赋成 `default` 之后就把通知丢了，因此每一条 `OpcUaDataChangedEventArgs` 带的都是空值。通知值是 `IEncodeable`，真正的 `DataValue` 在 `MonitoredItemNotification.Value` 上（F27）；事件型通知改用类型判断忽略，不再靠一个永远不会抛的强制转换。同时删掉对结构体 `DataValue` 的 `ArgumentNullException.ThrowIfNull`（无效逻辑）。订阅用例现在断言初始通知里的真实值、Good 状态与 UTC 时间戳。
+- 2026-10-16 [OpcUa] **Task 7（重连）**：验证并钉住会话的自动恢复（P62-D2、D11）。
+    - 服务器停掉时状态从 `Connected` 变为 `Reconnecting`；期间读、写、浏览、订阅一律立刻返回 `NotConnected`，**不**把请求交给 SDK 排队。
+    - 服务器在同一端口重新启动后回到 `Connected`，可以继续读。
+    - 停机前建立的订阅在重启后继续收到通知（由 `ManagedSession` 在会话重建时处理）。
+    - `Reconnecting` 期间 `DisconnectAsync` 与释放都会停掉重连：状态回到 `Disconnected`，释放立刻返回（不等退避），服务器回来后也不会自己连上去。
+    - 用例结束强制 GC 并观察 `TaskScheduler.UnobservedTaskException`：没有未观察的任务异常（Q40）。
+    - **变异**：把操作的准入条件从"状态是 `Connected`"改回"有会话对象"，重连期间的 `NotConnected` 用例立刻失败（实测该读调用会在 SDK 里挂住——重连重试次数不限，它就一直等下去）；断开时不关闭会话、释放时不把状态改成 `Disconnected`，各自对应的用例失败。`WithTransferSubscriptionsOnRecreate(false)` 是等价变异体：无论是否转移，服务器重启后 SDK 都会重建监控项，通知照样回来，因此"转移还是重建"目前无法从客户端侧区分。
+- 2026-10-16 [OpcUa] **Task 8（工厂与依赖注入）**：新增 `OpcUaClientFactory`（`NamedFactory<OpcUaClient>`）与 `OpcUaServiceCollectionExtensions.AddOpcUaClients()`（P62-D14）。命名与调用习惯与 `MqttClientFactory` / `AddMqttClients()` 一致；扩展方法刻意**不**叫 `AddOpcUa()`，那是 SDK 自带的服务注册同名。
+    - 验证：新增 14 条用例（同名同实例、不同名、null 与非法选项、释放与重复释放、释放后调用、取快照、appsettings 形状的 JSON 绑定、注册单例与可重复调用、容器日志工厂同时透传给本库与 SDK）。OPC UA 测试项目共 **302 条通过**。
+    - 变异：`TryAddSingleton` 换成 `AddSingleton`、`GetOrAddCore` 换成直接新建、容器日志工厂不透传，三个都被测试杀死。
+- 2026-10-16 [Docs] **Task 9（README、Skill、CHANGELOG）**：`Junevy.Communication.OpcUa/README.md` 补全为完整参考（开头醒目写明只支持 `None` 策略与匿名登录、依赖影响、快速上手、NodeId 写法与 `nsu=` 的建议、值类型表、批量与逐项状态、浏览、订阅、重连、状态、选项表、释放、错误分类表、依赖注入、日志、Verification status）。所有示例经 net8.0 实际编译验证（先做负控：故意写错一个成员，确认检查会报错）。新增 Skill `Skills/using-junevy-opcua/SKILL.md`。根 `readme.md` 的协议表与说明补上 OPC UA 一行。
+
 ## [Unreleased] — 开发流程：按改动选择测试
 
 ### 新增（Added）
