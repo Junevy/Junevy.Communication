@@ -58,19 +58,38 @@ internal static class OpcUaSdkErrorMap
     {
         ArgumentNullException.ThrowIfNull(exception);
 
-        if (scope is not null)
+        // 先看作用域：调用方取消与超时由我们自己掌握，比异常的类型可靠。
+        if (FromScope(scope, exception) is CommResult scoped)
         {
-            if (scope.IsUserCancelled)
-            {
-                return Fail(CommErrorKind.Cancelled, null, "The operation was cancelled.", exception);
-            }
-
-            if (scope.IsTimedOut)
-            {
-                return Fail(CommErrorKind.Timeout, null, "The OPC UA operation timed out.", exception);
-            }
+            return scoped;
         }
 
+        return FromException(exception);
+    }
+
+    /// <summary>作用域说是取消或超时就以它为准；它什么也没说时返回 null，交给异常本身分类。</summary>
+    /// <param name="scope">包住这次操作的超时作用域；可以是 null。</param>
+    /// <param name="exception">只作诊断附在结果上。</param>
+    /// <returns>分类结果；作用域没有给出结论时为 null。</returns>
+    private static CommResult? FromScope(TimeoutScope? scope, Exception exception)
+    {
+        if (scope is null)
+        {
+            return null;
+        }
+
+        if (scope.IsUserCancelled)
+        {
+            return Fail(CommErrorKind.Cancelled, null, "The operation was cancelled.", exception);
+        }
+
+        return scope.IsTimedOut
+            ? Fail(CommErrorKind.Timeout, null, "The OPC UA operation timed out.", exception)
+            : null;
+    }
+
+    private static CommResult FromException(Exception exception)
+    {
         // SDK 把服务级失败包在 ServiceResultException 里，状态码要沿异常链取（F16）。
         for (Exception? current = exception; current is not null; current = current.InnerException)
         {
@@ -142,7 +161,7 @@ internal static class OpcUaSdkErrorMap
             StatusCodes.BadCertificateIssuerUseNotAllowed,
             StatusCodes.BadCertificatePolicyCheckFailed,
             StatusCodes.BadCertificateRevocationUnknown,
-        StatusCodes.BadCertificateRevoked,
+            StatusCodes.BadCertificateRevoked,
             StatusCodes.BadCertificateChainIncomplete,
             StatusCodes.BadCertificateTimeInvalid,
             StatusCodes.BadCertificateIssuerRevocationUnknown,

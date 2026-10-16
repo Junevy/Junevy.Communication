@@ -178,59 +178,21 @@ internal sealed class OpcUaSdkConnection : IAsyncDisposable
     /// <param name="options">订阅选项。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>订阅；逐项创建状态在 <see cref="OpcUaSubscription.ItemStatuses"/>。</returns>
-    public async Task<CommResult<OpcUaSubscription>> SubscribeAsync(
+    public Task<CommResult<OpcUaSubscription>> SubscribeAsync(
         object owner,
         IReadOnlyList<string> nodeIds,
         EventHandler<OpcUaDataChangedEventArgs> handler,
         OpcUaSubscriptionOptions options,
         CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(nodeIds);
-        ArgumentNullException.ThrowIfNull(handler);
-
-        if (nodeIds.Count == 0)
-        {
-            return OpcUaSdkErrorMap.InvalidRequest("A subscription needs at least one node id.").As<OpcUaSubscription>();
-        }
-
-        var seen = new HashSet<string>(nodeIds, StringComparer.Ordinal);
-        if (seen.Count != nodeIds.Count)
-        {
-            return OpcUaSdkErrorMap
-                .InvalidRequest("A subscription cannot watch the same node twice.")
-                .As<OpcUaSubscription>();
-        }
-
-        OpcUaSdkSession session = RequireSession(owner);
-        var resolved = new NodeId[nodeIds.Count];
-        for (int i = 0; i < nodeIds.Count; i++)
-        {
-            if (!OpcUaSdkNodeId.TryParse(nodeIds[i], session.NamespaceUris, out NodeId nodeId, out string? reason))
-            {
-                return OpcUaSdkErrorMap
-                    .InvalidRequest($"'{nodeIds[i]}' is not a valid node id: {reason}")
-                    .As<OpcUaSubscription>();
-            }
-
-            resolved[i] = nodeId;
-        }
-
-        CommResult<OpcUaSdkSubscription> created = await OpcUaSdkSubscription
-            .CreateAsync(session, Telemetry, logger, resolved, nodeIds, handler, options, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!created.IsSuccess)
-        {
-            return created.As<OpcUaSubscription>();
-        }
-
-        OpcUaSdkSubscription subscription = created.Data!;
-        logger.LogDebug("Subscribed {Count} node(s) on {Endpoint}.", nodeIds.Count, this.options.EndpointUrl);
-        return CommResult<OpcUaSubscription>.Success(new OpcUaSubscription(
-            nodeIds.ToArray(),
-            subscription.ItemStatuses,
-            async () => await subscription.DeleteAsync(cancellationToken).ConfigureAwait(false)));
-    }
+        => OpcUaSdkSubscribeRequest.CreateAsync(
+            RequireSession(owner),
+            Telemetry,
+            logger,
+            this.options.EndpointUrl!,
+            nodeIds,
+            handler,
+            options,
+            cancellationToken);
 
     /// <summary>
     /// 浏览一个节点的正向层级引用。继续点由 <see cref="OpcUaSdkOperations"/> 追完。
