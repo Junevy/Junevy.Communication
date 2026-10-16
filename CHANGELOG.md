@@ -30,6 +30,19 @@
     - **测试服务器**：`AddNodeManager` 的回调是在宿主启动期间调用的，此时地址空间还没建好，连上去会拿到 `BadServerHalted`；`AddStartupTask` 注册的回调不会被调用（F20），测试服务器因此在启动后先用一次真实会话探路。嵌套文件夹不能按浏览路径从命名空间根解析（`Sub/Leaf` 找不到），要按父节点的 `NodeId` 定位（F21）。多维数组封不进 `Variant`，测试节点改用 `QualifiedName` 与 `Variant[]` 表示"不受支持的内置类型"（F22）。
   - **验证**：新增 23 条用例（连接、并发、超时、取消、端点选择、状态事件、释放），OPC UA 测试项目共 243 条通过；`build/test-affected.ps1 -Base 9597c33 -NoBuild` 选中 3 个项目共 270 条通过；Debug 与 Release 构建 0 错误、无新增警告；生产代码无超过 60 行的方法、无超过 300 行的文件。
     - **变异**：N1（去掉超时作用域）、N2（跳过 `None` 策略检查）、N3（跳过匿名检查）、N5（连接忽略取消令牌）、N6（不拒绝并发连接）、N7（断开不回 `Disconnected`）均被测试杀死。N8（`shuttingDown.Cancel()`）、N9（`finally` 里不释放锁）、N10（不释放 SDK 会话）、N11（不订阅 SDK 状态事件）在本 Task 的可观测范围内是等价变异体：N8/N9 要到"释放时正好有连接排在锁后面"才可达，N10 的 SDK 会话释放只能从 socket 回收上看（Task 4 的 `ReadAsync` 可读服务器的 `SessionCount` 后补齐），N11 只影响 SDK 断线事件（Task 7 重连用例补齐）。原计划的"改写端点主机名"变异体 N4 已无对象：那段逻辑按 F19 删除。
+- 2026-10-16 [OpcUa] **Task 4（读与写）**：`OpcUaClient.ReadAsync` / `WriteAsync` 与单节点扩展方法 `ReadAsync(nodeId)` / `WriteAsync(nodeId, value)` 全部落地（P62-D6、D7、D8）。
+    - 批量读写：结果与输入同序同长；**逐项**状态码来自服务器，一项 Bad 不影响其余项；空列表直接成功不发请求；未连接时返回 `NotConnected`，释放后返回 `ConnectionClosed`。
+    - 校验前置：NodeId 不合法、或某个 .NET 类型不在写入映射表里，**整批失败并且不发请求**（`InvalidRequest`）；写入不做类型转换，类型不符由服务器给 `BadTypeMismatch`（逐项）。
+    - 时间戳按 `TimestampsToReturn.Both` 取回，`SourceTimestamp` 与 `ServerTimestamp` 都是 UTC；不读属性的历史数据。
+    - 单节点扩展方法把 Bad 逐项状态变成失败（分类与 `ProtocolErrorCode` 由状态码推出），Good 与 Uncertain 仍算成功。
+    - 日志只记数量与端点，任何级别都不出现读写的值。
+    - **实现要点**：
+      - **分批**：读写都交给 SDK 的 `SessionClientBatched`，它按服务器的 `MaxNodesPerRead` / `MaxNodesPerWrite` 自动分批，本库不写第二份。测试服务器把上限压到 5、一次读或写 12 个节点，结果完整且同序。
+      - **SDK 边界**：读写的请求与响应封装在 `Sdk/OpcUaSdkSession`，NodeId 解析与逐项映射在 `Sdk/OpcUaSdkConnection`，`Sdk/` 之外不出现 `Opc.Ua` 类型。
+      - **测试服务器**：可写节点按类型分列在 `Writable` 文件夹；流式（fluent）强类型写入只接受与声明类型完全一致的 .NET 值，而本库写出去的是 `T[]`，因此数组写入用例走**原始写处理器**自己把 `Variant` 解回 `ArrayOf<T>`（F24）；结构体也必须包成 `ExtensionObject` 才能发布成变量值（F22）。
+    - **无法用进程内服务器验证的规则**："Uncertain 逐项状态算成功"在真实服务器上才会出现，测试服务器产生不出来，因此这条规则单独由 `OpcUaClientExtensions.Decide` 的单元测试钉住，集成用例覆盖 Bad 的真实路径。
+    - **验证**：新增 26 条用例（读矩阵、时间戳、结构体、部分失败、`nsu=`、非法 NodeId、空列表、超限批量、未连接、写矩阵、本地时间往返、类型不符、只读节点、不支持的类型、超限写入、单节点扩展方法、日志无值），OPC UA 测试项目共 **269 条通过**；`build/test-affected.ps1 -Base 9597c33 -NoBuild` 选中 3 个项目共 **296 条通过**；构建 0 错误、无新增警告。
+    - **变异**：R1（读不校验 NodeId）、R2（`nsu=` 不走长形式）、R3（空列表也发请求）、R4（读不出 `Uuid`）、R5（时间戳不保持 UTC）、R6（结构体不标记为不受支持类型）、R7（写入接受任意 .NET 类型）、R8（写入的 `DateTime` 不按 UTC 存）、R9（Bad 逐项状态算成功）、R10（Uncertain 算失败）、R11（未连接不报 `NotConnected`）、R12（读只取第一个节点）—— 12 个全部被测试杀死。
 
 ## [Unreleased] — 开发流程：按改动选择测试
 

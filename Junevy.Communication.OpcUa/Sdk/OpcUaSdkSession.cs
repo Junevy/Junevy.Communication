@@ -91,6 +91,46 @@ internal sealed class OpcUaSdkSession : IAsyncDisposable
         }
     }
 
+/// <summary>
+    /// 读若干个节点的值。分批由 SDK 按服务器的 <c>MaxNodesPerRead</c> 自动完成，本库不写第二份。
+    /// </summary>
+    /// <param name="nodeIds">已解析的节点。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>与输入同序同长的逐项值。</returns>
+    public async Task<ArrayOf<DataValue>> ReadAsync(IReadOnlyList<NodeId> nodeIds, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(nodeIds);
+
+        var items = new ReadValueId[nodeIds.Count];
+        for (int i = 0; i < nodeIds.Count; i++)
+        {
+            items[i] = new ReadValueId { NodeId = nodeIds[i], AttributeId = Attributes.Value };
+        }
+
+        ReadResponse response = await session
+            .ReadAsync(null, 0, TimestampsToReturn.Both, ArrayOf.ToArrayOf(items), cancellationToken)
+            .ConfigureAwait(false);
+
+        return response.Results;
+    }
+
+    /// <summary>
+    /// 写若干个节点的值。分批同样由 SDK 按 <c>MaxNodesPerWrite</c> 完成。
+    /// </summary>
+    /// <param name="values">待写项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>与输入同序同长的逐项状态码。</returns>
+    public async Task<ArrayOf<StatusCode>> WriteAsync(ArrayOf<WriteValue> values, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+
+        WriteResponse response = await session
+            .WriteAsync(null, values, cancellationToken)
+            .ConfigureAwait(false);
+
+        return response.Results;
+    }
+
     /// <summary>关闭会话：先让服务器删除会话上的订阅。</summary>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>关闭结果；尽力而为，不抛异常。</returns>

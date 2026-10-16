@@ -7,7 +7,7 @@ namespace Junevy.Communication.OpcUa.Sdk;
 /// 读、写、订阅三条路径共用它；计划第 17.2 节的每一行都有读与写的测试。
 /// </summary>
 /// <remarks>
-/// 两张表都按 <see cref="Type"/> 的**精确相等**分派，不用 C# 的类型模式。原因见 F19：
+/// 两张表都按 <see cref="Type"/> 的**精确相等**分派，不用 C# 的类型模式。原因见 CHANGELOG「Task 2（值模型与映射）」的实现要点：
 /// .NET 7 起支持"扩展数组转换"，<c>sbyte[]</c> 在 <c>is byte[]</c> 下为真、硬转换也成功（逐元素重解释），
 /// 因此类型模式会把 <c>sbyte[]</c> 误判成 <c>byte[]</c>（ByteString）。
 /// <para>

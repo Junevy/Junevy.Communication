@@ -224,42 +224,89 @@ CommResult result = await probe.ConnectAsync().ConfigureAwait(false);
         }
     }
 
-    private void Build(INodeManagerBuilder builder)
+private void Build(INodeManagerBuilder builder)
     {
         NamespaceIndex = builder.DefaultNamespaceIndex;
 
         INodeBuilder<FolderState> test = builder.AddFolder("Test", ObjectIds.ObjectsFolder);
         INodeBuilder<FolderState> sub = builder.AddFolder("Sub", test.Node.NodeId);
+        INodeBuilder<FolderState> writable = builder.AddFolder("Writable", test.Node.NodeId);
         Record("Test", test.Node.NodeId);
         Record("Sub", sub.Node.NodeId);
+        Record("Writable", writable.Node.NodeId);
 
+        // 只读节点：读矩阵用，类型各一项。
         Add<bool>(builder, test, "Test", "Bool", () => true, null);
         Add<sbyte>(builder, test, "Test", "SByte", () => -1, null);
         Add<byte>(builder, test, "Test", "Byte", () => 1, null);
         Add<short>(builder, test, "Test", "Int16", () => -1, null);
         Add<ushort>(builder, test, "Test", "UInt16", () => 1, null);
-        Add<int>(builder, test, "Test", "Int32", () => 42, _ => { });
-        Add<uint>(builder, test, "Test", "UInt32", () => 42, _ => { });
-        Add<long>(builder, test, "Test", "Int64", () => 42, _ => { });
-        Add<ulong>(builder, test, "Test", "UInt64", () => 42, _ => { });
-        Add<float>(builder, test, "Test", "Float", () => 1.5f, _ => { });
-        Add<double>(builder, test, "Test", "Double", () => 1.5, _ => { });
-        Add<string>(builder, test, "Test", "String", () => "hello", _ => { });
-        Add<DateTimeUtc>(builder, test, "Test", "DateTime", () => DateTimeUtc.From(new DateTime(2026, 10, 12, 1, 2, 3, DateTimeKind.Utc)), _ => { });
-        Add<Uuid>(builder, test, "Test", "Guid", () => new Uuid(Guid.Parse("11112222-3333-4444-5555-666677778888")), _ => { });
-        Add<ByteString>(builder, test, "Test", "ByteString", () => new ByteString(new byte[] { 1, 2 }), _ => { });
-        Add<ArrayOf<byte>>(builder, test, "Test", "ByteArray", () => ArrayOf.ToArrayOf<byte>(new byte[] { 7, 8 }), _ => { });
-        Add<ArrayOf<int>>(builder, test, "Test", "Int32Array", () => ArrayOf.ToArrayOf<int>(new[] { 1, 2, 3 }), _ => { });
-        Add<ArrayOf<double>>(builder, test, "Test", "DoubleArray", () => ArrayOf.ToArrayOf<double>(new[] { 1.5, 2.5 }), _ => { });
-        Add<ArrayOf<string>>(builder, test, "Test", "StringArray", () => ArrayOf.ToArrayOf<string>(new[] { "a", "b" }), _ => { });
+        Add<int>(builder, test, "Test", "Int32", () => 42, null);
+        Add<uint>(builder, test, "Test", "UInt32", () => 42, null);
+        Add<long>(builder, test, "Test", "Int64", () => 42, null);
+        Add<ulong>(builder, test, "Test", "UInt64", () => 42, null);
+        Add<float>(builder, test, "Test", "Float", () => 1.5f, null);
+        Add<double>(builder, test, "Test", "Double", () => 1.5, null);
+        Add<string>(builder, test, "Test", "String", () => "hello", null);
+        Add<DateTimeUtc>(builder, test, "Test", "DateTime", () => DateTimeUtc.From(new DateTime(2026, 10, 12, 1, 2, 3, DateTimeKind.Utc)), null);
+        Add<Uuid>(builder, test, "Test", "Guid", () => new Uuid(Guid.Parse("11112222-3333-4444-5555-666677778888")), null);
+        Add<ByteString>(builder, test, "Test", "ByteString", () => new ByteString(new byte[] { 1, 2 }), null);
+        Add<ArrayOf<byte>>(builder, test, "Test", "ByteArray", () => ArrayOf.ToArrayOf<byte>(new byte[] { 7, 8 }), null);
+        Add<ArrayOf<int>>(builder, test, "Test", "Int32Array", () => ArrayOf.ToArrayOf<int>(new[] { 1, 2, 3 }), null);
+        Add<ArrayOf<double>>(builder, test, "Test", "DoubleArray", () => ArrayOf.ToArrayOf<double>(new[] { 1.5, 2.5 }), null);
+        Add<ArrayOf<string>>(builder, test, "Test", "StringArray", () => ArrayOf.ToArrayOf<string>(new[] { "a", "b" }), null);
         Add<LocalizedText>(builder, test, "Test", "LocalizedText", () => new LocalizedText("en", "hello"), null);
         Add<StatusCode>(builder, test, "Test", "StatusCode", () => new StatusCode(0x40000000u, "Uncertain"), null);
-Add<NodeId>(builder, test, "Test", "NodeId", () => new NodeId("Other", NamespaceIndex), null);
+        Add<NodeId>(builder, test, "Test", "NodeId", () => new NodeId("Other", NamespaceIndex), null);
 
         // 不受支持的内置类型：只读出文本或码值，结构体 / 多维数组 / 异构数组读出时 Value 为 null。
-        // 注意多维数组放不上来：流式（fluent）表面拒绝把它封进 Variant（F21）。
+        // 注意多维数组放不上来：流式（fluent）表面拒绝把它封进 Variant（F22）。
         Add<QualifiedName>(builder, test, "Test", "QualifiedName", () => new QualifiedName("Speed", NamespaceIndex), null);
         Add<ArrayOf<Variant>>(builder, test, "Test", "VariantArray", () => ArrayOf.ToArrayOf<Variant>(new[] { new Variant(1), new Variant("x") }), null);
+        // 流式表面只收内置类型、枚举与 ExtensionObject（F22）；结构体要包一层才能当变量值发布。
+        Add<ExtensionObject>(
+            builder,
+            test,
+            "Test",
+            "Struct",
+            () => new ExtensionObject(new Argument
+            {
+                Name = "name",
+                ValueRank = ValueRanks.Scalar,
+                ArrayDimensions = ArrayOf.ToArrayOf(new uint[] { 0 }),
+                Value = new Variant(1),
+            }),
+            null);
+
+        // 可写节点：写矩阵用，每种可写类型一项，取值与读矩阵不同，便于区分往返。
+        Add<bool>(builder, writable, "Writable", "Bool", () => false, _ => { });
+        Add<sbyte>(builder, writable, "Writable", "SByte", () => -2, _ => { });
+        Add<byte>(builder, writable, "Writable", "Byte", () => 2, _ => { });
+        Add<short>(builder, writable, "Writable", "Int16", () => -3, _ => { });
+        Add<ushort>(builder, writable, "Writable", "UInt16", () => 3, _ => { });
+        Add<int>(builder, writable, "Writable", "Int32", () => -4, _ => { });
+        Add<uint>(builder, writable, "Writable", "UInt32", () => 4, _ => { });
+        Add<long>(builder, writable, "Writable", "Int64", () => -5, _ => { });
+        Add<ulong>(builder, writable, "Writable", "UInt64", () => 5, _ => { });
+        Add<float>(builder, writable, "Writable", "Float", () => -1.25f, _ => { });
+        Add<double>(builder, writable, "Writable", "Double", () => -2.25, _ => { });
+        Add<string>(builder, writable, "Writable", "String", () => "before", _ => { });
+        Add<DateTimeUtc>(builder, writable, "Writable", "DateTime", () => DateTimeUtc.From(new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc)), _ => { });
+        Add<Uuid>(builder, writable, "Writable", "Guid", () => new Uuid(Guid.Parse("99998888-7777-6666-5555-444433332222")), _ => { });
+        Add<ByteString>(builder, writable, "Writable", "ByteString", () => new ByteString(new byte[] { 9 }), _ => { });
+        AddRaw(builder, writable, "Writable", "BoolArray", ArrayOf.ToArrayOf<bool>(new[] { true, false }));
+        AddRaw(builder, writable, "Writable", "SByteArray", ArrayOf.ToArrayOf<sbyte>(new sbyte[] { -1, -2 }));
+        AddRaw(builder, writable, "Writable", "Int16Array", ArrayOf.ToArrayOf<short>(new short[] { -3, -4 }));
+        AddRaw(builder, writable, "Writable", "UInt16Array", ArrayOf.ToArrayOf<ushort>(new ushort[] { 3, 4 }));
+        AddRaw(builder, writable, "Writable", "Int32Array", ArrayOf.ToArrayOf<int>(new[] { -5, -6 }));
+        AddRaw(builder, writable, "Writable", "UInt32Array", ArrayOf.ToArrayOf<uint>(new uint[] { 5, 6 }));
+        AddRaw(builder, writable, "Writable", "Int64Array", ArrayOf.ToArrayOf<long>(new long[] { -7, -8 }));
+        AddRaw(builder, writable, "Writable", "UInt64Array", ArrayOf.ToArrayOf<ulong>(new ulong[] { 7, 8 }));
+        AddRaw(builder, writable, "Writable", "FloatArray", ArrayOf.ToArrayOf<float>(new[] { -1.5f, -2.5f }));
+        AddRaw(builder, writable, "Writable", "DoubleArray", ArrayOf.ToArrayOf<double>(new[] { -3.5, -4.5 }));
+        AddRaw(builder, writable, "Writable", "StringArray", ArrayOf.ToArrayOf<string>(new[] { "x", "y" }));
+        AddRaw(builder, writable, "Writable", "DateTimeArray", ArrayOf.ToArrayOf<DateTimeUtc>(new[] { DateTimeUtc.From(new DateTime(2026, 5, 6, 7, 8, 9, DateTimeKind.Utc)) }));
+        AddRaw(builder, writable, "Writable", "GuidArray", ArrayOf.ToArrayOf<Uuid>(new[] { new Uuid(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")) }));
 
         var counterBox = new Counter();
         Add<int>(builder, test, "Test", "Counter", () => counterBox.Value, value => counterBox.Value = value);
@@ -307,6 +354,38 @@ string path = parentPath + "/" + browseName;
 
     private void Record(string browseName, NodeId nodeId) => ids[browseName] = nodeId;
 
+    /// <summary>
+    /// 数组写入用的节点。流式（fluent）强类型写入只接受与声明类型**完全一致**的 .NET 值，
+    /// 本库写出去的是 <c>T[]</c>（公开 API 不暴露 SDK 的 <c>ArrayOf&lt;T&gt;</c>），
+    /// 因此这些节点走原始写处理器，自己把 <c>Variant</c> 解回 <c>ArrayOf&lt;T&gt;</c>（F24）。
+    /// </summary>
+    private void AddRaw<T>(INodeManagerBuilder builder, INodeBuilder parent, string parentPath, string browseName, ArrayOf<T> initial)
+    {
+        string path = parentPath + "/" + browseName;
+        IVariableBuilder<ArrayOf<T>> variable = builder.AddVariable<ArrayOf<T>>(browseName, parent.Node.NodeId);
+        RuntimeValueBuilderExtensions.Bind(variable, out IValueUpdater<ArrayOf<T>> updater);
+        updater.SetValue(initial);
+
+        INodeBuilder created = builder
+            .Node(parent.Node.NodeId)
+            .Child(new QualifiedName(browseName, builder.DefaultNamespaceIndex));
+
+        AccessLevelBuilderExtensions.Writable(created, true);
+        created.OnWrite(new NodeValueWriteEventHandlerAsync((_, _, _, variant, _) =>
+        {
+            object? raw = variant.AsBoxedObject(Variant.BoxingBehavior.Legacy);
+            if (raw is T[] elements)
+            {
+                updater.SetValue(ArrayOf.ToArrayOf(elements));
+                return new ValueTask<AttributeWriteResult>(new AttributeWriteResult(StatusCodes.Good));
+            }
+
+            return new ValueTask<AttributeWriteResult>(new AttributeWriteResult(StatusCodes.BadTypeMismatch));
+        }));
+
+        Record(path, created.Node.NodeId);
+    }
+
     /// <summary>计数器：测试要能改值、服务器要从它读值。</summary>
     private sealed class Counter
     {
@@ -314,3 +393,9 @@ string path = parentPath + "/" + browseName;
         public int Value { get; set; }
     }
 }
+
+
+
+
+
+

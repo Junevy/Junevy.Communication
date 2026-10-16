@@ -74,10 +74,19 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
     /// <param name="nodeIds">NodeId 文本；空列表直接成功，不发请求。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>与输入同序同长的逐项结果。</returns>
-    public Task<CommResult<IReadOnlyList<OpcUaValue>>> ReadAsync(
+    public async Task<CommResult<IReadOnlyList<OpcUaValue>>> ReadAsync(
         IReadOnlyList<string> nodeIds,
         CancellationToken cancellationToken = default)
-        => throw new NotSupportedException("Implemented in Task 4.");
+    {
+        ArgumentNullException.ThrowIfNull(nodeIds);
+
+        if (!TryBeginOperation(out CommResult failure))
+        {
+            return failure.As<IReadOnlyList<OpcUaValue>>();
+        }
+
+        return await lifecycle.Connection.ReadAsync(this, nodeIds, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// 写一个或多个节点（P62-D6、D7）。
@@ -85,10 +94,19 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
     /// <param name="values">待写项；空列表直接成功，不发请求。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>与输入同序同长的逐项状态码。</returns>
-    public Task<CommResult<IReadOnlyList<OpcUaStatusCode>>> WriteAsync(
+    public async Task<CommResult<IReadOnlyList<OpcUaStatusCode>>> WriteAsync(
         IReadOnlyList<OpcUaWriteValue> values,
         CancellationToken cancellationToken = default)
-        => throw new NotSupportedException("Implemented in Task 4.");
+    {
+        ArgumentNullException.ThrowIfNull(values);
+
+        if (!TryBeginOperation(out CommResult failure))
+        {
+            return failure.As<IReadOnlyList<OpcUaStatusCode>>();
+        }
+
+        return await lifecycle.Connection.WriteAsync(this, values, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// 浏览一个节点的正向层级引用（P62-D9）；继续点由本库处理完。
@@ -131,6 +149,25 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
     /// <summary>可读文本，用于日志与诊断。</summary>
     /// <returns>客户端与当前状态。</returns>
     public override string ToString() => $"OpcUaClient({options.EndpointUrl}, {State})";
+
+    // 释放后是 ConnectionClosed，没会话是 NotConnected（P62-D2 的四个操作共用这条规则）。
+    private bool TryBeginOperation(out CommResult failure)
+    {
+        if (lifecycle.IsDisposed)
+        {
+            failure = OpcUaSdkErrorMap.ConnectionClosed("The OPC UA client is disposed.");
+            return false;
+        }
+
+        if (!lifecycle.Connection.HasSession)
+        {
+            failure = OpcUaSdkErrorMap.NotConnected("The OPC UA client is not connected.");
+            return false;
+        }
+
+        failure = CommResult.Success();
+        return true;
+    }
 
     // 取快照：Create 之后调用方再改自己的 options 对象不应该影响这个客户端（P6-C9）。
     private static OpcUaClientOptions Snapshot(OpcUaClientOptions source) => new OpcUaClientOptions

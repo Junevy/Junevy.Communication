@@ -145,6 +145,54 @@ private readonly OpcUaSessionStateMachine stateMachine;
         return CommResult.Success();
     }
 
+/// <summary>
+    /// 读若干个节点。NodeId 与逐项映射交给 <see cref="OpcUaSdkOperations"/>；空列表直接成功。
+    /// </summary>
+    /// <param name="owner">调用方，用于异常信息。</param>
+    /// <param name="nodeIds">NodeId 文本。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>与输入同序同长的逐项值。</returns>
+    public Task<CommResult<IReadOnlyList<OpcUaValue>>> ReadAsync(
+        object owner,
+        IReadOnlyList<string> nodeIds,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(nodeIds);
+
+        return nodeIds.Count == 0
+            ? Task.FromResult(CommResult<IReadOnlyList<OpcUaValue>>.Success(Array.Empty<OpcUaValue>()))
+            : OpcUaSdkOperations.ReadAsync(
+                RequireSession(owner),
+                options.EndpointUrl,
+                logger,
+                nodeIds,
+                cancellationToken);
+    }
+
+    /// <summary>
+    /// 写若干个节点。NodeId、值与逐项映射交给 <see cref="OpcUaSdkOperations"/>；空列表直接成功。
+    /// </summary>
+    /// <param name="owner">调用方，用于异常信息。</param>
+    /// <param name="values">待写项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>与输入同序同长的逐项状态码。</returns>
+    public Task<CommResult<IReadOnlyList<OpcUaStatusCode>>> WriteAsync(
+        object owner,
+        IReadOnlyList<OpcUaWriteValue> values,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+
+        return values.Count == 0
+            ? Task.FromResult(CommResult<IReadOnlyList<OpcUaStatusCode>>.Success(Array.Empty<OpcUaStatusCode>()))
+            : OpcUaSdkOperations.WriteAsync(
+                RequireSession(owner),
+                options.EndpointUrl,
+                logger,
+                values,
+                cancellationToken);
+    }
+
     /// <summary>叫停进行中的连接，让它立刻返回失败，不必等到 <c>ConnectTimeout</c>（F14）。</summary>
     public void AbortConnect()
     {
@@ -206,5 +254,8 @@ await CloseAsync(CancellationToken.None).ConfigureAwait(false);
         _ => OpcUaSessionState.Disconnected,
     };
 }
+
+
+
 
 
