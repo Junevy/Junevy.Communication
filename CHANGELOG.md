@@ -2,6 +2,94 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — P6.2（OpcUa 1.0.0-preview.1：OPC UA 客户端）
+
+### 新增（Added）
+
+- 2026-10-15 [OpcUa] 新增库 `Junevy.Communication.OpcUa` 与测试项目 `Tests/Junevy.Communication.OpcUa.Tests`：OPC UA 2.0.1（OPC Foundation .NET Standard Stack）客户端薄适配层。
+  - **Task 1（骨架）**：生产项目只引用 Core 与 `OPCFoundation.NetStandard.Opc.Ua.Client` 2.0.1，只面向 net8.0（P6-C1），英文 README 打包；`InternalsVisibleTo` 只给本包的测试项目。
+  - 命名空间 `Junevy.Communication.OpcUa`（对外）、`.DependencyInjection`（Task 8）、`.Sdk`（内部，P6-C5）。
+  - 测试项目另加 `OPCFoundation.NetStandard.Opc.Ua.Server` 2.0.1 作为进程内测试服务器（P6-C12）。
+  - **依赖影响**：SDK 把 `Microsoft.Extensions.*` 带到 10.0.12 以上，测试项目按 P62-D1 用 `PackageReference Update` 把 `Microsoft.Extensions.DependencyInjection` 提到同一版本，避免 `NU1605` 降级错误；README 开头写明这一影响。
+- **Task 2（值模型与映射）**：`OpcUaSessionState`、`OpcUaNodeClass`、`OpcUaStatusCode`、`OpcUaValue`、`OpcUaWriteValue`、`OpcUaReference`、`OpcUaClientOptions`、`OpcUaSubscriptionOptions`；`Sdk/` 下 `StatusNames`、`OpcUaSdkValues`（值映射）、`OpcUaSdkNodeId`（NodeId 文本）、`OpcUaSdkErrorMap`（错误映射）。
+    - 公开 API 之外只多了计划批准的 `OpcUaClientOptions.PkiRoot`（默认 `%LocalAppData%\Junevy.Communication\OpcUa\pki`）：调研确认 `None` 策略下 SDK 不要求客户端证书，但构造客户端配置仍需要一个 pki 根目录。
+    - NodeId 接受 `i=`、`ns=`、`nsu=`（按命名空间 URI，推荐用于配置）五种形式；空串与语法错误返回 `InvalidRequest`，不会发送。
+    - 值映射：标量与一维数组映射为 .NET 基本类型；`Guid`/`DateTime` 从 SDK 的 `Uuid`/`DateTimeUtc` 换回 BCL 类型；结构体、多维数组、异构数组等 `Value` 为 null 且 `UnsupportedType` 给出类型名；写入只接受映射表"写"列中的类型，其余 `InvalidRequest`。
+    - 写入不做类型转换：`byte[]` 按 ByteString 写出（与读出的 Byte 数组歧义见 README）。
+    - **实现要点**：两张映射表按 `Type` 的**精确相等**分派。.NET 7 起 C# 支持"扩展数组转换"，`sbyte[]` 在 `is byte[]` 下为真，硬转换也成功；用类型模式会把 `sbyte[]` 误判成 ByteString。`ExtendedArrayCastingTests` 钉住这条。
+  - 2026-10-15 [Architecture] SDK 适配守卫登记表加 `Junevy.Communication.OpcUa`（SDK 前缀 `Opc.Ua`，`Sdk` 命名空间 `Junevy.Communication.OpcUa.Sdk`），同时登记 `SdkAdapterArchitectureTests.Adapters`、`ArchitectureTests.SdkPrefixes`、`ArchitectureTests.LayerTable`（`#if NET8_0_OR_GREATER`）与 `Architecture.Tests.csproj` 的 net8.0 条件项目引用。
+- 2026-10-16 [OpcUa] **Task 3（连接、状态与释放）**：`OpcUaClient` 的连接、断开、状态与释放跑通；新增 `OpcUaSessionStateChangedEventArgs`，SDK 侧新增 `Sdk/OpcUaSdkConnection`（配置、遥测、会话都关在 SDK 边界内，P6-C5）、`OpcUaSdkSession`、`OpcUaSdkConfiguration`、`OpcUaSdkConfigurationSet`。
+  - 端点选择按 P62-D3：只接受安全模式 `None` + 安全策略 `None` + 提供匿名身份令牌的端点，否则 `NotSupported`；选择不上任何端点时区分"服务器没报端点"（`ConnectionClosed`）与"没有 None + 匿名端点"（`NotSupported`）。
+  - 连接、断开、释放都走同一把异步锁串行；已是 `Connected` 时重复连接直接成功；**并发连接立刻返回 `InvalidRequest`**，不排队等上一次连完再自己连一遍。
+  - 状态只在对 `OpcUaClient.StateChanged` 报一次，顺序与实际变化一致；订阅者抛异常不影响状态机与其他订阅者。
+  - 释放可重复调用；释放后每个操作返回 `ConnectionClosed`；释放不释放仍可能被使用的异步锁（P6.1 验收发现 R3）。
+  - **实现要点**：
+    - **超时**：SDK 的 `ManagedSession.ConnectAsync` 没有超时参数，端点发现更是完全不理会取消令牌（F23）。因此连接过程自带 `TimeoutScope`，并用 `Task.WaitAsync` 先把调用方摘出去——超时、取消、释放都立刻有结果，SDK 那条后台任务继续跑完且不留未观察异常；摘出去之后连上的会话会被当场关掉，不挂到已释放的客户端上。
+    - **SDK 边界**：`OpcUaLifecycle` 只管串行化、状态与释放策略，所有 `Opc.Ua` 类型都关在 `Sdk/` 命名空间内，由 `SdkAdapterArchitectureTests` 守住。
+    - **端点地址**：P62-D3 ④（服务器报告的主机名与配置不同）不需要本库改写——SDK 2.0.1 自己就把端点地址钉回发现地址（F19），原先的 `RewriteHost` 已删除。
+    - **测试服务器**：`AddNodeManager` 的回调是在宿主启动期间调用的，此时地址空间还没建好，连上去会拿到 `BadServerHalted`；`AddStartupTask` 注册的回调不会被调用（F20），测试服务器因此在启动后先用一次真实会话探路。嵌套文件夹不能按浏览路径从命名空间根解析（`Sub/Leaf` 找不到），要按父节点的 `NodeId` 定位（F21）。多维数组封不进 `Variant`，测试节点改用 `QualifiedName` 与 `Variant[]` 表示"不受支持的内置类型"（F22）。
+  - **验证**：新增 23 条用例（连接、并发、超时、取消、端点选择、状态事件、释放），OPC UA 测试项目共 243 条通过；`build/test-affected.ps1 -Base 9597c33 -NoBuild` 选中 3 个项目共 270 条通过；Debug 与 Release 构建 0 错误、无新增警告；生产代码无超过 60 行的方法、无超过 300 行的文件。
+    - **变异**：N1（去掉超时作用域）、N2（跳过 `None` 策略检查）、N3（跳过匿名检查）、N5（连接忽略取消令牌）、N6（不拒绝并发连接）、N7（断开不回 `Disconnected`）均被测试杀死。N8（`shuttingDown.Cancel()`）、N9（`finally` 里不释放锁）、N10（不释放 SDK 会话）、N11（不订阅 SDK 状态事件）在本 Task 的可观测范围内是等价变异体：N8/N9 要到"释放时正好有连接排在锁后面"才可达，N10 的 SDK 会话释放只能从 socket 回收上看（Task 4 的 `ReadAsync` 可读服务器的 `SessionCount` 后补齐），N11 只影响 SDK 断线事件（Task 7 重连用例补齐）。原计划的"改写端点主机名"变异体 N4 已无对象：那段逻辑按 F19 删除。
+- 2026-10-16 [OpcUa] **Task 4（读与写）**：`OpcUaClient.ReadAsync` / `WriteAsync` 与单节点扩展方法 `ReadAsync(nodeId)` / `WriteAsync(nodeId, value)` 全部落地（P62-D6、D7、D8）。
+    - 批量读写：结果与输入同序同长；**逐项**状态码来自服务器，一项 Bad 不影响其余项；空列表直接成功不发请求；未连接时返回 `NotConnected`，释放后返回 `ConnectionClosed`。
+    - 校验前置：NodeId 不合法、或某个 .NET 类型不在写入映射表里，**整批失败并且不发请求**（`InvalidRequest`）；写入不做类型转换，类型不符由服务器给 `BadTypeMismatch`（逐项）。
+    - 时间戳按 `TimestampsToReturn.Both` 取回，`SourceTimestamp` 与 `ServerTimestamp` 都是 UTC；不读属性的历史数据。
+    - 单节点扩展方法把 Bad 逐项状态变成失败（分类与 `ProtocolErrorCode` 由状态码推出），Good 与 Uncertain 仍算成功。
+    - 日志只记数量与端点，任何级别都不出现读写的值。
+    - **实现要点**：
+      - **分批**：读写都交给 SDK 的 `SessionClientBatched`，它按服务器的 `MaxNodesPerRead` / `MaxNodesPerWrite` 自动分批，本库不写第二份。测试服务器把上限压到 5、一次读或写 12 个节点，结果完整且同序。
+      - **SDK 边界**：读写的请求与响应封装在 `Sdk/OpcUaSdkSession`，NodeId 解析与逐项映射在 `Sdk/OpcUaSdkConnection`，`Sdk/` 之外不出现 `Opc.Ua` 类型。
+      - **测试服务器**：可写节点按类型分列在 `Writable` 文件夹；流式（fluent）强类型写入只接受与声明类型完全一致的 .NET 值，而本库写出去的是 `T[]`，因此数组写入用例走**原始写处理器**自己把 `Variant` 解回 `ArrayOf<T>`（F24）；结构体也必须包成 `ExtensionObject` 才能发布成变量值（F22）。
+    - **无法用进程内服务器验证的规则**："Uncertain 逐项状态算成功"在真实服务器上才会出现，测试服务器产生不出来，因此这条规则单独由 `OpcUaClientExtensions.Decide` 的单元测试钉住，集成用例覆盖 Bad 的真实路径。
+    - **验证**：新增 26 条用例（读矩阵、时间戳、结构体、部分失败、`nsu=`、非法 NodeId、空列表、超限批量、未连接、写矩阵、本地时间往返、类型不符、只读节点、不支持的类型、超限写入、单节点扩展方法、日志无值），OPC UA 测试项目共 **269 条通过**；`build/test-affected.ps1 -Base 9597c33 -NoBuild` 选中 3 个项目共 **296 条通过**；构建 0 错误、无新增警告。
+    - **变异**：R1（读不校验 NodeId）、R2（`nsu=` 不走长形式）、R3（空列表也发请求）、R4（读不出 `Uuid`）、R5（时间戳不保持 UTC）、R6（结构体不标记为不受支持类型）、R7（写入接受任意 .NET 类型）、R8（写入的 `DateTime` 不按 UTC 存）、R9（Bad 逐项状态算成功）、R10（Uncertain 算失败）、R11（未连接不报 `NotConnected`）、R12（读只取第一个节点）—— 12 个全部被测试杀死。
+- 2026-10-16 [OpcUa] **Task 5（浏览）**：`OpcUaClient.BrowseAsync(nodeId)` 返回一个节点的正向层级引用，继续点由本库追完（P62-D9）。返回的 `OpcUaReference` 带 NodeId、浏览名、显示名与节点类别，NodeId 可以直接拿去读；浏览不存在的节点返回服务器给的 `BadNodeIdUnknown`；NodeId 语法错误返回 `InvalidRequest`；未连接返回 `NotConnected`。
+    - **实现要点**：遍历交给 SDK 的 `Opc.Ua.Client.Browser`（`MaxNodesPerBrowse` 决定每次请求的引用数，`BrowseAsync` 自己把继续点追完）。本库**不手写** `BrowseNextAsync` 循环：在 2.0 里那样做，第一次续取就会被判成 `BadContinuationPointInvalid`（F25）。
+    - `BrowserOptions.NodeClassMask` 必须给 **-1**（`0xFFFFFFFF`）。给 `int.MaxValue` 时服务器回上来的 `NodeClass` 全是 `Unspecified`（F26）。
+    - 测试服务器把 `MaxNodesPerBrowse` 压到 2，强制产生继续点，结果仍完整。
+    - **验证**：新增 9 条用例（文件夹全量子节点、返回的 NodeId 可直接读、Objects 文件夹看得到 `Test`、未知节点、非法 NodeId 三种、未连接、继续点），OPC UA 测试项目共 **275 条通过**；`build/test-affected.ps1 -Base 9597c33 -NoBuild` 选中 3 个项目共 **304 条通过**；构建 0 错误、无新增警告。
+    - **变异**：B2（浏览不校验 NodeId）、B3（引用不带节点类别）、B4（不再追完继续点）、B5（未连接时不拒绝浏览）均被测试杀死。B1（引用类型换成 `References`）在本 Task 的可观测范围内是等价变异体：进程内服务器的 `HasTypeDefinition` 引用无论按哪种引用类型过滤都会回来，过滤是否生效只能靠真实服务器验证，已按"未验证"记录。
+- 2026-10-16 [OpcUa] **Task 6（订阅）**：`OpcUaClient.SubscribeAsync` 与 `OpcUaSubscription` 全部落地（P62-D10）；新增 `Sdk/OpcUaSdkSubscription`。
+    - 空列表或重复 NodeId 直接返回 `InvalidRequest`；NodeId 语法错误返回 `InvalidRequest`；未连接返回 `NotConnected`。订阅内**逐项**创建状态在 `ItemStatuses`：一项 Bad 不影响其余项，其余项照常收通知。
+    - 数据变更在 SDK 的回调线程上逐条交给处理器；处理器抛异常只记一条 Error，后续通知照常交付。
+    - `DisposeAsync` 删除服务器上的订阅、断开后再调用不抛异常、可以重复调用。
+    - **实现要点**：
+      - 2.0 的 `SubscriptionOptions.PublishingEnabled` **默认 false**，不显式打开就一个通知都不会来（F28）。
+      - 必须先 `session.AddSubscription(...)` 再 `CreateAsync`，否则 `CreateAsync` 直接抛异常。
+      - 监控项是否创建成功看 `MonitoredItem.Status.Created` / `Status.Error`，不是 `MonitoredItem.Created`。
+      - 通知值是 `MonitoredItemNotification`（`IEncodeable`），里面的 `Value` 才是 `DataValue`（F27）；`DataValue` 在 2.0 是 struct 且**不实现** `IEncodeable`。
+      - 重连时的订阅转移交给 `ManagedSession`（`WithTransferSubscriptionsOnRecreate`），本库不写重连逻辑。
+    - **测试服务器的已知限制**：进程内服务器的监控项不一定每次写都发通知，且后续通知里的值与状态不可靠（F29）。因此"初始值 + UTC 时间戳"用真实值断言，"变更后再来一条"用反复写入直到满足条件的写法断言，并已在用例里注明。
+    - **验证**：新增 7 条用例（初始值与变更、批内一项坏、处理器抛异常、释放与重复释放、断开后释放、空列表与重复、未连接），OPC UA 测试项目共 **282 条通过**；`build/test-affected.ps1 -Base 9597c33 -NoBuild` 选中 3 个项目共 **309 条通过**；构建 0 错误、无新增警告。
+    - **变异**：S1（不开 `PublishingEnabled`）、S3（逐项状态不再报创建失败）、S4（处理器异常继续往上抛）、S6（重复 NodeId 被接受）被杀死。S2（不等待监控项创建完成）与 S5（释放时不删服务器上的订阅）在当前可观测范围内是等价变异体：`CreateAsync` 返回时监控项已经建好；`DetachNotificationEventHandlers` 已经让客户端不再投递，服务器端订阅数要等 Task 4 的服务器诊断读取才能核对。
+
+- 2026-10-16 [OpcUa] **修正：数据变更通知里的值一直是空的**（Task 7 过程中发现）。`Deliver` 把 `DataValue` 赋成 `default` 之后就把通知丢了，因此每一条 `OpcUaDataChangedEventArgs` 带的都是空值。通知值是 `IEncodeable`，真正的 `DataValue` 在 `MonitoredItemNotification.Value` 上（F27）；事件型通知改用类型判断忽略，不再靠一个永远不会抛的强制转换。同时删掉对结构体 `DataValue` 的 `ArgumentNullException.ThrowIfNull`（无效逻辑）。订阅用例现在断言初始通知里的真实值、Good 状态与 UTC 时间戳。
+- 2026-10-16 [OpcUa] **Task 7（重连）**：验证并钉住会话的自动恢复（P62-D2、D11）。
+    - 服务器停掉时状态从 `Connected` 变为 `Reconnecting`；期间读、写、浏览、订阅一律立刻返回 `NotConnected`，**不**把请求交给 SDK 排队。
+    - 服务器在同一端口重新启动后回到 `Connected`，可以继续读。
+    - 停机前建立的订阅在重启后继续收到通知（由 `ManagedSession` 在会话重建时处理）。
+    - `Reconnecting` 期间 `DisconnectAsync` 与释放都会停掉重连：状态回到 `Disconnected`，释放立刻返回（不等退避），服务器回来后也不会自己连上去。
+    - 用例结束强制 GC 并观察 `TaskScheduler.UnobservedTaskException`：没有未观察的任务异常（Q40）。
+    - **变异**：把操作的准入条件从"状态是 `Connected`"改回"有会话对象"，重连期间的 `NotConnected` 用例立刻失败（实测该读调用会在 SDK 里挂住——重连重试次数不限，它就一直等下去）；断开时不关闭会话、释放时不把状态改成 `Disconnected`，各自对应的用例失败。`WithTransferSubscriptionsOnRecreate(false)` 是等价变异体：无论是否转移，服务器重启后 SDK 都会重建监控项，通知照样回来，因此"转移还是重建"目前无法从客户端侧区分。
+- 2026-10-16 [OpcUa] **Task 8（工厂与依赖注入）**：新增 `OpcUaClientFactory`（`NamedFactory<OpcUaClient>`）与 `OpcUaServiceCollectionExtensions.AddOpcUaClients()`（P62-D14）。命名与调用习惯与 `MqttClientFactory` / `AddMqttClients()` 一致；扩展方法刻意**不**叫 `AddOpcUa()`，那是 SDK 自带的服务注册同名。
+    - 验证：新增 14 条用例（同名同实例、不同名、null 与非法选项、释放与重复释放、释放后调用、取快照、appsettings 形状的 JSON 绑定、注册单例与可重复调用、容器日志工厂同时透传给本库与 SDK）。OPC UA 测试项目共 **302 条通过**。
+    - 变异：`TryAddSingleton` 换成 `AddSingleton`、`GetOrAddCore` 换成直接新建、容器日志工厂不透传，三个都被测试杀死。
+- 2026-10-16 [Docs] **Task 9（README、Skill、CHANGELOG）**：`Junevy.Communication.OpcUa/README.md` 补全为完整参考（开头醒目写明只支持 `None` 策略与匿名登录、依赖影响、快速上手、NodeId 写法与 `nsu=` 的建议、值类型表、批量与逐项状态、浏览、订阅、重连、状态、选项表、释放、错误分类表、依赖注入、日志、Verification status）。所有示例经 net8.0 实际编译验证（先做负控：故意写错一个成员，确认检查会报错）。新增 Skill `Skills/using-junevy-opcua/SKILL.md`。根 `readme.md` 的协议表与说明补上 OPC UA 一行。
+
+### 修正（Fixed）
+
+- 2026-10-17 [OpcUa] **验收修正**（计划第 19.1 节 R1–R11）。每条都先写出在旧代码上失败的用例，再改：
+  - **R1 迟到的会话**：调用方取消或 `ConnectTimeout` 到点后，SDK 的后台连接（端点发现不理令牌，F23）照样可能连上，原实现在后台任务里直接把会话挂到客户端上——调用方拿到 `Cancelled`，客户端却挂着会话，服务器上多一个会话，再连一次还会把它覆盖成泄漏。现在会话只在调用方仍在等待时挂上，之后才连上的会话当场关掉。
+  - **R2 断开与晚到的状态事件**：断开与释放改为先摘下会话、再改状态、最后关闭；SDK 状态事件只认当前挂着的会话。连接成功改用 `TryMoveTo(Connecting → Connected)`，不覆盖 SDK 已报的断线。
+  - **R3/R4 释放订阅**：释放不再沿用创建订阅时的调用方令牌；改用 `RemoveSubscriptionAsync` 从会话摘下，原来的 `Subscription.DeleteAsync` 只删服务器上的订阅，会话恢复时会被重建（F30）。
+  - **R6 订阅创建失败与重连**：创建受 `OperationTimeout` 约束、取消与超时以作用域为准（SDK 把取消包成 Bad 码，原实现归成 `RemoteError`，F31）；失败时把挂到会话上的订阅摘掉。摘除**不能取消、也不能在重连期间先发出**：先等 SDK 报 `Connected`（它在转移或重建订阅之后才报）再摘，只有摘除成功才释放 SDK 对象。原实现在失败路径上直接 `Dispose` 仍挂在会话上的订阅，之后**每一次重连都会失败**（"启动已释放订阅的保活计时器"），并在服务器上留下重建出来的订阅（F32）。重连期间 `DisposeAsync` 立刻返回，摘除由后台完成。
+  - **R5** `SubscribeAsync` 补上订阅选项校验（抛 `ArgumentException` 族，与 `Create` 一致）。**R7** 通知改经 `EventSubscribers.InvokeEach` 交付、sender 是客户端（原来 sender 是委托本身，多播处理器的前一个订阅者抛异常会挡住后面的）。
+  - **R8 与断开并发的操作**：原实现会抛 `InvalidOperationException`（会话已被摘下）或 `ServiceResultException`（会话关闭后读命名空间表），现在返回 `NotConnected`；调用途中会话被释放的 `ObjectDisposedException` 归 `ConnectionClosed`。
+  - **R9** 读、写、浏览各包一个 `OperationTimeout` 作用域；按 P62-D13 与 README，每次操作在 Debug 记节点数与耗时，失败记 Warning（不记录值）。
+  - **R10 清理**：删除从未调用的 `OpcUaSdkConfigurationSet`、`OpcUaSdkSession` 的手写浏览两件套与 `OperationLimits` / `Connected`、`OpcUaSdkSubscription.Statuses()` 与重复的释放标志、`OpcUaSdkConnection.DisposeAsync` / `IsDisposed` / `RequireSession`；释放不再 `Dispose` 仍可能被进行中调用使用的令牌源（与 P6.1 验收 R3 同类）；改正注释里错误的摩擦编号（F13/F14 → F19/F23）。
+  - **R11 用例补齐**：测试服务器新增 `SessionCount`、`SubscriptionCount`、`ActivatedSessions`（计划 Task 3 要求"能查询当前的订阅数"）；补上"断开再连上之后掉线仍恢复"（P6.1 验收第一类缺陷）、释放后四个操作返回 `ConnectionClosed`、断开与释放后服务器上不留会话、订阅释放后服务器订阅数归零。
+  - **验证**：OPC UA 测试项目 **313 条通过**（原 302 条 + 新增 11 条）；变异检查见计划第 19.1 节。
+
 ## [Unreleased] — 开发流程：按改动选择测试
 
 ### 新增（Added）

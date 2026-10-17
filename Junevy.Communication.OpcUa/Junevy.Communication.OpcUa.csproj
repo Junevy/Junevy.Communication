@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\build\Junevy.Communication.Common.props" />
+
+  <!-- P6-C1：OPC UA 2.0 的新版本线不再面向 net472，lib/ 下只有 net8.0、net9.0、net10.0 与 net48，因此本包只面向 .NET 8。
+       其余约束（可空性、文档、常量日志模板等）沿用公共 props。 -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0</TargetFrameworks>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>OPC UA client: connect, read, write, browse and subscribe over the None security policy with anonymous login. Client only, .NET 8 only.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- P6-C6：适配包只引用 Core 与自己的 SDK，不引用 Channels、Tcp 等（架构测试强制）。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\Junevy.Communication.Core\Junevy.Communication.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="2.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Junevy.Communication.OpcUa.Tests" />
+  </ItemGroup>
+
+</Project>
