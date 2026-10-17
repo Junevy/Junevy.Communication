@@ -61,7 +61,7 @@ public sealed class ArchitectureTests
         // Secs 是自有模型协议，不走 Plc 套件，但与它们一样直接坐在 Channels 与 Tcp 之上（P51-D1、D2）。不做 SECS-I，因此没有 Serial。
         (typeof(SecsMessage).Assembly, new[] { ChannelsName, CoreName, TcpName }),
 #if NET8_0_OR_GREATER
-        // SDK 适配包只面向 .NET 8（P6-C1），因此只在 net8.0 目标上参与检查；它不经过通道族，只允许引用 Core（P6-C6）。
+        // SDK 适配包只面向 .NET 8（P6-C1），因此只在 net8.0 目标上参与检查；它不经过通道族，只允许引用 Core（P6-C6；服务端的例外见下一行）。
         (Assembly.Load(MqttName), new[] { CoreName }),
         (Assembly.Load(OpcUaName), new[] { CoreName }),
         // 服务端（P3.2）是 ASP.NET Core 的适配包，同时依赖 WebApi 的公共约定（P32-D2）；ASP.NET Core 只允许出现在 Hosting 命名空间（SdkAdapterArchitectureTests）。

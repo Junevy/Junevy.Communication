@@ -5,7 +5,7 @@ using NetArchTest.Rules;
 namespace Junevy.Communication.Architecture.Tests;
 
 /// <summary>
-/// SDK 适配包的三条守卫（P6-C4 公开 API 不出现 SDK 类型、P6-C5 SDK 只出现在 <c>Sdk</c> 命名空间、P6-C6 适配包只依赖 Core）。
+/// SDK 适配包的三条守卫（P6-C4 公开 API 不出现 SDK 类型、P6-C5 SDK 只出现在 <c>Sdk</c> 命名空间、P6-C6 适配包只依赖各自登记的允许库）。
 /// P6.2、P6.3 只需要在登记表里各加一行，就同时获得三条检查。
 /// 本文件只在 net8.0 上编译：三个适配包按 P6-C1 只有 net8.0 目标，net472 下连程序集引用都建立不起来。
 /// </summary>
