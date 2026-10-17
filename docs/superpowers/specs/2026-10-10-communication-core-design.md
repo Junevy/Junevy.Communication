@@ -1546,11 +1546,15 @@ P3.2（计划 `docs/superpowers/plans/2026-10-17-p32-webapi-server.md`，Task 0�
 | 11 | 15.5 | 未涉及 | 认证：`Basic`、`Bearer`、`ApiKey` 内置，期望值用 `CryptographicOperations.FixedTimeEquals` 比较；失败 401，Basic 与 Bearer 带 `WWW-Authenticate`，响应不回显期望值；监听所有网卡却没有认证时启动记 Warning | P32-D9；关闭 P3.1 待决问题 4 |
 | 12 | 15.5 | 未涉及 | 生命周期：`Stopped → Starting → Running → Stopping → Stopped`，状态只在锁内变化，`StateChanged` 按变化顺序触发；`StopAsync` 等在途请求最长 `StopTimeout`，之后中止；释放不释放仍可能被在途请求使用的锁（P6.1 R3、P6.2 R10） | P6-C8 的释放规则 |
 | 13 | 第 2 节（计划） | 计划 P32-D6 写"用 ASP.NET Core 的 `ProblemDetails` 类型" | 不用该类型，直接写 RFC 9457 的 JSON | `ProblemDetails` 位于 `Microsoft.AspNetCore.Mvc`，而 Q30 要求 `Hosting` 之外不引用 `Microsoft.AspNetCore.*`；线上格式不变 |
-| 14 | 第 3 节（计划） | 守卫 1 "适配包只引用 Core" | 守卫改为"引用各自的允许列表"，服务端允许 WebApi；其余适配包仍只允许 Core | 服务端同时依赖 WebApi 的公共约定（P32-D2）；没有新写守卫 |
+| 14 | 第 3 节（计划） | 守卫 1 "适配包只引用 Core" | 守卫改为"引用各自的允许列表"，服务端允许 WebApi；其余适配包仍只允许 Core | 服务端同时依赖 WebApi 的公共约定（P32-D2）；没有新写守卫；审阅者 2026-10-17 接受（计划 D-3） |
+| 15 | 计划 P32-D14 | 计划只列了 `WebApiServerFactory` 与 `AddWebApiServers()` | 增加 `WebApiServerFactoryBuilder`（`Create()`、`WithLoggerFactory()`、`Build()`），供没有 DI 容器的宿主使用；与客户端的 `WebApiClientFactoryBuilder` 对称。计划第 6–13 节的公开 API 不变 | 审阅者 2026-10-17 决定需要（计划 D-14） |
+| 16 | 计划第 8 节 Task 3 | 阶段顺序：正文 → 认证 → 拦截器（正文阶段含解码） | 读正文 → **认证** → 解码 → 请求拦截器 → 去重 → 处理器；504 或断开之后迟到的结果不经过响应拦截器 | 未认证的调用方只得到 401，序列化器不处理未认证的输入；认证器仍能拿到原始正文（审阅 A，2026-10-18） |
+| 17 | P32-D8 | 处理器超时后继续运行，结果丢弃并记 Warning | 另外统计仍在运行的被摘出处理器（内部计数，Warning 写出数量）；它们仍不占 `MaxConcurrentRequests` 的名额 | 设备卡住而 MES 反复重发时堆积看得见；是否计入并发上限留待现场数据（审阅 B，2026-10-18） |
+| 18 | P32-D5、D11 | 重复模板按字符串判断；去重键为幂等键 + 方法 + 路径 | 模板忽略大小写与首尾 `/` 判重（与 ASP.NET Core 的匹配一致）；去重键加入按名称排序的查询串 | 等价模板同时登记会在每次请求时歧义（500）；查询参数不同的请求是不同的命令（审阅 R4、R9） |
 
 **度量结论**（Task 9）：见计划第 19.3 节。新包的生产代码全部在 300 行以内，方法在 60 行以内；生产重复窗口与 P6.2 的基线一致。
 
-**待审阅者决定（未实现）**：客户端有 `WebApiClientFactoryBuilder`（给没有 DI 容器的宿主用），计划 P32-D14 只列了 `WebApiServerFactory` 与 `AddWebApiServers()`，因此服务端没有对应的构建器。是否需要，由审阅者决定。
+**审阅者决定（已实现）**：需要。服务端增加了 `WebApiServerFactoryBuilder`，见上表第 15 项。
 
 ## 21. 决策记录
 

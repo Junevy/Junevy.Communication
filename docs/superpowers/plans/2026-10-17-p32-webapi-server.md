@@ -511,6 +511,105 @@ public static class WebApiServerServiceCollectionExtensions
 
 | Task | 结论 | 说明 |
 |---|---|---|
+| 0 | 通过 | 调研 9 项记录完整；起点 `837f7d0`；度量基线可复现 |
+| 1 | 打回 | R3（`Logging` 配置无效） |
+| 2 | 通过（小修） | R14（D-1 写了 `instance`，实现没有写出） |
+| 3 | 有条件通过 | R10（D-7、D-8 没有用例）；R12（`Allow` 的复制冗余）；A（先解码后认证，待用户决定）、B（被摘出的处理器不计入并发上限，待用户决定） |
+| 4 | 有条件通过 | R7（504 之后迟到的结果仍触发响应拦截器）；R10（固定时间比较没有用例）；R13（两个相同的拒绝记录类型） |
+| 5 | 有条件通过 | R5（重放带上第一次请求的拦截器响应头；缓存与响应阶段共用同一个字典） |
+| 6 | 打回 | R1（释放与启动竞争）、R2（停止期间读取 `Urls` 抛异常）、R4（只差大小写或斜杠的模板被接受）、R6（映射失败不释放应用）；R10（Q29 用例拦不住读取宿主环境、释放规则没有用例）；R11（死代码） |
+| 7 | 通过 | 含 D-14 的 `WebApiServerFactoryBuilder`，与客户端对称 |
+| 8 | 有条件通过 | 文档随 R3、R4、R14 修正；知识库未提交 |
+| 9 | 通过 | 度量沿用执行者的记录（未复测）；审阅者复跑三条命令：Debug 构建 0 错误 0 警告，`test-affected -Repeat 3` 三遍均为 273 通过 |
+
+**审阅记录（2026-10-18）**
+
+复跑：`dotnet build Junevy.Communication.slnx -c Debug` 0 错误 0 警告；`pwsh build/test-affected.ps1 -Base 837f7d0 -NoBuild -Repeat 3` 三遍均为 273 通过（架构 net8.0 15、net472 12；服务端 246），0 失败，0 跳过。各 Task 只含本 Task 的文件，生产代码没有混进 `docs:` / `chore:` 提交；`WebApi/` 与 `Tests/Junevy.Communication.WebApi.Tests/` 相对 `837f7d0` 零改动。
+
+变异检查（第 17 节，脚本在仓库之外，改完即恢复）：
+
+| 变异 | 结果 | 拦住它的用例 |
+|---|---|---|
+| 并发超限排队而不是 503 | 拦住 | `ConcurrencyLimit_…`（等到 HttpClient 超时才失败，约 1 分钟） |
+| 超时后不发 504、等处理器结束 | 拦住 | `HandlerIgnoringTheToken_Returns504_…`、`TimeoutWhileRunning_…` |
+| 超时后第二次 `RequestCompleted` | 拦住 | `HandlerPastTheTimeout_…`、`HandlerIgnoringTheToken_…` |
+| 404 / 405 用框架的空正文 | 拦住 | `UnknownPath_IsAProblemDetailsWithStatus404` |
+| 405 不复制 `Allow` | **存活** | 框架已经把 `Allow` 写进响应头，本库的复制是冗余的（R12）；用例本身没有问题 |
+| 500 的正文带上异常消息 | 拦住 | `HandlerException_IsA500WithoutDetails_…` |
+| 认证不用固定时间比较 | **存活** | 没有用例（R10） |
+| 响应阶段不按逆序 | 拦住 | `RequestInterceptors_RunInRegistrationOrder_…` |
+| 去重缓存 500 | 拦住 | `HandlerFailure_IsNotCached_…` |
+| 去重在 504 时立即释放键 | 拦住 | `TimeoutWhileRunning_KeepsTheKeyInProgress_…` |
+| 改用 `CreateBuilder`（读取宿主环境） | **存活** | Q29 用例只检查 `Urls`，而显式的 `UseUrls` 本来就覆盖 `ASPNETCORE_URLS` 与 `appsettings` 的 `Urls`（R10） |
+| 停止后再启动旧的应用 | 拦住 | `StopThenStart_ServesRequestsAgain` |
+| 释放时释放生命周期锁 | **存活** | 没有用例（R10；与 R1 一起补） |
+| 包络的 `data` 写到客户端不读的路径 | 拦住 | `ResponseRoundTripTests`、`ClientRoundTripTests` |
+| 去掉对端断开路径上的 `AbandonedWork.Observe`（D-8） | **存活** | 没有用例；被摘出的任务只会以"取消"结束（非取消异常都已转成 500），所以这里只剩那条 Warning，没有用例断言它（R10） |
+| 畸形正文不翻译、按对端断开处理（D-7） | **存活** | 没有畸形分块正文 → 400 的用例（R10） |
+| 删除认证阶段 | 拦住 | 只有 `ClientRoundTripTests.Unauthorized_…` 一条；`AuthenticationTests` 只测校验器本身 |
+
+另用临时探针（已删除）复现了 R1、R2、R4、R5。
+
+**必须修（阻塞合并）**
+
+- **R1 释放与启动竞争，释放后服务器仍在运行**（`ServerLifecycle`）：`DisposeAsync` 先在锁内停止、出锁后才置 `disposed`；`StartCoreAsync` 不检查 `disposed`。复现：运行中调用 `DisposeAsync()` 不等待、紧接着 `StartAsync()`，两者完成后 `State = Running`，`GET` 返回 200，而 `StopAsync` 在释放后是空操作，端口一直占到进程退出。修法：`disposed` 在锁内设置，`StartCoreAsync` 在锁内检查（返回失败或抛 `ObjectDisposedException`，与公开契约一致），并补用例。
+- **R2 停止期间读取 `Urls` 抛 `ObjectDisposedException`**（`ServerLifecycle.Urls` → `KestrelHost.Addresses`）：`StopCoreAsync` 先 `await running.DisposeAsync()`，再把 `host` 置空；这段时间里 `Addresses` 访问已释放的 `ServiceProvider`。探针第 0 轮即复现。WPF 绑定或状态轮询读 `Urls` 就会碰上。修法：启动成功后把实际地址拍成快照（`KestrelHost` 或生命周期保存一份数组），`Urls` 只读快照；顺带免去每次读取都查服务容器。
+- **R3 `Logging` 配置完全无效**（P32-D15 未实现）：`WebApiServerConfig.Logging` 只被校验、复制进 `settings.Logging`，没有任何代码读取；`LogBodies`、`MaxLoggedBodyLength`、`RedactedHeaders`、`RedactedQueryParameters` 设什么都没有效果，公开 API 名不副实。另外每个请求的 Debug 日志写的是路径而不是计划要求的路由模板。修法：按 P32-D15 实现（请求日志带脱敏后的头与查询参数，`LogBodies` 时带截断的正文），并补用例。
+- **R4 只差大小写或斜杠的模板被当成不同路由**（`RouteTable.Add` 用区分大小写的字符串比较）：`MapGet("/orders")` 与 `MapGet("/Orders")`（或 `"orders"`、`"/orders/"`）都被接受，启动成功，之后每个 `GET /orders` 都因 ASP.NET Core 的 `AmbiguousMatchException` 返回 500。P32-D5 要求重复模板抛 `ArgumentException`，README 也写了"同一方法与模板不能注册两次"。修法：比较前规范化（去掉首尾 `/`，字面段不区分大小写，与 ASP.NET Core 的匹配规则一致）。
+
+**应修**
+
+- **R5 去重重放带上第一次请求的拦截器响应头，且缓存与响应阶段共用同一个字典**：`ticket.Complete(result)` 在响应拦截器之前，缓存的就是随后被拦截器修改的那个 `ServerResponse.Headers`。探针：拦截器按请求编号加头，重放的响应同时带 `X-Stamp-1` 与 `X-Stamp-2`。第二个请求在第一个请求的响应阶段期间复制该字典时，是对 `Dictionary` 的并发读写。修法：`Complete` 时缓存头的副本（或缓存不可变的快照）。
+- **R6 映射路由失败时不释放已建好的应用**（`KestrelHost.Create`）：`Build()` 之后 `RouteEndpointBinder.Map` 抛异常（例如模板 `"/orders/{"`），`WebApplication` 没有人释放，与"启动失败不留下任何应用"不符。修法：`Create` 内捕获后 `DisposeAsync` 再抛出。
+- **R7 504 之后迟到的处理器结果仍会触发响应拦截器**（`RunStagesAsync` → `ApplyResponseStageAsync`）：响应早已以 504 发出，拦截器却收到 `Outcome = Succeeded` 的 `OnRespondingAsync`（令牌已取消）；做审计的拦截器会记下一条没有发出的响应。修法：超时或对端断开之后跳过响应阶段。
+- **R8 处理器自己抛出的 `OperationCanceledException`**（例如处理器内部的 HttpClient 超时）返回 500，但跳过了响应拦截器，与其它 500 不一致（低）。
+- **R9 去重键不含查询串**：同键、同路径、同正文而查询参数不同的请求会被重放第一次的结果（低；至少写进 README）。
+- **R10 测试缺口**：固定时间比较（计划写明"用例无法区分时改为检查比较帮助类被调用"）；Q29 应改用 `CreateBuilder` 才会读取、显式设置又覆盖不了的配置，例如 `appsettings.json` 里的 `Kestrel:Endpoints`；释放规则（与 R1 一起补）；D-7（畸形分块正文 → 400）；D-8（对端断开后处理器仍在运行 → Warning）；Q27 的"去重键在 504 之后仍是处理中"用例没有 `UnobservedTaskWatch`；Q28 的停止用例没有用服务器侧在途数断言。
+
+**清理（clean code）**
+
+- **R11 死代码**：`ServerLifecycle.Host`（注释写"用于测试断言在途数"，但没有任何引用）、`RouteTable.Count`。
+- **R12** `ServerEntryMiddleware.ResolveResult` 复制 `Allow` 是冗余的（框架已经写入响应头）；删掉，或保留并注释原因。
+- **R13** `WebApiServerRequestingContext.Rejection` 与 `InterceptorRefusal` 是同形的两个记录，`InterceptorRun` 只是互相转换，合并成一个；`RequestPipeline.Deduplicate` 与认证处手写 `"409"`、`"422"`、`"503"`、`"401"`，其余路径用 `statusCode.ToString(...)`，统一走同一个帮助方法；`ResponseFormatter` 在 `WebApiServer` 与 `KestrelHost` 各建一个；日志类别常量在两个文件里重复；`RequestPipeline` 有多余空行；`WebApiServerCompletedEventArgs.cs` 的 `using System.Net;` 未使用；`ServerLifecycle` 里写全名的 `Junevy.Communication.WebApi.WebApiAuthScheme`、`System.Security.Cryptography.CryptographicException`。
+- **R14 文档**：D-1 说写出 `instance`，`ProblemWriter` 没有写；`WebApiServerOutcome.TimedOut` 的注释"504，或读取正文超时的 408 之外的超时"表述不清（408 属于 `Rejected`）。
+
+**待用户决定（设计）**
+
+- **A 先认证、后反序列化**：现在的顺序是读正文 → 解码 JSON（400 / 415）→ 认证（401）。未认证的调用方能拿到 400 / 415，序列化器也在认证之前处理不可信的输入。建议改为读正文 → 认证 → 解码 → 拦截器（认证只需要原始字节，签名校验也不受影响）。这会改变第 8 节 Task 3 的阶段顺序。
+- **B 被摘出去的处理器不计入 `MaxConcurrentRequests`**：504 之后限流许可就释放了，不理令牌的处理器继续在后台运行。设备卡住、MES 每 30 秒重发一次时，后台任务会一直累积，直到线程池耗尽（开启去重且 MES 带幂等键时不会，同键会得到 409）。建议至少记录被摘出的处理器数（内部计数与 Warning）；是否把它们计入并发上限由用户决定。
+
+**说明（不要求修改）**：同步 `Dispose()` 是 sync-over-async，与 `MqttClient`、`OpcUaClient` 一致；WPF 里在 UI 线程调用 `Dispose()`、同时 `StateChanged` 订阅者用 `Dispatcher.Invoke` 会死锁，建议 README 写明在 UI 线程上使用 `DisposeAsync`。
+
+**修正与复验（2026-10-18，用户要求审阅者直接修；A、B 按审阅者的建议执行）**
+
+| 项 | 修正 | 用例 |
+|---|---|---|
+| R1 | 释放标记在生命周期锁内设置与检查；等在锁外的 `StartAsync` 抛 `ObjectDisposedException` | `WebApiServerConcurrencyTests.StartWaitingBehindDispose_…` |
+| R2 | `KestrelHost.Addresses` 在启动成功时拍快照；`Urls` 只读快照；停止时先清引用再释放应用 | `Urls_CanBeReadWhileTheServerStops` |
+| R3 | 新增 `Logging/RequestLog`：Debug 记方法、路径、脱敏的查询串与请求头；结束日志用路由模板；`LogBodies` 时记两个方向的正文并截断 | `RequestLogTests`（3 条） |
+| R4 | `RouteTable` 忽略大小写与首尾 `/` 判重；删除未用的 `Count` | `TemplateEquivalentForRouting_IsADuplicate_…` |
+| R5 | `DeduplicationCache.Complete` 缓存 `DedupReplay.Capture` 的快照 | `CachedResult_IsASnapshot_…` |
+| R6 | `KestrelHost.Create` 映射失败时释放已建立的应用再抛出 | 无法从外部观察，按代码审阅 |
+| R7 | 令牌已取消时跳过响应阶段（结果仍按超时 / 断开处理） | `LateResultAfterA504_IsNotGivenToTheResponseInterceptors` |
+| R8 | 只有令牌确实取消时才把 `OperationCanceledException` 当取消；否则 500 并经过响应阶段 | `HandlerThrowingItsOwnCancellation_IsA500_…` |
+| R9 | 去重键加入按名称排序的查询串（`DedupTarget`） | `QueryParameters_ArePartOfTheTarget_…`、`SameKey_WithDifferentQueryParameters_…` |
+| R10 | 比较函数可注入（内部构造函数），用例确认每次比较都经过它；`ConstantTimeText` 先取 SHA-256 再固定时间比较；Q29 改用 `Kestrel:Endpoints`；补 D-7、D-8、释放规则、Q27（`UnobservedTaskWatch`）、Q28（停止后在途数回到 0） | `EveryScheme_DecidesThroughTheComparer_…`、`MalformedChunkedBody_IsA400_…`、`ClientDisconnecting_…`、`StopWaitingBehindDispose_…`、`StopPastItsDeadline_…` |
+| R11 | 删除 `ServerLifecycle.Host`、`RouteTable.Count` | — |
+| R12 | 405 不再复制 `Allow`（注释说明框架已写入） | 新变异"写出时移除 `Allow`"被 `EntryAndRoutingTests` 拦住 |
+| R13 | 删除 `InterceptorRefusal`（直接用 `Rejection`）；结果构造抽成 `Pipeline/ServerResults`（拒绝、503、500、504、断开，管线与入口共用），状态码文本只在一处生成；`HostServices` 让格式化器、事件与日志记录器只建一份；删除多余的 `using` 与全名 | — |
+| R14 | `WebApiServerOutcome.TimedOut` 注释改正；D-1 的 `instance` 见下 | — |
+| A | 认证移到解码之前 | `UnauthenticatedRequest_Gets401_BeforeItsBodyIsDecoded`（两条） |
+| B | `AbandonedWork` 改为实例，统计仍在运行的被摘出处理器（`KestrelHost.AbandonedCount`），Warning 写出数量；仍不计入并发上限 | `ClientDisconnecting_…`、`LateResultAfterA504_…` |
+
+关于 D-1：`ProblemWriter` 不写 `instance`（RFC 9457 中可选；格式化器不知道请求路径），D-1 原文"写出 `instance`"为误记，以本条为准。
+
+复验：
+- 第 17 节存活的变异与每项修正各一个变异，共 16 个，全部被拦住（含 M7、M11、M13、M15、M16）。
+- `dotnet build Junevy.Communication.slnx -c Debug` 与 `-c Release`：0 错误、31 警告（全部既有，来自 Modbus 与 WPF 示例）。
+- `pwsh build/test-affected.ps1 -Base 837f7d0 -NoBuild -Repeat 3`：三遍均为 298 通过（架构 net8.0 15、net472 12；服务端 271），0 失败，0 跳过；未选中 `WebApi.Tests`。
+- 度量：生产重复窗口 34（9），与基线一致，新包为 0；测试重复窗口 190（51），不变；超过 60 行的方法 0；新包最大文件 `ServerLifecycle.cs` 285 行、`RequestPipeline.cs` 253 行；有效行 `WebApi.Server` 2488、`WebApi.Server.Tests` 3528，客户端 `WebApi` 仍为 2735。
+
+**最终结论：通过**（Task 0–9）。
 
 ### 19.2 调研记录与执行偏差（执行者填写：现象 / 处理 / 是否需要审阅者决定）
 
@@ -539,7 +638,7 @@ public static class WebApiServerServiceCollectionExtensions
 
 - **D-1（实现细节，不改公开 API）**：P32-D6 写的是"用 ASP.NET Core 的 `ProblemDetails` 类型"，但 `ProblemDetails` 位于共享框架的 `Microsoft.AspNetCore.Mvc.Core`，而 P32-D16 与 Q30 要求 `Hosting` 之外不引用 `Microsoft.AspNetCore.*`。处理：`ResponseFormatter` 直接写 RFC 9457 的 JSON（`type`、`title`、`status`、`detail`、`instance`，业务码放扩展字段 `code`，`application/problem+json`），线上格式不变。是否需要审阅者决定：否。
 - **D-2（测试辅助）**：HTTPS 测试证书按 2.9 的结论使用 `Exportable` 导入，而不是直接用 `CreateSelfSigned` 的返回值或 `EphemeralKeySet`。是否需要审阅者决定：否。
-- **D-3（Task 1，是否需要审阅者决定：是）**：`SdkAdapterArchitectureTests.Adapters` 增加"允许引用的库"列，守卫 1 从"只引用 Core"改为"只引用各自的允许列表"（服务端允许 WebApi，其余适配包仍只允许 Core）。没有新写守卫，只改了登记表的语义，因为服务端同时依赖 WebApi 的公共约定（P32-D2）。
+- **D-3（Task 1，是否需要审阅者决定：是；审阅者决定：接受，2026-10-17）**：`SdkAdapterArchitectureTests.Adapters` 增加"允许引用的库"列，守卫 1 从"只引用 Core"改为"只引用各自的允许列表"（服务端允许 WebApi，其余适配包仍只允许 Core）。没有新写守卫，只改了登记表的语义，因为服务端同时依赖 WebApi 的公共约定（P32-D2）。
 - **D-4（Task 1，否）**：计划写"启用包络时"才检查序列化器的内容类型必须是 JSON。实现为**不论是否启用包络都检查**：服务端的请求正文与成功数据都经过它。比计划严格，不影响公开 API。
 - **D-5（Task 1，否）**：`WebApiServerComponents` 引用的 `IWebApiServerInterceptor`、`IWebApiRequestAuthenticator`、`WebApiServerContext`、`WebApiServerOutcome` 等类型在 Task 1 即写入（组件需要它们才能编译）。内容与计划第 6 节、第 9 节的公开 API 一致，只是提前。
 - **D-6（Task 1、Task 2，否）**：计划要求先写测试并确认失败。实际上公开类型要先存在，测试才能编译，所以测试与实现同时写入。红灯证据：Task 1 首次编译时，XML 注释里的 `cref` 指向未定义的类型，报 CS1574，已改为纯文字；Task 1 的去重窗口用例首次运行失败（参数名为 `config.Window`，应为 `config.Deduplication.Window`），已修正。Task 2 的测试首次运行全部通过，没有单独做红灯验证。
@@ -550,12 +649,12 @@ public static class WebApiServerServiceCollectionExtensions
 - **D-11（Task 5，否）**：缓存全是处理中的条目时返回 503（计划只写"满了先淘汰最旧的"）。处理中的条目永不淘汰，所以需要一个出路；503 与 `Retry-After` 与其它并发限制一致。
 - **D-12（Task 6，否）**：同步的 `Dispose()` 使用 `DisposeAsync().AsTask().GetAwaiter().GetResult()`。依据是内部所有等待都使用 `ConfigureAwait(false)`，不会因同步上下文死锁；测试覆盖了释放与重复释放。
 - **D-13（Task 6，否）**：HTTPS 还需要 `WebHost.UseKestrelHttpsConfiguration()`，否则 Kestrel 报 "Call UseKestrelHttpsConfiguration()"。调研 2.9 没有覆盖这一点，测试中发现，已在有证书时调用。
-- **D-14（Task 7，是否需要审阅者决定：是）**：客户端有 `WebApiClientFactoryBuilder`（给没有 DI 容器的宿主用）。计划 P32-D14 只列了 `WebApiServerFactory` 与 `AddWebApiServers()`，因此服务端没有对应的构建器。未实现；是否需要由审阅者决定。
+- **D-14（Task 7，是否需要审阅者决定：是；审阅者决定：需要，已实现，2026-10-17）**：客户端有 `WebApiClientFactoryBuilder`（给没有 DI 容器的宿主用）。计划 P32-D14 只列了 `WebApiServerFactory` 与 `AddWebApiServers()`，因此服务端原先没有对应的构建器。已增加 `WebApiServerFactoryBuilder`（`Create()`、`WithLoggerFactory`、`Build()`，与客户端对称），测试见 `WebApiServerFactoryBuilderTests.cs`。这是计划之外的增补，计划第 6–13 节的公开 API 不变。
 - **D-15（Task 8，否）**：README 由模板生成，代码块从 `ReadmeSamples.cs` 逐字复制；`ReadmeSampleTests` 检查一致并运行示例。负控（把 README 中一个字符改为 202）使检查失败，恢复后通过。
 - **D-16（Task 9，否）**：`RequestPipeline.cs` 第一次为 315 行（超过 300 行的上限），把重放结果的构造拆到 `Dedup/DedupReplay.cs`，被摘出去的处理器的观察拆到 `Pipeline/AbandonedWork.cs`，现为 294 行。不改公开 API。
 - **D-17（Task 8，否）**：设计文档新增第 20.10 节（14 项修订）；第 15.5 节加了指向 20.10 的说明。知识库中的 `技术栈与仓库结构` 笔记的项目数字在本期之前已经过时（它停留在 P5 之前的计数），本期只补充了服务端的包与测试项目两行，未修正原有的计数。
 
-**审阅者需要决定的事项**：D-3（守卫 1 的允许列表）与 D-14（是否需要服务端的非 DI 构建器）。
+**审阅者决定**：D-3 已接受；D-14 需要，已实现（均为 2026-10-17）。
 
 ### 19.3 基线与度量（执行者填写）
 
@@ -591,6 +690,7 @@ public static class WebApiServerServiceCollectionExtensions
 - `pwsh build/test-affected.ps1 -Base 837f7d0 -NoBuild -Repeat 3`：选中 `Junevy.Communication.Architecture.Tests` 与 `Junevy.Communication.WebApi.Server.Tests`，**没有选中 `WebApi.Tests`**（客户端未改）。三遍结果一致：每遍 268 通过（架构测试 net8.0 15、net472 12；服务端 241），0 失败，0 跳过。
 - `WebApi/` 与 `Tests/Junevy.Communication.WebApi.Tests/` 相对 `837f7d0` 的差异为空。
 - `Junevy.Communication.WebApi.Server` 中 `Microsoft.AspNetCore` 与 `HttpContext` 只出现在 `Hosting` 命名空间的代码里；其余出现的只是注释。
+- **D-14 增补后的复测（2026-10-17，审阅者决定需要）**：生产重复窗口仍为 34（9），新文件为 0；测试重复窗口（`Tests/` 下全部 `*.cs`）由 189（50）变为 190（51），相对 P6.2 基线 184（47）增加 6，仍在 10 之内；超过 60 行的方法仍为 0；有效行：`WebApi.Server` 2339（原 2322）、`WebApi.Server.Tests` 3129（原 3071）；客户端 `WebApi` 仍为 2735。`dotnet build Junevy.Communication.slnx -c Debug`：0 错误。`pwsh build/test-affected.ps1 -Base 837f7d0 -NoBuild -Repeat 3`：三遍均为 273 通过（架构 net8.0 15、net472 12；服务端 246），0 失败，0 跳过。
 
 **规模（Task 9 第 3 条）**：自己写的生产代码 2322 有效行，其中 `Hosting` 374 行（嵌入式 Kestrel 的宿主、入口与出口中间件、请求与响应的翻译、启动失败的分类、证书加载）。交给 ASP.NET Core 的部分包括：HTTP 解析与连接、Kestrel 的读写与背压、路由匹配（模板与字面段优先）、并发限流器、Kestrel 的正文上限与慢速攻击防护、框架日志的级别过滤。
 
@@ -602,4 +702,4 @@ public static class WebApiServerServiceCollectionExtensions
 
 **给以后 SOAP 服务端的建议**：复用 `Pipeline` 的阶段顺序与 `ResponseFormatter` 的出口（SOAP Fault 作为另一种格式写在同一个出口）；`RawRequest` 已与 HTTP 实现无关，SOAP 只需要新的正文解析与响应格式化，拦截器与事件可以原样使用。
 
-**未验证与未决**：未与真实 MES 联调（README 的"未验证"一节已写明）；D-14 的非 DI 构建器待决定；技术栈笔记的项目计数在本期之前已过时。
+**未验证与未决**：未与真实 MES 联调（README 的"未验证"一节已写明）；技术栈笔记的项目计数在本期之前已过时。
