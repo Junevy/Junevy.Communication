@@ -3,6 +3,7 @@ using Junevy.Communication.WebApi.Server.Config;
 using Junevy.Communication.WebApi.Server.Dedup;
 using Junevy.Communication.WebApi.Server.Formatting;
 using Junevy.Communication.WebApi.Server.Pipeline;
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -54,10 +55,11 @@ internal sealed class KestrelHost : IAsyncDisposable
     /// <param name="routes">路由定义。</param>
     /// <param name="events">事件派发器。</param>
     /// <param name="loggerFactory">调用方的日志工厂。</param>
+    /// <param name="certificate">HTTPS 证书；没有 https 地址时为 null。</param>
     /// <returns>应用宿主。</returns>
-    public static KestrelHost Create(WebApiServerSettings settings, string serverName, IEnumerable<RouteDefinition> routes, ServerEvents events, ILoggerFactory loggerFactory)
+    public static KestrelHost Create(WebApiServerSettings settings, string serverName, IEnumerable<RouteDefinition> routes, ServerEvents events, ILoggerFactory loggerFactory, X509Certificate2? certificate)
     {
-        WebApplication app = CreateBuilder(settings, loggerFactory).Build();
+        WebApplication app = CreateBuilder(settings, loggerFactory, certificate).Build();
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
         DeduplicationCache? dedup = CreateDeduplication(settings);
         var pipeline = new RequestPipeline(
@@ -106,12 +108,19 @@ internal sealed class KestrelHost : IAsyncDisposable
             ? new DeduplicationCache(settings.Deduplication.Window, settings.Deduplication.MaxEntries, settings.TimeProvider)
             : null;
 
-    private static WebApplicationBuilder CreateBuilder(WebApiServerSettings settings, ILoggerFactory loggerFactory)
+    private static WebApplicationBuilder CreateBuilder(WebApiServerSettings settings, ILoggerFactory loggerFactory, X509Certificate2? certificate)
     {
         WebApplicationBuilder builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions());
         builder.WebHost.UseKestrelCore();
         builder.WebHost.UseUrls(settings.Urls);
-        builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = settings.MaxRequestBodySize);
+        builder.WebHost.ConfigureKestrel(options =>
+        {
+            options.Limits.MaxRequestBodySize = settings.MaxRequestBodySize;
+            if (certificate != null)
+                options.ConfigureHttpsDefaults(https => https.ServerCertificate = certificate);
+        });
+        if (certificate != null)
+            builder.WebHost.UseKestrelHttpsConfiguration();
         builder.Services.AddRoutingCore();
         builder.Services.AddRateLimiter(options => ConfigureConcurrencyLimit(options, settings.MaxConcurrentRequests));
         builder.Logging.ClearProviders();

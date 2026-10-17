@@ -142,7 +142,7 @@ public sealed class LimitsAndTimeoutTests
 
         Assert.Equal(HttpStatusCode.GatewayTimeout, response.StatusCode);
         Assert.Contains(server.Logger.GetEntries(LogLevel.Warning), entry => entry.Message.Contains("still running after the timeout", StringComparison.Ordinal));
-        await Polling.WaitUntilAsync(() => server.Logger.GetEntries(LogLevel.Debug).Any(entry => entry.Message.Contains("finished after the timeout", StringComparison.Ordinal)));
+        await Polling.WaitUntilAsync(() => server.Logger.GetEntries(LogLevel.Debug).Any(entry => entry.Message.Contains("finished after it was abandoned", StringComparison.Ordinal)));
         await Task.Delay(50);
         Assert.Single(server.Completed);
         Assert.Equal(WebApiServerOutcome.TimedOut, server.Completed[0].Outcome);

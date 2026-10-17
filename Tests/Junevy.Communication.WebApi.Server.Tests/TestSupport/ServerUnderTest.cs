@@ -26,7 +26,7 @@ internal sealed class ServerUnderTest : IAsyncDisposable
             lock (gate)
                 completed.Add(args);
         };
-        host = KestrelHost.Create(settings, "test", routes, Events, Logger);
+        host = KestrelHost.Create(settings, "test", routes, Events, Logger, certificate: null);
     }
 
     /// <summary>测试日志器（同时是调用方的日志工厂）。</summary>

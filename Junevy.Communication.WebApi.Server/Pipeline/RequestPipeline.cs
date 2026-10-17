@@ -131,7 +131,7 @@ internal sealed class RequestPipeline
         }
         catch (OperationCanceledException) when (timeout.IsTimedOut)
         {
-            ObserveAbandonedInvocation(invocation, context.RequestId);
+            ObserveAbandonedInvocation(invocation, context.RequestId, "the timeout");
             string code = 504.ToString(CultureInfo.InvariantCulture);
             ServerResponse response = formatter.Reject(504, code, TimeoutMessage, new Dictionary<string, string>());
             logger.LogWarning("Request {RequestId} timed out.", context.RequestId);
@@ -139,6 +139,7 @@ internal sealed class RequestPipeline
         }
         catch (OperationCanceledException) when (clientToken.IsCancellationRequested)
         {
+            ObserveAbandonedInvocation(invocation, context.RequestId, "the client disconnected");
             return Disconnected(null, context.RequestId);
         }
         catch (Exception ex)
@@ -301,14 +302,14 @@ internal sealed class RequestPipeline
         return new ServerResult(0, null, WebApiServerOutcome.ClientDisconnected, null, null, exception);
     }
 
-    // 超时之后处理器仍在运行：响应已经发出，它的结果丢弃；任务的异常在这里被观察，避免成为未观察的任务异常。
-    private void ObserveAbandonedInvocation(Task<ServerResult> invocation, long requestId)
+    // 响应已经不再等待处理器（超时或对端断开）：处理器之后的结果丢弃，任务的异常在这里被观察，避免成为未观察的任务异常。
+    private void ObserveAbandonedInvocation(Task<ServerResult> invocation, long requestId, string reason)
     {
         if (!invocation.IsCompleted)
-            logger.LogWarning("The handler for request {RequestId} is still running after the timeout; its result will be discarded.", requestId);
+            logger.LogWarning("The handler for request {RequestId} is still running after {Reason}; its result will be discarded.", requestId, reason);
 
         _ = invocation.ContinueWith(
-            task => logger.LogDebug(task.Exception, "The handler for request {RequestId} finished after the timeout; its result was discarded.", requestId),
+            task => logger.LogDebug(task.Exception, "The handler for request {RequestId} finished after it was abandoned; its result was discarded.", requestId),
             TaskContinuationOptions.ExecuteSynchronously);
     }
 }

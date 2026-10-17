@@ -10,6 +10,15 @@
   - **Task 1（骨架、模型与校验）**：只面向 net8.0；引用 Core、WebApi 与 `Microsoft.AspNetCore.App`；英文 README 打包（Task 8 补全）；`InternalsVisibleTo` 只给本包的测试项目。
   - 公开模型：`WebApiServerConfig`、`WebApiServerHttpsOptions`、`WebApiServerDeduplicationOptions`、`WebApiServerComponents`、`WebApiServerState`、`WebApiServerStateChangedEventArgs`；拦截器与认证器的接口与上下文（`IWebApiServerInterceptor`、`WebApiServerInterceptor`、`WebApiServerContext`、`WebApiServerRequestingContext`、`WebApiServerRespondingContext`、`IWebApiRequestAuthenticator`、`WebApiAuthenticationResult`）；结果分类 `WebApiServerOutcome`。
   - 配置在创建服务器时校验并拍快照：监听地址（Kestrel 写法，必须带端口，不允许重复）、HTTPS 证书来源、业务包络的字段路径、去重与日志选项、序列化器的内容类型（必须是 JSON）。凭据与证书口令只保存环境变量名，值在创建时读取，错误消息只含变量名。
+- 2026-10-17 [WebApi.Server] **Task 6（服务端外观与生命周期）**：公开 `IWebApiServer` 与 `WebApiServer`（`Name`、`State`、`Urls`，`StateChanged`、`RequestReceived`、`RequestCompleted` 事件，`StartAsync` 返回 `CommResult`，`StopAsync`，`MapGet`、`MapDelete`、`MapPost`、`MapPut`，`Dispose` 与 `DisposeAsync`）。
+  - 状态机 `Stopped → Starting → Running → Stopping → Stopped`，状态变化在同一把异步锁之下按顺序触发；订阅者的异常只记录。
+  - 启动失败返回 `CommResult` 且不留下应用：已启动、没有路由 → `InvalidRequest`；端口被占用 → `ResourceExhausted`；无权绑定（Windows 排除端口等）→ `AuthenticationFailed`；证书加载失败 → `InvalidRequest`；路由模板非法 → `InvalidRequest`；其余 → `Unspecified`。
+  - HTTPS：`Components.Certificate` 优先，否则从 .pfx 文件加载（口令来自环境变量，文件导入使用 `Exportable`）。`Urls` 启动后返回实际绑定的地址（端口 0 已解析）。
+  - 停止：等待在途请求最长 `StopTimeout`，之后中止连接并取消处理器的令牌；处理器不理会令牌时停止与释放照常完成，结果丢弃且异常被观察。可重复调用；释放后 `StartAsync` 与 `Map*` 抛 `ObjectDisposedException`，`StopAsync` 无操作。
+  - 路由在启动后不能再注册（`InvalidOperationException`）；同一方法下模板重复抛 `ArgumentException`。
+  - 环境变量 `ASPNETCORE_URLS` 与工作目录下的 `appsettings.json` 不影响服务器；监听所有网卡却没有认证时启动记 Warning。
+  - 与 3.1 客户端的真实往返：成功、业务失败（`RemoteError` 与业务码）、401（`AuthenticationFailed`）、去重开启时带幂等键的重复调用只执行一次。
+  - 修正：客户端断开时仍在运行的处理器，其之后的异常也被观察（之前只处理了超时的情况）。
 - 2026-10-17 [WebApi.Server] **Task 5（重复下发去重）**：可选、默认关闭的去重（`WebApiServerDeduplicationOptions`：`HeaderName` 默认 `Idempotency-Key`，`Window` 默认 600000 毫秒，`MaxEntries` 默认 1000）。键为（幂等键、方法、路径），正文用 SHA-256 比较。
   - 窗口内同键已完成的请求重放第一次的状态码、`Content-Type` 与正文，带 `Idempotent-Replayed: true`，处理器不执行，结果分类为 `Replayed`；同键仍在处理中返回 409；同键正文不同返回 422。
   - 只缓存处理器给出的响应（成功与业务失败）；框架拒绝、正文错误与异常不缓存，允许重试。
