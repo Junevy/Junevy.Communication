@@ -1,6 +1,6 @@
 ---
 name: using-junevy-webapi
-description: Use when a .NET project references Junevy.Communication.WebApi, or needs to report data to a MES over HTTP — REST (WebApiClient) or SOAP 1.1/1.2 (SoapClient) calls, WebApiResult and ErrorKind handling, retries and idempotency keys, the business envelope ({code,msg,data}), writing interceptors (signing, token refresh, RequestReplay), subscribing to RequestSending/ResponseReceived/RequestCompleted/AvailabilityChanged, health checks and availability, log redaction, WebApiClientFactory or DI registration, or troubleshooting net472 connection limits and GBK responses
+description: Use when a .NET project references Junevy.Communication.WebApi or Junevy.Communication.WebApi.Server, or needs to report data to a MES over HTTP, or to receive HTTP calls from a MES (server) — REST (WebApiClient) or SOAP 1.1/1.2 (SoapClient) calls, WebApiResult and ErrorKind handling, retries and idempotency keys, the business envelope ({code,msg,data}), writing interceptors (signing, token refresh, RequestReplay), subscribing to RequestSending/ResponseReceived/RequestCompleted/AvailabilityChanged, health checks and availability, log redaction, WebApiClientFactory or DI registration, or troubleshooting net472 connection limits and GBK responses
 ---
 
 # Using Junevy WebApi (REST and SOAP client)
@@ -18,7 +18,7 @@ Asynchronous REST and SOAP client for .NET (net472 + net8.0) by Junevy, version 
 ## When NOT to Use
 
 - Modbus: `using-junevy-modbus`. Raw TCP/UDP/serial: `using-junevy-channels`. PLC addresses: `using-junevy-plc`.
-- The MES calling the device (an HTTP **server**): not in this package yet.
+- The MES calling the device (an HTTP **server**): use the separate package `Junevy.Communication.WebApi.Server`, see the Server section below.
 - WCF proxies: keep using them; this package does not generate proxies.
 - Offline caching/outbox: not implemented; `IdempotencyKey` and `AvailabilityChanged` are the hooks a future cache will use.
 
@@ -141,6 +141,23 @@ Same name = same instance (new config ignored). A REST request for a SOAP name (
 
 `Dispose`/`DisposeAsync` are idempotent; they stop the health check, end in-flight calls with `ConnectionClosed`, wait up to 2 s for pending `AvailabilityChanged` events, and never dispose an injected `HttpHandler`. Later calls return `NotConnected`. Safe to call from an `AvailabilityChanged` handler.
 
+## Server (Junevy.Communication.WebApi.Server)
+
+A separate package for **receiving** calls from the MES: `Junevy.Communication.WebApi.Server`, .NET 8 only, depending on Core and WebApi and on the ASP.NET Core shared framework. It embeds Kestrel and needs no `netsh` or URL ACL. Core principles:
+
+- **Create**: `new WebApiServer(name, config, components?, loggerFactory?)`, or `WebApiServerFactory.GetOrAdd(...)` with `services.AddWebApiServers()`. Invalid configuration throws `ArgumentException` at creation.
+- **Routes before start**: `MapGet`, `MapDelete`, `MapPost<TRequest, TResponse>`, `MapPut<TRequest, TResponse>`, with ASP.NET Core route templates. A handler returns `WebApiServerResponse<T>.Ok(data, status?)` or `.Fail(code, message, status?)`.
+- **Start returns a result**: `StartAsync` returns `CommResult` and does not throw for bind, certificate or route errors. `ResourceExhausted` means the address is in use, `AuthenticationFailed` means a reserved or excluded port, and `InvalidRequest` means a second start, no routes, a bad template or a bad certificate.
+- **Stop waits, then aborts**: `StopAsync` waits up to `StopTimeout` (5 s) for requests in progress, then aborts them. `Dispose` is repeatable; after it, `StartAsync` and `Map*` throw `ObjectDisposedException`.
+- **Two response shapes**: without the envelope, data is written as is (null gives 204) and failures are RFC 9457 Problem Details (`application/problem+json`, business code in `code`, default 400). With `Envelope.Enabled`, bodies are `{ code, msg, data }` at the configured paths, and business failures are HTTP `BusinessFailureStatusCode` (200 by default). An explicit status always wins.
+- **Framework codes**: 400 empty or invalid body; 401 authentication (with `WWW-Authenticate` for Basic and Bearer); 404; 405 with `Allow`; 408 body not read in time; 409 same idempotency key still running; 413 body too large; 415 non-JSON body; 422 same key with a different body; 500 generic message; 503 too many concurrent requests (`Retry-After: 1`); 504 handler timeout.
+- **Authentication**: the `WebApiAuthOptions` shape, with environment variable names (Basic, Bearer, ApiKey, constant-time comparison). A custom `IWebApiRequestAuthenticator` replaces the configured scheme.
+- **Interceptors and events**: derive from `WebApiServerInterceptor`; call `context.Reject(status, code, message)` in `OnRequestAsync`; add headers in `OnRespondingAsync`. `RequestCompleted` is raised exactly once per request with the `Outcome`.
+- **Idempotent replay**: off by default. Enable `Deduplication.Enabled` and have the MES send `Idempotency-Key`; within 10 minutes a completed request is replayed with `Idempotent-Replayed: true`. Only handler results are cached.
+- **Deployment**: the target needs the ASP.NET Core 8 runtime, not only the Desktop runtime; open the firewall port. If the host is already an ASP.NET Core app, use Minimal API instead.
+
+The README's samples are compiled and run by `ReadmeSampleTests`; keep the README and `ReadmeSamples.cs` in step.
+
 ## Common Mistakes
 
 | Mistake | Fix |
@@ -156,3 +173,9 @@ Same name = same instance (new config ignored). A REST request for a SOAP name (
 | Expecting `GBK` text on .NET 8 | Register `CodePagesEncodingProvider.Instance` at startup |
 | Putting a SOAP-only client option in `WebApiComponents.Serializer` | SOAP always uses XML; setting it throws |
 | net472: other code talks to the same host | The client sets `ConnectionLimit`/`ConnectionLeaseTimeout` on that host's `ServicePoint`; static `ServicePointManager` is never touched |
+| Only the .NET Desktop runtime is installed, so startup cannot find `Microsoft.AspNetCore.App` (server) | Install "ASP.NET Core Runtime 8", or publish self-contained |
+| A handler ignores its `CancellationToken` and does slow device work (server) | After the 504 it keeps running and its result is discarded; pass the token to every await |
+| Expecting HTTP 200 for failures without enabling `Envelope` (server) | Enable the envelope, or handle 400 Problem Details |
+| Deduplication enabled but the MES sends no `Idempotency-Key` (server) | Without the header the request is not deduplicated; have the MES send it |
+| Putting the handler's exception text into the response (server) | The 500 body is generic by design; read the log |
+| `http://*:port` without a firewall rule (server) | Open the port; the library does not change the firewall |

@@ -42,6 +42,13 @@
   - 往返：服务端写出的包络交给 3.1 客户端（`WebApiClient`，启用包络）解析，成功拿到同样的数据，业务失败拿到 `RemoteError` 与业务码。
 - 2026-10-17 [Architecture] SDK 适配守卫登记 `Junevy.Communication.WebApi.Server`（SDK 前缀 `Microsoft.AspNetCore`，命名空间 `Junevy.Communication.WebApi.Server.Hosting`），分层表与 `ArchitectureTests.SdkPrefixes` 同步加一行；`SdkAdapterArchitectureTests.Adapters` 增加"允许引用的库"列（服务端允许 Core 与 WebApi，其余适配包只允许 Core）。负控：临时暴露 `HttpContext` 与在根命名空间的类型里引用它，两条守卫各报一次错，已撤除。
 
+### 变更（Changed）
+
+- 2026-10-17 [WebApi] 客户端（`Junevy.Communication.WebApi`）的生产代码与 `Tests/Junevy.Communication.WebApi.Tests` 本期零改动。服务端的业务包络读取（`ResponseEnvelopeCodec`）未改，服务端只新增"写"的一侧。
+- 2026-10-17 [Architecture] `SdkAdapterArchitectureTests`：登记表增加"允许引用的库"列，守卫 1 由"只引用 Core"改为"只引用各自的允许列表"（服务端允许 WebApi，其余适配包仍只允许 Core）；`WebApiLayeringTests` 中关于 `Server` 的注释改为指向本包。
+- 2026-10-17 [WebApi.Server] 公开 API 与计划第 6–13 节逐条一致；`WebApiServerContext`、`WebApiServerOutcome` 等被组件接口引用的类型在 Task 1 即存在，以便组件可以编译。
+- 2026-10-17 [WebApi.Server] 配置校验新增两条：序列化器的内容类型必须是 JSON（不论是否启用包络），包络的三个路径不能互为前缀。
+
 ## [Unreleased] — P6.2（OpcUa 1.0.0-preview.1：OPC UA 客户端）
 
 ### 新增（Added）
