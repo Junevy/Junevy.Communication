@@ -184,7 +184,7 @@ Set `Https.CertificatePath` to a `.pfx` file and name the variable that holds it
 
 ## Factory and dependency injection
 
-`WebApiServerFactory` creates servers by name, like the client factory. `AddWebApiServers()` registers the factory as a singleton and can be called together with `AddWebApiClients()`. The container's `ILoggerFactory` is used for the servers' logs.
+`WebApiServerFactory` creates servers by name, like the client factory. `AddWebApiServers()` registers the factory as a singleton and can be called together with `AddWebApiClients()`. The container's `ILoggerFactory` is used for the servers' logs. Without a DI container, `WebApiServerFactoryBuilder.Create().WithLoggerFactory(loggerFactory).Build()` creates the factory; the builder's usage matches `WebApiClientFactoryBuilder`.
 
 ## Deployment
 

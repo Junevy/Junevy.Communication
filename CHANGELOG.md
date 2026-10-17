@@ -12,6 +12,8 @@
   - 配置在创建服务器时校验并拍快照：监听地址（Kestrel 写法，必须带端口，不允许重复）、HTTPS 证书来源、业务包络的字段路径、去重与日志选项、序列化器的内容类型（必须是 JSON）。凭据与证书口令只保存环境变量名，值在创建时读取，错误消息只含变量名。
 - 2026-10-17 [WebApi.Server] **Task 7（工厂与依赖注入）**：新增 `WebApiServerFactory : NamedFactory<IWebApiServer>`（`GetOrAdd(name, config, components?)`，同名返回同一实例，别名与释放与其它工厂一致）与 `AddWebApiServers()`（命名空间 `Junevy.Communication.WebApi.Server.DependencyInjection`，单例，可重复调用，与 `AddWebApiClients()` 互不影响）。容器的 `ILoggerFactory` 透传给服务器；容器释放时释放工厂与它创建的服务器。
   - 测试覆盖 appsettings 形状的 JSON 经绑定路径得到的配置，并能直接启动服务器。
+- 2026-10-17 [WebApi.Server] **增补（D-14，审阅者决定需要）**：新增 `WebApiServerFactoryBuilder`（命名空间 `Junevy.Communication.WebApi.Server`），供没有 DI 容器的宿主使用：`Create()`、`WithLoggerFactory(ILoggerFactory)`（为 null 抛出 `ArgumentNullException`）、`Build()`（每次返回新的独立 `WebApiServerFactory`）。用法与客户端的 `WebApiClientFactoryBuilder` 一致。这是计划之外的增补；计划第 6–13 节的公开 API 不变。
+  - 测试 `WebApiServerFactoryBuilderTests`：构建出的工厂可以创建服务器；日志工厂透传给服务器；不设日志工厂时服务器可以启动；两次构建互不影响。
 - 2026-10-17 [WebApi.Server] **Task 6（服务端外观与生命周期）**：公开 `IWebApiServer` 与 `WebApiServer`（`Name`、`State`、`Urls`，`StateChanged`、`RequestReceived`、`RequestCompleted` 事件，`StartAsync` 返回 `CommResult`，`StopAsync`，`MapGet`、`MapDelete`、`MapPost`、`MapPut`，`Dispose` 与 `DisposeAsync`）。
   - 状态机 `Stopped → Starting → Running → Stopping → Stopped`，状态变化在同一把异步锁之下按顺序触发；订阅者的异常只记录。
   - 启动失败返回 `CommResult` 且不留下应用：已启动、没有路由 → `InvalidRequest`；端口被占用 → `ResourceExhausted`；无权绑定（Windows 排除端口等）→ `AuthenticationFailed`；证书加载失败 → `InvalidRequest`；路由模板非法 → `InvalidRequest`；其余 → `Unspecified`。

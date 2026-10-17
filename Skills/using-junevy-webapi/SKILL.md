@@ -145,7 +145,7 @@ Same name = same instance (new config ignored). A REST request for a SOAP name (
 
 A separate package for **receiving** calls from the MES: `Junevy.Communication.WebApi.Server`, .NET 8 only, depending on Core and WebApi and on the ASP.NET Core shared framework. It embeds Kestrel and needs no `netsh` or URL ACL. Core principles:
 
-- **Create**: `new WebApiServer(name, config, components?, loggerFactory?)`, or `WebApiServerFactory.GetOrAdd(...)` with `services.AddWebApiServers()`. Invalid configuration throws `ArgumentException` at creation.
+- **Create**: `new WebApiServer(name, config, components?, loggerFactory?)`, or `WebApiServerFactory.GetOrAdd(...)` with `services.AddWebApiServers()`. Without a container: `WebApiServerFactoryBuilder.Create().WithLoggerFactory(f).Build()`. Invalid configuration throws `ArgumentException` at creation.
 - **Routes before start**: `MapGet`, `MapDelete`, `MapPost<TRequest, TResponse>`, `MapPut<TRequest, TResponse>`, with ASP.NET Core route templates. A handler returns `WebApiServerResponse<T>.Ok(data, status?)` or `.Fail(code, message, status?)`.
 - **Start returns a result**: `StartAsync` returns `CommResult` and does not throw for bind, certificate or route errors. `ResourceExhausted` means the address is in use, `AuthenticationFailed` means a reserved or excluded port, and `InvalidRequest` means a second start, no routes, a bad template or a bad certificate.
 - **Stop waits, then aborts**: `StopAsync` waits up to `StopTimeout` (5 s) for requests in progress, then aborts them. `Dispose` is repeatable; after it, `StartAsync` and `Map*` throw `ObjectDisposedException`.
