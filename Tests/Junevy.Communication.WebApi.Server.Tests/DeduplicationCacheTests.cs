@@ -1,4 +1,5 @@
 using Junevy.Communication.WebApi.Server.Dedup;
+using Junevy.Communication.WebApi.Server.Formatting;
 using Junevy.Communication.WebApi.Server.Pipeline;
 using Junevy.Communication.WebApi.Server.Tests.TestSupport;
 
@@ -59,14 +60,40 @@ public sealed class DeduplicationCacheTests
     {
         var cache = new DeduplicationCache(60000, 10, new ManualTimeProvider());
         DedupDecision first = cache.Begin("k", "POST", "/orders", Body);
-        var result = new ServerResult(201, null, WebApiServerOutcome.Succeeded);
+        ServerResult result = Completed(201);
 
         first.Ticket!.Complete(result);
         DedupDecision second = cache.Begin("k", "POST", "/orders", Body);
 
         Assert.Equal(DedupState.Replay, second.State);
-        Assert.Same(result, second.Replayed);
+        Assert.Equal(201, second.Replayed!.StatusCode);
+        Assert.Same(result.Response!.Body, second.Replayed.Response!.Body);
         Assert.Equal(0, cache.InFlightCount);
+    }
+
+    [Fact]
+    public void CachedResult_IsASnapshot_HeadersAddedLaterByTheResponseStageAreNotReplayed()
+    {
+        var cache = new DeduplicationCache(60000, 10, new ManualTimeProvider());
+        ServerResult result = Completed(200);
+        result.Response!.Headers["X-Handler"] = "1";
+
+        cache.Begin("k", "POST", "/orders", Body).Ticket!.Complete(result);
+        result.Response.Headers["X-Response-Stage"] = "first request only";
+        ServerResult replayed = cache.Begin("k", "POST", "/orders", Body).Replayed!;
+
+        Assert.Equal("1", replayed.Response!.Headers["X-Handler"]);
+        Assert.False(replayed.Response.Headers.ContainsKey("X-Response-Stage"));
+    }
+
+    [Fact]
+    public void QueryParameters_ArePartOfTheTarget_InAnyOrder()
+    {
+        var query = new Dictionary<string, string> { ["b"] = "2", ["a"] = "1" };
+
+        Assert.Equal("/orders", DedupTarget.Of("/orders", new Dictionary<string, string>()));
+        Assert.Equal("/orders?a=1&b=2", DedupTarget.Of("/orders", query));
+        Assert.NotEqual(DedupTarget.Of("/orders", query), DedupTarget.Of("/orders", new Dictionary<string, string> { ["a"] = "1", ["b"] = "3" }));
     }
 
     [Fact]
@@ -85,7 +112,7 @@ public sealed class DeduplicationCacheTests
     {
         var time = new ManualTimeProvider();
         var cache = new DeduplicationCache(1000, 10, time);
-        cache.Begin("k", "POST", "/orders", Body).Ticket!.Complete(new ServerResult(200, null, WebApiServerOutcome.Succeeded));
+        cache.Begin("k", "POST", "/orders", Body).Ticket!.Complete(Completed(200));
 
         time.Advance(TimeSpan.FromMilliseconds(1000));
 
@@ -96,8 +123,8 @@ public sealed class DeduplicationCacheTests
     public void WhenFull_TheOldestCompletedEntryIsEvicted()
     {
         var cache = new DeduplicationCache(60000, 2, new ManualTimeProvider());
-        cache.Begin("a", "POST", "/x", Body).Ticket!.Complete(new ServerResult(200, null, WebApiServerOutcome.Succeeded));
-        cache.Begin("b", "POST", "/x", Body).Ticket!.Complete(new ServerResult(200, null, WebApiServerOutcome.Succeeded));
+        cache.Begin("a", "POST", "/x", Body).Ticket!.Complete(Completed(200));
+        cache.Begin("b", "POST", "/x", Body).Ticket!.Complete(Completed(200));
 
         DedupDecision third = cache.Begin("c", "POST", "/x", Body);
 
@@ -117,5 +144,12 @@ public sealed class DeduplicationCacheTests
         Assert.Equal(DedupState.Full, decision.State);
         Assert.Equal(1, cache.EntryCount);
         Assert.Equal(DedupState.InProgress, cache.Begin("a", "POST", "/x", Body).State);
+    }
+
+    // 处理器给出的结果（只有带响应的结果才会被缓存）。
+    private static ServerResult Completed(int status)
+    {
+        var response = new ServerResponse(status, "application/json", new byte[] { 123, 125 }, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+        return new ServerResult(status, response, WebApiServerOutcome.Succeeded);
     }
 }

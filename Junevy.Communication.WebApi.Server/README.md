@@ -48,7 +48,7 @@ public static class OrderService
 
 Templates are ASP.NET Core route templates: `/orders/{id:int}` and the other constraints work as usual, and a literal segment wins over a parameter. A request that matches no route gets 404. A request whose path matches a route but whose method does not gets 405 with an `Allow` header. Both use the library's response format.
 
-The methods are `MapGet`, `MapDelete` (no body), and `MapPost`, `MapPut` (JSON body). The same method and template cannot be registered twice.
+The methods are `MapGet`, `MapDelete` (no body), and `MapPost`, `MapPut` (JSON body). The same method and template cannot be registered twice. Templates that match the same requests count as the same template: `/orders`, `/Orders`, `orders` and `/orders/` are one route, and the second registration throws `ArgumentException`.
 
 ## Responses
 
@@ -89,13 +89,13 @@ public static class EnvelopeService
 
 ## Request bodies
 
-For POST and PUT the body is read as follows. An empty body gives 400. A body whose `Content-Type` is not JSON (`application/json`, or `*/*+json`) gives 415. A `byte[]` parameter receives the raw bytes, and a `string` parameter receives the text decoded with the `charset` parameter (UTF-8 by default; charsets the runtime does not provide give 415). Any other type is deserialized by the serializer; a body it cannot deserialize gives 400 with no details in the response. A body larger than `MaxRequestBodySize` (1 MiB by default) gives 413.
+For POST and PUT the body is read as follows, after authentication (an unauthenticated caller gets 401 whatever it sent). An empty body gives 400. A body whose `Content-Type` is not JSON (`application/json`, or `*/*+json`) gives 415. A `byte[]` parameter receives the raw bytes, and a `string` parameter receives the text decoded with the `charset` parameter (UTF-8 by default; charsets the runtime does not provide give 415). Any other type is deserialized by the serializer; a body it cannot deserialize gives 400 with no details in the response. A body larger than `MaxRequestBodySize` (1 MiB by default) gives 413.
 
 ## Concurrency and timeouts
 
 `MaxConcurrentRequests` (16 by default) limits the requests in progress. A request beyond the limit gets 503 with `Retry-After: 1` at once; nothing is queued.
 
-`RequestTimeout` (30 seconds by default) covers reading the body, the interceptors and the handler. Reading the body past the timeout gives 408; anything later gives 504. A handler should honour its `CancellationToken`. A handler that ignores it keeps running after the 504 was sent, its result is discarded, and a warning is logged. An exception in the handler gives 500 with a generic message; the exception goes to the log only.
+`RequestTimeout` (30 seconds by default) covers reading the body, the interceptors and the handler. Reading the body past the timeout gives 408; anything later gives 504. A handler should honour its `CancellationToken`. A handler that ignores it keeps running after the 504 was sent; its late result is discarded and does not reach the response interceptors. Such a handler no longer counts against `MaxConcurrentRequests`, so a device that hangs while the MES keeps retrying can pile them up: the warning logged for each one says how many are still running. Deduplication prevents the pile-up when the MES sends an idempotency key, because the retries get 409. An exception in the handler gives 500 with a generic message; the exception goes to the log only. This includes an `OperationCanceledException` the handler raises itself, for example a timeout of its own HTTP call.
 
 ## Authentication
 
@@ -105,7 +105,7 @@ For POST and PUT the body is read as follows. An empty body gives 400. A body wh
 - `Bearer`: `TokenVariable`;
 - `ApiKey`: `ApiKeyHeader` (default `X-API-Key`) and `ApiKeyVariable`.
 
-The secrets are read when the server is created, and a missing variable is reported by name only. Comparisons are constant-time. A failure gives 401; Basic and Bearer add a `WWW-Authenticate` challenge, and the response never repeats the expected value.
+The secrets are read when the server is created, and a missing variable is reported by name only. Authentication runs after the body is read and before it is decoded, so a custom authenticator can check a signature over the raw body. Comparisons are constant-time and do not reveal the length of the expected value. A failure gives 401; Basic and Bearer add a `WWW-Authenticate` challenge, and the response never repeats the expected value.
 
 A custom `IWebApiRequestAuthenticator` in `WebApiServerComponents.Authenticator` replaces the configured scheme. If the server listens on all interfaces without any authentication, `StartAsync` logs a warning.
 
@@ -127,9 +127,13 @@ public sealed class RequireDeviceKey : WebApiServerInterceptor
 
 `RequestReceived` is raised before routing. `RequestCompleted` is raised once for every request, including rejected, timed-out, disconnected and replayed ones. It carries the `Outcome`, the status code, the route template and the elapsed time. A subscriber that throws is logged, and the other subscribers and the response are unaffected.
 
+## Logging
+
+At `Debug`, each request that reaches a route is logged with its method, path, query string and headers, and each finished request with its method, route template, status, outcome and elapsed time. The headers in `Logging.RedactedHeaders` (default `Authorization`, `Proxy-Authorization`) and the query parameters in `Logging.RedactedQueryParameters` (default `access_token`, `token`, `api_key`, `apikey`) print as `***`. Request and response bodies are logged only when `Logging.LogBodies` is on, cut at `MaxLoggedBodyLength` characters. Rejections are logged at `Warning`, handler exceptions at `Error`, and state changes at `Information`.
+
 ## Idempotent replay (deduplication)
 
-The MES may repeat a POST after a timeout, and a repeated command must not run twice. Enable deduplication and have the MES send the same `Idempotency-Key` header with the retry. The key, method and path together identify a request, and the body is compared by hash.
+The MES may repeat a POST after a timeout, and a repeated command must not run twice. Enable deduplication and have the MES send the same `Idempotency-Key` header with the retry. The key, method, path and query string together identify a request, and the body is compared by hash.
 
 ```csharp // sample: deduplication
 public static class DeduplicatedService
@@ -152,7 +156,7 @@ Within the window (10 minutes by default) a completed request is answered again 
 
 ## Lifecycle
 
-States are `Stopped`, `Starting`, `Running` and `Stopping`. `StateChanged` reports every change in order. `StopAsync` stops accepting requests, waits up to `StopTimeout` (5 seconds by default) for the requests in progress, then aborts the rest. It can be called again. `Dispose` and `DisposeAsync` stop the server and release it; afterwards `StartAsync` and the `Map` methods throw `ObjectDisposedException`, and `StopAsync` does nothing.
+States are `Stopped`, `Starting`, `Running` and `Stopping`. `StateChanged` reports every change in order. `StopAsync` stops accepting requests, waits up to `StopTimeout` (5 seconds by default) for the requests in progress, then aborts the rest. It can be called again. `Dispose` and `DisposeAsync` stop the server and release it; afterwards `StartAsync` and the `Map` methods throw `ObjectDisposedException`, and `StopAsync` does nothing. A `StartAsync` that was waiting while the server was being disposed also fails with `ObjectDisposedException`; nothing keeps listening after the dispose. On a UI thread, call `DisposeAsync` rather than `Dispose`: `Dispose` blocks until the server stops, and a `StateChanged` handler that marshals to the UI thread (`Dispatcher.Invoke`) would then wait forever. `Urls` can be read at any time, also while the server stops.
 
 `StartAsync` returns `InvalidRequest` for a second start, no routes, or a route template that cannot be mapped; `ResourceExhausted` for an address already in use; `AuthenticationFailed` for an address the system reserves or refuses to bind; and `InvalidRequest` for a certificate that cannot be loaded. A failed start leaves nothing running.
 

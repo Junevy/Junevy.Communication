@@ -1,11 +1,10 @@
-using System.Security.Cryptography;
 using System.Text;
 using Junevy.Communication.WebApi.Server.Config;
 
 namespace Junevy.Communication.WebApi.Server.Auth;
 
 /// <summary>
-/// 内置的凭据校验（内部，P32-D9）：Basic、Bearer、ApiKey。期望的凭据来自配置快照，比较使用 <see cref="CryptographicOperations.FixedTimeEquals(ReadOnlySpan{byte}, ReadOnlySpan{byte})"/>。
+/// 内置的凭据校验（内部，P32-D9）：Basic、Bearer、ApiKey。期望的凭据来自配置快照，每一次比较都经过同一个比较函数（默认 <see cref="ConstantTimeText.Matches"/>）。
 /// 失败的原因只进入 <see cref="WebApiAuthenticationResult.FailureMessage"/>（用于日志），响应体不回显任何期望值。
 /// </summary>
 internal sealed class CredentialAuthenticator : IWebApiRequestAuthenticator
@@ -15,12 +14,22 @@ internal sealed class CredentialAuthenticator : IWebApiRequestAuthenticator
     private const string BearerScheme = "Bearer";
 
     private readonly ServerCredentials credentials;
+    private readonly Func<string, string, bool> matches;
 
     /// <summary>创建校验器。</summary>
     /// <param name="credentials">已读取的期望凭据。</param>
     public CredentialAuthenticator(ServerCredentials credentials)
+        : this(credentials, ConstantTimeText.Matches)
+    {
+    }
+
+    /// <summary>创建校验器并指定比较函数（测试用它确认每次比较都经过比较函数）。</summary>
+    /// <param name="credentials">已读取的期望凭据。</param>
+    /// <param name="matches">比较函数：参数依次为请求中的值与期望值。</param>
+    internal CredentialAuthenticator(ServerCredentials credentials, Func<string, string, bool> matches)
     {
         this.credentials = credentials;
+        this.matches = matches;
     }
 
     /// <inheritdoc />
@@ -56,8 +65,8 @@ internal sealed class CredentialAuthenticator : IWebApiRequestAuthenticator
             return WebApiAuthenticationResult.Fail("The Basic credentials have no ':' separator.");
 
         // 两个比较都执行，不因第一个失败而短路，避免用时差判断哪一项错误。
-        bool userMatches = SameText(decoded[..separator], credentials.UserName!);
-        bool passwordMatches = SameText(decoded[(separator + 1)..], credentials.Password!);
+        bool userMatches = matches(decoded[..separator], credentials.UserName!);
+        bool passwordMatches = matches(decoded[(separator + 1)..], credentials.Password!);
         return userMatches & passwordMatches
             ? WebApiAuthenticationResult.Success(credentials.UserName)
             : WebApiAuthenticationResult.Fail("The Basic credentials do not match.");
@@ -68,7 +77,7 @@ internal sealed class CredentialAuthenticator : IWebApiRequestAuthenticator
         if (!TryGetAuthorization(context, BearerScheme, out string token))
             return WebApiAuthenticationResult.Fail("The Authorization header is missing or is not Bearer.");
 
-        return SameText(token, credentials.Token!)
+        return matches(token, credentials.Token!)
             ? WebApiAuthenticationResult.Success()
             : WebApiAuthenticationResult.Fail("The Bearer token does not match.");
     }
@@ -78,7 +87,7 @@ internal sealed class CredentialAuthenticator : IWebApiRequestAuthenticator
         if (!context.Headers.TryGetValue(credentials.ApiKeyHeader, out string? presented))
             return WebApiAuthenticationResult.Fail("The API key header is missing.");
 
-        return SameText(presented, credentials.ApiKey!)
+        return matches(presented, credentials.ApiKey!)
             ? WebApiAuthenticationResult.Success()
             : WebApiAuthenticationResult.Fail("The API key does not match.");
     }
@@ -97,7 +106,4 @@ internal sealed class CredentialAuthenticator : IWebApiRequestAuthenticator
         parameter = value[(space + 1)..].Trim();
         return true;
     }
-
-    private static bool SameText(string presented, string expected)
-        => CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(presented), Encoding.UTF8.GetBytes(expected));
 }

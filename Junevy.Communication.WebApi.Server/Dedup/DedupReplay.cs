@@ -11,6 +11,19 @@ internal static class DedupReplay
     /// <summary>重放标记的响应头名称。</summary>
     public const string HeaderName = "Idempotent-Replayed";
 
+    /// <summary>
+    /// 拍下处理器结果的快照用于缓存：响应头复制一份（正文是不再修改的字节数组，直接共用）。
+    /// </summary>
+    /// <param name="result">处理器的结果（必须有响应）。</param>
+    /// <returns>与原结果互不影响的快照。</returns>
+    public static ServerResult Capture(ServerResult result)
+    {
+        ServerResponse response = result.Response!;
+        var headers = new Dictionary<string, string>(response.Headers, StringComparer.OrdinalIgnoreCase);
+        var copy = new ServerResponse(response.StatusCode, response.ContentType, response.Body, headers);
+        return new ServerResult(result.StatusCode, copy, result.Outcome, result.Code, result.Message);
+    }
+
     /// <summary>由缓存的结果构造重放的结果。</summary>
     /// <param name="cached">第一次的结果（必须有响应）。</param>
     /// <returns>重放的结果。</returns>

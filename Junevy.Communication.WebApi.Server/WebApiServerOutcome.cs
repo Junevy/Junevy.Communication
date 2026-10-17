@@ -17,7 +17,7 @@ public enum WebApiServerOutcome
     /// <summary>处理器或拦截器抛出异常（500）。</summary>
     HandlerFailed,
 
-    /// <summary>超时（504，或读取正文超时的 408 之外的超时）。</summary>
+    /// <summary>处理超时（504）。读取正文超时是 408，属于 <see cref="Rejected"/>。</summary>
     TimedOut,
 
     /// <summary>去重重放：返回第一次的响应，处理器没有执行。</summary>

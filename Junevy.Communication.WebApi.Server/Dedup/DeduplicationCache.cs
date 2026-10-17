@@ -4,7 +4,7 @@ using Junevy.Communication.WebApi.Server.Pipeline;
 namespace Junevy.Communication.WebApi.Server.Dedup;
 
 /// <summary>
-/// 重复下发的去重缓存（内部，P32-D11）。键为（幂等键、方法、路径）。已完成的条目在窗口内重放第一次的结果；
+/// 重复下发的去重缓存（内部，P32-D11）。键为（幂等键、方法、请求目标：路径与排序后的查询参数）。已完成的条目在窗口内重放第一次的结果；
 /// 处理中的条目保持到处理器真正结束，超时之后也不提前释放。条目超过上限时淘汰最旧的已完成条目，处理中的条目永不淘汰。
 /// 时间源由调用方注入（测试可以推进时间）。线程安全。
 /// </summary>
@@ -54,12 +54,12 @@ internal sealed class DeduplicationCache
     /// </summary>
     /// <param name="key">幂等键。</param>
     /// <param name="method">HTTP 方法。</param>
-    /// <param name="path">请求路径。</param>
+    /// <param name="target">请求目标（<see cref="DedupTarget"/>）。</param>
     /// <param name="body">请求正文（用于比较）。</param>
     /// <returns>判定结果。</returns>
-    public DedupDecision Begin(string key, string method, string path, byte[] body)
+    public DedupDecision Begin(string key, string method, string target, byte[] body)
     {
-        var identity = new DedupKey(key, method, path);
+        var identity = new DedupKey(key, method, target);
         byte[] bodyHash = SHA256.HashData(body);
         lock (gate)
         {
@@ -90,7 +90,8 @@ internal sealed class DeduplicationCache
             if (!entries.TryGetValue(identity, out DedupEntry? current) || !ReferenceEquals(current, entry))
                 return;
 
-            entry.Result = result;
+            // 缓存快照：之后响应拦截器修改的是本次请求自己的响应头，不进入缓存，也不与重放并发读写同一个字典。
+            entry.Result = DedupReplay.Capture(result);
             entry.CompletedAt = timeProvider.GetUtcNow();
         }
     }
@@ -131,11 +132,11 @@ internal sealed class DeduplicationCache
         return true;
     }
 
-    /// <summary>条目的身份：幂等键、方法与路径。</summary>
+    /// <summary>条目的身份：幂等键、方法与请求目标。</summary>
     /// <param name="Key">幂等键。</param>
     /// <param name="Method">HTTP 方法。</param>
-    /// <param name="Path">请求路径。</param>
-    internal readonly record struct DedupKey(string Key, string Method, string Path);
+    /// <param name="Target">请求目标（路径与排序后的查询参数）。</param>
+    internal readonly record struct DedupKey(string Key, string Method, string Target);
 
     /// <summary>条目：正文哈希、插入顺序、完成后的结果与完成时间。</summary>
     internal sealed class DedupEntry

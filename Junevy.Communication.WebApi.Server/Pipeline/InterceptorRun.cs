@@ -24,7 +24,7 @@ internal sealed class InterceptorRun
     /// </summary>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>拒绝的详情，或 null。</returns>
-    public async Task<InterceptorRefusal?> RunRequestStageAsync(CancellationToken cancellationToken)
+    public async Task<WebApiServerRequestingContext.Rejection?> RunRequestStageAsync(CancellationToken cancellationToken)
     {
         var requesting = new WebApiServerRequestingContext(context);
         for (int i = 0; i < interceptors.Length; i++)
@@ -32,7 +32,7 @@ internal sealed class InterceptorRun
             await interceptors[i].OnRequestAsync(requesting, cancellationToken).ConfigureAwait(false);
             completed = i + 1;
             if (requesting.RejectionDetails is { } rejection)
-                return new InterceptorRefusal(rejection.StatusCode, rejection.Code, rejection.Message);
+                return rejection;
         }
 
         return null;
@@ -53,11 +53,3 @@ internal sealed class InterceptorRun
             await interceptors[i].OnRespondingAsync(responding, cancellationToken).ConfigureAwait(false);
     }
 }
-
-/// <summary>
-/// 请求阶段被拦截器拒绝的详情（内部）。
-/// </summary>
-/// <param name="StatusCode">HTTP 状态码（4xx 或 5xx）。</param>
-/// <param name="Code">业务码。</param>
-/// <param name="Message">英文消息。</param>
-internal sealed record InterceptorRefusal(int StatusCode, string Code, string Message);

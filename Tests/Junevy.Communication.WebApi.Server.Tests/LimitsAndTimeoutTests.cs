@@ -150,6 +150,35 @@ public sealed class LimitsAndTimeoutTests
     }
 
     [Fact]
+    public async Task StopPastItsDeadline_AbortsTheInFlightRequest_AndTheServerSideCountReturnsToZero()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        WebApiServerSettings settings = SettingsFactory.Create();
+        await using var server = new ServerUnderTest(settings, new[]
+        {
+            TestRoutes.Get<Order>(settings, "/slow", async (_, token) =>
+            {
+                entered.TrySetResult();
+                await Task.Delay(TimeSpan.FromSeconds(10), token);
+                return WebApiServerResponse<Order>.Ok(new Order());
+            }),
+        });
+        await server.StartAsync();
+        using var http = new HttpClient();
+        Task<HttpResponseMessage> request = http.GetAsync(server.BaseUrl + "/slow");
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, server.Host.InFlightCount);
+
+        await server.StopAsync(TimeSpan.FromMilliseconds(300));
+
+        await Polling.WaitUntilAsync(() => server.Host.InFlightCount == 0);
+        await Polling.WaitUntilAsync(() => server.Completed.Count == 1);
+        Assert.Equal(WebApiServerOutcome.ClientDisconnected, server.Completed[0].Outcome);
+        Assert.Equal(0, server.Host.AbandonedCount);
+        await Record.ExceptionAsync(() => request);
+    }
+
+    [Fact]
     public async Task FailingSubscriber_DoesNotChangeTheResponseOrTheOtherSubscribers()
     {
         WebApiServerSettings settings = SettingsFactory.Create();

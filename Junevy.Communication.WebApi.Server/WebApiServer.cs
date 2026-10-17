@@ -1,6 +1,7 @@
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.WebApi.Server.Config;
 using Junevy.Communication.WebApi.Server.Formatting;
+using Junevy.Communication.WebApi.Server.Hosting;
 using Junevy.Communication.WebApi.Server.Lifecycle;
 using Junevy.Communication.WebApi.Server.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -40,7 +41,7 @@ public sealed class WebApiServer : IWebApiServer
         ILogger logger = factory.CreateLogger(LogCategory);
         formatter = new ResponseFormatter(settings);
         events = new ServerEvents(logger);
-        lifecycle = new ServerLifecycle(name, settings, events, factory, logger);
+        lifecycle = new ServerLifecycle(new HostServices(name, settings, events, formatter, factory, logger));
     }
 
     /// <inheritdoc />

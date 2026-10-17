@@ -1,10 +1,10 @@
 using System.Diagnostics;
 using Junevy.Communication.WebApi.Server.Formatting;
+using Junevy.Communication.WebApi.Server.Logging;
 using Junevy.Communication.WebApi.Server.Pipeline;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Primitives;
 
 namespace Junevy.Communication.WebApi.Server.Hosting;
 
@@ -20,7 +20,9 @@ internal sealed class ServerEntryMiddleware
     private readonly string serverName;
     private readonly ServerEvents events;
     private readonly RequestPipeline pipeline;
+    private readonly ServerResults results;
     private readonly InFlightCounter inFlight;
+    private readonly RequestLog log;
     private readonly ILogger logger;
     private long lastRequestId;
 
@@ -28,14 +30,18 @@ internal sealed class ServerEntryMiddleware
     /// <param name="serverName">服务器名称。</param>
     /// <param name="events">事件派发器。</param>
     /// <param name="pipeline">请求管线。</param>
+    /// <param name="results">结果构造（与管线共用）。</param>
     /// <param name="inFlight">在途请求计数。</param>
+    /// <param name="log">每个请求的 Debug 日志。</param>
     /// <param name="logger">日志记录器。</param>
-    public ServerEntryMiddleware(string serverName, ServerEvents events, RequestPipeline pipeline, InFlightCounter inFlight, ILogger logger)
+    public ServerEntryMiddleware(string serverName, ServerEvents events, RequestPipeline pipeline, ServerResults results, InFlightCounter inFlight, RequestLog log, ILogger logger)
     {
         this.serverName = serverName;
         this.events = events;
         this.pipeline = pipeline;
+        this.results = results;
         this.inFlight = inFlight;
+        this.log = log;
         this.logger = logger;
     }
 
@@ -80,7 +86,7 @@ internal sealed class ServerEntryMiddleware
         catch (Exception ex)
         {
             // 边界：异常发生在管线之外（路由或框架本身），统一返回 500，详情只进日志。
-            result = pipeline.InternalFailure(ex, requestId);
+            result = results.InternalFailure(ex, requestId);
         }
 
         return await WriteAsync(context, result, requestId).ConfigureAwait(false);
@@ -93,17 +99,14 @@ internal sealed class ServerEntryMiddleware
             return routed;
 
         if (context.Items.ContainsKey(ServerKeys.LimiterRejected))
-            return pipeline.Reject(503, BusyMessage, new Dictionary<string, string> { ["Retry-After"] = "1" }, requestId);
+            return results.Busy(BusyMessage, requestId);
 
         int status = context.Response.StatusCode;
         if (status < 400)
-            return pipeline.InternalFailure(new InvalidOperationException(UnhandledMessage), requestId);
+            return results.InternalFailure(new InvalidOperationException(UnhandledMessage), requestId);
 
-        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (context.Response.Headers.TryGetValue("Allow", out StringValues allow))
-            headers["Allow"] = allow.ToString();
-
-        return pipeline.Reject(status, ReasonPhrases.Of(status), headers, requestId);
+        // 405 的 Allow 头已由框架写在响应上，写出时不清除已有的头，因此这里不需要复制。
+        return results.Reject(status, ReasonPhrases.Of(status), new Dictionary<string, string>(), requestId);
     }
 
     private async Task<ServerResult> WriteAsync(HttpContext context, ServerResult result, long requestId)
@@ -129,7 +132,6 @@ internal sealed class ServerEntryMiddleware
         events.RaiseRequestCompleted(new WebApiServerCompletedEventArgs(
             serverName, requestId, method, path, routeTemplate, result.StatusCode, result.Outcome,
             result.Code, result.Message, result.Exception, elapsed));
-        logger.LogDebug("Request {RequestId} {Method} {Path} finished with {StatusCode} ({Outcome}) in {ElapsedMs} ms.",
-            requestId, method, path, result.StatusCode, result.Outcome, elapsed.TotalMilliseconds);
+        log.LogCompleted(requestId, method, routeTemplate ?? path, result, elapsed);
     }
 }

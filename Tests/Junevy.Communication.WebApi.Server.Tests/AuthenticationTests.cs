@@ -164,6 +164,41 @@ public sealed class AuthenticationTests
         Assert.Null(authenticator.Challenge);
     }
 
+    [Fact]
+    public async Task EveryScheme_DecidesThroughTheComparer_WithThePresentedValueFirst()
+    {
+        // 计时无法在用例里区分；改为确认每一次比较都经过比较函数、结论也由它决定（计划第 17 节）。
+        var calls = new List<(string Presented, string Expected)>();
+        bool Refuse(string presented, string expected)
+        {
+            calls.Add((presented, expected));
+            return false;
+        }
+
+        WebApiAuthenticationResult basic = await new CredentialAuthenticator(BasicCredentials, Refuse).AuthenticateAsync(
+            RequestFactory.Create(new Dictionary<string, string> { ["Authorization"] = RequestFactory.Basic("alice:" + Password) }), CancellationToken.None);
+        WebApiAuthenticationResult bearer = await new CredentialAuthenticator(BearerCredentials, Refuse).AuthenticateAsync(
+            RequestFactory.Create(new Dictionary<string, string> { ["Authorization"] = "Bearer token-123" }), CancellationToken.None);
+        WebApiAuthenticationResult apiKey = await new CredentialAuthenticator(ApiKeyCredentials, Refuse).AuthenticateAsync(
+            RequestFactory.Create(new Dictionary<string, string> { ["X-Device-Key"] = "key-abc" }), CancellationToken.None);
+
+        Assert.False(basic.IsAuthenticated);
+        Assert.False(bearer.IsAuthenticated);
+        Assert.False(apiKey.IsAuthenticated);
+        Assert.Equal(new[] { ("alice", "alice"), (Password, Password), ("token-123", "token-123"), ("key-abc", "key-abc") }, calls);
+    }
+
+    [Theory]
+    [InlineData("token-123", "token-123", true)]
+    [InlineData("token-124", "token-123", false)]
+    [InlineData("token-12", "token-123", false)]
+    [InlineData("", "token-123", false)]
+    [InlineData("密钥", "密钥", true)]
+    public void ConstantTimeText_ComparesTheValues(string presented, string expected, bool same)
+    {
+        Assert.Equal(same, ConstantTimeText.Matches(presented, expected));
+    }
+
     private sealed class AlwaysAuthenticated : IWebApiRequestAuthenticator
     {
         public Task<WebApiAuthenticationResult> AuthenticateAsync(WebApiServerContext context, CancellationToken cancellationToken)

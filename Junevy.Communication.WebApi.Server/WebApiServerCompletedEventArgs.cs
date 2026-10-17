@@ -1,5 +1,3 @@
-using System.Net;
-
 namespace Junevy.Communication.WebApi.Server;
 
 /// <summary>

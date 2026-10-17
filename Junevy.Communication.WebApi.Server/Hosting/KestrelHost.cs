@@ -1,20 +1,18 @@
+using System.Security.Cryptography.X509Certificates;
+using System.Threading.RateLimiting;
 using Junevy.Communication.WebApi.Server.Auth;
 using Junevy.Communication.WebApi.Server.Config;
 using Junevy.Communication.WebApi.Server.Dedup;
-using Junevy.Communication.WebApi.Server.Formatting;
+using Junevy.Communication.WebApi.Server.Logging;
 using Junevy.Communication.WebApi.Server.Pipeline;
-using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using System.Threading.RateLimiting;
 
 namespace Junevy.Communication.WebApi.Server.Hosting;
 
@@ -25,21 +23,24 @@ namespace Junevy.Communication.WebApi.Server.Hosting;
 /// </summary>
 internal sealed class KestrelHost : IAsyncDisposable
 {
-    private const string LogCategory = "Junevy.Communication.WebApi.Server";
-
     private readonly WebApplication app;
     private readonly InFlightCounter inFlight;
+    private readonly AbandonedWork abandoned;
     private readonly DeduplicationCache? dedup;
 
-    private KestrelHost(WebApplication app, InFlightCounter inFlight, DeduplicationCache? dedup)
+    private KestrelHost(WebApplication app, InFlightCounter inFlight, AbandonedWork abandoned, DeduplicationCache? dedup)
     {
         this.app = app;
         this.inFlight = inFlight;
+        this.abandoned = abandoned;
         this.dedup = dedup;
     }
 
-    /// <summary>当前在途的请求数。</summary>
+    /// <summary>当前在途的请求数（已经发出响应、被摘出去的处理器不计入）。</summary>
     public int InFlightCount => inFlight.Count;
+
+    /// <summary>被摘出去（超时或对端断开之后）仍在运行的处理器数。</summary>
+    public int AbandonedCount => abandoned.Count;
 
     /// <summary>去重缓存的条目数；去重关闭时为 0。</summary>
     public int DeduplicationEntryCount => dedup?.EntryCount ?? 0;
@@ -47,58 +48,65 @@ internal sealed class KestrelHost : IAsyncDisposable
     /// <summary>去重缓存中处理中的条目数；去重关闭时为 0。</summary>
     public int DeduplicationInFlightCount => dedup?.InFlightCount ?? 0;
 
+    /// <summary>启动后实际绑定的地址（端口 0 已解析），在启动成功时拍下快照；未启动时为空。</summary>
+    public IReadOnlyList<string> Addresses { get; private set; } = Array.Empty<string>();
+
     /// <summary>
-    /// 建立应用（尚未启动）。路由必须在此之前全部登记。
+    /// 建立应用（尚未启动）。路由必须在此之前全部登记。路由映射失败时释放已建立的应用再抛出。
     /// </summary>
-    /// <param name="settings">已校验的配置。</param>
-    /// <param name="serverName">服务器名称。</param>
+    /// <param name="services">服务器共用的对象。</param>
     /// <param name="routes">路由定义。</param>
-    /// <param name="events">事件派发器。</param>
-    /// <param name="loggerFactory">调用方的日志工厂。</param>
     /// <param name="certificate">HTTPS 证书；没有 https 地址时为 null。</param>
     /// <returns>应用宿主。</returns>
-    public static KestrelHost Create(WebApiServerSettings settings, string serverName, IEnumerable<RouteDefinition> routes, ServerEvents events, ILoggerFactory loggerFactory, X509Certificate2? certificate)
+    public static KestrelHost Create(HostServices services, IEnumerable<RouteDefinition> routes, X509Certificate2? certificate)
     {
-        WebApplication app = CreateBuilder(settings, loggerFactory, certificate).Build();
-        ILogger logger = loggerFactory.CreateLogger(LogCategory);
-        DeduplicationCache? dedup = CreateDeduplication(settings);
-        var pipeline = new RequestPipeline(
-            settings,
-            new ResponseFormatter(settings),
-            logger,
-            ServerAuthenticator.Create(settings, serverName),
-            settings.Interceptors,
-            dedup);
-        var inFlight = new InFlightCounter();
+        WebApiServerSettings settings = services.Settings;
+        WebApplication app = CreateBuilder(settings, services.LoggerFactory, certificate).Build();
+        try
+        {
+            DeduplicationCache? dedup = CreateDeduplication(settings);
+            var abandoned = new AbandonedWork(services.Logger);
+            var log = new RequestLog(settings.Logging, services.Logger);
+            var results = new ServerResults(services.Formatter, services.Logger);
+            var pipeline = new RequestPipeline(
+                settings,
+                results,
+                services.Logger,
+                ServerAuthenticator.Create(settings, services.ServerName),
+                dedup,
+                abandoned,
+                log);
+            var inFlight = new InFlightCounter();
 
-        app.Use(new ServerEntryMiddleware(serverName, events, pipeline, inFlight, logger).InvokeAsync);
-        app.UseRateLimiter();
-        app.UseRouting();
-        foreach (RouteDefinition route in routes)
-            RouteEndpointBinder.Map(app, route, pipeline, serverName, settings.MaxRequestBodySize);
+            app.Use(new ServerEntryMiddleware(services.ServerName, services.Events, pipeline, results, inFlight, log, services.Logger).InvokeAsync);
+            app.UseRateLimiter();
+            app.UseRouting();
+            foreach (RouteDefinition route in routes)
+                RouteEndpointBinder.Map(app, route, pipeline, services.ServerName, settings.MaxRequestBodySize);
 
-        return new KestrelHost(app, inFlight, dedup);
+            return new KestrelHost(app, inFlight, abandoned, dedup);
+        }
+        catch
+        {
+            ((IDisposable)app).Dispose();
+            throw;
+        }
     }
 
-    /// <summary>启动应用并绑定地址。</summary>
+    /// <summary>启动应用并绑定地址，成功后拍下实际地址。</summary>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>启动完成的任务；绑定失败时抛出异常。</returns>
-    public Task StartAsync(CancellationToken cancellationToken) => app.StartAsync(cancellationToken);
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        await app.StartAsync(cancellationToken).ConfigureAwait(false);
+        IServerAddressesFeature? feature = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>();
+        Addresses = feature == null ? Array.Empty<string>() : feature.Addresses.ToArray();
+    }
 
     /// <summary>停止应用：停止接收，等待在途请求，超过令牌的期限后中止剩余连接。</summary>
     /// <param name="cancellationToken">停止的期限。</param>
     /// <returns>停止完成的任务。</returns>
     public Task StopAsync(CancellationToken cancellationToken) => app.StopAsync(cancellationToken);
-
-    /// <summary>启动后实际绑定的地址（端口 0 已解析）；未启动时为空。</summary>
-    public IReadOnlyList<string> Addresses
-    {
-        get
-        {
-            IServerAddressesFeature? feature = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>();
-            return feature == null ? Array.Empty<string>() : feature.Addresses.ToArray();
-        }
-    }
 
     /// <inheritdoc />
     public ValueTask DisposeAsync() => app.DisposeAsync();

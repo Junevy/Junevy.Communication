@@ -50,6 +50,19 @@
 - 2026-10-17 [Architecture] `SdkAdapterArchitectureTests`：登记表增加"允许引用的库"列，守卫 1 由"只引用 Core"改为"只引用各自的允许列表"（服务端允许 WebApi，其余适配包仍只允许 Core）；`WebApiLayeringTests` 中关于 `Server` 的注释改为指向本包。
 - 2026-10-17 [WebApi.Server] 公开 API 与计划第 6–13 节逐条一致；`WebApiServerContext`、`WebApiServerOutcome` 等被组件接口引用的类型在 Task 1 即存在，以便组件可以编译。
 - 2026-10-17 [WebApi.Server] 配置校验新增两条：序列化器的内容类型必须是 JSON（不论是否启用包络），包络的三个路径不能互为前缀。
+- 2026-10-18 [WebApi.Server] **管线顺序（审阅 A）**：认证移到解码之前——读正文 → 认证 → 解码 → 请求拦截器 → 去重 → 处理器。未认证的调用方只得到 401（不再因正文得到 400 / 415），序列化器不处理未认证的输入；认证器仍拿到原始正文。
+- 2026-10-18 [WebApi.Server] **被摘出去的处理器可观测（审阅 B）**：504 或对端断开之后仍在运行的处理器计数（内部 `KestrelHost.AbandonedCount`），每条 Warning 写出仍在运行的数量；它们仍不占 `MaxConcurrentRequests` 的名额。
+- 2026-10-18 [WebApi.Server] 凭据比较改为两边先取 SHA-256 再固定时间比较，不再暴露期望值的长度。
+
+### 修正（Fixed）
+
+- 2026-10-18 [WebApi.Server] **释放与启动竞争**：等在锁外的 `StartAsync` 会在 `DisposeAsync` 之后建起新应用，释放后服务器仍在监听且无法停止。释放标记改在生命周期锁内设置与检查，等待中的启动抛 `ObjectDisposedException`。用例：`WebApiServerConcurrencyTests`。
+- 2026-10-18 [WebApi.Server] **停止期间读取 `Urls` 抛 `ObjectDisposedException`**：`Urls` 改读启动成功时拍下的地址快照，不再在应用释放时访问它的服务容器。
+- 2026-10-18 [WebApi.Server] **`Logging` 配置无效**（P32-D15 未实现）：新增请求日志——Debug 记方法、路径、脱敏后的查询参数与请求头；结束时记方法、路由模板（原为路径）、状态码、结果与耗时；`LogBodies` 时记请求与响应正文并按 `MaxLoggedBodyLength` 截断。用例：`RequestLogTests`。
+- 2026-10-18 [WebApi.Server] **等价模板被当成不同路由**：`/orders`、`/Orders`、`orders/` 同时登记会在每次请求时引发歧义（500）。登记时忽略大小写与首尾 `/` 判重，抛 `ArgumentException`。
+- 2026-10-18 [WebApi.Server] **去重重放带上第一次请求的拦截器响应头**：缓存改存头的快照，响应拦截器之后的修改不进入缓存，也不再与重放并发读写同一个字典；去重键加入查询串（按名称排序），查询参数不同的请求不再互相重放。
+- 2026-10-18 [WebApi.Server] 504 或对端断开之后迟到的处理器结果不再交给响应拦截器；处理器自己抛出的 `OperationCanceledException`（令牌未取消）按 500 处理并经过响应拦截器；路由映射失败时释放已建立的应用。
+- 2026-10-18 [WebApi.Server] 清理：删除未使用的 `ServerLifecycle.Host` 与 `RouteTable.Count`；合并两个同形的拒绝记录；405 不再重复复制框架已写入的 `Allow`；格式化器、事件与日志记录器经 `HostServices` 只建一份；补齐 D-7（畸形分块正文 → 400）、D-8（断开后仍在运行 → Warning）、释放规则、Q29（`Kestrel:Endpoints`）与"比较都经过比较函数"的用例。
 
 ## [Unreleased] — P6.2（OpcUa 1.0.0-preview.1：OPC UA 客户端）
 

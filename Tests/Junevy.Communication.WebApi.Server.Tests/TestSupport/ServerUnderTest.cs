@@ -1,5 +1,6 @@
 using Junevy.Communication.Testing;
 using Junevy.Communication.WebApi.Server.Config;
+using Junevy.Communication.WebApi.Server.Formatting;
 using Junevy.Communication.WebApi.Server.Hosting;
 using Junevy.Communication.WebApi.Server.Pipeline;
 
@@ -26,7 +27,8 @@ internal sealed class ServerUnderTest : IAsyncDisposable
             lock (gate)
                 completed.Add(args);
         };
-        host = KestrelHost.Create(settings, "test", routes, Events, Logger, certificate: null);
+        var services = new HostServices("test", settings, Events, new ResponseFormatter(settings), Logger, Logger.CreateLogger("server"));
+        host = KestrelHost.Create(services, routes, certificate: null);
     }
 
     /// <summary>测试日志器（同时是调用方的日志工厂）。</summary>
@@ -56,6 +58,13 @@ internal sealed class ServerUnderTest : IAsyncDisposable
     {
         await host.StartAsync(CancellationToken.None).ConfigureAwait(false);
         BaseUrl = host.Addresses[0];
+    }
+
+    /// <summary>停止应用：等待在途请求，超过 <paramref name="timeout"/> 后中止。</summary>
+    public async Task StopAsync(TimeSpan timeout)
+    {
+        using var deadline = new CancellationTokenSource(timeout);
+        await host.StopAsync(deadline.Token).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

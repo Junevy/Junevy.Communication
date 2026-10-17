@@ -96,6 +96,22 @@ public sealed class DeduplicationTests
     }
 
     [Fact]
+    public async Task SameKey_WithDifferentQueryParameters_IsADifferentCommand()
+    {
+        int runs = 0;
+        WebApiServerSettings settings = Enabled(config => config.Deduplication.Enabled = true);
+        await using var server = new ServerUnderTest(settings, new[] { OrderRoute(settings, () => Interlocked.Increment(ref runs)) });
+        await server.StartAsync();
+        using var http = new HttpClient();
+
+        await http.SendAsync(Post(server.BaseUrl, "k1", Json, "?line=1"));
+        HttpResponseMessage second = await http.SendAsync(Post(server.BaseUrl, "k1", Json, "?line=2"));
+
+        Assert.False(second.Headers.Contains("Idempotent-Replayed"));
+        Assert.Equal(2, runs);
+    }
+
+    [Fact]
     public async Task RequestsWithoutTheHeader_DoNotParticipate()
     {
         int runs = 0;
@@ -139,6 +155,7 @@ public sealed class DeduplicationTests
     [Fact]
     public async Task TimeoutWhileRunning_KeepsTheKeyInProgress_UntilTheHandlerFinishes_ThenReplaysItsResult()
     {
+        using var unobserved = new UnobservedTaskWatch();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         int runs = 0;
@@ -173,6 +190,8 @@ public sealed class DeduplicationTests
 
         Assert.Equal(HttpStatusCode.Accepted, replay.StatusCode);
         Assert.Equal(1, runs);
+        Assert.Equal(0, server.Host.AbandonedCount);
+        await unobserved.AssertNoneAsync();
     }
 
     [Fact]
@@ -255,9 +274,9 @@ public sealed class DeduplicationTests
     private static WebApiServerSettings Enabled(Action<WebApiServerConfig> configure)
         => SettingsFactory.Create(configure);
 
-    private static HttpRequestMessage Post(string baseUrl, string key, string json)
+    private static HttpRequestMessage Post(string baseUrl, string key, string json, string query = "")
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/orders")
+        var request = new HttpRequestMessage(HttpMethod.Post, baseUrl + "/orders" + query)
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json"),
         };

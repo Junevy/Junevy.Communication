@@ -240,6 +240,19 @@ public sealed class WebApiServerLifecycleTests
         Assert.Throws<ArgumentException>(() => server.MapGet<Order>(string.Empty, (_, _) => Task.FromResult(WebApiServerResponse<Order>.Ok(new Order()))));
     }
 
+    [Theory]
+    [InlineData("/X")]
+    [InlineData("x")]
+    [InlineData("/x/")]
+    public async Task TemplateEquivalentForRouting_IsADuplicate_NotAnAmbiguityAtRequestTime(string equivalent)
+    {
+        await using var server = CreateServer(Loopback, out _);
+        server.MapGet<Order>("/x", (_, _) => Task.FromResult(WebApiServerResponse<Order>.Ok(new Order())));
+
+        Assert.Throws<ArgumentException>(() => server.MapGet<Order>(equivalent, (_, _) => Task.FromResult(WebApiServerResponse<Order>.Ok(new Order()))));
+        server.MapPost<Order, Order>(equivalent, (order, _, _) => Task.FromResult(WebApiServerResponse<Order>.Ok(order)));
+    }
+
     [Fact]
     public void EmptyName_IsAnArgumentException()
     {
@@ -255,7 +268,10 @@ public sealed class WebApiServerLifecycleTests
         Directory.CreateDirectory(directory);
         try
         {
-            File.WriteAllText(Path.Combine(directory, "appsettings.json"), "{ \"Urls\": \"http://127.0.0.1:5998\" }");
+            // Kestrel:Endpoints 是显式 UseUrls 盖不住的配置：只要应用读取了工作目录的 appsettings.json，它就会改变绑定的地址。
+            File.WriteAllText(
+                Path.Combine(directory, "appsettings.json"),
+                "{ \"Urls\": \"http://127.0.0.1:5998\", \"Kestrel\": { \"Endpoints\": { \"Host\": { \"Url\": \"http://127.0.0.1:5997\" } } } }");
             Environment.CurrentDirectory = directory;
             Environment.SetEnvironmentVariable("ASPNETCORE_URLS", "http://127.0.0.1:5999");
             await using var server = CreateServer(Loopback, out _);
@@ -263,7 +279,9 @@ public sealed class WebApiServerLifecycleTests
 
             await server.StartAsync();
 
-            string bound = server.Urls[0];
+            string bound = Assert.Single(server.Urls);
+            Assert.StartsWith("http://127.0.0.1:", bound, StringComparison.Ordinal);
+            Assert.DoesNotContain(":5997", bound, StringComparison.Ordinal);
             Assert.DoesNotContain(":5998", bound, StringComparison.Ordinal);
             Assert.DoesNotContain(":5999", bound, StringComparison.Ordinal);
         }
