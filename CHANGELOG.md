@@ -10,6 +10,10 @@
   - **Task 1（骨架、模型与校验）**：只面向 net8.0；引用 Core、WebApi 与 `Microsoft.AspNetCore.App`；英文 README 打包（Task 8 补全）；`InternalsVisibleTo` 只给本包的测试项目。
   - 公开模型：`WebApiServerConfig`、`WebApiServerHttpsOptions`、`WebApiServerDeduplicationOptions`、`WebApiServerComponents`、`WebApiServerState`、`WebApiServerStateChangedEventArgs`；拦截器与认证器的接口与上下文（`IWebApiServerInterceptor`、`WebApiServerInterceptor`、`WebApiServerContext`、`WebApiServerRequestingContext`、`WebApiServerRespondingContext`、`IWebApiRequestAuthenticator`、`WebApiAuthenticationResult`）；结果分类 `WebApiServerOutcome`。
   - 配置在创建服务器时校验并拍快照：监听地址（Kestrel 写法，必须带端口，不允许重复）、HTTPS 证书来源、业务包络的字段路径、去重与日志选项、序列化器的内容类型（必须是 JSON）。凭据与证书口令只保存环境变量名，值在创建时读取，错误消息只含变量名。
+- 2026-10-17 [WebApi.Server] **Task 2（响应格式与请求正文）**：新增 `WebApiServerResponse<T>`（`Ok` 只接受 2xx，`Fail` 的业务码不能为空、状态码 200 至 599）。内部 `ResponseFormatter` 是唯一的响应出口：启用包络时成功写 `{ code, msg, data }`、业务失败写 `{ code, msg }`，框架拒绝用同一结构（`code` 为状态码文本）；未启用包络时成功写数据本身（`data` 为 null 时 204），失败与拒绝写 RFC 9457 Problem Details（`application/problem+json`，业务码在扩展字段 `code`）。
+  - 请求正文（`RequestBodyReader`）：空正文 400，有正文但非 JSON 媒体类型 415，`byte[]` 给原始字节，`string` 按 charset 解码（缺省 UTF-8，未知字符集 415），其余类型由序列化器反序列化（失败 400，详情只进日志）。
+  - 包络配置新增一条校验：`CodePath`、`MessagePath`、`DataPath` 不能互为前缀（写出时同一层的字段会争用同一个属性）。
+  - 往返：服务端写出的包络交给 3.1 客户端（`WebApiClient`，启用包络）解析，成功拿到同样的数据，业务失败拿到 `RemoteError` 与业务码。
 - 2026-10-17 [Architecture] SDK 适配守卫登记 `Junevy.Communication.WebApi.Server`（SDK 前缀 `Microsoft.AspNetCore`，命名空间 `Junevy.Communication.WebApi.Server.Hosting`），分层表与 `ArchitectureTests.SdkPrefixes` 同步加一行；`SdkAdapterArchitectureTests.Adapters` 增加"允许引用的库"列（服务端允许 Core 与 WebApi，其余适配包只允许 Core）。负控：临时暴露 `HttpContext` 与在根命名空间的类型里引用它，两条守卫各报一次错，已撤除。
 
 ## [Unreleased] — P6.2（OpcUa 1.0.0-preview.1：OPC UA 客户端）

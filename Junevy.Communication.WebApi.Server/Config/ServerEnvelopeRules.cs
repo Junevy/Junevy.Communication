@@ -23,9 +23,26 @@ internal static class ServerEnvelopeRules
         string[] codePath = RequirePath(envelope.CodePath, nameof(ResponseEnvelopeOptions.CodePath));
         string[] messagePath = RequirePath(envelope.MessagePath, nameof(ResponseEnvelopeOptions.MessagePath));
         string[] dataPath = RequirePath(envelope.DataPath, nameof(ResponseEnvelopeOptions.DataPath));
+        RequireDisjoint(nameof(ResponseEnvelopeOptions.CodePath), codePath, nameof(ResponseEnvelopeOptions.MessagePath), messagePath);
+        RequireDisjoint(nameof(ResponseEnvelopeOptions.CodePath), codePath, nameof(ResponseEnvelopeOptions.DataPath), dataPath);
+        RequireDisjoint(nameof(ResponseEnvelopeOptions.MessagePath), messagePath, nameof(ResponseEnvelopeOptions.DataPath), dataPath);
         string successCode = RequireSuccessCode(envelope.SuccessCodes);
         return new ServerEnvelopeSettings(true, codePath, messagePath, dataPath, successCode);
     }
+
+    // 写出时同一层的字段按路径段分组：一条路径不能是另一条的前缀（包括相等），否则两个字段争用同一个属性。
+    private static void RequireDisjoint(string firstProperty, string[] first, string secondProperty, string[] second)
+    {
+        if (IsPrefix(first, second) || IsPrefix(second, first))
+        {
+            throw new ArgumentException(
+                $"{Section}.{firstProperty} and {Section}.{secondProperty} must not overlap, not '{string.Join(".", first)}' and '{string.Join(".", second)}'.",
+                Section + "." + secondProperty);
+        }
+    }
+
+    private static bool IsPrefix(string[] prefix, string[] path)
+        => prefix.Length <= path.Length && prefix.SequenceEqual(path.Take(prefix.Length));
 
     private static string[] RequirePath(string? path, string property)
     {

@@ -221,6 +221,17 @@ public sealed class ServerConfigRulesTests : IDisposable
     }
 
     [Fact]
+    public void Envelope_WhenEnabled_RejectsPathsThatOverlap()
+    {
+        var config = new WebApiServerConfig
+        {
+            Envelope = new ResponseEnvelopeOptions { Enabled = true, CodePath = "result", MessagePath = "result.msg", DataPath = "data" },
+        };
+
+        AssertRejected(config, "config.Envelope.MessagePath", "must not overlap");
+    }
+
+    [Fact]
     public void Envelope_WhenEnabled_SplitsThePathsAndKeepsTheFirstSuccessCode()
     {
         var config = new WebApiServerConfig
