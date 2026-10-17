@@ -54,7 +54,10 @@ public sealed class OpcUaClientFactoryTests
         OpcUaClient first = factory.GetOrAdd("line1", OptionsFor("a"));
         OpcUaClient second = factory.GetOrAdd("line2", OptionsFor("b"));
 
+        // 每个名字保留自己的端点：Create 取的是创建时的快照。
         Assert.NotSame(first, second);
+        Assert.Contains("/a/", first.ToString(), StringComparison.Ordinal);
+        Assert.Contains("/b/", second.ToString(), StringComparison.Ordinal);
         Assert.Equal(2, factory.Count);
     }
 
@@ -64,6 +67,7 @@ public sealed class OpcUaClientFactoryTests
         using var factory = new OpcUaClientFactory();
 
         Assert.Throws<ArgumentNullException>("options", () => factory.GetOrAdd("line1", null!));
+        Assert.Equal(0, factory.Count);
     }
 
     [Fact]
