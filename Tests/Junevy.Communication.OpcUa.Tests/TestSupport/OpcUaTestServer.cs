@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Opc.Ua;
+using Opc.Ua.Server;
 using Opc.Ua.Server.Fluent;
 using Opc.Ua.Server.Hosting;
 
@@ -55,6 +56,8 @@ public sealed class OpcUaTestServer : IAsyncDisposable
     private readonly Dictionary<string, NodeId> ids = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Counter> counters = new(StringComparer.Ordinal);
     private IHost? host;
+    private StandardServer? server;
+    private int activatedSessions;
     private int disposed;
 
     private OpcUaTestServer(OpcUaTestServerOptions options, ITelemetryContext telemetry, ILoggerFactory? probeLoggerFactory)
@@ -77,6 +80,20 @@ public sealed class OpcUaTestServer : IAsyncDisposable
 
     /// <summary>服务器是否在运行。</summary>
     public bool IsRunning => host is not null;
+
+    /// <summary>服务器上当前的会话数：断开、释放与"被摘出去的连接"有没有把会话关掉。</summary>
+    public int SessionCount => Running.SessionManager.GetSessions().Count;
+
+    /// <summary>服务器上当前的订阅数：释放的订阅有没有真的删掉，重连之后有没有被复活。</summary>
+    public int SubscriptionCount => Running.SubscriptionManager.GetSubscriptions().Count;
+
+    /// <summary>
+    /// 本次启动以来激活过的会话数（不含启动时的探路会话）。"后台连接是不是真的连上过"只能从这里看：
+    /// 那条会话被当场关掉之后 <see cref="SessionCount"/> 又回到 0。
+    /// </summary>
+    public int ActivatedSessions => Volatile.Read(ref activatedSessions);
+
+    private IServerInternal Running =>(server ?? throw new InvalidOperationException("The test server is not running.")).CurrentInstance;
 
     /// <summary>
     /// 启动一个服务器。
@@ -153,10 +170,14 @@ public sealed class OpcUaTestServer : IAsyncDisposable
                 });
             })
             .AddNodeManager(NamespaceUri, Build);
+        CaptureServer(builder.Services);
 
         host = builder.Build();
         await host.StartAsync().ConfigureAwait(false);
         await WaitUntilReadyAsync().ConfigureAwait(false);
+
+        Volatile.Write(ref activatedSessions, 0);
+        Running.SessionManager.SessionActivated += (_, _) => Interlocked.Increment(ref activatedSessions);
     }
 
     // 通用宿主返回时服务器只是"开始"启动：TCP 监听已经就绪，地址空间还在建。
@@ -201,6 +222,41 @@ public sealed class OpcUaTestServer : IAsyncDisposable
 
         await host.StopAsync().ConfigureAwait(false);
         host = null;
+        server = null;
+    }
+
+    // 宿主不把 StandardServer 放进容器，会话数与订阅数只能从它的 CurrentInstance 读：
+    // 给 IOpcUaServerFactory 包一层，把每次启动创建的实例记下来。
+    private void CaptureServer(IServiceCollection services)
+    {
+        ServiceDescriptor original = services.Last(descriptor => descriptor.ServiceType == typeof(IOpcUaServerFactory));
+        services.Remove(original);
+        services.AddSingleton<IOpcUaServerFactory>(provider =>
+            new CapturingServerFactory(Resolve(original, provider), created => server = created));
+    }
+
+    private static IOpcUaServerFactory Resolve(ServiceDescriptor descriptor, IServiceProvider provider)
+        => (IOpcUaServerFactory)(descriptor.ImplementationInstance
+            ?? descriptor.ImplementationFactory?.Invoke(provider)
+            ?? ActivatorUtilities.CreateInstance(provider, descriptor.ImplementationType!));
+
+    private sealed class CapturingServerFactory : IOpcUaServerFactory
+    {
+        private readonly IOpcUaServerFactory inner;
+        private readonly Action<StandardServer> created;
+
+        public CapturingServerFactory(IOpcUaServerFactory inner, Action<StandardServer> created)
+        {
+            this.inner = inner;
+            this.created = created;
+        }
+
+        public StandardServer CreateServer(ITelemetryContext telemetry, TimeProvider timeProvider)
+        {
+            StandardServer server = inner.CreateServer(telemetry, timeProvider);
+            created(server);
+            return server;
+        }
     }
 
     /// <summary>释放：停服务器并删除证书目录。</summary>

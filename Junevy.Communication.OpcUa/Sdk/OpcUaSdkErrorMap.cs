@@ -106,6 +106,9 @@ internal static class OpcUaSdkErrorMap
             TimeoutException => Fail(CommErrorKind.Timeout, null, "The OPC UA operation timed out.", exception),
             System.Net.Sockets.SocketException => Fail(CommErrorKind.ConnectionClosed, null, $"The connection failed: {exception.Message}", exception),
             IOException => Fail(CommErrorKind.ConnectionClosed, null, $"The connection failed: {exception.Message}", exception),
+
+            // 调用进行中会话被并发的断开或释放关掉：SDK 抛"对象已释放"，按"释放之后的操作"归类（第 17.1 节）。
+            ObjectDisposedException => Fail(CommErrorKind.ConnectionClosed, null, "The OPC UA session was closed during the call.", exception),
             _ => Fail(CommErrorKind.Unspecified, null, $"The OPC UA operation failed with {exception.GetType().Name}: {exception.Message}", exception),
         };
     }

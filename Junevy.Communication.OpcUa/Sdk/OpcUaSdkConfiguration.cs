@@ -14,17 +14,17 @@ internal static class OpcUaSdkConfiguration
     private const string SecurityPolicyNone = "http://opcfoundation.org/UA/SecurityPolicy#None";
 
     /// <summary>
-    /// 遥测上下文。SDK 自带 <c>ILogger</c> 集成，入口就是 <c>DefaultTelemetry.Create</c>（P62-D13）。
+    /// 遥测上下文。SDK 自带 <c>ILogger</c> 集成，公开入口只有 <c>DefaultTelemetry.Create</c>（P62-D13；
+    /// 接收 <c>ILoggerFactory</c> 的构造函数不公开）。
     /// </summary>
-    /// <param name="loggerFactory">调用方的日志工厂；为 null 时用 SDK 自己的默认实现。</param>
+    /// <param name="loggerFactory">调用方的日志工厂；为 null 时 SDK 的日志也不输出。</param>
     /// <returns>SDK 的遥测上下文。</returns>
     public static ITelemetryContext CreateTelemetry(ILoggerFactory? loggerFactory)
         => DefaultTelemetry.Create(builder =>
         {
             if (loggerFactory is not null)
             {
-                // SDK 只接受 ILoggerProvider 桥接，没有直接接 ILoggerFactory 的入口；
-                // 把调用方的工厂注册进同一个容器，让 SDK 的日志落到同一个 ILoggerFactory 上。
+                // 把调用方的工厂注册进 SDK 建的那个容器，让 SDK 的日志落到同一个 ILoggerFactory 上。
                 builder.Services.AddSingleton(loggerFactory);
             }
         });
@@ -98,7 +98,7 @@ internal static class OpcUaSdkConfiguration
             {
                 collection.Add(description);
                 // P62-D3 ④（服务器报告的主机名与配置不同）：SDK 2.0.1 自己就会把端点地址钉回发现地址，
-                // GetEndpointsAsync 返回的 EndpointUrl 已经是配置里的那个主机名，所以这里不用再改写（F13）。
+                // GetEndpointsAsync 返回的 EndpointUrl 已经是配置里的那个主机名，所以这里不用再改写（F19）。
                 return CommResult<ConfiguredEndpoint>.Success(collection.Endpoints[^1]);
             }
         }

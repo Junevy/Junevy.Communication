@@ -83,27 +83,102 @@ public sealed class OpcUaReconnectTests
         Assert.True((await client.ConnectAsync()).IsSuccess);
 
         var nodeId = server.Id("Test/Counter").ToString()!;
-        var received = new List<OpcUaDataChangedEventArgs>();
-        CommResult<OpcUaSubscription> subscribed = await client.SubscribeAsync(
-            new[] { nodeId },
-            (_, args) => { lock (received) { received.Add(args); } },
-            FastOptions());
-        Assert.True(subscribed.IsSuccess, subscribed.ToString());
-        await using OpcUaSubscription subscription = subscribed.Data;
+        (OpcUaSubscription subscribed, List<OpcUaDataChangedEventArgs> received) = await KeepAsync(client, nodeId);
+        await using OpcUaSubscription subscription = subscribed;
 
         await WaitUntilAsync(() => Count(received) >= 1, "the initial value");
 
         await server.StopHostAsync();
         await WaitForStateAsync(client, OpcUaSessionState.Reconnecting);
         await server.StartHostAsync();
-        await WaitForStateAsync(client, OpcUaSessionState.Connected);
 
-        // 服务器重启后监控项被重建（F2/WithTransferSubscriptionsOnRecreate），处理器继续收到通知。
-        // 进程内服务器的监控项不一定每次写都发通知（F29），因此反复写直到满足条件。
-        int afterRestart = Count(received);
-        await PumpUntilAsync(client, nodeId, () => Count(received) > afterRestart);
-
+        // 服务器重启后监控项被重建（WithTransferSubscriptionsOnRecreate），处理器继续收到通知。
+        await WaitUntilRecoveredAsync(client, nodeId, received);
         Assert.Equal(nodeId, received[received.Count - 1].NodeId);
+    }
+
+    [Fact]
+    public async Task AfterADisconnectAndAFreshConnect_ALaterDropStillRecovers()
+    {
+        // P6.1 验收发现的第一类缺陷："停止"与"释放"不能混为一谈。断开只结束那一次会话，
+        // 之后再连上，下一次意外断线照样要自动恢复。
+        await using OpcUaTestServer server = await OpcUaTestServerFactory.StartOwnAsync(loggerFactory: loggerFactory);
+        await using OpcUaClient client = OpcUaClient.Create(OptionsFor(server.EndpointUrl), loggerFactory);
+
+        Assert.True((await client.ConnectAsync()).IsSuccess);
+        await client.DisconnectAsync();
+        Assert.True((await client.ConnectAsync()).IsSuccess);
+
+        await server.StopHostAsync();
+        await WaitForStateAsync(client, OpcUaSessionState.Reconnecting);
+        await server.StartHostAsync();
+
+        await WaitForStateAsync(client, OpcUaSessionState.Connected);
+        Assert.True((await client.ReadAsync(new[] { server.Id("Test/Int32").ToString()! })).IsSuccess);
+        Assert.Equal(1, server.SessionCount);
+    }
+
+    [Fact]
+    public async Task DisposedOrFailedSubscriptions_AreNotRecreatedWhenTheSessionRecovers()
+    {
+        await using OpcUaTestServer server = await OpcUaTestServerFactory.StartOwnAsync(loggerFactory: loggerFactory);
+        await using OpcUaClient client = OpcUaClient.Create(OptionsFor(server.EndpointUrl), loggerFactory);
+        Assert.True((await client.ConnectAsync()).IsSuccess);
+
+        var nodeId = server.Id("Test/Counter").ToString()!;
+        (OpcUaSubscription live, List<OpcUaDataChangedEventArgs> kept) = await KeepAsync(client, nodeId);
+        await using OpcUaSubscription keep = live;
+
+        // 一个建好之后释放的订阅，一个被调用方取消、没有建成的订阅。
+        CommResult<OpcUaSubscription> dropped = await client.SubscribeAsync(new[] { nodeId }, (_, _) => { }, FastOptions());
+        Assert.True(dropped.IsSuccess, dropped.ToString());
+        await dropped.Data.DisposeAsync();
+
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        CommResult<OpcUaSubscription> failed = await client.SubscribeAsync(
+            new[] { nodeId },
+            (_, _) => { },
+            FastOptions(),
+            cancelled.Token);
+        Assert.Equal(CommErrorKind.Cancelled, failed.ErrorKind);
+        Assert.Equal(1, server.SubscriptionCount);
+
+        await server.StopHostAsync();
+        await WaitForStateAsync(client, OpcUaSessionState.Reconnecting);
+        await server.StartHostAsync();
+
+        // 会话恢复时 SDK 会重建它名下的全部订阅：已经释放或没建成的订阅如果还挂在会话上，就会在新服务器上复活。
+        await WaitUntilRecoveredAsync(client, nodeId, kept);
+        Assert.Equal(1, server.SubscriptionCount);
+    }
+
+    [Fact]
+    public async Task DisposeASubscriptionWhileReconnecting_ReturnsPromptlyAndItStaysGone()
+    {
+        await using OpcUaTestServer server = await OpcUaTestServerFactory.StartOwnAsync(loggerFactory: loggerFactory);
+        await using OpcUaClient client = OpcUaClient.Create(OptionsFor(server.EndpointUrl), loggerFactory);
+        Assert.True((await client.ConnectAsync()).IsSuccess);
+
+        var nodeId = server.Id("Test/Counter").ToString()!;
+        (OpcUaSubscription live, List<OpcUaDataChangedEventArgs> kept) = await KeepAsync(client, nodeId);
+        await using OpcUaSubscription keep = live;
+
+        CommResult<OpcUaSubscription> dropped = await client.SubscribeAsync(new[] { nodeId }, (_, _) => { }, FastOptions());
+        Assert.True(dropped.IsSuccess, dropped.ToString());
+
+        await server.StopHostAsync();
+        await WaitForStateAsync(client, OpcUaSessionState.Reconnecting);
+
+        // 重连期间服务器不可达：释放立刻返回，不挂在 SDK 里等（重连不限次数），摘除在恢复之后由后台完成。
+        DateTime started = DateTime.UtcNow;
+        await dropped.Data.DisposeAsync();
+        Assert.InRange((DateTime.UtcNow - started).TotalMilliseconds, 0, 2000);
+
+        // 之后的每一次重连都不能被这个订阅拖垮（F32），恢复之后它也不能复活。
+        await server.StartHostAsync();
+        await WaitUntilRecoveredAsync(client, nodeId, kept);
+        Assert.Equal(1, server.SubscriptionCount);
     }
 
     [Fact]
@@ -116,7 +191,7 @@ public sealed class OpcUaReconnectTests
         await server.StopHostAsync();
         await WaitForStateAsync(client, OpcUaSessionState.Reconnecting);
 
-        Assert.True((await client.DisconnectAsync()).IsSuccess);
+        await client.DisconnectAsync();
         Assert.Equal(OpcUaSessionState.Disconnected, client.State);
 
         // 服务器回来之后也不该自己连上去。
@@ -216,6 +291,29 @@ public sealed class OpcUaReconnectTests
         QueueSize = 10,
         DiscardOldest = false,
     };
+
+    // 一个一直保留的订阅：会话恢复之后它又收到通知，就说明 SDK 已经转移或重建完订阅。
+    private static async Task<(OpcUaSubscription Subscription, List<OpcUaDataChangedEventArgs> Received)> KeepAsync(
+        OpcUaClient client,
+        string nodeId)
+    {
+        var received = new List<OpcUaDataChangedEventArgs>();
+        CommResult<OpcUaSubscription> subscribed = await client.SubscribeAsync(
+            new[] { nodeId },
+            (_, args) => { lock (received) { received.Add(args); } },
+            FastOptions());
+        Assert.True(subscribed.IsSuccess, subscribed.ToString());
+        return (subscribed.Data, received);
+    }
+
+    // 回到 Connected 之后，再等保留的订阅收到一条新通知（订阅已经恢复），并给后台的摘除留一点时间。
+    private static async Task WaitUntilRecoveredAsync(OpcUaClient client, string nodeId, List<OpcUaDataChangedEventArgs> kept)
+    {
+        await WaitForStateAsync(client, OpcUaSessionState.Connected);
+        int afterRestart = Count(kept);
+        await PumpUntilAsync(client, nodeId, () => Count(kept) > afterRestart);
+        await Task.Delay(1000);
+    }
 
     // 进程内服务器的监控项不一定每次写都发通知（F29），因此反复写直到条件满足。
     private static async Task PumpUntilAsync(OpcUaClient client, string nodeId, Func<bool> until)

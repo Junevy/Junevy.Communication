@@ -29,14 +29,11 @@ internal sealed class OpcUaSdkSession : IAsyncDisposable
     /// <summary>命名空间表：<c>nsu=</c> 形式的 NodeId 按它解析。</summary>
     public NamespaceTable NamespaceUris => session.NamespaceUris;
 
-    /// <summary>服务器上报的操作上限（P62-D7）。</summary>
-    public OperationLimits OperationLimits => session.OperationLimits;
-
     /// <summary>底层客户端：SDK 的 <c>Browser</c> 等高层助手需要它（<c>ISessionClient</c>）。</summary>
     public ISessionClient SessionClient => session;
 
-    /// <summary>是否已连接。</summary>
-    public bool Connected => session.Connected;
+    /// <summary>会话已连接且不在重连中：此时发出的请求会立刻得到服务器的回应。</summary>
+    public bool IsUsable => session.Connected && !session.Reconnecting;
 
     /// <summary>会话标识，诊断用。</summary>
     public string SessionId => session.SessionId.IsNull ? "<none>" : session.SessionId.ToString();
@@ -134,43 +131,57 @@ internal sealed class OpcUaSdkSession : IAsyncDisposable
         return response.Results;
     }
 
-    /// <summary>把 SDK 的订阅挂到会话上（重连时由 SDK 自己转移）。</summary>
+    /// <summary>把 SDK 的订阅挂到会话上（重连时由 SDK 自己转移或重建）。</summary>
     /// <param name="subscription">SDK 的订阅。</param>
     public void AddSubscription(Subscription subscription) => session.AddSubscription(subscription);
 
     /// <summary>
-    /// 浏览与续取引用。继续点不在请求里，在响应里，续取用 <see cref="BrowseNextAsync"/>（F14）。
+    /// 把订阅从会话上摘下并删除服务器上的订阅。只调 <c>Subscription.DeleteAsync</c> 不够：
+    /// 订阅还挂在会话上，会话恢复时 SDK 会把它在服务器上重建出来（F30）。
     /// </summary>
-    /// <param name="requestHeader">请求头，null 表示由 SDK 填。</param>
-    /// <param name="view">视图。</param>
-    /// <param name="requestedMaxReferencesPerNode">每次请求的引用数上限。</param>
-    /// <param name="nodesToBrowse">要浏览的节点。</param>
+    /// <param name="subscription">SDK 的订阅。</param>
     /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>浏览响应，结果在 <c>Results</c> 里。</returns>
-    public async Task<BrowseResponse> BrowseAsync(
-        RequestHeader? requestHeader,
-        ViewDescription view,
-        uint requestedMaxReferencesPerNode,
-        ArrayOf<BrowseDescription> nodesToBrowse,
-        CancellationToken cancellationToken)
-        => await session
-            .BrowseAsync(requestHeader, view, requestedMaxReferencesPerNode, nodesToBrowse, cancellationToken)
-            .ConfigureAwait(false);
+    /// <returns>异步操作。</returns>
+    public Task RemoveSubscriptionAsync(Subscription subscription, CancellationToken cancellationToken)
+        => session.RemoveSubscriptionAsync(subscription, cancellationToken);
 
-    /// <summary>续取一批继续点的引用。</summary>
-    /// <param name="requestHeader">请求头，null 表示由 SDK 填。</param>
-    /// <param name="releaseContinuationPoints">是否在取完后释放继续点。</param>
-    /// <param name="continuationPoints">继续点。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>续取响应，结果在 <c>Results</c> 里。</returns>
-    public async Task<BrowseNextResponse> BrowseNextAsync(
-        RequestHeader? requestHeader,
-        bool releaseContinuationPoints,
-        ArrayOf<ByteString> continuationPoints,
-        CancellationToken cancellationToken)
-        => await session
-            .BrowseNextAsync(requestHeader, releaseContinuationPoints, continuationPoints, cancellationToken)
-            .ConfigureAwait(false);
+    /// <summary>
+    /// 等到 SDK 报告 <c>Connected</c>。重连时 SDK 先重新激活会话、再转移或重建订阅，最后才报 <c>Connected</c>，
+    /// 所以等到它之后再发的请求看到的是恢复完成的会话（F32）。
+    /// </summary>
+    /// <returns>会话已连接时立刻完成；会话关闭时以 <see cref="ObjectDisposedException"/> 失败。</returns>
+    public async Task WaitUntilConnectedAsync()
+    {
+        var recovered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnChanged(object? sender, ConnectionStateChangedEventArgs e)
+        {
+            if (e.NewState == ConnectionState.Connected)
+            {
+                recovered.TrySetResult();
+            }
+            else if (e.NewState is ConnectionState.Closing or ConnectionState.Closed)
+            {
+                recovered.TrySetException(new ObjectDisposedException(nameof(OpcUaSdkSession), "The OPC UA session was closed."));
+            }
+        }
+
+        // 先挂事件再看当前状态：否则两步之间恢复完成的那次事件会被漏掉。
+        session.ConnectionStateChanged += OnChanged;
+        try
+        {
+            if (IsUsable)
+            {
+                return;
+            }
+
+            await recovered.Task.ConfigureAwait(false);
+        }
+        finally
+        {
+            session.ConnectionStateChanged -= OnChanged;
+        }
+    }
 
     /// <summary>关闭会话：先让服务器删除会话上的订阅。</summary>
     /// <param name="cancellationToken">取消令牌。</param>
@@ -199,7 +210,16 @@ internal sealed class OpcUaSdkSession : IAsyncDisposable
         }
 
         session.ConnectionStateChanged -= OnConnectionStateChanged;
-        await session.DisposeAsync().ConfigureAwait(false);
+
+        try
+        {
+            await session.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            // 释放不抛异常（P6-C8）：它也在"被摘出去的连接"的后台续体里调用，异常没有人观察。
+            logger.LogWarning(exception, "Disposing the OPC UA session failed; the session is dropped anyway.");
+        }
     }
 
     private void OnConnectionStateChanged(object? sender, ConnectionStateChangedEventArgs e)

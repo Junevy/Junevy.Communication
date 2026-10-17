@@ -1,5 +1,6 @@
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.OpcUa.Tests.TestSupport;
+using Junevy.Communication.Testing;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
@@ -221,6 +222,27 @@ public sealed class OpcUaReadWriteTests
     }
 
     [Fact]
+    public async Task ReadWriteAndBrowse_CallerCancels_ReportCancelled()
+    {
+        await using OpcUaTestServer server = await StartServerAsync();
+        await using OpcUaClient client = await ConnectedAsync(server);
+        string nodeId = server.Id("Writable/Int32").ToString()!;
+
+        // 取消以调用方的令牌为准，不看 SDK 抛出的异常类型：SDK 会把取消包成带 Bad 码的服务异常（F31）。
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+
+        Assert.Equal(CommErrorKind.Cancelled, (await client.ReadAsync(new[] { nodeId }, cancelled.Token)).ErrorKind);
+        Assert.Equal(
+            CommErrorKind.Cancelled,
+            (await client.WriteAsync(new[] { new OpcUaWriteValue(nodeId, 7) }, cancelled.Token)).ErrorKind);
+        Assert.Equal(CommErrorKind.Cancelled, (await client.BrowseAsync(server.Id("Test").ToString()!, cancelled.Token)).ErrorKind);
+
+        // 被取消的调用不影响会话本身。
+        Assert.True((await client.ReadAsync(new[] { nodeId })).IsSuccess);
+    }
+
+    [Fact]
     public async Task Write_SupportedTypes_RoundTrip()
     {
         await using OpcUaTestServer server = await StartServerAsync();
@@ -419,17 +441,12 @@ public sealed class OpcUaReadWriteTests
     }
 
     [Fact]
-    public async Task ReadAndWrite_LogNothingAboutTheValues()
+    public async Task ReadAndWrite_LogCountAndDurationButNothingAboutTheValues()
     {
-        using var collector = new CollectingLoggerProvider();
-        using ILoggerFactory verbose = LoggerFactory.Create(builder =>
-        {
-            builder.SetMinimumLevel(LogLevel.Trace);
-            builder.AddProvider(collector);
-        });
+        var logs = new TestLogger();
 
-        await using OpcUaTestServer server = await StartServerAsync(log: verbose);
-        await using OpcUaClient client = OpcUaClient.Create(OptionsFor(server.EndpointUrl), verbose);
+        await using OpcUaTestServer server = await StartServerAsync(log: logs);
+        await using OpcUaClient client = OpcUaClient.Create(OptionsFor(server.EndpointUrl), logs);
         Assert.True((await client.ConnectAsync()).IsSuccess);
 
         string secret = "s3cr3t-value-9d2f";
@@ -437,58 +454,13 @@ public sealed class OpcUaReadWriteTests
         Assert.True((await client.ReadAsync(Text(server, "Writable/String"))).IsSuccess);
         await client.DisconnectAsync();
 
-        string everything = string.Join('\n', collector.Messages);
-        Assert.DoesNotContain(secret, everything, StringComparison.Ordinal);
+        // 每次操作在 Debug 记节点数与耗时（P62-D13）；任何级别都不出现值。
+        Assert.Contains(logs.GetEntries(LogLevel.Debug), entry => entry.Message.StartsWith("OPC UA Write of 1 node(s)", StringComparison.Ordinal));
+        Assert.Contains(logs.GetEntries(LogLevel.Debug), entry => entry.Message.StartsWith("OPC UA Read of 1 node(s)", StringComparison.Ordinal));
+        Assert.DoesNotContain(logs.Entries, entry => entry.Message.Contains(secret, StringComparison.Ordinal));
     }
 
     private static string Text(OpcUaTestServer server, string browsePath) => server.Id(browsePath).ToString();
 
     private static string Index(OpcUaTestServer server, string browsePath) => server.Id(browsePath).IdentifierAsString;
-
-    private sealed class CollectingLoggerProvider : ILoggerProvider
-    {
-        private readonly List<string> messages = new List<string>();
-
-        public IReadOnlyList<string> Messages
-        {
-            get
-            {
-                lock (messages)
-                {
-                    return messages.ToArray();
-                }
-            }
-        }
-
-        public ILogger CreateLogger(string categoryName) => new CollectingLogger(messages);
-
-        public void Dispose()
-        {
-        }
-
-        private sealed class CollectingLogger : ILogger
-        {
-            private readonly List<string> messages;
-
-            public CollectingLogger(List<string> messages) => this.messages = messages;
-
-            public IDisposable? BeginScope<TState>(TState state)
-                where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(
-                LogLevel logLevel,
-                EventId eventId,
-                TState state,
-                Exception? exception,
-                Func<TState, Exception?, string> formatter)
-            {
-                lock (messages)
-                {
-                    messages.Add(formatter(state, exception));
-                }
-            }
-        }
-    }
 }

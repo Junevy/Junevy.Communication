@@ -168,6 +168,12 @@ public sealed class OpcUaErrorMapTests
             OpcUaSdkErrorMap.Runtime(new System.Net.Sockets.SocketException(10061)).ErrorKind);
 
     [Fact]
+    public void Runtime_SessionDisposedDuringTheCall_IsConnectionClosed()
+        => Assert.Equal(
+            CommErrorKind.ConnectionClosed,
+            OpcUaSdkErrorMap.Runtime(new ObjectDisposedException("ManagedSession")).ErrorKind);
+
+    [Fact]
     public void Runtime_UnknownException_IsUnspecified()
     {
         CommResult result = OpcUaSdkErrorMap.Runtime(new InvalidOperationException("boom"));

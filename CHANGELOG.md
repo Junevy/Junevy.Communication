@@ -59,7 +59,7 @@
       - 监控项是否创建成功看 `MonitoredItem.Status.Created` / `Status.Error`，不是 `MonitoredItem.Created`。
       - 通知值是 `MonitoredItemNotification`（`IEncodeable`），里面的 `Value` 才是 `DataValue`（F27）；`DataValue` 在 2.0 是 struct 且**不实现** `IEncodeable`。
       - 重连时的订阅转移交给 `ManagedSession`（`WithTransferSubscriptionsOnRecreate`），本库不写重连逻辑。
-    - **测试服务器的已知限制**：进程内服务器的监控项不一定每次写都发通知，且后续通知里的值与状态不可靠（F30）。因此"初始值 + UTC 时间戳"用真实值断言，"变更后再来一条"用反复写入直到满足条件的写法断言，并已在用例里注明。
+    - **测试服务器的已知限制**：进程内服务器的监控项不一定每次写都发通知，且后续通知里的值与状态不可靠（F29）。因此"初始值 + UTC 时间戳"用真实值断言，"变更后再来一条"用反复写入直到满足条件的写法断言，并已在用例里注明。
     - **验证**：新增 7 条用例（初始值与变更、批内一项坏、处理器抛异常、释放与重复释放、断开后释放、空列表与重复、未连接），OPC UA 测试项目共 **282 条通过**；`build/test-affected.ps1 -Base 9597c33 -NoBuild` 选中 3 个项目共 **309 条通过**；构建 0 错误、无新增警告。
     - **变异**：S1（不开 `PublishingEnabled`）、S3（逐项状态不再报创建失败）、S4（处理器异常继续往上抛）、S6（重复 NodeId 被接受）被杀死。S2（不等待监控项创建完成）与 S5（释放时不删服务器上的订阅）在当前可观测范围内是等价变异体：`CreateAsync` 返回时监控项已经建好；`DetachNotificationEventHandlers` 已经让客户端不再投递，服务器端订阅数要等 Task 4 的服务器诊断读取才能核对。
 
@@ -75,6 +75,20 @@
     - 验证：新增 14 条用例（同名同实例、不同名、null 与非法选项、释放与重复释放、释放后调用、取快照、appsettings 形状的 JSON 绑定、注册单例与可重复调用、容器日志工厂同时透传给本库与 SDK）。OPC UA 测试项目共 **302 条通过**。
     - 变异：`TryAddSingleton` 换成 `AddSingleton`、`GetOrAddCore` 换成直接新建、容器日志工厂不透传，三个都被测试杀死。
 - 2026-10-16 [Docs] **Task 9（README、Skill、CHANGELOG）**：`Junevy.Communication.OpcUa/README.md` 补全为完整参考（开头醒目写明只支持 `None` 策略与匿名登录、依赖影响、快速上手、NodeId 写法与 `nsu=` 的建议、值类型表、批量与逐项状态、浏览、订阅、重连、状态、选项表、释放、错误分类表、依赖注入、日志、Verification status）。所有示例经 net8.0 实际编译验证（先做负控：故意写错一个成员，确认检查会报错）。新增 Skill `Skills/using-junevy-opcua/SKILL.md`。根 `readme.md` 的协议表与说明补上 OPC UA 一行。
+
+### 修正（Fixed）
+
+- 2026-10-17 [OpcUa] **验收修正**（计划第 19.1 节 R1–R11）。每条都先写出在旧代码上失败的用例，再改：
+  - **R1 迟到的会话**：调用方取消或 `ConnectTimeout` 到点后，SDK 的后台连接（端点发现不理令牌，F23）照样可能连上，原实现在后台任务里直接把会话挂到客户端上——调用方拿到 `Cancelled`，客户端却挂着会话，服务器上多一个会话，再连一次还会把它覆盖成泄漏。现在会话只在调用方仍在等待时挂上，之后才连上的会话当场关掉。
+  - **R2 断开与晚到的状态事件**：断开与释放改为先摘下会话、再改状态、最后关闭；SDK 状态事件只认当前挂着的会话。连接成功改用 `TryMoveTo(Connecting → Connected)`，不覆盖 SDK 已报的断线。
+  - **R3/R4 释放订阅**：释放不再沿用创建订阅时的调用方令牌；改用 `RemoveSubscriptionAsync` 从会话摘下，原来的 `Subscription.DeleteAsync` 只删服务器上的订阅，会话恢复时会被重建（F30）。
+  - **R6 订阅创建失败与重连**：创建受 `OperationTimeout` 约束、取消与超时以作用域为准（SDK 把取消包成 Bad 码，原实现归成 `RemoteError`，F31）；失败时把挂到会话上的订阅摘掉。摘除**不能取消、也不能在重连期间先发出**：先等 SDK 报 `Connected`（它在转移或重建订阅之后才报）再摘，只有摘除成功才释放 SDK 对象。原实现在失败路径上直接 `Dispose` 仍挂在会话上的订阅，之后**每一次重连都会失败**（"启动已释放订阅的保活计时器"），并在服务器上留下重建出来的订阅（F32）。重连期间 `DisposeAsync` 立刻返回，摘除由后台完成。
+  - **R5** `SubscribeAsync` 补上订阅选项校验（抛 `ArgumentException` 族，与 `Create` 一致）。**R7** 通知改经 `EventSubscribers.InvokeEach` 交付、sender 是客户端（原来 sender 是委托本身，多播处理器的前一个订阅者抛异常会挡住后面的）。
+  - **R8 与断开并发的操作**：原实现会抛 `InvalidOperationException`（会话已被摘下）或 `ServiceResultException`（会话关闭后读命名空间表），现在返回 `NotConnected`；调用途中会话被释放的 `ObjectDisposedException` 归 `ConnectionClosed`。
+  - **R9** 读、写、浏览各包一个 `OperationTimeout` 作用域；按 P62-D13 与 README，每次操作在 Debug 记节点数与耗时，失败记 Warning（不记录值）。
+  - **R10 清理**：删除从未调用的 `OpcUaSdkConfigurationSet`、`OpcUaSdkSession` 的手写浏览两件套与 `OperationLimits` / `Connected`、`OpcUaSdkSubscription.Statuses()` 与重复的释放标志、`OpcUaSdkConnection.DisposeAsync` / `IsDisposed` / `RequireSession`；释放不再 `Dispose` 仍可能被进行中调用使用的令牌源（与 P6.1 验收 R3 同类）；改正注释里错误的摩擦编号（F13/F14 → F19/F23）。
+  - **R11 用例补齐**：测试服务器新增 `SessionCount`、`SubscriptionCount`、`ActivatedSessions`（计划 Task 3 要求"能查询当前的订阅数"）；补上"断开再连上之后掉线仍恢复"（P6.1 验收第一类缺陷）、释放后四个操作返回 `ConnectionClosed`、断开与释放后服务器上不留会话、订阅释放后服务器订阅数归零。
+  - **验证**：OPC UA 测试项目 **313 条通过**（原 302 条 + 新增 11 条）；变异检查见计划第 19.1 节。
 
 ## [Unreleased] — 开发流程：按改动选择测试
 

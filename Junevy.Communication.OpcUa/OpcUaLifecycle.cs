@@ -100,7 +100,8 @@ internal sealed class OpcUaLifecycle : IAsyncDisposable
                 return connected;
             }
 
-            stateMachine.MoveTo(OpcUaSessionState.Connected, null);
+            // 会话挂上之后 SDK 的状态事件就开始生效：它要是已经报了断线（Reconnecting），不能再被这里改回 Connected。
+            stateMachine.TryMoveTo(OpcUaSessionState.Connecting, OpcUaSessionState.Connected, null);
             return CommResult.Success();
         }
         finally
@@ -110,10 +111,10 @@ internal sealed class OpcUaLifecycle : IAsyncDisposable
     }
 
     /// <summary>
-    /// 断开：关闭会话并回到 <see cref="OpcUaSessionState.Disconnected"/>。可以重复调用。
+    /// 断开：先摘下会话、回到 <see cref="OpcUaSessionState.Disconnected"/>，再关闭服务器上的会话。可以重复调用。
     /// </summary>
     /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>断开结果。</returns>
+    /// <returns>断开结果；关闭失败只影响结果，状态照样是 <see cref="OpcUaSessionState.Disconnected"/>。</returns>
     public async Task<CommResult> DisconnectAsync(CancellationToken cancellationToken)
     {
         if (IsDisposed)
@@ -124,14 +125,12 @@ internal sealed class OpcUaLifecycle : IAsyncDisposable
         await gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
-            if (!connection.HasSession)
-            {
-                stateMachine.MoveTo(OpcUaSessionState.Disconnected, null);
-                return CommResult.Success();
-            }
-
+            // 顺序不能换：先摘下会话，它晚到的状态事件才不会把刚改好的 Disconnected 又改回去。
+            OpcUaSdkSession? detached = connection.Detach();
             stateMachine.MoveTo(OpcUaSessionState.Disconnected, null);
-            return await CloseAsync(cancellationToken).ConfigureAwait(false);
+
+            using var closing = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, shuttingDown.Token);
+            return await connection.CloseAsync(detached, closing.Token).ConfigureAwait(false);
         }
         finally
         {
@@ -140,8 +139,9 @@ internal sealed class OpcUaLifecycle : IAsyncDisposable
     }
 
     /// <summary>
-    /// 释放：先取消进行中的连接，再在锁内关闭会话并释放 SDK。**不释放异步锁**——
-    /// 锁可能正被进行中的调用持有（P6.1 验收发现 R3）。可重复调用。
+    /// 释放：先叫停进行中的连接，再在锁内摘下并释放会话。不等服务器对关闭的回应——SDK 释放会话时自己会关掉
+    /// 服务器上的会话（用例核对服务器的会话数），重连期间也不会卡在不可达的服务器上。
+    /// **不释放异步锁与令牌源**：它们可能正被进行中的调用使用（P6.1 验收发现 R3）。可重复调用。
     /// </summary>
     /// <returns>异步释放。</returns>
     public async ValueTask DisposeAsync()
@@ -152,27 +152,20 @@ internal sealed class OpcUaLifecycle : IAsyncDisposable
         }
 
         // 先让排队中的连接失败退出，而不是等它连上再断；
-        // 已经在连的那条也要立刻叫停，否则释放会干等到 ConnectTimeout（F14）。
+        // 已经在连的那条也要立刻叫停，否则释放会干等到 ConnectTimeout（F23）。
         shuttingDown.Cancel();
         connection.AbortConnect();
 
         await gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
+            OpcUaSdkSession? detached = connection.Detach();
             stateMachine.MoveTo(OpcUaSessionState.Disconnected, "The client was disposed.");
-            await CloseAsync(CancellationToken.None).ConfigureAwait(false);
+            await connection.CloseAsync(detached, shuttingDown.Token).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
-
-        shuttingDown.Dispose();
-    }
-
-    private async Task<CommResult> CloseAsync(CancellationToken cancellationToken)
-    {
-        using var scope = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, shuttingDown.Token);
-        return await connection.CloseAsync(scope.Token).ConfigureAwait(false);
     }
 }

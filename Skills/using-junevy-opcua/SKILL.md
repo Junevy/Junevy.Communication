@@ -130,7 +130,9 @@ Every operation returns `CommResult` or `CommResult<T>`. Decide on `ErrorKind`; 
 
 An unexpected drop moves the state to `Reconnecting`; a background loop retries with exponential backoff (`ReconnectInterval` doubling up to `MaxReconnectInterval`), unlimited attempts. Operations during that window return `NotConnected` instead of waiting. On success the state becomes `Connected` again and subscriptions are re-established on the server — the same handler keeps receiving notifications and the server resends the current values.
 
-A **first** `ConnectAsync` that fails never starts the loop. `ConnectAsync` while already connected returns success without reconnecting; while `Connecting` or `Reconnecting` it returns `InvalidRequest` instead of queueing. `DisconnectAsync` and disposal stop the loop.
+A **first** `ConnectAsync` that fails never starts the loop. `ConnectAsync` while already connected returns success without reconnecting; while `Connecting` or `Reconnecting` it returns `InvalidRequest` instead of queueing. `DisconnectAsync` and disposal stop the loop. `DisconnectAsync` only ends that session: connect again and the next drop is recovered as usual.
+
+A `ConnectAsync` whose token fires (or whose `ConnectTimeout` elapses) returns at once; if the SDK still opens a session afterwards, it is closed immediately and never attached. Disposing a subscription while `Reconnecting` returns at once; it is removed after the session recovers and is not re-established.
 
 ## Dependency injection
 
@@ -154,8 +156,8 @@ OpcUaClient client = factory.GetOrAdd("line1", options);
 | `ConnectAsync` | Success if already connected; `InvalidRequest` if a connect or reconnect is in progress; `NotSupported` if the server has no usable endpoint. |
 | `DisconnectAsync` | Repeatable; closes the session and ends the reconnect round. |
 | `ReadAsync` / `WriteAsync` / `BrowseAsync` | Same length and order as the input; per-item statuses are data. |
-| `SubscribeAsync(nodeIds, handler, options?, ct?)` | The handler is a parameter, so the initial value cannot be missed. `ItemStatuses` is per item; one rejected item does not fail the call. |
-| `Dispose` / `DisposeAsync` | Repeatable. Cancels an in-flight connect, stops the reconnect loop, closes the session. Afterwards `ConnectAsync` throws `ObjectDisposedException`; the other operations return `ConnectionClosed`. |
+| `SubscribeAsync(nodeIds, handler, options?, ct?)` | The handler is a parameter, so the initial value cannot be missed; `sender` is the client. `ItemStatuses` is per item; one rejected item does not fail the call. Invalid options throw `ArgumentException` like `Create`. `ct` covers creation only, not the later `DisposeAsync`. |
+| `Dispose` / `DisposeAsync` | Repeatable. Cancels an in-flight connect, stops the reconnect loop, closes the session without waiting for the server's answer. Afterwards `ConnectAsync` throws `ObjectDisposedException`; the other operations return `ConnectionClosed`. |
 
 Full option table, value table, error table and "Verification status" are in
 [Junevy.Communication.OpcUa/README.md](file://Junevy.Communication.OpcUa/README.md).

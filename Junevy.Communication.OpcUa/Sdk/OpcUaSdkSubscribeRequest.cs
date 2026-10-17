@@ -17,53 +17,49 @@ internal static class OpcUaSdkSubscribeRequest
     /// <param name="session">已建立的会话，提供命名空间表并承载 SDK 的订阅。</param>
     /// <param name="telemetry">遥测上下文。</param>
     /// <param name="logger">本包的日志器。</param>
-    /// <param name="endpointUrl">端点地址，只用于日志。</param>
+    /// <param name="options">客户端选项：超时与日志里的端点。</param>
+    /// <param name="owner">客户端本身：数据变更事件的 sender。</param>
     /// <param name="nodeIds">NodeId 文本；空列表或重复项返回 <c>InvalidRequest</c>。</param>
     /// <param name="handler">数据变更处理器，在 SDK 的回调线程上逐条交付。</param>
-    /// <param name="options">订阅选项。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="subscriptionOptions">已校验的订阅选项。</param>
+    /// <param name="cancellationToken">取消令牌；只管这一次创建，不影响之后的 <see cref="OpcUaSubscription.DisposeAsync"/>。</param>
     /// <returns>订阅；逐项创建状态在 <see cref="OpcUaSubscription.ItemStatuses"/>。</returns>
     public static async Task<CommResult<OpcUaSubscription>> CreateAsync(
         OpcUaSdkSession session,
         ITelemetryContext telemetry,
         ILogger logger,
-        string endpointUrl,
+        OpcUaClientOptions options,
+        object owner,
         IReadOnlyList<string> nodeIds,
         EventHandler<OpcUaDataChangedEventArgs> handler,
-        OpcUaSubscriptionOptions options,
+        OpcUaSubscriptionOptions subscriptionOptions,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(nodeIds);
-        ArgumentNullException.ThrowIfNull(handler);
-
         if (nodeIds.Count == 0)
         {
             return OpcUaSdkErrorMap.InvalidRequest("A subscription needs at least one node id.").As<OpcUaSubscription>();
         }
 
-        var seen = new HashSet<string>(nodeIds, StringComparer.Ordinal);
-        if (seen.Count != nodeIds.Count)
+        if (new HashSet<string>(nodeIds, StringComparer.Ordinal).Count != nodeIds.Count)
         {
             return OpcUaSdkErrorMap
                 .InvalidRequest("A subscription cannot watch the same node twice.")
                 .As<OpcUaSubscription>();
         }
 
-        var resolved = new NodeId[nodeIds.Count];
-        for (int i = 0; i < nodeIds.Count; i++)
+        if (!OpcUaSdkOperations.TryResolve(session, nodeIds, out NodeId[] resolved, out CommResult failure))
         {
-            if (!OpcUaSdkNodeId.TryParse(nodeIds[i], session.NamespaceUris, out NodeId nodeId, out string? reason))
-            {
-                return OpcUaSdkErrorMap
-                    .InvalidRequest($"'{nodeIds[i]}' is not a valid node id: {reason}")
-                    .As<OpcUaSubscription>();
-            }
-
-            resolved[i] = nodeId;
+            return failure.As<OpcUaSubscription>();
         }
 
+        string[] texts = nodeIds.ToArray();
         CommResult<OpcUaSdkSubscription> created = await OpcUaSdkSubscription
-            .CreateAsync(session, telemetry, logger, resolved, nodeIds, handler, options, cancellationToken)
+            .CreateAsync(
+                new OpcUaSdkSubscription.Request(session, telemetry, logger, options.OperationTimeout, owner, handler),
+                resolved,
+                texts,
+                subscriptionOptions,
+                cancellationToken)
             .ConfigureAwait(false);
 
         if (!created.IsSuccess)
@@ -72,10 +68,8 @@ internal static class OpcUaSdkSubscribeRequest
         }
 
         OpcUaSdkSubscription subscription = created.Data!;
-        logger.LogDebug("Subscribed {Count} node(s) on {Endpoint}.", nodeIds.Count, endpointUrl);
-        return CommResult<OpcUaSubscription>.Success(new OpcUaSubscription(
-            nodeIds.ToArray(),
-            subscription.ItemStatuses,
-            async () => await subscription.DeleteAsync(cancellationToken).ConfigureAwait(false)));
+        logger.LogDebug("Subscribed {Count} node(s) on {Endpoint}.", texts.Length, options.EndpointUrl);
+        return CommResult<OpcUaSubscription>.Success(
+            new OpcUaSubscription(texts, subscription.ItemStatuses, () => new ValueTask(subscription.DeleteAsync())));
     }
 }

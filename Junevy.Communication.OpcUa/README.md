@@ -128,10 +128,11 @@ await subscription.DisposeAsync();
 - Every call creates one OPC UA subscription with one monitored item per node id, on the `Value` attribute, in reporting mode.
 - The handler is a **parameter**, not an event: it is already attached when `SubscribeAsync` returns, so the initial value cannot be missed.
 - `SubscribeAsync` returns once the server has created the subscription and every monitored item has been created. `ItemStatuses` is in the same order as `NodeIds`; an item the server rejected is `Bad` there and the **call still succeeds** — the other items keep notifying.
-- Notifications are delivered one by one on the SDK's callback thread. **The handler must not block**: the publish response is held back until it returns, so a slow handler delays later notifications. A handler that throws is logged as an error and later notifications continue.
-- `DisposeAsync` deletes the subscription on the server, best effort, and may be called more than once. After a disconnect or after the client is gone it does nothing.
+- Notifications are delivered one by one on the SDK's callback thread, with the client as `sender`. **The handler must not block**: the publish response is held back until it returns, so a slow handler delays later notifications. Each subscriber of a multicast handler is called separately: one that throws is logged as an error, and the other subscribers and later notifications continue.
+- The cancellation token only covers creating the subscription. Creation is bounded by `OperationTimeout`; when it times out or is cancelled, the call fails (`Timeout` / `Cancelled`) and nothing is left behind, neither on the server nor in the session.
+- `DisposeAsync` deletes the subscription on the server, best effort, and may be called more than once. While the session is `Reconnecting` it returns at once and the subscription is removed as soon as the session has recovered. After a disconnect or after the client is gone it does nothing.
 - An empty list, or the same node id twice, returns `InvalidRequest`.
-- After a reconnect the subscription is re-established on the server and the same handler keeps receiving notifications; the server resends the current values.
+- After a reconnect the subscription is re-established on the server and the same handler keeps receiving notifications; the server resends the current values. Disposed subscriptions are not re-established.
 
 ## Reconnect
 
@@ -141,6 +142,10 @@ await subscription.DisposeAsync();
 4. `DisconnectAsync` and disposal stop the loop and do not wait for a backoff to expire.
 
 A **first** `ConnectAsync` that fails never starts the loop. `ConnectAsync` while already connected returns success without reconnecting; while `Connecting` or `Reconnecting` it returns `InvalidRequest` instead of queueing behind the running attempt.
+
+The SDK ignores cancellation while it discovers endpoints, so `ConnectAsync` stops waiting by itself: when the caller's token fires or `ConnectTimeout` elapses it returns at once, and a session the SDK still manages to open afterwards is closed straight away — it is never attached to the client and never left on the server.
+
+`DisconnectAsync` ends the current session only. Connect again later, and the next unexpected drop is recovered as usual.
 
 ## State and events
 
@@ -172,7 +177,7 @@ Invalid options are rejected by `Create` with an `ArgumentException` whose `Para
 
 ## Disposal
 
-`Dispose` and `DisposeAsync` are repeatable. They cancel a connect that is still in progress (that `ConnectAsync` returns `ConnectionClosed`), stop the reconnect loop, close the session and release the SDK. Afterwards `ConnectAsync` throws `ObjectDisposedException`, while read, write, browse, subscribe and disconnect return `ConnectionClosed`.
+`Dispose` and `DisposeAsync` are repeatable. They cancel a connect that is still in progress (that `ConnectAsync` returns `ConnectionClosed`), stop the reconnect loop, close the session and release the SDK. Disposal does not wait for the server to acknowledge the close, so it returns promptly even while `Reconnecting`. Afterwards `ConnectAsync` throws `ObjectDisposedException`, while read, write, browse, subscribe and disconnect return `ConnectionClosed`.
 
 ## Error classification
 
@@ -180,8 +185,8 @@ Failures come back as `CommResult` with an `ErrorKind` and, where the server sup
 
 | Situation | `ErrorKind` | `ProtocolErrorCode` |
 |---|---|---|
-| Caller's cancellation token fires | `Cancelled` | — |
-| Connect timeout, or a service call times out | `Timeout` | — |
+| Caller's cancellation token fires (judged from the token, not from the SDK's exception) | `Cancelled` | — |
+| Connect timeout, or a service call exceeds `OperationTimeout` | `Timeout` | — |
 | BadTimeout, BadRequestTimeout | `Timeout` | status code |
 | BadNotConnected, BadConnectionClosed, BadSecureChannelClosed, BadSessionClosed, BadSessionIdInvalid, BadServerNotConnected, BadCommunicationError | `ConnectionClosed` | status code |
 | BadIdentityTokenInvalid, BadIdentityTokenRejected, BadUserAccessDenied, BadSecurityChecksFailed, BadCertificate* | `AuthenticationFailed` | status code |
@@ -190,7 +195,8 @@ Failures come back as `CommResult` with an `ErrorKind` and, where the server sup
 | BadEncodingError, BadDecodingError, BadEncodingLimitsExceeded | `ProtocolViolation` | status code |
 | Any other Bad status | `RemoteError` | status code |
 | Connection refused, socket error | `ConnectionClosed` | — |
-| Read, write, browse or subscribe while not `Connected` | `NotConnected` | — |
+| Read, write, browse or subscribe while not `Connected`, or racing a `DisconnectAsync` that closes the session as the call starts | `NotConnected` | — |
+| The session is closed by a concurrent disconnect or disposal while the call is on the wire | `ConnectionClosed` | — |
 | The server offers no `None` endpoint, or no anonymous user token policy | `NotSupported` | — |
 | Malformed node id, unknown `nsu=` URI, unsupported .NET type to write, empty or duplicated subscription node ids | `InvalidRequest` | — |
 | Any operation after disposal | `ConnectionClosed` | — |

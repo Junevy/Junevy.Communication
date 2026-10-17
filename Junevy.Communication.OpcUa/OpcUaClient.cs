@@ -17,12 +17,10 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
     private OpcUaClient(OpcUaClientOptions options, ILoggerFactory? loggerFactory)
     {
         this.options = options;
-        logger = CreateLogger(loggerFactory);
+        ILogger logger = CreateLogger(loggerFactory);
         stateMachine = new OpcUaSessionStateMachine(this, logger);
         lifecycle = new OpcUaLifecycle(this, options, loggerFactory, logger, stateMachine);
     }
-
-    private readonly ILogger logger;
 
     /// <summary>
     /// 创建客户端。选项在这里校验并**取快照**，之后调用方再改选项不影响已创建的客户端（P6-C9）。
@@ -85,7 +83,7 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
             return failure.As<IReadOnlyList<OpcUaValue>>();
         }
 
-        return await lifecycle.Connection.ReadAsync(this, nodeIds, cancellationToken).ConfigureAwait(false);
+        return await lifecycle.Connection.ReadAsync(nodeIds, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -105,7 +103,7 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
             return failure.As<IReadOnlyList<OpcUaStatusCode>>();
         }
 
-        return await lifecycle.Connection.WriteAsync(this, values, cancellationToken).ConfigureAwait(false);
+        return await lifecycle.Connection.WriteAsync(values, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -125,17 +123,19 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
             return failure.As<IReadOnlyList<OpcUaReference>>();
         }
 
-        return await lifecycle.Connection.BrowseAsync(this, nodeId, cancellationToken).ConfigureAwait(false);
+        return await lifecycle.Connection.BrowseAsync(nodeId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// 订阅一个或多个节点的值变化（P62-D10）。
     /// </summary>
     /// <param name="nodeIds">NodeId 文本；空列表或重复返回 <see cref="CommErrorKind.InvalidRequest"/>。</param>
-    /// <param name="handler">通知处理器，在 SDK 的回调线程上逐条交付。</param>
+    /// <param name="handler">通知处理器，在 SDK 的回调线程上逐条交付；sender 是本客户端。</param>
     /// <param name="options">订阅选项；为 null 时用默认值。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="cancellationToken">取消令牌；只管这一次创建，不影响之后释放订阅。</param>
     /// <returns>订阅；逐项创建状态在 <see cref="OpcUaSubscription.ItemStatuses"/>。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="nodeIds"/> 或 <paramref name="handler"/> 为 null。</exception>
+    /// <exception cref="ArgumentException">订阅选项不合法（与 <see cref="Create"/> 的选项校验一致）。</exception>
     public async Task<CommResult<OpcUaSubscription>> SubscribeAsync(
         IReadOnlyList<string> nodeIds,
         EventHandler<OpcUaDataChangedEventArgs> handler,
@@ -144,6 +144,8 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(nodeIds);
         ArgumentNullException.ThrowIfNull(handler);
+        options ??= new OpcUaSubscriptionOptions();
+        OpcUaOptionsValidator.Validate(options);
 
         if (!TryBeginOperation(out CommResult failure))
         {
@@ -151,7 +153,7 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
         }
 
         return await lifecycle.Connection
-            .SubscribeAsync(this, nodeIds, handler, options ?? new OpcUaSubscriptionOptions(), cancellationToken)
+            .SubscribeAsync(this, nodeIds, handler, options, cancellationToken)
             .ConfigureAwait(false);
     }
 

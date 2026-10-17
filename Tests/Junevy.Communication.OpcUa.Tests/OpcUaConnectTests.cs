@@ -197,14 +197,43 @@ public sealed class OpcUaConnectTests
     }
 
     [Fact]
+    public async Task Connect_CallerGivesUpWhileTheServerStillAnswers_LeavesNoSessionBehind()
+    {
+        await using OpcUaTestServer server = await OpcUaTestServerFactory.StartOwnAsync(loggerFactory: loggerFactory);
+        await using OpcUaClient client = OpcUaClient.Create(OptionsFor(server.EndpointUrl), loggerFactory);
+
+        // 调用方先放弃：令牌在调用前就已取消，调用立刻返回 Cancelled。
+        // SDK 那条后台连接不理令牌（F23），照样会在服务器上建出一个会话。
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        CommResult result = await client.ConnectAsync(cancelled.Token);
+        Assert.Equal(CommErrorKind.Cancelled, result.ErrorKind);
+
+        // 那个迟到的会话必须当场关掉：不能挂到客户端上，也不能留在服务器上。
+        await WaitUntilAsync(() => server.ActivatedSessions >= 1, 15000);
+        await WaitUntilAsync(() => server.SessionCount == 0, 15000);
+        Assert.Equal(OpcUaSessionState.Disconnected, client.State);
+
+        // 之后正常连接只有一个会话，断开后一个不剩。
+        Assert.True((await client.ConnectAsync()).IsSuccess);
+        Assert.Equal(1, server.SessionCount);
+        Assert.True((await client.DisconnectAsync()).IsSuccess);
+        Assert.Equal(0, server.SessionCount);
+    }
+
+    [Fact]
     public async Task Disconnect_ClosesTheSessionOnTheServer_AndCanBeRepeated()
     {
         await using OpcUaTestServer server = await OpcUaTestServerFactory.StartOwnAsync(loggerFactory: loggerFactory);
         await using OpcUaClient client = OpcUaClient.Create(OptionsFor(server.EndpointUrl), loggerFactory);
 
         Assert.True((await client.ConnectAsync()).IsSuccess);
+        Assert.Equal(1, server.SessionCount);
+
         Assert.True((await client.DisconnectAsync()).IsSuccess);
         Assert.Equal(OpcUaSessionState.Disconnected, client.State);
+        Assert.Equal(0, server.SessionCount);
+
         Assert.True((await client.DisconnectAsync()).IsSuccess);
         Assert.Equal(OpcUaSessionState.Disconnected, client.State);
     }
