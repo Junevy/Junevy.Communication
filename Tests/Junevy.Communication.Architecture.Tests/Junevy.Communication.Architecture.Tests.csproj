@@ -25,6 +25,8 @@
     <!-- P62-D1：OpcUa 的 SDK 把 Microsoft.Extensions.DependencyInjection 带到 10.0.12，这里跟着抬高，
          否则 Tests.props 的 8.0.0 会触发 NU1605 降级错误。只改本项目，不动共享的 Tests.props。 -->
     <PackageReference Update="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+    <!-- P32-D2：服务端同样只面向 .NET 8（ASP.NET Core 8 共享框架），与 SDK 适配包一样只在 net8.0 上参与检查。 -->
+    <ProjectReference Include="..\..\Junevy.Communication.WebApi.Server\Junevy.Communication.WebApi.Server.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
     <Compile Remove="SdkAdapterArchitectureTests.cs" />

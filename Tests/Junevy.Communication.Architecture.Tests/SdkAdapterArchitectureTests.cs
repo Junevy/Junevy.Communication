@@ -12,17 +12,20 @@ namespace Junevy.Communication.Architecture.Tests;
 public sealed class SdkAdapterArchitectureTests
 {
     private const string CoreName = "Junevy.Communication.Core";
+    private const string WebApiName = "Junevy.Communication.WebApi";
     private const string LibraryPrefix = "Junevy.Communication.";
 
-    // 登记表（计划 Task 1）：适配程序集、它的 SDK 程序集名前缀、SDK 唯一允许出现的命名空间。
-    private static readonly (string AssemblyName, string SdkPrefix, string SdkNamespace)[] Adapters =
+    // 登记表（计划 Task 1）：适配程序集、它的 SDK 程序集名前缀、SDK 唯一允许出现的命名空间，以及它允许引用的 Junevy.Communication.* 程序集。
+    // 服务端（P3.2）同时依赖 WebApi 的公共约定（P32-D2），因此它的允许列表比 SDK 适配包多一项。
+    private static readonly (string AssemblyName, string SdkPrefix, string SdkNamespace, string[] AllowedLibraries)[] Adapters =
     {
-        ("Junevy.Communication.Mqtt", "MQTTnet", "Junevy.Communication.Mqtt.Sdk"),
-        ("Junevy.Communication.OpcUa", "Opc.Ua", "Junevy.Communication.OpcUa.Sdk"),
+        ("Junevy.Communication.Mqtt", "MQTTnet", "Junevy.Communication.Mqtt.Sdk", new[] { CoreName }),
+        ("Junevy.Communication.OpcUa", "Opc.Ua", "Junevy.Communication.OpcUa.Sdk", new[] { CoreName }),
+        ("Junevy.Communication.WebApi.Server", "Microsoft.AspNetCore", "Junevy.Communication.WebApi.Server.Hosting", new[] { CoreName, WebApiName }),
     };
 
     [Fact]
-    public void SdkAdapters_ReferenceOnlyCoreAmongTheLibraryAssemblies()
+    public void SdkAdapters_ReferenceOnlyTheirAllowedLibraries()
     {
         var violations = new List<string>();
         foreach (var adapter in Adapters)
@@ -30,7 +33,7 @@ public sealed class SdkAdapterArchitectureTests
             foreach (AssemblyName reference in Assembly.Load(adapter.AssemblyName).GetReferencedAssemblies())
             {
                 string referenced = reference.Name!;
-                if (referenced.StartsWith(LibraryPrefix, StringComparison.Ordinal) && referenced != CoreName)
+                if (referenced.StartsWith(LibraryPrefix, StringComparison.Ordinal) && !adapter.AllowedLibraries.Contains(referenced))
                 {
                     violations.Add($"{adapter.AssemblyName} -> {referenced}");
                 }
@@ -38,7 +41,7 @@ public sealed class SdkAdapterArchitectureTests
         }
 
         Assert.True(violations.Count == 0,
-            $"SDK adapters must reference Core only (assembly -> referenced): {string.Join(", ", violations)}");
+            $"SDK adapters may reference only their allowed libraries (assembly -> referenced): {string.Join(", ", violations)}");
     }
 
     [Fact]

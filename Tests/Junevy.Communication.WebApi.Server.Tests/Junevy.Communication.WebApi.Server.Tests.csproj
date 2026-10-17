@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\build\Junevy.Communication.Tests.props" />
+
+  <!-- P32-D2：服务端只面向 .NET 8，测试项目同样只有 net8.0 一个目标（Import 的默认值是 net8.0;net472）。 -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0</TargetFrameworks>
+  </PropertyGroup>
+
+  <!-- 3.1 客户端参与往返用例（P32-D2、Task 2 与 Task 6），因此同时引用客户端包与共享测试库。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Junevy.Communication.WebApi.Server\Junevy.Communication.WebApi.Server.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.WebApi\Junevy.Communication.WebApi.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -2,6 +2,16 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — WebApi P3.2（WebApi.Server 1.0.0-preview.1：HTTP 服务端）
+
+### 新增（Added）
+
+- 2026-10-17 [WebApi.Server] 新增库 `Junevy.Communication.WebApi.Server` 与测试项目 `Tests/Junevy.Communication.WebApi.Server.Tests`（P3.2 计划，P32-D1 至 D3）。只做 REST / JSON 服务端，不做 SOAP 服务端。
+  - **Task 1（骨架、模型与校验）**：只面向 net8.0；引用 Core、WebApi 与 `Microsoft.AspNetCore.App`；英文 README 打包（Task 8 补全）；`InternalsVisibleTo` 只给本包的测试项目。
+  - 公开模型：`WebApiServerConfig`、`WebApiServerHttpsOptions`、`WebApiServerDeduplicationOptions`、`WebApiServerComponents`、`WebApiServerState`、`WebApiServerStateChangedEventArgs`；拦截器与认证器的接口与上下文（`IWebApiServerInterceptor`、`WebApiServerInterceptor`、`WebApiServerContext`、`WebApiServerRequestingContext`、`WebApiServerRespondingContext`、`IWebApiRequestAuthenticator`、`WebApiAuthenticationResult`）；结果分类 `WebApiServerOutcome`。
+  - 配置在创建服务器时校验并拍快照：监听地址（Kestrel 写法，必须带端口，不允许重复）、HTTPS 证书来源、业务包络的字段路径、去重与日志选项、序列化器的内容类型（必须是 JSON）。凭据与证书口令只保存环境变量名，值在创建时读取，错误消息只含变量名。
+- 2026-10-17 [Architecture] SDK 适配守卫登记 `Junevy.Communication.WebApi.Server`（SDK 前缀 `Microsoft.AspNetCore`，命名空间 `Junevy.Communication.WebApi.Server.Hosting`），分层表与 `ArchitectureTests.SdkPrefixes` 同步加一行；`SdkAdapterArchitectureTests.Adapters` 增加"允许引用的库"列（服务端允许 Core 与 WebApi，其余适配包只允许 Core）。负控：临时暴露 `HttpContext` 与在根命名空间的类型里引用它，两条守卫各报一次错，已撤除。
+
 ## [Unreleased] — P6.2（OpcUa 1.0.0-preview.1：OPC UA 客户端）
 
 ### 新增（Added）

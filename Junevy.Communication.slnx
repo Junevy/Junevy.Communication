@@ -14,6 +14,7 @@
     <Project Path="Tests/Junevy.Communication.Omron.Tests/Junevy.Communication.Omron.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.Secs.Tests/Junevy.Communication.Secs.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.WebApi.Tests/Junevy.Communication.WebApi.Tests.csproj" />
+    <Project Path="Tests/Junevy.Communication.WebApi.Server.Tests/Junevy.Communication.WebApi.Server.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.Mqtt.Tests/Junevy.Communication.Mqtt.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.OpcUa.Tests/Junevy.Communication.OpcUa.Tests.csproj" />
   </Folder>
@@ -30,6 +31,7 @@
   <Project Path="Junevy.Communication.Omron/Junevy.Communication.Omron.csproj" />
   <Project Path="Junevy.Communication.Secs/Junevy.Communication.Secs.csproj" />
   <Project Path="Junevy.Communication.WebApi/Junevy.Communication.WebApi.csproj" />
+  <Project Path="Junevy.Communication.WebApi.Server/Junevy.Communication.WebApi.Server.csproj" />
   <Project Path="Junevy.Communication.Mqtt/Junevy.Communication.Mqtt.csproj" DisplayName="Junevy.Communication.Mqtt" />
   <Project Path="Junevy.Communication.OpcUa/Junevy.Communication.OpcUa.csproj" DisplayName="Junevy.Communication.OpcUa" />
 </Solution>

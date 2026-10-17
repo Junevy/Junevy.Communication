@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\build\Junevy.Communication.Common.props" />
+
+  <!-- P32-D2：服务端只面向 .NET 8（用户 2026-10-17 决定；Kestrel 与 ASP.NET Core 运行时不支持 net472），因此只有 net8.0 目标。
+       其余约束（可空性、文档、常量日志模板等）沿用公共 props。 -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0</TargetFrameworks>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>HTTP server for MES on embedded Kestrel: routes, JSON envelope, business failures, authentication, interceptors and idempotent replay. Server only, .NET 8 only.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- P32-D2：只有 Hosting 命名空间引用 Microsoft.AspNetCore.*（架构测试强制）；其余类型只依赖 Core 与 WebApi 的公共约定。 -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\Junevy.Communication.Core\Junevy.Communication.Core.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.WebApi\Junevy.Communication.WebApi.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Junevy.Communication.WebApi.Server.Tests" />
+  </ItemGroup>
+
+</Project>

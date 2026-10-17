@@ -19,7 +19,7 @@ public sealed class WebApiLayeringTests
     private const string Factory = Root + ".Factory";
     private const string DependencyInjection = Root + ".DependencyInjection";
 
-    // 分层表（计划第 3 节）：命名空间 → 允许依赖的 WebApi 内部命名空间。Server（3.2）的依赖由 3.2 计划确定，届时在此加一行。
+    // 分层表（计划第 3 节）：命名空间 → 允许依赖的 WebApi 内部命名空间。服务端是独立包 Junevy.Communication.WebApi.Server，见 P3.2 计划；客户端包里不会出现 Server 命名空间，分层表不变。
     private static readonly Dictionary<string, string[]> Layers = new Dictionary<string, string[]>
     {
         [Root] = Array.Empty<string>(),
