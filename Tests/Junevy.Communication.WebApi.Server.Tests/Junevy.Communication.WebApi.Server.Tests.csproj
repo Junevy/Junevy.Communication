@@ -14,4 +14,10 @@
     <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
   </ItemGroup>
 
+  <!-- 用 appsettings 形状的 JSON 经真正的绑定路径验证配置（与 MQTT 测试项目一致的版本）。 -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.2" />
+  </ItemGroup>
+
 </Project>

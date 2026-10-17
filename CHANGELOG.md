@@ -10,6 +10,8 @@
   - **Task 1（骨架、模型与校验）**：只面向 net8.0；引用 Core、WebApi 与 `Microsoft.AspNetCore.App`；英文 README 打包（Task 8 补全）；`InternalsVisibleTo` 只给本包的测试项目。
   - 公开模型：`WebApiServerConfig`、`WebApiServerHttpsOptions`、`WebApiServerDeduplicationOptions`、`WebApiServerComponents`、`WebApiServerState`、`WebApiServerStateChangedEventArgs`；拦截器与认证器的接口与上下文（`IWebApiServerInterceptor`、`WebApiServerInterceptor`、`WebApiServerContext`、`WebApiServerRequestingContext`、`WebApiServerRespondingContext`、`IWebApiRequestAuthenticator`、`WebApiAuthenticationResult`）；结果分类 `WebApiServerOutcome`。
   - 配置在创建服务器时校验并拍快照：监听地址（Kestrel 写法，必须带端口，不允许重复）、HTTPS 证书来源、业务包络的字段路径、去重与日志选项、序列化器的内容类型（必须是 JSON）。凭据与证书口令只保存环境变量名，值在创建时读取，错误消息只含变量名。
+- 2026-10-17 [WebApi.Server] **Task 7（工厂与依赖注入）**：新增 `WebApiServerFactory : NamedFactory<IWebApiServer>`（`GetOrAdd(name, config, components?)`，同名返回同一实例，别名与释放与其它工厂一致）与 `AddWebApiServers()`（命名空间 `Junevy.Communication.WebApi.Server.DependencyInjection`，单例，可重复调用，与 `AddWebApiClients()` 互不影响）。容器的 `ILoggerFactory` 透传给服务器；容器释放时释放工厂与它创建的服务器。
+  - 测试覆盖 appsettings 形状的 JSON 经绑定路径得到的配置，并能直接启动服务器。
 - 2026-10-17 [WebApi.Server] **Task 6（服务端外观与生命周期）**：公开 `IWebApiServer` 与 `WebApiServer`（`Name`、`State`、`Urls`，`StateChanged`、`RequestReceived`、`RequestCompleted` 事件，`StartAsync` 返回 `CommResult`，`StopAsync`，`MapGet`、`MapDelete`、`MapPost`、`MapPut`，`Dispose` 与 `DisposeAsync`）。
   - 状态机 `Stopped → Starting → Running → Stopping → Stopped`，状态变化在同一把异步锁之下按顺序触发；订阅者的异常只记录。
   - 启动失败返回 `CommResult` 且不留下应用：已启动、没有路由 → `InvalidRequest`；端口被占用 → `ResourceExhausted`；无权绑定（Windows 排除端口等）→ `AuthenticationFailed`；证书加载失败 → `InvalidRequest`；路由模板非法 → `InvalidRequest`；其余 → `Unspecified`。
