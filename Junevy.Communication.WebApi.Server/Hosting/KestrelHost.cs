@@ -1,5 +1,6 @@
 using Junevy.Communication.WebApi.Server.Auth;
 using Junevy.Communication.WebApi.Server.Config;
+using Junevy.Communication.WebApi.Server.Dedup;
 using Junevy.Communication.WebApi.Server.Formatting;
 using Junevy.Communication.WebApi.Server.Pipeline;
 using Microsoft.AspNetCore.Builder;
@@ -27,15 +28,23 @@ internal sealed class KestrelHost : IAsyncDisposable
 
     private readonly WebApplication app;
     private readonly InFlightCounter inFlight;
+    private readonly DeduplicationCache? dedup;
 
-    private KestrelHost(WebApplication app, InFlightCounter inFlight)
+    private KestrelHost(WebApplication app, InFlightCounter inFlight, DeduplicationCache? dedup)
     {
         this.app = app;
         this.inFlight = inFlight;
+        this.dedup = dedup;
     }
 
     /// <summary>当前在途的请求数。</summary>
     public int InFlightCount => inFlight.Count;
+
+    /// <summary>去重缓存的条目数；去重关闭时为 0。</summary>
+    public int DeduplicationEntryCount => dedup?.EntryCount ?? 0;
+
+    /// <summary>去重缓存中处理中的条目数；去重关闭时为 0。</summary>
+    public int DeduplicationInFlightCount => dedup?.InFlightCount ?? 0;
 
     /// <summary>
     /// 建立应用（尚未启动）。路由必须在此之前全部登记。
@@ -50,12 +59,14 @@ internal sealed class KestrelHost : IAsyncDisposable
     {
         WebApplication app = CreateBuilder(settings, loggerFactory).Build();
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
+        DeduplicationCache? dedup = CreateDeduplication(settings);
         var pipeline = new RequestPipeline(
             settings,
             new ResponseFormatter(settings),
             logger,
             ServerAuthenticator.Create(settings, serverName),
-            settings.Interceptors);
+            settings.Interceptors,
+            dedup);
         var inFlight = new InFlightCounter();
 
         app.Use(new ServerEntryMiddleware(serverName, events, pipeline, inFlight, logger).InvokeAsync);
@@ -64,7 +75,7 @@ internal sealed class KestrelHost : IAsyncDisposable
         foreach (RouteDefinition route in routes)
             RouteEndpointBinder.Map(app, route, pipeline, serverName, settings.MaxRequestBodySize);
 
-        return new KestrelHost(app, inFlight);
+        return new KestrelHost(app, inFlight, dedup);
     }
 
     /// <summary>启动应用并绑定地址。</summary>
@@ -89,6 +100,11 @@ internal sealed class KestrelHost : IAsyncDisposable
 
     /// <inheritdoc />
     public ValueTask DisposeAsync() => app.DisposeAsync();
+
+    private static DeduplicationCache? CreateDeduplication(WebApiServerSettings settings)
+        => settings.Deduplication.Enabled
+            ? new DeduplicationCache(settings.Deduplication.Window, settings.Deduplication.MaxEntries, settings.TimeProvider)
+            : null;
 
     private static WebApplicationBuilder CreateBuilder(WebApiServerSettings settings, ILoggerFactory loggerFactory)
     {

@@ -10,6 +10,11 @@
   - **Task 1（骨架、模型与校验）**：只面向 net8.0；引用 Core、WebApi 与 `Microsoft.AspNetCore.App`；英文 README 打包（Task 8 补全）；`InternalsVisibleTo` 只给本包的测试项目。
   - 公开模型：`WebApiServerConfig`、`WebApiServerHttpsOptions`、`WebApiServerDeduplicationOptions`、`WebApiServerComponents`、`WebApiServerState`、`WebApiServerStateChangedEventArgs`；拦截器与认证器的接口与上下文（`IWebApiServerInterceptor`、`WebApiServerInterceptor`、`WebApiServerContext`、`WebApiServerRequestingContext`、`WebApiServerRespondingContext`、`IWebApiRequestAuthenticator`、`WebApiAuthenticationResult`）；结果分类 `WebApiServerOutcome`。
   - 配置在创建服务器时校验并拍快照：监听地址（Kestrel 写法，必须带端口，不允许重复）、HTTPS 证书来源、业务包络的字段路径、去重与日志选项、序列化器的内容类型（必须是 JSON）。凭据与证书口令只保存环境变量名，值在创建时读取，错误消息只含变量名。
+- 2026-10-17 [WebApi.Server] **Task 5（重复下发去重）**：可选、默认关闭的去重（`WebApiServerDeduplicationOptions`：`HeaderName` 默认 `Idempotency-Key`，`Window` 默认 600000 毫秒，`MaxEntries` 默认 1000）。键为（幂等键、方法、路径），正文用 SHA-256 比较。
+  - 窗口内同键已完成的请求重放第一次的状态码、`Content-Type` 与正文，带 `Idempotent-Replayed: true`，处理器不执行，结果分类为 `Replayed`；同键仍在处理中返回 409；同键正文不同返回 422。
+  - 只缓存处理器给出的响应（成功与业务失败）；框架拒绝、正文错误与异常不缓存，允许重试。
+  - 处理器超时（504）之后仍在运行时，该键保持处理中，直到处理器真正结束才缓存它的最终结果。
+  - 条目超过上限时淘汰最旧的已完成条目；处理中的条目永不淘汰，缓存全是处理中条目时返回 503 与 `Retry-After: 1`。时间源可注入（`WebApiServerComponents.TimeProvider`）。
 - 2026-10-17 [WebApi.Server] **Task 4（认证与拦截器）**：内置认证（`WebApiAuthOptions` 的形状，凭据来自环境变量，构造时读取）：Basic、Bearer、ApiKey，期望值用 `CryptographicOperations.FixedTimeEquals` 比较，方案名不区分大小写；失败返回 401，Basic 与 Bearer 带 `WWW-Authenticate`（Basic 的 realm 为服务器名称），响应体不回显任何凭据。`IWebApiRequestAuthenticator` 设置后取代内置配置，身份名称进入 `WebApiServerContext.UserName`。
   - 拦截器（`IWebApiServerInterceptor`，基类 `WebApiServerInterceptor`）：请求阶段按注册顺序，`Reject` 之后的拦截器与处理器都不执行；响应阶段只通知请求阶段已经完成（或拒绝）的拦截器，并按逆序执行，可追加响应头。拦截器或认证器抛出的异常返回 500 并记 Error。
   - 认证与拦截器都在请求超时之下执行（超时 504）。

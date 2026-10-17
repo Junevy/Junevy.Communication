@@ -3,6 +3,7 @@ using Junevy.Communication.Core.Utils;
 using Junevy.Communication.WebApi.Server.Auth;
 using Junevy.Communication.WebApi.Server.Body;
 using Junevy.Communication.WebApi.Server.Config;
+using Junevy.Communication.WebApi.Server.Dedup;
 using Junevy.Communication.WebApi.Server.Formatting;
 using Microsoft.Extensions.Logging;
 
@@ -20,12 +21,14 @@ internal sealed class RequestPipeline
     private const string UnexpectedErrorMessage = "An unexpected error occurred.";
     private const string AuthenticationMessage = "Authentication failed.";
     private const string WwwAuthenticateHeader = "WWW-Authenticate";
+    private const string ReplayedHeader = "Idempotent-Replayed";
 
     private readonly WebApiServerSettings settings;
     private readonly ResponseFormatter formatter;
     private readonly ILogger logger;
     private readonly ServerAuthenticator? authenticator;
     private readonly IWebApiServerInterceptor[] interceptors;
+    private readonly DeduplicationCache? dedup;
 
     /// <summary>创建管线。</summary>
     /// <param name="settings">已校验的配置。</param>
@@ -33,13 +36,15 @@ internal sealed class RequestPipeline
     /// <param name="logger">日志记录器。</param>
     /// <param name="authenticator">认证；不认证时为 null。</param>
     /// <param name="interceptors">拦截器（已拍快照，按注册顺序）。</param>
-    public RequestPipeline(WebApiServerSettings settings, ResponseFormatter formatter, ILogger logger, ServerAuthenticator? authenticator, IWebApiServerInterceptor[] interceptors)
+    /// <param name="dedup">重复下发的去重缓存；去重关闭时为 null。</param>
+    public RequestPipeline(WebApiServerSettings settings, ResponseFormatter formatter, ILogger logger, ServerAuthenticator? authenticator, IWebApiServerInterceptor[] interceptors, DeduplicationCache? dedup)
     {
         this.settings = settings;
         this.formatter = formatter;
         this.logger = logger;
         this.authenticator = authenticator;
         this.interceptors = interceptors;
+        this.dedup = dedup;
     }
 
     /// <summary>
@@ -179,7 +184,67 @@ internal sealed class RequestPipeline
         if (intercepted != null)
             return Refusal(intercepted.StatusCode, intercepted.Code, intercepted.Message, new Dictionary<string, string>(), null, context.RequestId);
 
-        return await route.InvokeAsync(request, context, cancellationToken).ConfigureAwait(false);
+        ServerResult? replayed = Deduplicate(context, out DedupTicket? ticket);
+        if (replayed != null)
+            return replayed;
+
+        ServerResult result;
+        try
+        {
+            result = await route.InvokeAsync(request, context, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            ticket?.Abandon();
+            throw;
+        }
+
+        // 只缓存处理器给出的响应（成功与业务失败）；框架拒绝与异常不缓存，允许重试（P32-D11）。
+        if (ticket != null)
+        {
+            if (result.Outcome is WebApiServerOutcome.Succeeded or WebApiServerOutcome.BusinessFailure)
+                ticket.Complete(result);
+            else
+                ticket.Abandon();
+        }
+
+        return result;
+    }
+
+    // 返回非 null：请求已经有了结果（重放或拒绝），不再执行处理器。返回 null：继续执行，ticket 为本次的登记（没有幂等键或去重关闭时为 null）。
+    private ServerResult? Deduplicate(WebApiServerContext context, out DedupTicket? ticket)
+    {
+        ticket = null;
+        if (dedup == null || !context.Headers.TryGetValue(settings.Deduplication.HeaderName, out string? key) || key.Length == 0)
+            return null;
+
+        DedupDecision decision = dedup.Begin(key, context.Method, context.Path, context.Body);
+        switch (decision.State)
+        {
+            case DedupState.Proceed:
+                ticket = decision.Ticket;
+                return null;
+            case DedupState.Replay:
+                return Replayed(decision.Replayed!);
+            case DedupState.InProgress:
+                return Refusal(409, "409", "A request with the same idempotency key is still being processed.", new Dictionary<string, string>(), null, context.RequestId);
+            case DedupState.BodyMismatch:
+                return Refusal(422, "422", "The idempotency key was already used with a different request body.", new Dictionary<string, string>(), null, context.RequestId);
+            default:
+                var retryAfter = new Dictionary<string, string> { ["Retry-After"] = "1" };
+                return Refusal(503, "503", "Too many idempotent requests are in progress; retry later.", retryAfter, null, context.RequestId);
+        }
+    }
+
+    // 重放第一次的状态码、内容类型与正文，并标记为重放；处理器没有执行。
+    private static ServerResult Replayed(ServerResult cached)
+    {
+        var headers = new Dictionary<string, string>(cached.Response!.Headers, StringComparer.OrdinalIgnoreCase)
+        {
+            [ReplayedHeader] = "true",
+        };
+        var response = new ServerResponse(cached.StatusCode, cached.Response.ContentType, cached.Response.Body, headers);
+        return new ServerResult(cached.StatusCode, response, WebApiServerOutcome.Replayed, cached.Code, cached.Message);
     }
 
     private async Task<ServerResult?> AuthenticateAsync(WebApiServerContext context, CancellationToken cancellationToken)
