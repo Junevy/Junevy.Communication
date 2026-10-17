@@ -21,7 +21,6 @@ internal sealed class RequestPipeline
     private const string UnexpectedErrorMessage = "An unexpected error occurred.";
     private const string AuthenticationMessage = "Authentication failed.";
     private const string WwwAuthenticateHeader = "WWW-Authenticate";
-    private const string ReplayedHeader = "Idempotent-Replayed";
 
     private readonly WebApiServerSettings settings;
     private readonly ResponseFormatter formatter;
@@ -131,7 +130,7 @@ internal sealed class RequestPipeline
         }
         catch (OperationCanceledException) when (timeout.IsTimedOut)
         {
-            ObserveAbandonedInvocation(invocation, context.RequestId, "the timeout");
+            AbandonedWork.Observe(invocation, context.RequestId, "the timeout", logger);
             string code = 504.ToString(CultureInfo.InvariantCulture);
             ServerResponse response = formatter.Reject(504, code, TimeoutMessage, new Dictionary<string, string>());
             logger.LogWarning("Request {RequestId} timed out.", context.RequestId);
@@ -139,7 +138,7 @@ internal sealed class RequestPipeline
         }
         catch (OperationCanceledException) when (clientToken.IsCancellationRequested)
         {
-            ObserveAbandonedInvocation(invocation, context.RequestId, "the client disconnected");
+            AbandonedWork.Observe(invocation, context.RequestId, "the client disconnected", logger);
             return Disconnected(null, context.RequestId);
         }
         catch (Exception ex)
@@ -226,7 +225,7 @@ internal sealed class RequestPipeline
                 ticket = decision.Ticket;
                 return null;
             case DedupState.Replay:
-                return Replayed(decision.Replayed!);
+                return DedupReplay.Create(decision.Replayed!);
             case DedupState.InProgress:
                 return Refusal(409, "409", "A request with the same idempotency key is still being processed.", new Dictionary<string, string>(), null, context.RequestId);
             case DedupState.BodyMismatch:
@@ -237,16 +236,6 @@ internal sealed class RequestPipeline
         }
     }
 
-    // 重放第一次的状态码、内容类型与正文，并标记为重放；处理器没有执行。
-    private static ServerResult Replayed(ServerResult cached)
-    {
-        var headers = new Dictionary<string, string>(cached.Response!.Headers, StringComparer.OrdinalIgnoreCase)
-        {
-            [ReplayedHeader] = "true",
-        };
-        var response = new ServerResponse(cached.StatusCode, cached.Response.ContentType, cached.Response.Body, headers);
-        return new ServerResult(cached.StatusCode, response, WebApiServerOutcome.Replayed, cached.Code, cached.Message);
-    }
 
     private async Task<ServerResult?> AuthenticateAsync(WebApiServerContext context, CancellationToken cancellationToken)
     {
@@ -302,14 +291,4 @@ internal sealed class RequestPipeline
         return new ServerResult(0, null, WebApiServerOutcome.ClientDisconnected, null, null, exception);
     }
 
-    // 响应已经不再等待处理器（超时或对端断开）：处理器之后的结果丢弃，任务的异常在这里被观察，避免成为未观察的任务异常。
-    private void ObserveAbandonedInvocation(Task<ServerResult> invocation, long requestId, string reason)
-    {
-        if (!invocation.IsCompleted)
-            logger.LogWarning("The handler for request {RequestId} is still running after {Reason}; its result will be discarded.", requestId, reason);
-
-        _ = invocation.ContinueWith(
-            task => logger.LogDebug(task.Exception, "The handler for request {RequestId} finished after it was abandoned; its result was discarded.", requestId),
-            TaskContinuationOptions.ExecuteSynchronously);
-    }
 }
