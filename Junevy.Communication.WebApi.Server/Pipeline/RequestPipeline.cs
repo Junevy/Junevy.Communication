@@ -1,5 +1,6 @@
 using System.Globalization;
 using Junevy.Communication.Core.Utils;
+using Junevy.Communication.WebApi.Server.Auth;
 using Junevy.Communication.WebApi.Server.Body;
 using Junevy.Communication.WebApi.Server.Config;
 using Junevy.Communication.WebApi.Server.Formatting;
@@ -8,28 +9,37 @@ using Microsoft.Extensions.Logging;
 namespace Junevy.Communication.WebApi.Server.Pipeline;
 
 /// <summary>
-/// 请求管线（内部，P32-D8）：路由已经匹配之后的阶段，依次是读取正文（408 / 413）、解码（400 / 415）、处理器（带超时，504）。
-/// 超时由本类自己计时（<see cref="TimeoutScope"/>）：处理器不理会取消令牌而继续运行时，504 已经写出，之后的结果丢弃并记 Warning。
+/// 请求管线（内部，P32-D8、D9、D10）。阶段依次是：读取正文（408 / 413）→ 解码（400 / 415）→ 认证（401）→ 请求拦截器 → 处理器 → 响应拦截器 → 写出结果的内容。
+/// 读取正文之后的阶段都在同一个超时之下（超时 504，读取正文超时 408）；处理器或拦截器不理会取消令牌而继续运行时，响应照发，结果丢弃并记 Warning。
+/// 响应拦截器只对读取了正文的请求执行：正文阶段的拒绝（408、413、正文为空等）没有构成完整的请求上下文。
 /// 不接触 HttpContext；写出响应与触发事件由 Hosting 层负责。
 /// </summary>
 internal sealed class RequestPipeline
 {
     private const string TimeoutMessage = "The request timed out.";
     private const string UnexpectedErrorMessage = "An unexpected error occurred.";
+    private const string AuthenticationMessage = "Authentication failed.";
+    private const string WwwAuthenticateHeader = "WWW-Authenticate";
 
     private readonly WebApiServerSettings settings;
     private readonly ResponseFormatter formatter;
     private readonly ILogger logger;
+    private readonly ServerAuthenticator? authenticator;
+    private readonly IWebApiServerInterceptor[] interceptors;
 
     /// <summary>创建管线。</summary>
     /// <param name="settings">已校验的配置。</param>
     /// <param name="formatter">响应格式化器。</param>
     /// <param name="logger">日志记录器。</param>
-    public RequestPipeline(WebApiServerSettings settings, ResponseFormatter formatter, ILogger logger)
+    /// <param name="authenticator">认证；不认证时为 null。</param>
+    /// <param name="interceptors">拦截器（已拍快照，按注册顺序）。</param>
+    public RequestPipeline(WebApiServerSettings settings, ResponseFormatter formatter, ILogger logger, ServerAuthenticator? authenticator, IWebApiServerInterceptor[] interceptors)
     {
         this.settings = settings;
         this.formatter = formatter;
         this.logger = logger;
+        this.authenticator = authenticator;
+        this.interceptors = interceptors;
     }
 
     /// <summary>
@@ -52,15 +62,15 @@ internal sealed class RequestPipeline
         }
         catch (RequestBodyTooLargeException ex)
         {
-            return Refuse(413, "The request body exceeds the configured maximum size.", ex, requestId);
+            return Refusal(413, "The request body exceeds the configured maximum size.", ex, requestId);
         }
         catch (RequestBodyMalformedException ex)
         {
-            return Refuse(400, "The request body could not be read.", ex, requestId);
+            return Refusal(400, "The request body could not be read.", ex, requestId);
         }
         catch (OperationCanceledException) when (timeout.IsTimedOut)
         {
-            return Refuse(408, "The request body was not received in time.", null, requestId);
+            return Refusal(408, "The request body was not received in time.", null, requestId);
         }
         catch (OperationCanceledException)
         {
@@ -73,27 +83,17 @@ internal sealed class RequestPipeline
         catch (Exception ex)
         {
             // 边界：Kestrel 对畸形的正文抛出的其他异常，翻译为 400，详情只进日志。
-            return Refuse(400, "The request body could not be read.", ex, requestId);
-        }
-
-        object? request = null;
-        if (route.RequestType != null)
-        {
-            BodyReadResult decoded = RequestBodyReader.Read(body, raw.ContentType, route.RequestType, settings.Serializer);
-            if (!decoded.IsSuccess)
-                return Refuse(decoded.StatusCode, decoded.Message!, decoded.Exception, requestId);
-
-            request = decoded.Value;
+            return Refusal(400, "The request body could not be read.", ex, requestId);
         }
 
         var context = new WebApiServerContext(
             serverName, requestId, raw.Method, raw.Path, raw.RouteTemplate, raw.RouteValues,
             raw.Query, raw.Headers, raw.ContentType, body, raw.RemoteEndPoint);
-        return await InvokeHandlerAsync(route, request, context, timeout, clientToken).ConfigureAwait(false);
+        return await RunWithinTimeoutAsync(route, raw.ContentType, body, context, timeout, clientToken).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// 生成框架或拦截器的拒绝结果（404、405、503、413 等），与管线内部的拒绝走同一个格式化出口。
+    /// 生成框架或拦截器的拒绝结果（404、405、503 等），与管线内部的拒绝走同一个格式化出口。
     /// </summary>
     /// <param name="statusCode">HTTP 状态码。</param>
     /// <param name="message">英文消息。</param>
@@ -101,52 +101,7 @@ internal sealed class RequestPipeline
     /// <param name="requestId">请求编号（只用于日志）。</param>
     /// <returns>拒绝结果。</returns>
     public ServerResult Reject(int statusCode, string message, IDictionary<string, string> headers, long requestId)
-    {
-        string code = statusCode.ToString(CultureInfo.InvariantCulture);
-        ServerResponse response = formatter.Reject(statusCode, code, message, headers);
-        logger.LogWarning("Request {RequestId} was rejected with status {StatusCode}: {Reason}.", requestId, statusCode, message);
-        return new ServerResult(statusCode, response, WebApiServerOutcome.Rejected, code, message);
-    }
-
-    private ServerResult Refuse(int statusCode, string message, Exception? exception, long requestId)
-    {
-        string code = statusCode.ToString(CultureInfo.InvariantCulture);
-        ServerResponse response = formatter.Reject(statusCode, code, message, new Dictionary<string, string>());
-        if (exception != null)
-            logger.LogDebug(exception, "Request {RequestId} was rejected with status {StatusCode}.", requestId, statusCode);
-        logger.LogWarning("Request {RequestId} was rejected with status {StatusCode}: {Reason}.", requestId, statusCode, message);
-        return new ServerResult(statusCode, response, WebApiServerOutcome.Rejected, code, message, exception);
-    }
-
-    private ServerResult Disconnected(Exception? exception, long requestId)
-    {
-        logger.LogDebug(exception, "Request {RequestId}: the client disconnected before the response was produced.", requestId);
-        return new ServerResult(0, null, WebApiServerOutcome.ClientDisconnected, null, null, exception);
-    }
-
-    private async Task<ServerResult> InvokeHandlerAsync(IRoute route, object? request, WebApiServerContext context, TimeoutScope timeout, CancellationToken clientToken)
-    {
-        Task<ServerResult> invocation = route.InvokeAsync(request, context, timeout.Token);
-        try
-        {
-            return await invocation.WaitAsync(timeout.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (timeout.IsTimedOut)
-        {
-            ObserveAbandonedInvocation(invocation, context.RequestId);
-            string code = 504.ToString(CultureInfo.InvariantCulture);
-            ServerResponse response = formatter.Reject(504, code, TimeoutMessage, new Dictionary<string, string>());
-            return new ServerResult(504, response, WebApiServerOutcome.TimedOut, code, TimeoutMessage);
-        }
-        catch (OperationCanceledException) when (clientToken.IsCancellationRequested)
-        {
-            return Disconnected(null, context.RequestId);
-        }
-        catch (Exception ex)
-        {
-            return InternalFailure(ex, context.RequestId);
-        }
-    }
+        => Refusal(statusCode, statusCode.ToString(CultureInfo.InvariantCulture), message, headers, null, requestId);
 
     /// <summary>
     /// 处理器、拦截器或框架的未预期异常：返回 500，只写通用消息；异常详情只进日志（P32-D8）。
@@ -160,6 +115,125 @@ internal sealed class RequestPipeline
         string code = 500.ToString(CultureInfo.InvariantCulture);
         ServerResponse response = formatter.Reject(500, code, UnexpectedErrorMessage, new Dictionary<string, string>());
         return new ServerResult(500, response, WebApiServerOutcome.HandlerFailed, code, UnexpectedErrorMessage, exception);
+    }
+
+    private async Task<ServerResult> RunWithinTimeoutAsync(IRoute route, string? contentType, byte[] body, WebApiServerContext context, TimeoutScope timeout, CancellationToken clientToken)
+    {
+        Task<ServerResult> invocation = RunStagesAsync(route, contentType, body, context, timeout.Token);
+        try
+        {
+            return await invocation.WaitAsync(timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (timeout.IsTimedOut)
+        {
+            ObserveAbandonedInvocation(invocation, context.RequestId);
+            string code = 504.ToString(CultureInfo.InvariantCulture);
+            ServerResponse response = formatter.Reject(504, code, TimeoutMessage, new Dictionary<string, string>());
+            logger.LogWarning("Request {RequestId} timed out.", context.RequestId);
+            return new ServerResult(504, response, WebApiServerOutcome.TimedOut, code, TimeoutMessage);
+        }
+        catch (OperationCanceledException) when (clientToken.IsCancellationRequested)
+        {
+            return Disconnected(null, context.RequestId);
+        }
+        catch (Exception ex)
+        {
+            return InternalFailure(ex, context.RequestId);
+        }
+    }
+
+    // 阶段的异常转换为 500；取消（超时或对端断开）原样向上传播，由调用方区分处理。
+    private async Task<ServerResult> RunStagesAsync(IRoute route, string? contentType, byte[] body, WebApiServerContext context, CancellationToken cancellationToken)
+    {
+        var run = new InterceptorRun(interceptors, context);
+        ServerResult result;
+        try
+        {
+            result = await ProcessAsync(run, route, contentType, body, context, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            result = InternalFailure(ex, context.RequestId);
+        }
+
+        return await ApplyResponseStageAsync(run, context, result, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ServerResult> ProcessAsync(InterceptorRun run, IRoute route, string? contentType, byte[] body, WebApiServerContext context, CancellationToken cancellationToken)
+    {
+        object? request = null;
+        if (route.RequestType != null)
+        {
+            BodyReadResult decoded = RequestBodyReader.Read(body, contentType, route.RequestType, settings.Serializer);
+            if (!decoded.IsSuccess)
+                return Refusal(decoded.StatusCode, decoded.Message!, decoded.Exception, context.RequestId);
+
+            request = decoded.Value;
+        }
+
+        ServerResult? refused = await AuthenticateAsync(context, cancellationToken).ConfigureAwait(false);
+        if (refused != null)
+            return refused;
+
+        InterceptorRefusal? intercepted = await run.RunRequestStageAsync(cancellationToken).ConfigureAwait(false);
+        if (intercepted != null)
+            return Refusal(intercepted.StatusCode, intercepted.Code, intercepted.Message, new Dictionary<string, string>(), null, context.RequestId);
+
+        return await route.InvokeAsync(request, context, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ServerResult?> AuthenticateAsync(WebApiServerContext context, CancellationToken cancellationToken)
+    {
+        if (authenticator == null)
+            return null;
+
+        WebApiAuthenticationResult result = await authenticator.Authenticator.AuthenticateAsync(context, cancellationToken).ConfigureAwait(false);
+        if (result.IsAuthenticated)
+        {
+            context.UserName = result.UserName;
+            return null;
+        }
+
+        logger.LogDebug("Request {RequestId} failed authentication: {Reason}.", context.RequestId, result.FailureMessage);
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (authenticator.Challenge != null)
+            headers[WwwAuthenticateHeader] = authenticator.Challenge;
+
+        return Refusal(401, "401", AuthenticationMessage, headers, null, context.RequestId);
+    }
+
+    private async Task<ServerResult> ApplyResponseStageAsync(InterceptorRun run, WebApiServerContext context, ServerResult result, CancellationToken cancellationToken)
+    {
+        if (result.Response == null)
+            return result;
+
+        try
+        {
+            await run.RunResponseStageAsync(result.StatusCode, result.Outcome, result.Response.Headers, cancellationToken).ConfigureAwait(false);
+            return result;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return InternalFailure(ex, context.RequestId);
+        }
+    }
+
+    private ServerResult Refusal(int statusCode, string message, Exception? exception, long requestId)
+        => Refusal(statusCode, statusCode.ToString(CultureInfo.InvariantCulture), message, new Dictionary<string, string>(), exception, requestId);
+
+    private ServerResult Refusal(int statusCode, string code, string message, IDictionary<string, string> headers, Exception? exception, long requestId)
+    {
+        ServerResponse response = formatter.Reject(statusCode, code, message, headers);
+        if (exception != null)
+            logger.LogDebug(exception, "Request {RequestId} was rejected with status {StatusCode}.", requestId, statusCode);
+        logger.LogWarning("Request {RequestId} was rejected with status {StatusCode}: {Reason}.", requestId, statusCode, message);
+        return new ServerResult(statusCode, response, WebApiServerOutcome.Rejected, code, message, exception);
+    }
+
+    private ServerResult Disconnected(Exception? exception, long requestId)
+    {
+        logger.LogDebug(exception, "Request {RequestId}: the client disconnected before the response was produced.", requestId);
+        return new ServerResult(0, null, WebApiServerOutcome.ClientDisconnected, null, null, exception);
     }
 
     // 超时之后处理器仍在运行：响应已经发出，它的结果丢弃；任务的异常在这里被观察，避免成为未观察的任务异常。

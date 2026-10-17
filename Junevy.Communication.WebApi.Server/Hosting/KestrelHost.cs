@@ -1,3 +1,4 @@
+using Junevy.Communication.WebApi.Server.Auth;
 using Junevy.Communication.WebApi.Server.Config;
 using Junevy.Communication.WebApi.Server.Formatting;
 using Junevy.Communication.WebApi.Server.Pipeline;
@@ -49,7 +50,12 @@ internal sealed class KestrelHost : IAsyncDisposable
     {
         WebApplication app = CreateBuilder(settings, loggerFactory).Build();
         ILogger logger = loggerFactory.CreateLogger(LogCategory);
-        var pipeline = new RequestPipeline(settings, new ResponseFormatter(settings), logger);
+        var pipeline = new RequestPipeline(
+            settings,
+            new ResponseFormatter(settings),
+            logger,
+            ServerAuthenticator.Create(settings, serverName),
+            settings.Interceptors);
         var inFlight = new InFlightCounter();
 
         app.Use(new ServerEntryMiddleware(serverName, events, pipeline, inFlight, logger).InvokeAsync);

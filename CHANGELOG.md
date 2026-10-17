@@ -10,6 +10,10 @@
   - **Task 1（骨架、模型与校验）**：只面向 net8.0；引用 Core、WebApi 与 `Microsoft.AspNetCore.App`；英文 README 打包（Task 8 补全）；`InternalsVisibleTo` 只给本包的测试项目。
   - 公开模型：`WebApiServerConfig`、`WebApiServerHttpsOptions`、`WebApiServerDeduplicationOptions`、`WebApiServerComponents`、`WebApiServerState`、`WebApiServerStateChangedEventArgs`；拦截器与认证器的接口与上下文（`IWebApiServerInterceptor`、`WebApiServerInterceptor`、`WebApiServerContext`、`WebApiServerRequestingContext`、`WebApiServerRespondingContext`、`IWebApiRequestAuthenticator`、`WebApiAuthenticationResult`）；结果分类 `WebApiServerOutcome`。
   - 配置在创建服务器时校验并拍快照：监听地址（Kestrel 写法，必须带端口，不允许重复）、HTTPS 证书来源、业务包络的字段路径、去重与日志选项、序列化器的内容类型（必须是 JSON）。凭据与证书口令只保存环境变量名，值在创建时读取，错误消息只含变量名。
+- 2026-10-17 [WebApi.Server] **Task 4（认证与拦截器）**：内置认证（`WebApiAuthOptions` 的形状，凭据来自环境变量，构造时读取）：Basic、Bearer、ApiKey，期望值用 `CryptographicOperations.FixedTimeEquals` 比较，方案名不区分大小写；失败返回 401，Basic 与 Bearer 带 `WWW-Authenticate`（Basic 的 realm 为服务器名称），响应体不回显任何凭据。`IWebApiRequestAuthenticator` 设置后取代内置配置，身份名称进入 `WebApiServerContext.UserName`。
+  - 拦截器（`IWebApiServerInterceptor`，基类 `WebApiServerInterceptor`）：请求阶段按注册顺序，`Reject` 之后的拦截器与处理器都不执行；响应阶段只通知请求阶段已经完成（或拒绝）的拦截器，并按逆序执行，可追加响应头。拦截器或认证器抛出的异常返回 500 并记 Error。
+  - 认证与拦截器都在请求超时之下执行（超时 504）。
+  - 判定函数（内部）：监听所有网卡（`*`、`+`、`0.0.0.0`、`[::]`）却没有认证时需要警告，启动时的警告在 Task 6 接入。
 - 2026-10-17 [WebApi.Server] **Task 3（路由与请求管线）**：嵌入式 Kestrel 宿主（`KestrelHost`，每次启动建一个只含 Kestrel 与路由的应用，不读 `appsettings.json`、环境变量与命令行，不加默认日志提供程序；Warning 及以上的框架日志转给调用方的 `ILoggerFactory`）。中间件顺序：入口与出口 → 并发限流（`RateLimiter` 的并发限流器，队列长度 0，超限立即 503 与 `Retry-After: 1`）→ 路由（ASP.NET Core 路由模板，字面段优先）→ 管线。
   - 管线（`RequestPipeline`）：读取正文（超时 408，超过 `MaxRequestBodySize` 413，断开不返回响应）→ 解码（400 / 415）→ 处理器（带超时，超时 504，处理器不理会令牌而继续运行时响应照发，结果丢弃并记 Warning，`RequestCompleted` 不重复触发）→ 写出；处理器抛出的异常返回 500，响应只含通用消息，异常只进日志。
   - 框架的 404 与 405 走同一个写出出口（405 带 `Allow`）。
