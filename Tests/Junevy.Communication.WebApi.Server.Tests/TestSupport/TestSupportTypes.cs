@@ -19,7 +19,8 @@ internal static class SettingsFactory
     /// </summary>
     public static WebApiServerSettings Create(Action<WebApiServerConfig>? configure = null, WebApiServerComponents? components = null)
     {
-        var config = new WebApiServerConfig();
+        // 测试只监听回环地址的临时端口：不需要管理员权限，也不弹出防火墙提示（P32 Task 1 第 9 条）。
+        var config = new WebApiServerConfig { Urls = new[] { "http://127.0.0.1:0" } };
         configure?.Invoke(config);
         return WebApiServerConfigRules.Create(config, components ?? new WebApiServerComponents());
     }

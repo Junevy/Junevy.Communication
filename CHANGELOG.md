@@ -10,6 +10,12 @@
   - **Task 1（骨架、模型与校验）**：只面向 net8.0；引用 Core、WebApi 与 `Microsoft.AspNetCore.App`；英文 README 打包（Task 8 补全）；`InternalsVisibleTo` 只给本包的测试项目。
   - 公开模型：`WebApiServerConfig`、`WebApiServerHttpsOptions`、`WebApiServerDeduplicationOptions`、`WebApiServerComponents`、`WebApiServerState`、`WebApiServerStateChangedEventArgs`；拦截器与认证器的接口与上下文（`IWebApiServerInterceptor`、`WebApiServerInterceptor`、`WebApiServerContext`、`WebApiServerRequestingContext`、`WebApiServerRespondingContext`、`IWebApiRequestAuthenticator`、`WebApiAuthenticationResult`）；结果分类 `WebApiServerOutcome`。
   - 配置在创建服务器时校验并拍快照：监听地址（Kestrel 写法，必须带端口，不允许重复）、HTTPS 证书来源、业务包络的字段路径、去重与日志选项、序列化器的内容类型（必须是 JSON）。凭据与证书口令只保存环境变量名，值在创建时读取，错误消息只含变量名。
+- 2026-10-17 [WebApi.Server] **Task 3（路由与请求管线）**：嵌入式 Kestrel 宿主（`KestrelHost`，每次启动建一个只含 Kestrel 与路由的应用，不读 `appsettings.json`、环境变量与命令行，不加默认日志提供程序；Warning 及以上的框架日志转给调用方的 `ILoggerFactory`）。中间件顺序：入口与出口 → 并发限流（`RateLimiter` 的并发限流器，队列长度 0，超限立即 503 与 `Retry-After: 1`）→ 路由（ASP.NET Core 路由模板，字面段优先）→ 管线。
+  - 管线（`RequestPipeline`）：读取正文（超时 408，超过 `MaxRequestBodySize` 413，断开不返回响应）→ 解码（400 / 415）→ 处理器（带超时，超时 504，处理器不理会令牌而继续运行时响应照发，结果丢弃并记 Warning，`RequestCompleted` 不重复触发）→ 写出；处理器抛出的异常返回 500，响应只含通用消息，异常只进日志。
+  - 框架的 404 与 405 走同一个写出出口（405 带 `Allow`）。
+  - 事件：`RequestReceived`（路由之前）与 `RequestCompleted`（每个请求恰好一次，含拒绝、超时、断开）；订阅者逐个调用，单个订阅者的异常只记 Error。
+  - 公开类型：`WebApiServerContext`、`WebApiServerOutcome`、`WebApiServerRequestEventArgs`、`WebApiServerCompletedEventArgs`。
+  - 在途请求数（内部，供测试断言）回到零。
 - 2026-10-17 [WebApi.Server] **Task 2（响应格式与请求正文）**：新增 `WebApiServerResponse<T>`（`Ok` 只接受 2xx，`Fail` 的业务码不能为空、状态码 200 至 599）。内部 `ResponseFormatter` 是唯一的响应出口：启用包络时成功写 `{ code, msg, data }`、业务失败写 `{ code, msg }`，框架拒绝用同一结构（`code` 为状态码文本）；未启用包络时成功写数据本身（`data` 为 null 时 204），失败与拒绝写 RFC 9457 Problem Details（`application/problem+json`，业务码在扩展字段 `code`）。
   - 请求正文（`RequestBodyReader`）：空正文 400，有正文但非 JSON 媒体类型 415，`byte[]` 给原始字节，`string` 按 charset 解码（缺省 UTF-8，未知字符集 415），其余类型由序列化器反序列化（失败 400，详情只进日志）。
   - 包络配置新增一条校验：`CodePath`、`MessagePath`、`DataPath` 不能互为前缀（写出时同一层的字段会争用同一个属性）。
