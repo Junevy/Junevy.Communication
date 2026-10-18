@@ -35,11 +35,15 @@ internal static class TestModbus
 
     /// <summary>把 PDU 封装成与请求同一帧格式的应答。MBAP 的事务号取自请求。</summary>
     public static byte[] Frame(byte[] request, ModbusFraming framing, byte unit, byte[] pdu)
+        => Frame((ushort)((request[0] << 8) | request[1]), framing, unit, pdu);
+
+    /// <summary>按给定的事务号封装 PDU（RTU 没有事务号，忽略它）。</summary>
+    public static byte[] Frame(ushort transactionId, ModbusFraming framing, byte unit, byte[] pdu)
     {
         using var buffer = new ByteBufferWriter();
         if (framing == ModbusFraming.Mbap)
         {
-            MbapHeader.Write(buffer, (ushort)((request[0] << 8) | request[1]), unit, pdu.Length);
+            MbapHeader.Write(buffer, transactionId, unit, pdu.Length);
             ModbusBuffer.Write(buffer, pdu);
         }
         else

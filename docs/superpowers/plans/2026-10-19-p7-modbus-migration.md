@@ -558,6 +558,7 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 | F-S2 | 计划 | 套件只有读写入口，0x16 / 0x17 无法复用操作锁与重试 | 已列为 S2（P7-D2） | `SendProtocolRequestAsync<T>` |
 | F-A1 | Task 4 | `PlcAddressParser` 只能解析“符号 + 编号 + 位号”，无法表达站号前缀 `s=n;`，也无法表达 Modicon 的一基写法（首位表示存储区，编号按位数换算） | 自写 `ModbusAddressParser`（internal），空白与大小写约定与套件一致；不改套件 | 地址解析的前缀段与编号换算钩子（与 S7 的 F1 同类），供以后的协议声明式地表达 |
 | F-A2 | Task 8 | `PlcClientBase` 的测试替身（`ScriptedClientChannel`）在 Plc.Tests 内部，共享测试库只有 `ScriptedByteChannel`（`IByteChannel`），无法给 `IClientChannel` 的客户端使用，因此 Modbus.Tests 复制了一份（`ScriptedModbusChannel`） | 复制一个同形的替身（约 200 行）；计划第 1 节第 6 条要求改共享测试库时先记摩擦，由审阅者决定 | 在 `Junevy.Communication.Testing` 提供 `IClientChannel` 的脚本替身，供所有协议测试共用（审阅者决定） |
+| F-A3 | Task 10 | 共享测试库的 `DeviceSimulator` 的回复是同步的（回调返回即写出），无法在 TCP 上只延迟一个回复而不阻塞后续请求；`DeviceSimulatorTcpHost` 没有回复延迟 | 在替身外层包一个 `DelayingStream`：延迟的写入在后台完成，分帧循环立即继续（`TestSupport/DelayingStream.cs`，`ModbusTcpSlave.cs`） | 在共享测试库提供异步的回复延迟（审阅者决定） |
 
 ### 25.3 执行汇报与偏差（执行者填写：每个 Task 的汇报、里程碑小结、偏差与是否需要审阅者决定）
 
@@ -743,6 +744,21 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - 需要审阅者知悉的两个决定（不影响门槛判断）：
   - 第 6 节 "超过 256 字节抛 FrameDecodeException" 的字面实现（噪声可能让通道把连接当作出错），以及对应的 P7-D8 "不抛异常" 的张力。
   - 分帧器在候选帧的字节数未到达时等待（P7-D17 ②）。
+
+#### Task 10（设备替身与端到端，2026-10-19）
+
+- 新增（仅测试）：`TestSupport/ModbusSlave.cs`（+ `ModbusSlave.Writes.cs`，partial）：在 `PlcMemory` 上实现 01–06、0F、10、16、17；越界返回异常码 02，数量越界 03，未知功能码 01；站号集合之外不回复；可丢弃第 n 个请求；回复前可加噪声字节。`TestSupport/ModbusRtuRequestCodecs.cs`（设备一侧的 RTU 请求分帧，按第 21.4 节的请求列）、`TestSupport/ModbusTcpSlave.cs`（TCP 承载，回复可按序号延迟）、`TestSupport/DelayingStream.cs`（写入前延迟，延迟的写入在后台完成）。端到端：`EndToEnd/ModbusEndToEndTcpTests.cs`（MBAP 与 RTU over TCP）、`EndToEnd/ModbusEndToEndUdpTests.cs`（MBAP 与 RTU over UDP）、`EndToEnd/ModbusEndToEndSerialTests.cs`（`DuplexClientChannel` 上的 RTU，以及真实串口对的用例）。
+- 覆盖的矩阵（计划第 14 节第 2 条）：四个存储区的读写（TCP 的两种帧，UDP 的两种帧）；拆包边界（126 字、2001 点）；类型化读写（Int32、Float、String，仅 TCP）；站号轮询（1、2 正常，3 超时，然后 1 仍正常）；异常码 02；MBAP 迟到应答（不重建连接，`AcceptedConnectionCount` 为 1）；RTU over TCP 迟到应答（重建连接，`AcceptedConnectionCount` 为 2）；UDP 迟到应答（每个请求独立）；帧前与帧间的噪声（TCP 与串口）；静默设备加心跳进入 `Reconnecting` 并恢复；请求中释放（20 次，无异常）；掩码写只改一位。
+- 与计划不同之处：
+  - 重试用例只测 MBAP。RTU over TCP 的超时重建与重试存在竞争（见下方发现），因此不把它当作期望。
+  - 类型化读写只在 TCP 上跑，没有在串口与 UDP 上跑（矩阵的其余部分已覆盖）。
+  - 替身的文件大小：`ModbusSlave` 拆成两个 partial 文件，每个 ≤ 165 行，符合计划的"按职责拆文件"。
+- 发现（需要审阅者知悉，本期未改通道层）：RTU over TCP 上，请求超时后 `ResetOnRequestTimeout` 会断开连接，重连在后台进行。紧接着的请求（包括 `RetryCount > 0` 的重试）可能早于重连完成而得到 `NotConnected`。代码路径推断：`ConnectionSupervisor.WaitForConnectedAsync` 在状态仍为 `Connected` 时立即返回 true，而断开是异步的。测试在超时后先等待断开再等待重连（`AwaitRebuiltConnectionAsync`），因此没有掩盖问题，只是不把竞争当作期望。
+- 先红的证据（诚实说明）：本 Task 是测试与替身，没有生产代码变化。测试在第一次运行时暴露了三个问题（重连未完成、重试竞争、`Polling` 用法），已逐个修正并在报告中说明。变异检查：把 MBAP 的关联改为 Sequential，`MbapLateReply_…` 与 `StationPolling_…(Mbap)` 失败；恢复后通过。
+- 后绿：`Modbus.Tests` 295/295，1 个跳过（`RtuReadAndWrite_OverARealSerialPair`，未设置 `JUNEVY_SERIAL_PAIR`；执行者不运行，由审阅者在有串口对的机器上运行）。
+- 第 2 节自查：测试代码不进入库；替身的回复编码复用生产的 MBAP 与 RTU 封装（这些已由第 21 节向量覆盖）。
+- 度量：生产代码无变化（Modbus 有效行 1157；测试不计入）。
+- 三条命令：Debug 2 个警告、0 个错误（WPF 工具的 CS8618，改动前即存在）；Release 2 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 295 / 295（跳过 1），Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
 
 ### 25.4 基线与度量（执行者填写）
 
