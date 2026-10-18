@@ -2,6 +2,12 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — P7（Modbus 3.0.0-preview.1：迁移到 Plc 套件；Plc 套件扩展）
+
+### 新增（Added）
+
+- 2026-10-19 [Plc] 只读地址钩子（P7-S1，计划 P7-D2）：`protected internal virtual bool IsReadOnly(TAddress address)`，默认 `false`。返回 `true` 时，`WriteAsync`、`WriteBitsAsync`（原生位写与读-改-写两条路径）、`WriteBytesAsync` 都返回 `InvalidRequest`，消息为 `The address '<Text>' is read-only.`；判断在地址解析之后、点数检查之前进行，不发请求，也不进入操作锁，断开状态下同样先返回这个失败。读取不受影响。测试：`PlcClientReadOnlyTests`（FakePlcClient 增加只读软元件 R、N、Y）。
+
 ## [Unreleased] — 项目目录整理
 
 ### 变更（Changed）

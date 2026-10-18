@@ -571,6 +571,18 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - 第 22 节"用例数"：静态计数（`[Fact]` 与 `[InlineData]` 行数），未运行测试。
 - 偏差：第 3 节 P4.6 口径的测试重复窗口基线写的是 52 个集群，实测为 53 个集群（窗口数 192 一致）。按实测记录，计划文字不改。
 
+#### Task 1（S1 只读地址，2026-10-19）
+
+- 修改：`Junevy.Communication.Plc/Client/PlcClientBase.Hooks.cs`（`IsReadOnly`，默认 false）、`PlcClientBase.cs`（类注释的钩子契约）、`Pipeline/PlcRequestPipeline.cs`（`CheckWritable`）、`PipeRequestPipeline.Words/Bits/Bytes.cs`（三个写入口在地址解析后调用）、`Junevy.Communication.Plc/README.md`（钩子表增加一行）、`CHANGELOG.md`（P7 节，新增）。
+- 测试：`Tests/Junevy.Communication.Plc.Tests/PlcClientReadOnlyTests.cs`（8 个用例）；`TestSupport/FakePlcClient.cs` 增加只读软元件 R（字）、N（位）、Y（字节），并覆写 `IsReadOnly`。
+- 先红：未改生产代码时，`FakePlcClient` 覆写 `IsReadOnly` 报 CS0115（net472 与 net8.0 各一次），即编译失败。
+- 后绿：Plc.Tests 270/270（net472 与 net8.0）。
+- 顺序（执行者确认，写进汇报）：只读检查位于地址解析之后、点数与值检查之前，并且早于连接检查。断开状态下写只读地址返回 `InvalidRequest`，不返回 `NotConnected`。
+- 第 2 节自查：符合。注释为中文，错误消息为英文，没有新增 await，没有使用 net472 禁用 API；S1 的代码、注释与消息中不含 "Modbus"（Q46）。
+- 度量：Plc 有效行 1231 → 1245（+14）。
+- 三条命令：Debug 31 个警告、0 个错误；Release 31 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12（net8.0 / net472），Melsec 184（跳过 1）/ 184（跳过 1），Omron 260 / 260，Plc 270 / 270，Siemens 316 / 316。
+- 偏差：计划预期本里程碑会选中 Modbus.Tests，实际未被选中，因为 Modbus 尚未引用 Plc（Task 3 之后才会）。记录在此，不影响结论。Melsec 的跳过用例是 `SerialPairFact`（未设置 `JUNEVY_SERIAL_PAIR`），与 master 一致。
+
 ### 25.4 基线与度量（执行者填写）
 
 Task 0 实测（第 3 节口径；脚本 `build/metrics/*.py`，经 `runpy` 调用，未修改脚本）：

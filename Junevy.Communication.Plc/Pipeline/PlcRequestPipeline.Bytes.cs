@@ -58,6 +58,9 @@ internal partial class PlcRequestPipeline<TAddress> where TAddress : PlcAddress
     {
         if (!TryResolve(address, out TAddress? target, out CommResult? failure))
             return failure.As<bool>();
+        CommResult? readOnly = CheckWritable(target);
+        if (readOnly is not null)
+            return readOnly.As<bool>();
         if (target.BitIndex is not null)
             return Invalid<bool>("A bit index is not allowed in WriteBytesAsync; use WriteBitsAsync to write single bits.");
         if (data.Length == 0)

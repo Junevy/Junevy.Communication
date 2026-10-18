@@ -21,6 +21,7 @@ namespace Junevy.Communication.Plc;
 /// 软元件表含字节软元件的协议必须覆写。
 /// • 位写入的路由：<see cref="CanWriteBitsNatively"/> 是虚方法，默认等于"地址的软元件单位是位"；返回 false 时字软元件按读-改-写规则处理，
 /// 字节软元件返回 <c>NotSupported</c>。
+/// • 只读地址：<see cref="IsReadOnly"/> 是虚方法，默认 false；返回 true 时写入（包括读-改-写）返回 <c>InvalidRequest</c>，读取不受影响。
 /// 未覆写的默认实现抛出的异常由流水线收口为 <c>Unspecified</c> 并记录 Error。
 /// </remarks>
 /// <typeparam name="TAddress">协议的地址类型。</typeparam>

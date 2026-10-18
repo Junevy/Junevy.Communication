@@ -111,6 +111,12 @@ internal sealed partial class PlcRequestPipeline<TAddress> where TAddress : PlcA
         return false;
     }
 
+    // 只读地址的写入（P7-S1）：在点数检查之前拒绝，因此不发请求，也不进入操作锁。
+    private CommResult? CheckWritable(TAddress target)
+        => client.IsReadOnly(target)
+            ? CommResult.Fail($"The address '{target.Text}' is read-only.", CommErrorKind.InvalidRequest)
+            : null;
+
     // 位访问的入口检查：点数是否允许由协议的 ValidateRange 决定。
     private CommResult? CheckBitAccess(TAddress target, int points) => Rejection(client.ValidateRange(target, PlcAccess.Bits, points));
 

@@ -87,6 +87,9 @@ internal partial class PlcRequestPipeline<TAddress> where TAddress : PlcAddress
     {
         if (!TryResolve(address, out TAddress? target, out CommResult? failure))
             return failure.As<bool>();
+        CommResult? readOnly = CheckWritable(target);
+        if (readOnly is not null)
+            return readOnly.As<bool>();
         if (values.Length < 1)
             return Invalid<bool>("The value list must not be empty.");
 

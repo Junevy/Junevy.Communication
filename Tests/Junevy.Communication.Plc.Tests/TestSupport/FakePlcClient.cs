@@ -24,6 +24,9 @@ internal class FakePlcClient : PlcClientBase<TestAddress>
         new TestDevice("D", PlcAddressUnit.Word, 10, 9999),
         new TestDevice("M", PlcAddressUnit.Bit, 10, 9999),
         new TestDevice("B", PlcAddressUnit.Byte, 10, 9999),
+        new TestDevice("R", PlcAddressUnit.Word, 10, 9999),
+        new TestDevice("N", PlcAddressUnit.Bit, 10, 9999),
+        new TestDevice("Y", PlcAddressUnit.Byte, 10, 9999),
     };
 
     private static readonly PlcAddressParser<TestDevice, TestAddress> Parser =
@@ -64,6 +67,9 @@ internal class FakePlcClient : PlcClientBase<TestAddress>
     /// <inheritdoc />
     protected internal override bool TryParseAddress(string address, [NotNullWhen(true)] out TestAddress? parsed, [NotNullWhen(false)] out string? error)
         => Parser.TryParse(address, out parsed, out error);
+
+    /// <inheritdoc />
+    protected internal override bool IsReadOnly(TestAddress address) => SymbolOf(address) is 'R' or 'N' or 'Y';
 
     /// <inheritdoc />
     protected internal override int GetMaxReadPoints(TestAddress address, PlcAccess access) => access == PlcAccess.Words ? maxWords : maxBits;
