@@ -762,14 +762,14 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 
 #### Task 11（依赖注入与 WPF 调试工具，P7-D14、D16，2026-10-19）
 
-- 新增：：、、、（ 注册创建器，再调用 ，幂等）。测试 （11 个用例）。
-- 修改：WPF 调试工具（）：项目引用 Modbus； 调用 ； 重写为 v3 视图模型（ 创建客户端，连接、断开、读、写；TCP 与串口；C、DI、IR、HR）； 重写为对应的窗口（不追求与 2.x 界面相同）。删除没有引用的旧文件：、、、（这些只服务于 2.x 界面）。 保留，用于结果表格。
-- 决定：每次连接使用新的客户端名称（），因为工厂按名称返回已注册的客户端（P7 的  语义）；修改配置后重新连接即可生效。
-- 先红的证据（诚实说明）：没有单独运行一次红（与 Task 6–10 相同）。第一次编译的错误是 WPF 视图模型缺少  的 using，修正后通过。测试中的  是后加的，用于覆盖计划的配置类型不符。
-- 后绿： 307/307，1 个跳过（真实串口对）。
+- 新增：`Junevy.Communication.Modbus/DependencyInjection/`：`ModbusTransport`、`ModbusClientConfig`、`ModbusClientCreator`、`ModbusServiceCollectionExtensions.AddModbus()`（`TryAddEnumerable` 注册创建器，再调用 `AddPlcClients()`，幂等）。测试 `Tests/Junevy.Communication.Modbus.Tests/DependencyInjection/ModbusDependencyInjectionTests.cs`（11 个用例）。
+- 修改：WPF 调试工具（`Junevy.Communication.Test`）：项目引用 Modbus；`App.xaml.cs` 调用 `AddModbus()`；`MainWindowViewModel.cs` 重写为 v3 视图模型（经 `PlcClientFactory` 创建客户端，连接、断开、读、写；TCP 与串口；C、DI、IR、HR）；`MainWindow.xaml` 重写为对应的窗口（不追求与 2.x 界面相同）。删除没有引用的旧文件：`MbCmd.cs`、`Regions.cs`、`EnumToBoolConverter.cs`、`LengthEnableConverter.cs`（它们只服务于 2.x 界面）。`ModbusData.cs` 保留，用于结果表格。
+- 决定：每次连接使用新的客户端名称（`debug-N`），因为工厂按名称返回已注册的客户端；修改配置后重新连接即可生效。
+- 先红的证据（诚实说明）：没有单独运行一次红（与 Task 6–10 相同）。第一次编译的错误是 WPF 视图模型缺少 `Core.Results` 的 using，修正后通过。`Creator_ConfigOfAnotherType_ThrowsArgumentException` 是后加的，用于覆盖计划的"配置类型不符"。
+- 后绿：`Modbus.Tests` 307/307，1 个跳过（真实串口对）。
 - 第 2 节自查：符合。依赖注入类型的公共成员有中文注释；错误消息英文；创建客户端不打开连接或端口。WPF 工具只通过公开 API 使用库。
 - 度量：Modbus 有效行 1157 → 1215（DI 类型 58 行）。
-- 三条命令：Debug 2 个警告、0 个错误（WPF 工具的 CS8618，改动前即存在）；Release 2 个警告、0 个错误； 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 307 / 307（跳过 1），Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
+- 三条命令：Debug 2 个警告、0 个错误（WPF 工具的 CS8618，改动前即存在）；Release 2 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 307 / 307（跳过 1），Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
 
 ### 25.4 基线与度量（执行者填写）
 

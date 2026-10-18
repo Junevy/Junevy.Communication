@@ -23,9 +23,9 @@
 
 - 2026-10-19 [Modbus] 端到端矩阵与设备替身（P7 Task 10，仅测试）：`ModbusSlave`（替身，在 PlcMemory 上实现 01–06、0F、10、16、17，越界为异常码 02，站号集合之外不回复，可丢弃第 n 个请求，可在回复前加噪声）、`ModbusTcpSlave` 与 `DelayingStream`（TCP 上的迟到应答，延迟的写入在后台完成，不阻塞后续请求）、测试用的 RTU 请求分帧。端到端：`ModbusEndToEndTcpTests`、`ModbusEndToEndUdpTests`、`ModbusEndToEndSerialTests`（另有一个真实串口对的用例，未设置 `JUNEVY_SERIAL_PAIR` 时跳过）。
 
-- 2026-10-19 [Modbus] 依赖注入（P7 Task 11，P7-D14）：（Tcp、Udp、Serial）、（、、、、）、、（幂等，与  共存）。测试：（11 个用例，含 appsettings 形状的 JSON 绑定）。
+- 2026-10-19 [Modbus] 依赖注入（P7 Task 11，P7-D14）：`ModbusTransport`（Tcp、Udp、Serial）、`ModbusClientConfig : IPlcClientConfig`（`Transport`、`Tcp`、`Udp`、`Serial`、`Options`）、`ModbusClientCreator : IPlcClientCreator`、`AddModbus()`（幂等，与 `AddMelsec()` 共存）。测试：`ModbusDependencyInjectionTests`（11 个用例，含 appsettings 形状的 JSON 绑定）。
 
-- 2026-10-19 [WPF 调试工具] 调试工具移植到 v3（P7 Task 11）：经  与  连接（TCP 或串口），读写 C、DI、IR、HR，结果显示在表格中。不追求与 2.x 界面逐项相同。
+- 2026-10-19 [WPF 调试工具] 调试工具移植到 v3（P7 Task 11）：经 `AddModbus()` 与 `PlcClientFactory` 连接（TCP 或串口），读写 C、DI、IR、HR，结果显示在表格中。不追求与 2.x 界面逐项相同；删除只服务于 2.x 界面的 `MbCmd.cs`、`Regions.cs`、`EnumToBoolConverter.cs`、`LengthEnableConverter.cs`。
 
 ### 变更（Changed）
 
