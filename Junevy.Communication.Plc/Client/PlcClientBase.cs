@@ -1,3 +1,4 @@
+using System.Buffers;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Plc.Pipeline;
@@ -117,6 +118,37 @@ public abstract partial class PlcClientBase<TAddress> : IPlcClient where TAddres
         => TryParseAddress(address ?? string.Empty, out TAddress? parsed, out string? error)
             ? CommResult<PlcAddress>.Success(parsed)
             : CommResult<PlcAddress>.Fail(error!, CommErrorKind.InvalidRequest);
+
+    /// <summary>
+    /// 发送一个协议专有请求（一包），并解析应答（P7-S2）。用于读写入口没有覆盖的功能码。
+    /// 语义与读写入口相同：已释放或未连接时立即返回 <c>NotConnected</c>，不发请求；在操作锁内执行，与读写互相排队；
+    /// <c>Timeout</c>、<c>ConnectionClosed</c>、<c>ProtocolViolation</c> 按 <see cref="PlcClientOptions.RetryCount"/> 与
+    /// <see cref="PlcClientOptions.RetryInterval"/> 重试，<c>RemoteError</c> 与 <c>InvalidRequest</c> 不重试；
+    /// 委托抛出的异常收口为 <c>Unspecified</c> 并记录 Error；调用方取消返回 <c>Cancelled</c>。
+    /// </summary>
+    /// <typeparam name="T">解析后的结果类型。</typeparam>
+    /// <param name="operation">操作名称，用于日志与错误消息；不能为空白。</param>
+    /// <param name="buildRequest">写入请求字节。</param>
+    /// <param name="parseResponse">解析应答字节；对端错误返回 <c>RemoteError</c>，格式不符返回 <c>ProtocolViolation</c>。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>解析结果。</returns>
+    /// <exception cref="ArgumentNullException">任一参数为 null。</exception>
+    /// <exception cref="ArgumentException"><paramref name="operation"/> 为空白。</exception>
+    protected Task<CommResult<T>> SendProtocolRequestAsync<T>(string operation, Action<IBufferWriter<byte>> buildRequest,
+                                                              Func<byte[], CommResult<T>> parseResponse, CancellationToken cancellationToken = default)
+    {
+        // 编程错误：同步抛出（与构造函数的约定一致），不包装进任务。
+        if (operation is null)
+            throw new ArgumentNullException(nameof(operation));
+        if (buildRequest is null)
+            throw new ArgumentNullException(nameof(buildRequest));
+        if (parseResponse is null)
+            throw new ArgumentNullException(nameof(parseResponse));
+        if (string.IsNullOrWhiteSpace(operation))
+            throw new ArgumentException("The operation name must not be empty.", nameof(operation));
+
+        return pipeline.ProtocolRequestAsync(operation, buildRequest, parseResponse, cancellationToken);
+    }
 
     /// <summary>
     /// 释放客户端及其通道（P2-D13）。释放之后的公开操作返回 <c>NotConnected</c>。可重复调用。

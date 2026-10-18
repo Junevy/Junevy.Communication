@@ -189,6 +189,10 @@ Which hooks you have to override is decided by the units your device table conta
 
 A default hook that is not overridden throws `InvalidOperationException`, which the pipeline reports as `Unspecified` with an error log — so a protocol never has to write an empty implementation for a hook it does not use.
 
+### Protocol-specific requests (P7-S2)
+
+`SendProtocolRequestAsync<T>(operation, buildRequest, parseResponse, cancellationToken)` (protected) sends one packet for a function code the read and write entry points do not cover (for example Modbus 0x16 and 0x17). It uses the same guards, operation lock, retry rules and error mapping as the entry points: disposed or disconnected returns `NotConnected` without sending, `Timeout`, `ConnectionClosed` and `ProtocolViolation` are retried under `RetryCount`, `RemoteError` and `InvalidRequest` are not, a hook exception becomes `Unspecified` with an error log, and a caller cancellation returns `Cancelled`. A null delegate or a blank `operation` throws synchronously, because it is a programming error.
+
 Protocol state that a handshake discovers (a negotiated PDU size, a node address) belongs in an immutable session snapshot that the `Create` method hands to both the channel's `IConnectionInitializer` and the client, and the hooks read the current snapshot; see the S7 and FINS packages for the pattern.
 
 A protocol offers one creation entry, which takes the transport configuration and a creator for that transport (the built-in creators are used when the protocol offers a shortcut). `PlcChannelBinding.CreateChannel` creates the channel: it takes the creator, the optional name, the transport configuration (its type must be the creator's `ConfigType`) and a delegate that returns the components for the creator's `Delivery` and `Medium`. A transport that is not built in supplies its own `IChannelCreator`, and the protocol works with it without changes to the protocol package.

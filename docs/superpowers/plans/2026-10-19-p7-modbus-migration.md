@@ -573,7 +573,7 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 
 #### Task 1（S1 只读地址，2026-10-19）
 
-- 修改：`Junevy.Communication.Plc/Client/PlcClientBase.Hooks.cs`（`IsReadOnly`，默认 false）、`PlcClientBase.cs`（类注释的钩子契约）、`Pipeline/PlcRequestPipeline.cs`（`CheckWritable`）、`PipeRequestPipeline.Words/Bits/Bytes.cs`（三个写入口在地址解析后调用）、`Junevy.Communication.Plc/README.md`（钩子表增加一行）、`CHANGELOG.md`（P7 节，新增）。
+- 修改：`Junevy.Communication.Plc/Client/PlcClientBase.Hooks.cs`（`IsReadOnly`，默认 false）、`PlcClientBase.cs`（类注释的钩子契约）、`Pipeline/PlcRequestPipeline.cs`（`CheckWritable`）、`PlcRequestPipeline.Words/Bits/Bytes.cs`（三个写入口在地址解析后调用）、`Junevy.Communication.Plc/README.md`（钩子表增加一行）、`CHANGELOG.md`（P7 节，新增）。
 - 测试：`Tests/Junevy.Communication.Plc.Tests/PlcClientReadOnlyTests.cs`（8 个用例）；`TestSupport/FakePlcClient.cs` 增加只读软元件 R（字）、N（位）、Y（字节），并覆写 `IsReadOnly`。
 - 先红：未改生产代码时，`FakePlcClient` 覆写 `IsReadOnly` 报 CS0115（net472 与 net8.0 各一次），即编译失败。
 - 后绿：Plc.Tests 270/270（net472 与 net8.0）。
@@ -582,6 +582,25 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - 度量：Plc 有效行 1231 → 1245（+14）。
 - 三条命令：Debug 31 个警告、0 个错误；Release 31 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12（net8.0 / net472），Melsec 184（跳过 1）/ 184（跳过 1），Omron 260 / 260，Plc 270 / 270，Siemens 316 / 316。
 - 偏差：计划预期本里程碑会选中 Modbus.Tests，实际未被选中，因为 Modbus 尚未引用 Plc（Task 3 之后才会）。记录在此，不影响结论。Melsec 的跳过用例是 `SerialPairFact`（未设置 `JUNEVY_SERIAL_PAIR`），与 master 一致。
+
+#### Task 2（S2 协议专有请求，2026-10-19）
+
+- 新增：`Junevy.Communication.Plc/Pipeline/PlcRequestPipeline.Protocol.cs`（守卫与操作锁）、`Tests/Junevy.Communication.Plc.Tests/PlcClientProtocolRequestTests.cs`（13 个用例，含 `ProtocolRequestClient` 测试替身）。
+- 修改：`PlcClientBase.cs`（`SendProtocolRequestAsync<T>`，参数校验同步抛出）、`PlcPacketExchange.cs`（`ExchangeProtocolRequestAsync<T>`，复用 `ExchangeAsync` 的重试循环与 `RunPacketsAsync` 的日志，没有复制第二份循环）、`PlcRequestPipeline.cs`（持有包交换的引用）、`Plc/README.md`（新增 "Protocol-specific requests (P7-S2)" 一节）、`CHANGELOG.md`。
+- 解析委托的处理：选择闭包方式（`ExchangeAsync` 的解析委托保持非泛型），没有改动 `ExchangeAsync` 的签名，与分包读取的 `Collect*` 做法一致。
+- 日志偏差：分包日志的模板含 `{Points}`，协议请求没有点数。复用同一模板，记为 1 点、1 包，因此日志是 `SendProtocolRequestAsync <操作名>: 1 point(s) in 1 packet(s), …`。"point" 用词不贴切，记在此处，不另建模板。
+- 先红：未实现 `SendProtocolRequestAsync` 时，测试项目报 CS0103（两个目标各一次）；另外修正了测试代码中两处 CS0411（泛型无法从 `null!` 或只抛异常的 lambda 推断），之后仍是 CS0103。
+- 后绿：Plc.Tests 283/283（net472 与 net8.0）。
+- 变异检查：临时去掉操作锁（`ProtocolRequestAsync` 直接调用 `ExchangeProtocolRequestAsync`），`RunsSeriallyWithReadAsync` 在两个目标上都失败（"The collection contained 2 items"），随后还原并确认文件与测试时完全一致。
+- 串行测试的说明：负向断言（读取在协议请求解析期间没有发出）依赖"等待 100 次让出"。有锁时它必然通过，无锁时大概率失败；变异检查证明它能发现缺失的锁。它不是严格的时序证明，审阅者如需要可以换成更强的机制。
+- 第 2 节自查：符合。`ConfigureAwait(false)` 写在包交换的新 await 上；注释为中文，消息为英文；S2 的代码与消息中没有 "Modbus"（Q46 通过 grep 确认）；没有重复的重试循环（Q47 不适用于本 Task，但遵守了"不复制"的要求）。
+- 度量：Plc 有效行 1231（基线）→ 1245（S1，+14）→ 1285（S2，+40）；累计 +54。
+- 三条命令：Debug 31 个警告、0 个错误；Release 31 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
+- 里程碑 1 小结：
+  - S1、S2 是计划允许的两项套件改动，共 54 个有效行（Plc 1231 → 1285）。
+  - Melsec、Siemens、Omron：`git diff c29a45b --stat` 对它们的生产代码与测试为空；测试数与 Task 1 的运行一致（Melsec 184 + 1 跳过，Siemens 316，Omron 260）。Task 0 没有运行测试（计划第 4 节第 6 条），因此"与 Task 0 一致"只能对照 Task 1 之后的运行。
+  - 三个协议的测试全部通过。
+  - 未发现 S1、S2 以外的套件缺口，里程碑 2 可以开始。
 
 ### 25.4 基线与度量（执行者填写）
 

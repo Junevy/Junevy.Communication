@@ -30,6 +30,7 @@ internal sealed partial class PlcRequestPipeline<TAddress> where TAddress : PlcA
     private readonly PlcPipelineSettings settings;
     private readonly WordOrder wordOrder;
     private readonly ILogger logger;
+    private readonly PlcPacketExchange exchange;
     private readonly PlcTransfer<TAddress> transfer;
 
     // 同一客户端内的操作串行执行：包括拆包的全部分包，以及读-改-写的读与写。
@@ -53,7 +54,8 @@ internal sealed partial class PlcRequestPipeline<TAddress> where TAddress : PlcA
         this.settings = settings;
         wordOrder = dataFormat.WordOrder;
         this.logger = logger;
-        transfer = new PlcTransfer<TAddress>(client, new PlcPacketExchange(channel, settings, logger));
+        exchange = new PlcPacketExchange(channel, settings, logger);
+        transfer = new PlcTransfer<TAddress>(client, exchange);
     }
 
     /// <summary>

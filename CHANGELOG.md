@@ -7,6 +7,7 @@
 ### 新增（Added）
 
 - 2026-10-19 [Plc] 只读地址钩子（P7-S1，计划 P7-D2）：`protected internal virtual bool IsReadOnly(TAddress address)`，默认 `false`。返回 `true` 时，`WriteAsync`、`WriteBitsAsync`（原生位写与读-改-写两条路径）、`WriteBytesAsync` 都返回 `InvalidRequest`，消息为 `The address '<Text>' is read-only.`；判断在地址解析之后、点数检查之前进行，不发请求，也不进入操作锁，断开状态下同样先返回这个失败。读取不受影响。测试：`PlcClientReadOnlyTests`（FakePlcClient 增加只读软元件 R、N、Y）。
+- 2026-10-19 [Plc] 协议专有请求（P7-S2，计划 P7-D2）：`protected Task<CommResult<T>> SendProtocolRequestAsync<T>(string operation, Action<IBufferWriter<byte>> buildRequest, Func<byte[], CommResult<T>> parseResponse, CancellationToken cancellationToken = default)`。与读写入口的守卫、操作锁、重试规则与错误映射相同（释放或未连接返回 `NotConnected` 且不发请求；`Timeout`、`ConnectionClosed`、`ProtocolViolation` 重试，`RemoteError`、`InvalidRequest` 不重试；委托异常收口为 `Unspecified` 并记录 Error；调用方取消返回 `Cancelled`）。空的委托或空白的操作名同步抛出 `ArgumentNullException` / `ArgumentException`。日志与分包日志共用格式，地址位置写操作名。测试：`PlcClientProtocolRequestTests`（13 个用例，含与 `ReadAsync` 串行的用例）。
 
 ## [Unreleased] — 项目目录整理
 
