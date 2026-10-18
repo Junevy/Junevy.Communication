@@ -21,6 +21,7 @@ public sealed class SdkAdapterArchitectureTests
     {
         ("Junevy.Communication.Mqtt", "MQTTnet", "Junevy.Communication.Mqtt.Sdk", new[] { CoreName }),
         ("Junevy.Communication.OpcUa", "Opc.Ua", "Junevy.Communication.OpcUa.Sdk", new[] { CoreName }),
+        ("Junevy.Communication.Ftp", "FluentFTP", "Junevy.Communication.Ftp.Sdk", new[] { CoreName }),
         ("Junevy.Communication.WebApi.Server", "Microsoft.AspNetCore", "Junevy.Communication.WebApi.Server.Hosting", new[] { CoreName, WebApiName }),
     };
 

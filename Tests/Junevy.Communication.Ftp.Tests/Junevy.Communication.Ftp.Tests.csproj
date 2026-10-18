@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\build\Junevy.Communication.Tests.props" />
+
+  <!-- P6-C1：SDK 适配包只面向 .NET 8，测试项目同样只有一个目标（Import 的默认值是 net8.0;net472）。 -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0</TargetFrameworks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Junevy.Communication.Ftp\Junevy.Communication.Ftp.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
+  </ItemGroup>
+
+  <!-- P6-C12：FTP 的测试替身是自写的进程内模拟服务器（TestSupport/），不引用任何第三方 FTP 服务器包。 -->
+
+</Project>

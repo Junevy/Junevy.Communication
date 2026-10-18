@@ -22,6 +22,7 @@
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
     <ProjectReference Include="..\..\Junevy.Communication.Mqtt\Junevy.Communication.Mqtt.csproj" />
     <ProjectReference Include="..\..\Junevy.Communication.OpcUa\Junevy.Communication.OpcUa.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Ftp\Junevy.Communication.Ftp.csproj" />
     <!-- P62-D1：OpcUa 的 SDK 把 Microsoft.Extensions.DependencyInjection 带到 10.0.12，这里跟着抬高，
          否则 Tests.props 的 8.0.0 会触发 NU1605 降级错误。只改本项目，不动共享的 Tests.props。 -->
     <PackageReference Update="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
