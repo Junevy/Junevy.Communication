@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using Junevy.Communication.Modbus.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using System.Windows;
@@ -54,6 +55,8 @@ namespace Junevy.Communication.Test
                 builder.ClearProviders();
                 builder.AddSerilog();
             });
+
+            container.AddModbus();
 
             this.Provider = container.BuildServiceProvider();
         }

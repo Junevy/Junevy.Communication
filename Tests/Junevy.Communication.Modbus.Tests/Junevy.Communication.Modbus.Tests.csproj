@@ -3,7 +3,13 @@
   <Import Project="..\..\build\Junevy.Communication.Tests.props" />
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\Junevy.Communication.Modbus\Junevy.Communication.Modbus.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Melsec\Junevy.Communication.Melsec.csproj" />
     <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
   </ItemGroup>
 
