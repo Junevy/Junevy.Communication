@@ -32,7 +32,7 @@ public sealed class FtpErrorMapTests
     {
         var exception = new FtpCommandException(code, "The server replied.");
 
-        CommResult result = FtpErrorMap.FromException(exception, cancelledByCaller: false);
+        CommResult result = FtpErrorMap.FromException(exception);
 
         AssertFailure(result, kind, long.Parse(code));
         Assert.Same(exception, result.Exception);
@@ -43,7 +43,7 @@ public sealed class FtpErrorMapTests
     {
         var exception = new FtpAuthenticationException("530", "Login incorrect.");
 
-        CommResult result = FtpErrorMap.FromException(exception, cancelledByCaller: false);
+        CommResult result = FtpErrorMap.FromException(exception);
 
         AssertFailure(result, CommErrorKind.AuthenticationFailed, 530);
     }
@@ -53,7 +53,7 @@ public sealed class FtpErrorMapTests
     {
         var exception = new FtpCommandException("530", "Not logged in.");
 
-        CommResult result = FtpErrorMap.FromException(exception, cancelledByCaller: false);
+        CommResult result = FtpErrorMap.FromException(exception);
 
         AssertFailure(result, CommErrorKind.AuthenticationFailed, 530);
     }
@@ -63,7 +63,7 @@ public sealed class FtpErrorMapTests
     {
         var exception = new FtpInvalidCertificateException("The certificate is not trusted.");
 
-        CommResult result = FtpErrorMap.FromException(exception, cancelledByCaller: false);
+        CommResult result = FtpErrorMap.FromException(exception);
 
         AssertFailure(result, CommErrorKind.AuthenticationFailed, null);
     }
@@ -73,7 +73,7 @@ public sealed class FtpErrorMapTests
     {
         var exception = new AuthenticationException("The remote certificate is invalid.");
 
-        CommResult result = FtpErrorMap.FromException(exception, cancelledByCaller: false);
+        CommResult result = FtpErrorMap.FromException(exception);
 
         AssertFailure(result, CommErrorKind.AuthenticationFailed, null);
     }
@@ -83,7 +83,7 @@ public sealed class FtpErrorMapTests
     {
         var exception = new IOException("The TLS handshake failed.", new AuthenticationException("invalid"));
 
-        CommResult result = FtpErrorMap.FromException(exception, cancelledByCaller: false);
+        CommResult result = FtpErrorMap.FromException(exception);
 
         AssertFailure(result, CommErrorKind.AuthenticationFailed, null);
     }
@@ -91,16 +91,16 @@ public sealed class FtpErrorMapTests
     [Fact]
     public void CallerCancelled_IsCancelled()
     {
-        CommResult result = FtpErrorMap.FromException(new OperationCanceledException(), cancelledByCaller: true);
+        CommResult result = FtpErrorMap.Cancelled();
 
         AssertFailure(result, CommErrorKind.Cancelled, null);
     }
 
     [Fact]
-    public void OperationCanceled_NotCancelledByCaller_IsConnectionClosed()
+    public void OperationCanceled_IsConnectionClosed()
     {
         // 释放客户端时正在进行的操作以这种方式结束（P63-D4，计划 Task 6）。
-        CommResult result = FtpErrorMap.FromException(new OperationCanceledException(), cancelledByCaller: false);
+        CommResult result = FtpErrorMap.FromException(new OperationCanceledException());
 
         AssertFailure(result, CommErrorKind.ConnectionClosed, null);
     }
@@ -118,7 +118,7 @@ public sealed class FtpErrorMapTests
             _ => new IOException("The read failed.", new SocketException((int)SocketError.TimedOut)),
         };
 
-        CommResult result = FtpErrorMap.FromException(exception, cancelledByCaller: false);
+        CommResult result = FtpErrorMap.FromException(exception);
 
         AssertFailure(result, CommErrorKind.Timeout, null);
     }
@@ -135,7 +135,7 @@ public sealed class FtpErrorMapTests
     {
         var exception = new SocketException((int)SocketError.ConnectionRefused);
 
-        CommResult result = FtpErrorMap.FromException(exception, cancelledByCaller: false);
+        CommResult result = FtpErrorMap.FromException(exception);
 
         AssertFailure(result, CommErrorKind.ConnectionClosed, null);
     }
@@ -145,7 +145,7 @@ public sealed class FtpErrorMapTests
     {
         var exception = new IOException("Unable to read data from the transport connection.");
 
-        CommResult result = FtpErrorMap.FromException(exception, cancelledByCaller: false);
+        CommResult result = FtpErrorMap.FromException(exception);
 
         AssertFailure(result, CommErrorKind.ConnectionClosed, null);
     }
@@ -196,7 +196,7 @@ public sealed class FtpErrorMapTests
     [Fact]
     public void OtherSdkException_IsUnspecified()
     {
-        CommResult result = FtpErrorMap.FromException(new InvalidOperationException("Unexpected."), cancelledByCaller: false);
+        CommResult result = FtpErrorMap.FromException(new InvalidOperationException("Unexpected."));
 
         AssertFailure(result, CommErrorKind.Unspecified, null);
     }

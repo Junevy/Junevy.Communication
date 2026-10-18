@@ -13,18 +13,15 @@ namespace Junevy.Communication.Ftp.Sdk;
 /// </summary>
 internal static class FtpErrorMap
 {
-    /// <summary>运行期异常 → 结果。SDK 抛出的异常不能逃出公开方法（P6-C8）。</summary>
+    /// <summary>
+    /// 运行期异常 → 结果。SDK 抛出的异常不能逃出公开方法（P6-C8）。调用方取消不经过这里：生命周期先判断调用方的令牌，
+    /// 再调用 <see cref="Cancelled"/>，因此这里的 <see cref="OperationCanceledException"/> 只来自释放或连接关闭。
+    /// </summary>
     /// <param name="exception">SDK 或 BCL 抛出的异常；只作诊断。</param>
-    /// <param name="cancelledByCaller">调用方的取消令牌是否已经触发。</param>
     /// <returns>带分类的失败结果。</returns>
-    public static CommResult FromException(Exception exception, bool cancelledByCaller)
+    public static CommResult FromException(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
-
-        if (cancelledByCaller)
-        {
-            return Fail(CommErrorKind.Cancelled, null, "The operation was cancelled.", exception);
-        }
 
         // SDK 常把应答码异常包在别的异常里（例如上传失败时是 FtpException，缺少对象时是 FtpMissingObjectException），
         // 因此沿内层异常链找第一个应答码异常。登录异常是它的子类，排在前面。

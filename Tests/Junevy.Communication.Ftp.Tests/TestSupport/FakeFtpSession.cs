@@ -14,7 +14,6 @@ internal sealed partial class FakeFtpSession : IDisposable
     private readonly TcpClient tcp;
     private readonly int connectionId;
     private Stream stream;
-    private int commandNumber;
     private FakeFtpCommand? current;
     private bool loggedIn;
     private string? pendingUser;
@@ -76,12 +75,10 @@ internal sealed partial class FakeFtpSession : IDisposable
         int space = line.IndexOf(' ');
         string verb = (space < 0 ? line : line[..space]).ToUpperInvariant();
         string argument = space < 0 ? string.Empty : line[(space + 1)..];
-        commandNumber++;
         current = server.Commands.Received(connectionId, verb, argument);
         try
         {
-            bool keepOpen = await ExecuteAsync(verb, argument, cancellationToken).ConfigureAwait(false);
-            return keepOpen && !server.Faults.ShouldCloseAfter(commandNumber);
+            return await ExecuteAsync(verb, argument, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
