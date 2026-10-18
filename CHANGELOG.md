@@ -19,6 +19,8 @@
 
 - 2026-10-19 [Modbus] 客户端 `ModbusClient : PlcClientBase<ModbusAddress>`（P7 Task 8，P7-D3、D4、D5、D6、D10）：两个公开的 `Create`（按传输类型选择内置创建器，或指定创建器），没有公开构造函数。协议钩子覆盖地址（站号前缀按帧格式检查：RTU 1–247）、单包上限（读 125 字、2000 位，写 123 字、1968 线圈，寄存器位掩码写每包一位）、功能码映射（03、04、01、02、06、10、05、0F、16；单功能码规则按包判断）、只读区域（`IR`、`DI` 写入返回 `InvalidRequest`）、越界检查（结束地址不超过 65535）、线上的请求与应答校验（每包的期望在构造请求时记录一次）。测试：`ModbusClientWireTests`（26 个用例，线上字节）、`ModbusClientErrorTests`（11 个用例，错误映射与重试）、`ModbusClientCreationTests`（10 个用例，创建、地址与类型化读写）。
 
+- 2026-10-19 [Modbus] 掩码写寄存器（0x16）与读写多个寄存器（0x17）（P7 Task 9，P7-D15）：`MaskWriteRegisterAsync(address, andMask, orMask)` 只接受不带位号的保持寄存器，发送一个请求并要求应答原样回显；`ReadWriteMultipleRegistersAsync(readAddress, readCount, writeAddress, writeData)` 两个地址都必须是不带位号的保持寄存器且站号相同，读 1–125 字、写 1–121 字，不拆包，返回读出的字节。两者经套件的协议专有请求入口（`SendProtocolRequestAsync`）发送，享有操作锁、重试与错误映射；参数不合法时不发请求。测试：`ModbusClientCommandTests`（25 个用例）。
+
 ### 变更（Changed）
 
 - 2026-10-19 [Modbus] 项目骨架改为 Plc 套件上的 3.0.0-preview.1（P7-D1）：csproj 导入 `build/Junevy.Communication.Common.props`，依赖 Plc、Tcp、Udp、Serial；`InternalsVisibleTo` 只给 `Junevy.Communication.Modbus.Tests`。协议实现在后续 Task 中加入，本次提交尚无公开类型。

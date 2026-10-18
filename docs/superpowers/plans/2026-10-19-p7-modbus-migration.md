@@ -709,6 +709,41 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - 度量：Modbus 有效行 822 → 1065。
 - 三条命令：Debug 2 个警告、0 个错误（WPF 工具的 CS8618，改动前即存在）；Release 2 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 246 / 246，Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
 
+#### Task 9（0x16 与 0x17，P7-D15，2026-10-19）
+
+- 新增：`Junevy.Communication.Modbus/Client/ModbusClient.Commands.cs`（两个公开方法）；测试 `Tests/…Modbus.Tests/Client/ModbusClientCommandTests.cs`（25 个用例）。
+- 修改：`CHANGELOG.md`。
+- 公开面：`MaskWriteRegisterAsync(string, ushort, ushort, CancellationToken)` 返回 `Task<CommResult>`；`ReadWriteMultipleRegistersAsync(string, int, string, ReadOnlyMemory<byte>, CancellationToken)` 返回 `Task<CommResult<byte[]>>`（P7-D15 的签名）。
+- 地址与参数的检查在发请求之前完成，不进入操作锁：掩码写要求不带位号的保持寄存器（IR、C、DI、带位号都返回 `InvalidRequest`）；读写多个要求两个地址都是不带位号的保持寄存器、站号相同、读 1–125 字、写 1–121 字（偶数字节）、两段结束地址不超过 65535，且不拆包。
+- 线上字节：V-P-9（16）、V-P-10（17）、V-R-13（RTU 的 16）、V-R-14（RTU 的 17）逐字节比对；掩码写的应答必须回显地址与两个掩码，读写多个返回读出的 `2 × readCount` 字节。
+- 先红的证据（诚实说明）：与 Task 6–8 相同，没有单独运行一次红。变异检查：去掉"同一站号"与"保持寄存器"的判断，9 个用例失败；恢复后通过。
+- 后绿：`Modbus.Tests` 271/271（net472 与 net8.0）。
+- 第 2 节自查：符合。两个公开方法的 XML 注释为中文；await 都带 `ConfigureAwait(false)`；错误消息英文；没有 net472 禁用的 API。
+- 度量：Modbus 有效行 1065 → 1157。
+- 三条命令：Debug 2 个警告、0 个错误（WPF 工具的 CS8618，改动前即存在）；Release 2 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 271 / 271，Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
+
+#### 里程碑 3 小结（可行性门槛，第 13 节）
+
+- 摩擦记录（第 25.2 节）：F-S1（只读钩子，已列为 S1）、F-S2（协议专有请求，已列为 S2）、F-A1（地址解析器无法表达站号前缀与 Modicon 写法，自写 `ModbusAddressParser`）、F-A2（`IClientChannel` 的测试替身只能复制，共享测试库只有 `IByteChannel` 的替身）。
+- 是否出现 S1、S2 以外的套件缺口：**否**。Task 7–9 只用到了 S1、S2 与套件已有的组件装配（`PlcComponentWiring`）、通道创建（`PlcChannelBinding`）与类型化读写扩展。
+- v2 的读写能力逐项对照（第 20 节，只列读写与连接相关的行）：
+  - 连接与断开（`ConnectAsync`、`DisconnectAsync`、`IsConnected`、`State`、`StateChanged`）：基类提供，Plc.Tests 的生命周期用例覆盖；Modbus 的 `Disconnect` 之后请求返回 `NotConnected` 由套件的测试覆盖。
+  - 重试与超时：`RetryCount`（默认 0）、`RetryInterval`，`EchoMismatch_IsProtocolViolationAndIsRetried`、`Timeout_IsReportedAndRetriedWhenConfigured` 覆盖。
+  - 读保持寄存器、读输入寄存器（`ReadHoldingRegisters`、`ReadInputRegisters`）：`ReadHoldingRegisters_SendsFunction03…`、`ReadInputRegisters_SendsFunction04`，类型化读取 `ReadUInt16Async`、`ReadInt32Async` 等。
+  - 读线圈、读离散输入（`ReadCoils`、`ReadDiscreteInputs`）：`ReadCoils_SendsFunction01…`、`ReadDiscreteInputs_SendsFunction02`。
+  - 单个与多个寄存器写入（`WriteSingleRegister`、`WriteMultipleRegisters`）：`WriteOneRegister_UsesFunction06`、`WriteTwoRegisters_UsesFunction10`；单功能码规则 `SingleWriteFunctionsOff_UseTheMultipleWriteFunctions`。
+  - 单个与多个线圈写入（`WriteSingleCoil`、`WriteMultipleCoils`）：`WriteOneCoil_UsesFunction05…`、`WriteManyCoils_UsesFunction0FWithPackedBits`。
+  - 掩码写（`MaskWriteRegister`）：`MaskWriteRegister_SendsFunction16…`（Task 9）。
+  - 读写多个（`ReadWriteMultipleRegisters`）：`ReadWriteMultipleRegisters_SendsFunction17…`（Task 9）。
+  - 站号（v2 的 `slave` 参数）：站号前缀 `s=n;` 与默认站号，`StationPrefix_IsOnTheWireInTheUnitIdPosition`，`NoStationPrefix_UsesTheDefaultUnitId`。
+  - 有意不提供（第 20 节与 P7-D1）：`ReadExceptionStatus`、`Diagnostics`、`GetCommEventCounter`、`GetCommEventLog`、`ReportServerId`、原始 PDU 入口（`Request`、`RequestAsync`）、`ModbusHelper.BuildRequestFrame`、同步 API、`IModbusPduValidator` 注入。这些都在迁移对照表中写明，不属于能力缺失。
+  - 工厂与依赖注入（`IModbusFactory` → `PlcClientFactory`）：归 Task 11，尚未验证。
+- 有效行：v2 3304 → v3 1157（Protocol 与 Client 与 Options 与 Framing 与 Addressing 与 Connection 合计）。
+- 结论：**继续**。没有出现 S1、S2 以外的套件缺口，也没有 v2 的读写能力表达不出来的情况，按计划不停下，进入里程碑 4。
+- 需要审阅者知悉的两个决定（不影响门槛判断）：
+  - 第 6 节 "超过 256 字节抛 FrameDecodeException" 的字面实现（噪声可能让通道把连接当作出错），以及对应的 P7-D8 "不抛异常" 的张力。
+  - 分帧器在候选帧的字节数未到达时等待（P7-D17 ②）。
+
 ### 25.4 基线与度量（执行者填写）
 
 Task 0 实测（第 3 节口径；脚本 `build/metrics/*.py`，经 `runpy` 调用，未修改脚本）：
