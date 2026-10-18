@@ -2,6 +2,68 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — WebApi P3.2（WebApi.Server 1.0.0-preview.1：HTTP 服务端）
+
+### 新增（Added）
+
+- 2026-10-17 [WebApi.Server] 新增库 `Junevy.Communication.WebApi.Server` 与测试项目 `Tests/Junevy.Communication.WebApi.Server.Tests`（P3.2 计划，P32-D1 至 D3）。只做 REST / JSON 服务端，不做 SOAP 服务端。
+  - **Task 1（骨架、模型与校验）**：只面向 net8.0；引用 Core、WebApi 与 `Microsoft.AspNetCore.App`；英文 README 打包（Task 8 补全）；`InternalsVisibleTo` 只给本包的测试项目。
+  - 公开模型：`WebApiServerConfig`、`WebApiServerHttpsOptions`、`WebApiServerDeduplicationOptions`、`WebApiServerComponents`、`WebApiServerState`、`WebApiServerStateChangedEventArgs`；拦截器与认证器的接口与上下文（`IWebApiServerInterceptor`、`WebApiServerInterceptor`、`WebApiServerContext`、`WebApiServerRequestingContext`、`WebApiServerRespondingContext`、`IWebApiRequestAuthenticator`、`WebApiAuthenticationResult`）；结果分类 `WebApiServerOutcome`。
+  - 配置在创建服务器时校验并拍快照：监听地址（Kestrel 写法，必须带端口，不允许重复）、HTTPS 证书来源、业务包络的字段路径、去重与日志选项、序列化器的内容类型（必须是 JSON）。凭据与证书口令只保存环境变量名，值在创建时读取，错误消息只含变量名。
+- 2026-10-17 [WebApi.Server] **Task 7（工厂与依赖注入）**：新增 `WebApiServerFactory : NamedFactory<IWebApiServer>`（`GetOrAdd(name, config, components?)`，同名返回同一实例，别名与释放与其它工厂一致）与 `AddWebApiServers()`（命名空间 `Junevy.Communication.WebApi.Server.DependencyInjection`，单例，可重复调用，与 `AddWebApiClients()` 互不影响）。容器的 `ILoggerFactory` 透传给服务器；容器释放时释放工厂与它创建的服务器。
+  - 测试覆盖 appsettings 形状的 JSON 经绑定路径得到的配置，并能直接启动服务器。
+- 2026-10-17 [WebApi.Server] **增补（D-14，审阅者决定需要）**：新增 `WebApiServerFactoryBuilder`（命名空间 `Junevy.Communication.WebApi.Server`），供没有 DI 容器的宿主使用：`Create()`、`WithLoggerFactory(ILoggerFactory)`（为 null 抛出 `ArgumentNullException`）、`Build()`（每次返回新的独立 `WebApiServerFactory`）。用法与客户端的 `WebApiClientFactoryBuilder` 一致。这是计划之外的增补；计划第 6–13 节的公开 API 不变。
+  - 测试 `WebApiServerFactoryBuilderTests`：构建出的工厂可以创建服务器；日志工厂透传给服务器；不设日志工厂时服务器可以启动；两次构建互不影响。
+- 2026-10-17 [WebApi.Server] **Task 6（服务端外观与生命周期）**：公开 `IWebApiServer` 与 `WebApiServer`（`Name`、`State`、`Urls`，`StateChanged`、`RequestReceived`、`RequestCompleted` 事件，`StartAsync` 返回 `CommResult`，`StopAsync`，`MapGet`、`MapDelete`、`MapPost`、`MapPut`，`Dispose` 与 `DisposeAsync`）。
+  - 状态机 `Stopped → Starting → Running → Stopping → Stopped`，状态变化在同一把异步锁之下按顺序触发；订阅者的异常只记录。
+  - 启动失败返回 `CommResult` 且不留下应用：已启动、没有路由 → `InvalidRequest`；端口被占用 → `ResourceExhausted`；无权绑定（Windows 排除端口等）→ `AuthenticationFailed`；证书加载失败 → `InvalidRequest`；路由模板非法 → `InvalidRequest`；其余 → `Unspecified`。
+  - HTTPS：`Components.Certificate` 优先，否则从 .pfx 文件加载（口令来自环境变量，文件导入使用 `Exportable`）。`Urls` 启动后返回实际绑定的地址（端口 0 已解析）。
+  - 停止：等待在途请求最长 `StopTimeout`，之后中止连接并取消处理器的令牌；处理器不理会令牌时停止与释放照常完成，结果丢弃且异常被观察。可重复调用；释放后 `StartAsync` 与 `Map*` 抛 `ObjectDisposedException`，`StopAsync` 无操作。
+  - 路由在启动后不能再注册（`InvalidOperationException`）；同一方法下模板重复抛 `ArgumentException`。
+  - 环境变量 `ASPNETCORE_URLS` 与工作目录下的 `appsettings.json` 不影响服务器；监听所有网卡却没有认证时启动记 Warning。
+  - 与 3.1 客户端的真实往返：成功、业务失败（`RemoteError` 与业务码）、401（`AuthenticationFailed`）、去重开启时带幂等键的重复调用只执行一次。
+  - 修正：客户端断开时仍在运行的处理器，其之后的异常也被观察（之前只处理了超时的情况）。
+- 2026-10-17 [WebApi.Server] **Task 5（重复下发去重）**：可选、默认关闭的去重（`WebApiServerDeduplicationOptions`：`HeaderName` 默认 `Idempotency-Key`，`Window` 默认 600000 毫秒，`MaxEntries` 默认 1000）。键为（幂等键、方法、路径），正文用 SHA-256 比较。
+  - 窗口内同键已完成的请求重放第一次的状态码、`Content-Type` 与正文，带 `Idempotent-Replayed: true`，处理器不执行，结果分类为 `Replayed`；同键仍在处理中返回 409；同键正文不同返回 422。
+  - 只缓存处理器给出的响应（成功与业务失败）；框架拒绝、正文错误与异常不缓存，允许重试。
+  - 处理器超时（504）之后仍在运行时，该键保持处理中，直到处理器真正结束才缓存它的最终结果。
+  - 条目超过上限时淘汰最旧的已完成条目；处理中的条目永不淘汰，缓存全是处理中条目时返回 503 与 `Retry-After: 1`。时间源可注入（`WebApiServerComponents.TimeProvider`）。
+- 2026-10-17 [WebApi.Server] **Task 4（认证与拦截器）**：内置认证（`WebApiAuthOptions` 的形状，凭据来自环境变量，构造时读取）：Basic、Bearer、ApiKey，期望值用 `CryptographicOperations.FixedTimeEquals` 比较，方案名不区分大小写；失败返回 401，Basic 与 Bearer 带 `WWW-Authenticate`（Basic 的 realm 为服务器名称），响应体不回显任何凭据。`IWebApiRequestAuthenticator` 设置后取代内置配置，身份名称进入 `WebApiServerContext.UserName`。
+  - 拦截器（`IWebApiServerInterceptor`，基类 `WebApiServerInterceptor`）：请求阶段按注册顺序，`Reject` 之后的拦截器与处理器都不执行；响应阶段只通知请求阶段已经完成（或拒绝）的拦截器，并按逆序执行，可追加响应头。拦截器或认证器抛出的异常返回 500 并记 Error。
+  - 认证与拦截器都在请求超时之下执行（超时 504）。
+  - 判定函数（内部）：监听所有网卡（`*`、`+`、`0.0.0.0`、`[::]`）却没有认证时需要警告，启动时的警告在 Task 6 接入。
+- 2026-10-17 [WebApi.Server] **Task 3（路由与请求管线）**：嵌入式 Kestrel 宿主（`KestrelHost`，每次启动建一个只含 Kestrel 与路由的应用，不读 `appsettings.json`、环境变量与命令行，不加默认日志提供程序；Warning 及以上的框架日志转给调用方的 `ILoggerFactory`）。中间件顺序：入口与出口 → 并发限流（`RateLimiter` 的并发限流器，队列长度 0，超限立即 503 与 `Retry-After: 1`）→ 路由（ASP.NET Core 路由模板，字面段优先）→ 管线。
+  - 管线（`RequestPipeline`）：读取正文（超时 408，超过 `MaxRequestBodySize` 413，断开不返回响应）→ 解码（400 / 415）→ 处理器（带超时，超时 504，处理器不理会令牌而继续运行时响应照发，结果丢弃并记 Warning，`RequestCompleted` 不重复触发）→ 写出；处理器抛出的异常返回 500，响应只含通用消息，异常只进日志。
+  - 框架的 404 与 405 走同一个写出出口（405 带 `Allow`）。
+  - 事件：`RequestReceived`（路由之前）与 `RequestCompleted`（每个请求恰好一次，含拒绝、超时、断开）；订阅者逐个调用，单个订阅者的异常只记 Error。
+  - 公开类型：`WebApiServerContext`、`WebApiServerOutcome`、`WebApiServerRequestEventArgs`、`WebApiServerCompletedEventArgs`。
+  - 在途请求数（内部，供测试断言）回到零。
+- 2026-10-17 [WebApi.Server] **Task 2（响应格式与请求正文）**：新增 `WebApiServerResponse<T>`（`Ok` 只接受 2xx，`Fail` 的业务码不能为空、状态码 200 至 599）。内部 `ResponseFormatter` 是唯一的响应出口：启用包络时成功写 `{ code, msg, data }`、业务失败写 `{ code, msg }`，框架拒绝用同一结构（`code` 为状态码文本）；未启用包络时成功写数据本身（`data` 为 null 时 204），失败与拒绝写 RFC 9457 Problem Details（`application/problem+json`，业务码在扩展字段 `code`）。
+  - 请求正文（`RequestBodyReader`）：空正文 400，有正文但非 JSON 媒体类型 415，`byte[]` 给原始字节，`string` 按 charset 解码（缺省 UTF-8，未知字符集 415），其余类型由序列化器反序列化（失败 400，详情只进日志）。
+  - 包络配置新增一条校验：`CodePath`、`MessagePath`、`DataPath` 不能互为前缀（写出时同一层的字段会争用同一个属性）。
+  - 往返：服务端写出的包络交给 3.1 客户端（`WebApiClient`，启用包络）解析，成功拿到同样的数据，业务失败拿到 `RemoteError` 与业务码。
+- 2026-10-17 [Architecture] SDK 适配守卫登记 `Junevy.Communication.WebApi.Server`（SDK 前缀 `Microsoft.AspNetCore`，命名空间 `Junevy.Communication.WebApi.Server.Hosting`），分层表与 `ArchitectureTests.SdkPrefixes` 同步加一行；`SdkAdapterArchitectureTests.Adapters` 增加"允许引用的库"列（服务端允许 Core 与 WebApi，其余适配包只允许 Core）。负控：临时暴露 `HttpContext` 与在根命名空间的类型里引用它，两条守卫各报一次错，已撤除。
+
+### 变更（Changed）
+
+- 2026-10-17 [WebApi] 客户端（`Junevy.Communication.WebApi`）的生产代码与 `Tests/Junevy.Communication.WebApi.Tests` 本期零改动。服务端的业务包络读取（`ResponseEnvelopeCodec`）未改，服务端只新增"写"的一侧。
+- 2026-10-17 [Architecture] `SdkAdapterArchitectureTests`：登记表增加"允许引用的库"列，守卫 1 由"只引用 Core"改为"只引用各自的允许列表"（服务端允许 WebApi，其余适配包仍只允许 Core）；`WebApiLayeringTests` 中关于 `Server` 的注释改为指向本包。
+- 2026-10-17 [WebApi.Server] 公开 API 与计划第 6–13 节逐条一致；`WebApiServerContext`、`WebApiServerOutcome` 等被组件接口引用的类型在 Task 1 即存在，以便组件可以编译。
+- 2026-10-17 [WebApi.Server] 配置校验新增两条：序列化器的内容类型必须是 JSON（不论是否启用包络），包络的三个路径不能互为前缀。
+- 2026-10-18 [WebApi.Server] **管线顺序（审阅 A）**：认证移到解码之前——读正文 → 认证 → 解码 → 请求拦截器 → 去重 → 处理器。未认证的调用方只得到 401（不再因正文得到 400 / 415），序列化器不处理未认证的输入；认证器仍拿到原始正文。
+- 2026-10-18 [WebApi.Server] **被摘出去的处理器可观测（审阅 B）**：504 或对端断开之后仍在运行的处理器计数（内部 `KestrelHost.AbandonedCount`），每条 Warning 写出仍在运行的数量；它们仍不占 `MaxConcurrentRequests` 的名额。
+- 2026-10-18 [WebApi.Server] 凭据比较改为两边先取 SHA-256 再固定时间比较，不再暴露期望值的长度。
+
+### 修正（Fixed）
+
+- 2026-10-18 [WebApi.Server] **释放与启动竞争**：等在锁外的 `StartAsync` 会在 `DisposeAsync` 之后建起新应用，释放后服务器仍在监听且无法停止。释放标记改在生命周期锁内设置与检查，等待中的启动抛 `ObjectDisposedException`。用例：`WebApiServerConcurrencyTests`。
+- 2026-10-18 [WebApi.Server] **停止期间读取 `Urls` 抛 `ObjectDisposedException`**：`Urls` 改读启动成功时拍下的地址快照，不再在应用释放时访问它的服务容器。
+- 2026-10-18 [WebApi.Server] **`Logging` 配置无效**（P32-D15 未实现）：新增请求日志——Debug 记方法、路径、脱敏后的查询参数与请求头；结束时记方法、路由模板（原为路径）、状态码、结果与耗时；`LogBodies` 时记请求与响应正文并按 `MaxLoggedBodyLength` 截断。用例：`RequestLogTests`。
+- 2026-10-18 [WebApi.Server] **等价模板被当成不同路由**：`/orders`、`/Orders`、`orders/` 同时登记会在每次请求时引发歧义（500）。登记时忽略大小写与首尾 `/` 判重，抛 `ArgumentException`。
+- 2026-10-18 [WebApi.Server] **去重重放带上第一次请求的拦截器响应头**：缓存改存头的快照，响应拦截器之后的修改不进入缓存，也不再与重放并发读写同一个字典；去重键加入查询串（按名称排序），查询参数不同的请求不再互相重放。
+- 2026-10-18 [WebApi.Server] 504 或对端断开之后迟到的处理器结果不再交给响应拦截器；处理器自己抛出的 `OperationCanceledException`（令牌未取消）按 500 处理并经过响应拦截器；路由映射失败时释放已建立的应用。
+- 2026-10-18 [WebApi.Server] 清理：删除未使用的 `ServerLifecycle.Host` 与 `RouteTable.Count`；合并两个同形的拒绝记录；405 不再重复复制框架已写入的 `Allow`；格式化器、事件与日志记录器经 `HostServices` 只建一份；补齐 D-7（畸形分块正文 → 400）、D-8（断开后仍在运行 → Warning）、释放规则、Q29（`Kestrel:Endpoints`）与"比较都经过比较函数"的用例。
+
 ## [Unreleased] — P6.2（OpcUa 1.0.0-preview.1：OPC UA 客户端）
 
 ### 新增（Added）

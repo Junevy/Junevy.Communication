@@ -100,7 +100,8 @@ graph TB
 | `Junevy.Communication.Serial`                   | `SerialChannel`                                                                     | Channels + System.IO.Ports                                                                                  | P1       |
 | `Junevy.Communication.Plc`                      | 地址型设备协议套件                                                                           | Channels                                                                                                    | P2       |
 | `Junevy.Communication.Melsec`                   | 三菱 MC 协议                                                                            | Plc + Tcp + Udp + Serial                                                                                    | P2       |
-| `Junevy.Communication.WebApi`                   | REST 客户端、SOAP 客户端、HTTP 服务端                                                          | Core + System.Text.Json                                                                                     | P3       |
+| `Junevy.Communication.WebApi`                   | REST 客户端、SOAP 客户端                                                          | Core + System.Text.Json                                                                                     | P3       |
+| `Junevy.Communication.WebApi.Server`          | HTTP 服务端（REST / JSON，嵌入式 Kestrel，只面向 net8.0，P3.2）                           | Core + WebApi + `Microsoft.AspNetCore.App`（共享框架）                                |
 | `Junevy.Communication.Siemens` / `.Omron`       | S7、FINS                                                                             | Plc + 所需传输包                                                                                                 | P4       |
 | `Junevy.Communication.Secs`                     | SECS-II、HSMS-SS（设备端），之后是 GEM；不做 SECS-I                                       | Channels + Tcp                                                                                              | P5       |
 | `Junevy.Communication.Mqtt` / `.OpcUa` / `.Ftp` | SDK 适配：只做客户端，**只面向 net8.0**（Q9–Q12）                                                 | Core + 对应第三方 SDK（MQTTnet 5、OPC Foundation .NET Standard 2.0、FluentFTP）                                           | P6       |
@@ -1160,6 +1161,8 @@ public class WebApiServerConfig
 - **不用 Kestrel**：不支持 net472，且要求宿主引用 ASP.NET Core 共享框架；本身是 ASP.NET Core 的宿主应直接用 Minimal API。
 - **部署陷阱**：非管理员运行需先 `netsh http add urlacl url=http://+:8080/ user=<运行账户>`；HTTPS 需 `netsh http add sslcert` 绑定证书；防火墙放行端口。
 
+> **P3.2 修订**：本节的服务端设计（`HttpListener`、`WebApiResult<bool>`、`RestartOnFault`、"不用 Kestrel"）已由第 20.10 节取代，以 20.10 为准。
+
 ### 15.6 离线缓存（只预留扩展点）
 
 ```csharp
@@ -1246,7 +1249,7 @@ public sealed class OutboxItem
 |---|---|
 | P1（本期） | Core + Channels + Tcp（含可选 TLS）+ Udp + Serial + 测试套件。里程碑：M1 Core + Channels + TCP 客户端/服务端 → M2 TLS → M3 串口 → M4 UDP |
 | P2 | Plc 套件 + MELSEC MC（验证扩展性，见 21.1 R2） |
-| P3 | WebApi（MES）：REST 客户端、SOAP 客户端、HTTP 服务端；离线缓存只预留接口 |
+| P3 | WebApi（MES）：REST 客户端、SOAP 客户端（**P3.1 已完成**）；HTTP 服务端（**P3.2 已完成**，见 20.10，独立包 `WebApi.Server`）；离线缓存只预留接口 |
 | P4 | S7、FINS（套件的第二、第三个使用者） |
 | P4.5 / P4.6 | 协议共用件（`BigEndianFields`、`SequenceCounter`、组件装配）；共享测试库整理 |
 | P5 | SECS（设备端）：**P5.1 SECS-II + HSMS-SS 已完成** → P5.2 GEM。不做 SECS-I（21.1 Q13） |
@@ -1523,6 +1526,35 @@ P6.2（计划 `docs/superpowers/plans/2026-10-12-p62-opcua.md`，Task 0–12）�
 **度量结论**（Task 12，验收修正之后）：OpcUa 包有效行 1758，其中 `Sdk/` 1138（64.7%）。与 Mqtt 的 1484 / 508（34.2%）对照：OPC UA 的 `Sdk/` 占比高，不是因为适配层厚，而是值映射（两张表）、NodeId 文本、错误映射表与订阅的删除时序都算在 `Sdk/` 里；SDK 把分批、继续点、重连、订阅转移都做好了，本库一行都没重写。生产重复窗口 34 个（与基线逐条相同，本期为 0 新增），生产 >60 行方法 0，>300 行文件 9（未增加；OpcUa 最长的 `OpcUaSdkOperations` 298 行），生产程序集之间的 `InternalsVisibleTo` 仍为 2。
 
 **给后续 SDK 适配的教训**（验收所得）：进程内测试替身要能读出**服务器侧**的会话数与订阅数——会话泄漏、订阅复活、"取消之后后台照样连上"这几类缺陷从客户端侧完全看不出来，P6.2 的执行者因此把相应变异体记成了等价变异体。
+
+### 20.10 实施修订（P3.2）
+
+P3.2（计划 `docs/superpowers/plans/2026-10-17-p32-webapi-server.md`，Task 0–9）是 MES 的 HTTP 服务端：`Junevy.Communication.WebApi.Server`，只面向 net8.0，只支持 REST 与 JSON。第 15.5 节的设计在以下各处被修订；本节以代码与计划为准。
+
+| # | 章节 | 原设计 | 实际实现 | 原因 |
+|---|---|---|---|---|
+| 1 | 15.5 | 服务端用 `HttpListener`，"不用 Kestrel" | 改用**嵌入式 Kestrel**：每次启动建一个只含 Kestrel 与路由的 ASP.NET Core 应用，不读宿主的配置、环境变量与命令行，不加默认日志提供程序 | 用户 2026-10-17 决定；Kestrel 是微软持续维护的默认服务器，`HttpListener` 官方不推荐用于新开发；Kestrel 绑定地址不需要 `netsh`（URL ACL 与证书绑定）；使用方是 net8.0-windows |
+| 2 | 15.2、第 3.1 节 | `WebApi` 包内含 `Server/` 命名空间 | 服务端是**独立包** `Junevy.Communication.WebApi.Server`（只面向 net8.0），引用 WebApi 与 Core，并加 `Microsoft.AspNetCore.App` 框架引用；`Microsoft.AspNetCore.*` 只允许出现在 `Hosting` 命名空间（架构测试强制） | 拆包让只用客户端的程序不被 ASP.NET Core 运行时拖累；客户端包仍是 net472;net8.0 且本期零改动 |
+| 3 | 15.5 | `StartAsync` 返回 `WebApiResult<bool>` | 返回 `CommResult`，与 `TcpServer.StartAsync` 一致。端口被占用 → `ResourceExhausted`；无权绑定（Windows 排除端口）→ `AuthenticationFailed`；证书或路由错误、重复启动、没有路由 → `InvalidRequest` | 服务端的启动结果不携带 HTTP 响应，与通道族保持一致 |
+| 4 | 15.5 | `RestartOnFault` 故障自动重启 | 不做。接收循环自己处理套接字错误；状态 `WebApiServerState` 自建，不引用 Tcp 的 `ServerState` | 没有 `HttpListener` 那种"监听意外停掉"的情形；关闭 P3.1 待决问题 2 |
+| 5 | 15.5 | `WebApiServerConfig`：`Prefixes`、`WebApiServerAuthOptions` | `Urls`（Kestrel 写法，端口可为 0，启动后 `Urls` 给出实际地址）；`Auth` 复用 `WebApiAuthOptions` 的形状，凭据来自环境变量，创建时读取；`Https` 用证书文件（口令来自环境变量）或调用方的 `X509Certificate2` | 与客户端配置对称；凭据不进入配置文件或日志 |
+| 6 | 15.5 | 错误响应：404、405、401、400、413、500、503、504 | 增加 408、409、415、422；两种响应格式：启用业务包络时成功写 `{ code, msg, data }`、业务失败写 `{ code, msg }`，框架拒绝用同一结构；未启用时成功写数据本身（null 为 204），失败与拒绝写 RFC 9457 Problem Details（`application/problem+json`，业务码在扩展字段 `code`） | 很多 MES 无论成败都 HTTP 200，与客户端的业务包络对称；不用包络时用标准格式（P32-D6） |
+| 7 | 15.5 | 未涉及 | 内置、默认关闭的**重复下发去重**：键为（幂等键、方法、路径），正文用 SHA-256 比较；窗口内重放第一次的状态码、内容类型与正文（带 `Idempotent-Replayed: true`）；处理中的同键返回 409，正文不同返回 422；只缓存处理器给出的响应；处理器超时之后仍处于"处理中"，直到它真正结束才缓存结果 | MES 超时重发是现场最常见的重复执行来源（P32-D11） |
+| 8 | 15.5 | 未涉及 | 拦截器（`IWebApiServerInterceptor`）：请求阶段按注册顺序，`Reject` 之后的拦截器与处理器都不执行；响应阶段按逆序，只通知请求阶段已经完成的拦截器，可追加响应头。事件 `RequestReceived`（路由之前）与 `RequestCompleted`（每个请求恰好一次，含拒绝、超时、断开与重放）；订阅者逐个调用，异常只记录 | 签名校验、IP 白名单、审计都靠拦截器；事件参数自成一套，不复用客户端的 `WebApiCallEventArgs`（P32-D10） |
+| 9 | 15.5 | `RequestTimeout` "处理器超时返回 504" | 超时由本库自己计时（`TimeoutScope`）：读正文超时 408，之后的阶段超时 504。框架的 `RequestTimeouts` 中间件只取消令牌，处理器不理会令牌时不会按时回 504；处理器继续运行时，响应照发，结果丢弃并记 Warning，异常被观察 | P32-D8；P6.2 的同类教训 |
+| 10 | 15.5 | 未涉及 | 不做 SOAP 服务端（用户 2026-10-17 决定，以后另起计划）；不做挂到宿主已有 ASP.NET Core 应用上的扩展（计划第 18 节，以后可加）；宿主本身是 ASP.NET Core 应用时直接用 Minimal API | 现代 MES 的下发多为 HTTP + JSON（P32-D1） |
+| 11 | 15.5 | 未涉及 | 认证：`Basic`、`Bearer`、`ApiKey` 内置，期望值用 `CryptographicOperations.FixedTimeEquals` 比较；失败 401，Basic 与 Bearer 带 `WWW-Authenticate`，响应不回显期望值；监听所有网卡却没有认证时启动记 Warning | P32-D9；关闭 P3.1 待决问题 4 |
+| 12 | 15.5 | 未涉及 | 生命周期：`Stopped → Starting → Running → Stopping → Stopped`，状态只在锁内变化，`StateChanged` 按变化顺序触发；`StopAsync` 等在途请求最长 `StopTimeout`，之后中止；释放不释放仍可能被在途请求使用的锁（P6.1 R3、P6.2 R10） | P6-C8 的释放规则 |
+| 13 | 第 2 节（计划） | 计划 P32-D6 写"用 ASP.NET Core 的 `ProblemDetails` 类型" | 不用该类型，直接写 RFC 9457 的 JSON | `ProblemDetails` 位于 `Microsoft.AspNetCore.Mvc`，而 Q30 要求 `Hosting` 之外不引用 `Microsoft.AspNetCore.*`；线上格式不变 |
+| 14 | 第 3 节（计划） | 守卫 1 "适配包只引用 Core" | 守卫改为"引用各自的允许列表"，服务端允许 WebApi；其余适配包仍只允许 Core | 服务端同时依赖 WebApi 的公共约定（P32-D2）；没有新写守卫；审阅者 2026-10-17 接受（计划 D-3） |
+| 15 | 计划 P32-D14 | 计划只列了 `WebApiServerFactory` 与 `AddWebApiServers()` | 增加 `WebApiServerFactoryBuilder`（`Create()`、`WithLoggerFactory()`、`Build()`），供没有 DI 容器的宿主使用；与客户端的 `WebApiClientFactoryBuilder` 对称。计划第 6–13 节的公开 API 不变 | 审阅者 2026-10-17 决定需要（计划 D-14） |
+| 16 | 计划第 8 节 Task 3 | 阶段顺序：正文 → 认证 → 拦截器（正文阶段含解码） | 读正文 → **认证** → 解码 → 请求拦截器 → 去重 → 处理器；504 或断开之后迟到的结果不经过响应拦截器 | 未认证的调用方只得到 401，序列化器不处理未认证的输入；认证器仍能拿到原始正文（审阅 A，2026-10-18） |
+| 17 | P32-D8 | 处理器超时后继续运行，结果丢弃并记 Warning | 另外统计仍在运行的被摘出处理器（内部计数，Warning 写出数量）；它们仍不占 `MaxConcurrentRequests` 的名额 | 设备卡住而 MES 反复重发时堆积看得见；是否计入并发上限留待现场数据（审阅 B，2026-10-18） |
+| 18 | P32-D5、D11 | 重复模板按字符串判断；去重键为幂等键 + 方法 + 路径 | 模板忽略大小写与首尾 `/` 判重（与 ASP.NET Core 的匹配一致）；去重键加入按名称排序的查询串 | 等价模板同时登记会在每次请求时歧义（500）；查询参数不同的请求是不同的命令（审阅 R4、R9） |
+
+**度量结论**（Task 9）：见计划第 19.3 节。新包的生产代码全部在 300 行以内，方法在 60 行以内；生产重复窗口与 P6.2 的基线一致。
+
+**审阅者决定（已实现）**：需要。服务端增加了 `WebApiServerFactoryBuilder`，见上表第 15 项。
 
 ## 21. 决策记录
 
