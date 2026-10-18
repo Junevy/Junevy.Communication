@@ -17,34 +17,30 @@ public sealed class FtpEncodingRoundTripTests
     [Fact]
     public async Task Gbk_UploadListDownload_RoundTripsTheChineseName()
     {
-        Encoding gbk = FtpFixtures.Gbk();
         using var local = new TempDirectory();
-        string source = local.File("source.txt");
-        File.WriteAllText(source, "gbk content", Encoding.ASCII);
-        await using FakeFtpServer server = FtpFixtures.Start(new FakeFtpOptions { AdvertiseUtf8 = false, FileNameEncoding = gbk });
+        await using FakeFtpServer server = FtpFixtures.Start(new FakeFtpOptions { AdvertiseUtf8 = false, FileNameEncoding = FtpFixtures.Gbk() });
         FtpClientOptions options = FtpTestClients.OptionsFor(server);
         options.EncodingName = "GBK";
         await using FtpClient client = FtpClient.Create(options);
 
-        CommResult<FtpTransferStatus> uploaded = await client.UploadFileAsync(source, "/" + ChineseName);
-        CommResult<IReadOnlyList<FtpEntry>> listed = await client.ListAsync("/");
-        CommResult<FtpTransferStatus> downloaded = await client.DownloadFileAsync("/" + ChineseName, local.File("copy.txt"));
-
-        Assert.True(uploaded.IsSuccess, uploaded.ToString());
-        Assert.True(listed.IsSuccess, listed.ToString());
-        Assert.Contains(listed.Data!, e => e.Name == ChineseName);
-        Assert.True(downloaded.IsSuccess, downloaded.ToString());
-        Assert.Equal("gbk content", File.ReadAllText(local.File("copy.txt"), Encoding.ASCII));
+        await AssertChineseNameRoundTripsAsync(client, local, "gbk content");
     }
 
     [Fact]
     public async Task Utf8_UploadListDownload_RoundTripsTheChineseName_WithTheDefaults()
     {
         using var local = new TempDirectory();
-        string source = local.File("source.txt");
-        File.WriteAllText(source, "utf8 content", Encoding.ASCII);
         await using FakeFtpServer server = FtpFixtures.Start();
         await using FtpClient client = FtpClient.Create(FtpTestClients.OptionsFor(server));
+
+        await AssertChineseNameRoundTripsAsync(client, local, "utf8 content");
+    }
+
+    // 上传、列目录、下载同一个中文名，并检查名称与内容都一致。
+    private static async Task AssertChineseNameRoundTripsAsync(FtpClient client, TempDirectory local, string content)
+    {
+        string source = local.File("source.txt");
+        File.WriteAllText(source, content, Encoding.ASCII);
 
         CommResult<FtpTransferStatus> uploaded = await client.UploadFileAsync(source, "/" + ChineseName);
         CommResult<IReadOnlyList<FtpEntry>> listed = await client.ListAsync("/");
@@ -54,6 +50,6 @@ public sealed class FtpEncodingRoundTripTests
         Assert.True(listed.IsSuccess, listed.ToString());
         Assert.Contains(listed.Data!, e => e.Name == ChineseName);
         Assert.True(downloaded.IsSuccess, downloaded.ToString());
-        Assert.Equal("utf8 content", File.ReadAllText(local.File("copy.txt"), Encoding.ASCII));
+        Assert.Equal(content, File.ReadAllText(local.File("copy.txt"), Encoding.ASCII));
     }
 }

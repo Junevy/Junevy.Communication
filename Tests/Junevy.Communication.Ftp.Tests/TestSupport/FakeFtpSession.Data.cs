@@ -3,7 +3,7 @@ using System.Net.Sockets;
 
 namespace Junevy.Communication.Ftp.Tests.TestSupport;
 
-/// <summary>被动模式（PASV 与 EPSV）的应答与数据监听；数据传输命令在 Task 4、5 加入。</summary>
+/// <summary>被动模式（PASV 与 EPSV）的应答与数据监听，以及发送与接收共用的数据连接前置检查和发送入口。</summary>
 internal sealed partial class FakeFtpSession
 {
     private const int PortHighByteDivisor = 256;
@@ -15,16 +15,9 @@ internal sealed partial class FakeFtpSession
     // 注入了中断字节数时，发送到该字节数后关闭数据连接并应答 426。
     private async Task TransferAsync(byte[] payload, CancellationToken cancellationToken)
     {
-        if (server.Faults.DataRejectCode != 0)
-        {
-            await ReplyAsync(server.Faults.DataRejectCode, "Can't open data connection.", cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        TcpListener? listener = passiveListener;
+        TcpListener? listener = await TakeDataListenerAsync(cancellationToken).ConfigureAwait(false);
         if (listener is null)
         {
-            await ReplyAsync(425, "Use PASV or EPSV first.", cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -38,6 +31,25 @@ internal sealed partial class FakeFtpSession
         {
             listener.Stop();
         }
+    }
+
+    // 数据传输的前置检查（发送与接收共用）：被故障注入拒绝时应答注入的码；没有被动监听时应答 425。
+    // 两种情况都返回 null；否则返回监听（不发 150，由调用方确定要传输时再发出）。
+    private async Task<TcpListener?> TakeDataListenerAsync(CancellationToken cancellationToken)
+    {
+        if (server.Faults.DataRejectCode != 0)
+        {
+            await ReplyAsync(server.Faults.DataRejectCode, "Can't open data connection.", cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+
+        TcpListener? listener = passiveListener;
+        if (listener is null)
+        {
+            await ReplyAsync(425, "Use PASV or EPSV first.", cancellationToken).ConfigureAwait(false);
+        }
+
+        return listener;
     }
 
     private async Task SendOverDataConnectionAsync(TcpListener listener, byte[] payload, CancellationToken cancellationToken)

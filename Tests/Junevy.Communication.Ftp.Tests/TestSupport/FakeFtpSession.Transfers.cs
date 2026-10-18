@@ -42,16 +42,9 @@ internal sealed partial class FakeFtpSession
     // 接收客户端经数据连接发来的全部内容（直到它关闭连接），写入文件系统，最后应答 226。
     private async Task ReceiveAsync(string target, CancellationToken cancellationToken)
     {
-        if (server.Faults.DataRejectCode != 0)
-        {
-            await ReplyAsync(server.Faults.DataRejectCode, "Can't open data connection.", cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        TcpListener? listener = passiveListener;
+        TcpListener? listener = await TakeDataListenerAsync(cancellationToken).ConfigureAwait(false);
         if (listener is null)
         {
-            await ReplyAsync(425, "Use PASV or EPSV first.", cancellationToken).ConfigureAwait(false);
             return;
         }
 

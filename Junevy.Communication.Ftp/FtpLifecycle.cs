@@ -11,7 +11,10 @@ namespace Junevy.Communication.Ftp;
 internal sealed class FtpLifecycle
 {
     private readonly FtpSdkSession session;
-    private readonly FtpOperationGate gate = new();
+
+    // 串行门：一次只允许一个操作使用控制连接（P63-D4）。信号量从不释放：释放客户端时仍可能有操作在等待或持有它，
+    // 而没有访问过 AvailableWaitHandle 的 SemaphoreSlim 不持有非托管资源。
+    private readonly SemaphoreSlim gate = new(1, 1);
     private readonly CancellationTokenSource disposing = new();
     private readonly Lazy<Task> disposal;
     private readonly ILogger logger;
@@ -48,7 +51,8 @@ internal sealed class FtpLifecycle
     /// <returns>断开完成。</returns>
     public async Task DisconnectAsync(CancellationToken cancellationToken)
     {
-        await using (await gate.EnterAsync(cancellationToken).ConfigureAwait(false))
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
             if (IsDisposed || !session.IsConnected)
             {
@@ -65,6 +69,10 @@ internal sealed class FtpLifecycle
                 // QUIT 失败不影响断开：SDK 已经关闭连接，这里只记录。
                 logger.LogWarning(ex, "The FTP QUIT command failed; the control connection was closed locally.");
             }
+        }
+        finally
+        {
+            gate.Release();
         }
     }
 
@@ -85,19 +93,22 @@ internal sealed class FtpLifecycle
             return FtpErrorMap.Disposed().As<T>();
         }
 
-        IAsyncDisposable lease;
         try
         {
-            lease = await gate.EnterAsync(cancellationToken).ConfigureAwait(false);
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             return FtpErrorMap.Cancelled().As<T>();
         }
 
-        await using (lease)
+        try
         {
             return await ExecuteAsync(operation, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
         }
     }
 
@@ -175,12 +186,17 @@ internal sealed class FtpLifecycle
         disposing.Cancel();
 
         // 等待正在进行的操作因取消而结束，然后独占串行门做最后的 QUIT。
-        await using (await gate.EnterAsync(CancellationToken.None).ConfigureAwait(false))
+        await gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
         {
             if (session.IsConnected)
             {
                 await QuitBestEffortAsync().ConfigureAwait(false);
             }
+        }
+        finally
+        {
+            gate.Release();
         }
 
         await session.DisposeAsync().ConfigureAwait(false);

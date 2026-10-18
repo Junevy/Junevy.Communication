@@ -3,6 +3,7 @@ using FluentFTP;
 using FluentFTP.Exceptions;
 using Junevy.Communication.Ftp.Tests.TestSupport;
 using Junevy.Communication.Testing;
+using static Junevy.Communication.Ftp.Tests.TestSupport.SdkTestClients;
 
 namespace Junevy.Communication.Ftp.Tests;
 
@@ -206,22 +207,5 @@ public sealed class FtpSdkBehaviourTests
         }
 
         return null;
-    }
-
-    private static async Task<AsyncFtpClient> ConnectAsync(FakeFtpServer server)
-    {
-        var config = new FtpConfig
-        {
-            DataConnectionType = FtpDataConnectionType.AutoPassive,
-            RetryAttempts = 1,
-            ValidateAnyCertificate = true,
-            ConnectTimeout = 5000,
-            ReadTimeout = 2000,
-            DataConnectionConnectTimeout = 2000,
-            DataConnectionReadTimeout = 2000,
-        };
-        var sdk = new AsyncFtpClient(LoopbackTcp.Host, "line1", "secret", server.Port, config);
-        await sdk.Connect(CancellationToken.None);
-        return sdk;
     }
 }

@@ -16,10 +16,7 @@ public sealed class FtpReleaseTests
     public async Task ReleaseWhileAnOperationIsInProgress_ReturnsAFailureResult_WithoutThrowing()
     {
         await using FakeFtpServer server = FtpFixtures.Start();
-        server.Faults.DelayReply("MLSD", TimeSpan.FromSeconds(2));
-        FtpClientOptions options = FtpTestClients.OptionsFor(server);
-        options.ReadTimeout = 10000;
-        FtpClient client = FtpClient.Create(options);
+        FtpClient client = CreateClientWithSlowListing(server);
         Task<CommResult<IReadOnlyList<FtpEntry>>> inProgress = client.ListAsync("/docs");
         await Polling.WaitUntilAsync(() => server.Commands.Snapshot().Any(c => c.Verb == "MLSD"));
 
@@ -40,10 +37,7 @@ public sealed class FtpReleaseTests
     public async Task ReleaseWhileOperationsAreQueued_ReturnsAFailureResult_ForEachOne_AndDoesNotRunThem()
     {
         await using FakeFtpServer server = FtpFixtures.Start();
-        server.Faults.DelayReply("MLSD", TimeSpan.FromSeconds(2));
-        FtpClientOptions options = FtpTestClients.OptionsFor(server);
-        options.ReadTimeout = 10000;
-        FtpClient client = FtpClient.Create(options);
+        FtpClient client = CreateClientWithSlowListing(server);
         Task<CommResult<IReadOnlyList<FtpEntry>>> first = client.ListAsync("/docs");
         await Polling.WaitUntilAsync(() => server.Commands.Snapshot().Any(c => c.Verb == "MLSD"));
         Task<CommResult<IReadOnlyList<FtpEntry>>> queuedList = client.ListAsync("/docs");
@@ -92,10 +86,7 @@ public sealed class FtpReleaseTests
         try
         {
             await using FakeFtpServer server = FtpFixtures.Start();
-            server.Faults.DelayReply("MLSD", TimeSpan.FromSeconds(2));
-            FtpClientOptions options = FtpTestClients.OptionsFor(server);
-            options.ReadTimeout = 10000;
-            FtpClient client = FtpClient.Create(options);
+            FtpClient client = CreateClientWithSlowListing(server);
             Task<CommResult<IReadOnlyList<FtpEntry>>> inProgress = client.ListAsync("/docs");
             await Polling.WaitUntilAsync(() => server.Commands.Snapshot().Any(c => c.Verb == "MLSD"));
             await client.DisposeAsync();
@@ -110,5 +101,14 @@ public sealed class FtpReleaseTests
         }
 
         Assert.Equal(0, Volatile.Read(ref unobserved));
+    }
+
+    // MLSD 的应答延迟 2 秒，并放宽读超时：释放发生在操作进行中，而不是等超时之后。
+    private static FtpClient CreateClientWithSlowListing(FakeFtpServer server)
+    {
+        server.Faults.DelayReply("MLSD", TimeSpan.FromSeconds(2));
+        FtpClientOptions options = FtpTestClients.OptionsFor(server);
+        options.ReadTimeout = 10000;
+        return FtpClient.Create(options);
     }
 }
