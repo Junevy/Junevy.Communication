@@ -70,6 +70,10 @@ internal static class FtpErrorMap
         return Fail(CommErrorKind.Unspecified, null, $"The local file operation failed: {exception.Message}", exception);
     }
 
+    /// <summary>调用方取消（包括在串行门前排队时取消）：Cancelled。</summary>
+    /// <returns><see cref="CommErrorKind.Cancelled"/> 的结果。</returns>
+    public static CommResult Cancelled() => CommResult.Fail("The operation was cancelled.", CommErrorKind.Cancelled);
+
     /// <summary>释放之后的操作（P6-C8）：ConnectionClosed。</summary>
     /// <returns><see cref="CommErrorKind.ConnectionClosed"/> 的结果。</returns>
     public static CommResult Disposed() => CommResult.Fail("The FTP client has been disposed.", CommErrorKind.ConnectionClosed);
