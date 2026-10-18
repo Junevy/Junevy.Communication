@@ -771,6 +771,16 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - 度量：Modbus 有效行 1157 → 1215（DI 类型 58 行）。
 - 三条命令：Debug 2 个警告、0 个错误（WPF 工具的 CS8618，改动前即存在）；Release 2 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 307 / 307（跳过 1），Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
 
+#### Task 12（README、Skill、CHANGELOG，2026-10-19）
+
+- 修改：`Junevy.Communication.Modbus/README.md`（英文，整体重写：安装、快速开始（TCP、串口 RTU、RTU over TCP、多站）、地址表、功能码映射与单包上限、类型化读写、选项表、掩码写与读写多个、错误处理、心跳与重连、依赖注入、不提供的功能、"Migrating from 2.x"（第 20 节的对照表）、"Verification status"（P7-D17 的五项）加上 `IsReadOnly` 与协议专有请求的说明）；`Skills/using-junevy-modbus/SKILL.md`（改写为 v2 到 v3 的迁移指南，指向 `using-junevy-plc`）；`Skills/using-junevy-plc/SKILL.md`（概述与包表增加 Modbus；新增 "Modbus Quick Start" 一节；钩子表增加 `IsReadOnly`；新增 "Protocol-specific requests" 小节；新增 "Lessons From the P7 Friction Log"）；根 `readme.md`（协议表的 Modbus 行改为 3.0.0-preview.1 的描述）；`CHANGELOG.md`（P7 节的破坏性变更逐条列出 P7-D13 与第 20 节的变化）。
+- 代码块编译：从 `Junevy.Communication.Modbus/README.md`、`using-junevy-modbus` 与 `using-junevy-plc` 中的 Modbus 相关示例抽出（共 10 个），放进临时项目（`ImplicitUsings=disable`、`Nullable=enable`、`TreatWarningsAsErrors=true`，net8.0 与 net472 同时构建），结果为 0 错误、0 警告。过程中补齐了示例缺少的 `using`（`Core.Results`、`Channels`、`Modbus`、`Tcp`）与未声明的 `client`，使每个示例自成一体。临时项目在 scratchpad，未提交。
+- 未编译的内容：`using-junevy-plc` 中 MELSEC、S7、FINS 的示例（既有内容，不是本期改动）。它们含有类型声明，临时项目的包装方式无法承载，因此没有编译；这一点留给审阅者决定是否补做。
+- 发现的文档问题（已在 Skill 的 P7 教训中记录）：RTU over TCP 的重试与超时后的重连存在竞争（见第 25.2 节的说明）。README 的心跳一节写明了需要等待重连。
+- 先红：文档没有先红。改动前后用 `dotnet build` 验证示例（示例先失败：缺少 `using` 与未声明的 `client`，修正后通过）。
+- 第 2 节自查：符合。文档与代码中的名称一致（`MaskWriteRegisterAsync`、`ReadWriteMultipleRegistersAsync`、`AddModbus`、`ModbusClientConfig`）；v2 类型名只出现在迁移对照与 Skill 的迁移指南中（Q45 允许的位置）。
+- 三条命令：本 Task 不改代码；`test-affected` 在 Task 11 的结果仍然有效（见 Task 11）。
+
 ### 25.4 基线与度量（执行者填写）
 
 Task 0 实测（第 3 节口径；脚本 `build/metrics/*.py`，经 `runpy` 调用，未修改脚本）：

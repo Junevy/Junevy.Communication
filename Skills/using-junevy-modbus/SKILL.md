@@ -1,157 +1,95 @@
 ---
 name: using-junevy-modbus
-description: Use when a .NET project integrates the Junevy.Communication.Modbus library or repository (Modbus TCP/RTU master client) — writing connect/read/write code, DI or factory registration, handling ModbusResult or ModbusErrorKind, or troubleshooting reconnect/retry/timeout behavior
+description: Use when a .NET project integrates the Junevy.Communication.Modbus library (Modbus TCP, RTU and UDP master) and was written against the 2.x API (ModbusTcpClient, ModbusRtuClient, ModbusResult, IModbusFactory, AddModbusFactory) or needs the v2 to v3 migration — or when a 3.0 project must choose between the old and the new names. For writing new 3.0 code, the protocol details are in using-junevy-plc.
 ---
 
-# Using Junevy.Communication.Modbus
+# Using Junevy.Communication.Modbus (v2 → v3 migration)
 
 ## Overview
 
-Modbus TCP/RTU **master (client)** library for .NET (net472 + net8.0) by Junevy. Core principles:
+Version 3.0.0-preview.1 rebuilds the Modbus master on the Junevy.Communication PLC suite. The 2.x API is gone. There are no compatibility shims and no `[Obsolete]` forwarders. The 2.x code is kept at the local tag `modbus-v2.0.0`.
 
-- **Result-based, not exception-based**: reads/writes return `ModbusResult<T>` (`IsSuccess`, `Data`, `ErrorMessage`, `ErrorKind`) instead of throwing. Parameter validation throws `ArgumentException`; `Request`/`RequestAsync` never throw on protocol violations. `ModbusResult<T>` is immutable and sealed; create results only through `ModbusResult<T>.Success` / `Fail`.
-- **Config-object clients**: `new ModbusTcpClient(config)` / `new ModbusRtuClient(config)` — no `ConnectAsync(host, port)` overloads. `ConnectAsync(CancellationToken)` throws `OperationCanceledException` when cancelled and returns false when the connection fails or times out.
-- **Factory**: `GetOrAdd(key, IModbusConfig)` / `TryAdd(key, IModbusConfig, out modbus)` resolve a creator by config type (base-type chain). Unknown config types throw `NotSupportedException`. Custom transports implement `IModbusClientCreator`; register it AFTER `AddModbusFactory()` (later registration wins) or pass it to `ModbusFactoryBuilder.WithCreator`.
-- **The library does not mutate the protocol fields of your request objects** and returns them untouched. The one exception: for TCP the client writes `request.TransactionId` in the lock (it manages transaction IDs internally, so never set it yourself for transport calls). Your config objects **are** mutated: `GetOrAdd`/`TryAdd` fill in default values, so don't share one config instance across differently-configured connections.
+Use this skill for the migration. For code you write now, read `using-junevy-plc` (its "Modbus Quick Start" section and the address and framing rules).
 
 ## When NOT to Use
 
-Slave (server) simulation, Modbus ASCII, or gateways — not covered by this library.
-
-## ⚠️ Renamed API Trap (pre-rename names do not exist)
-
-| Wrong (old / guessed) | Correct (current) |
-|---|---|
-| `ModbusTCP` / `ModbusRTU` | `ModbusTcpClient` / `ModbusRtuClient` |
-| `ModbusTCPConfig` / `ModbusRTUConfig` | `ModbusTcpClientConfig` / `ModbusRtuClientConfig` |
-| `ReadTimeOut` / `WriteTimeOut` | `ReadTimeout` / `WriteTimeout` |
-| `request.Start` / `request.Length` | `request.StartAddress` / `request.Quantity` |
-| `SetPort(502)` | `Port` is a plain settable property (`config.Port = 1502;`) |
-| `CheckConnection()` | Use `IsConnected` |
-| `ConnectAsync(host, port)` | `Connect()` / `ConnectAsync()` use the config's `Address`/`Port` |
-| NModbus-style `ushort[]` return | `ModbusResult<ushort[]>` — values in `.Data` |
+- Code that is already on 3.0 and only needs a request: use `using-junevy-plc`.
+- Modbus ASCII, server (slave) mode, diagnostic functions, file records, FIFO, device identification, broadcast, custom PDUs or a synchronous API: not provided in 3.0.
 
 ## Quick Reference — Namespaces
 
-| Namespace | Types |
+| 2.x | 3.0 |
 |---|---|
-| `...Modbus.Tcp` | `ModbusTcpClient`, `ModbusTcpClientConfig` |
-| `...Modbus.Rtu` | `ModbusRtuClient`, `ModbusRtuClientConfig` |
-| `...Modbus.Core.Models` | `ModbusRequest`, `ModbusResult<T>`, `ModbusErrorKind`, `ModbusFunctionCode`, `ModbusExceptionCode` |
-| `...Modbus.Extensions` | `ModbusBitExtensions`, `ModbusRegisterExtensions`, `ModbusDiagnosticsExtensions` (three static classes, one per function-code group) |
-| `...Modbus.Factory` | `IModbusFactory`, `ModbusFactory`, `IModbusClientCreator`, `TcpClientCreator`, `RtuClientCreator` |
-| `...Modbus.DependencyInjection` | `AddModbusFactory(this IServiceCollection)` |
-| `...Modbus.Utils` | `ModbusHelper`, `Crc16Helper` |
+| `Junevy.Communication.Modbus.Tcp.ModbusTcpClient` | `Junevy.Communication.Modbus.ModbusClient` |
+| `Junevy.Communication.Modbus.Rtu.ModbusRtuClient` | `Junevy.Communication.Modbus.ModbusClient` |
+| `Junevy.Communication.Modbus.Core.Models.ModbusResult<T>` | `Junevy.Communication.Core.Results.CommResult<T>` |
+| `Junevy.Communication.Modbus.Core.Models.ModbusErrorKind` | `Junevy.Communication.Core.Results.CommErrorKind` |
+| `Junevy.Communication.Modbus.Factory.IModbusFactory` | `Junevy.Communication.Plc.PlcClientFactory` |
+| `Junevy.Communication.Modbus.DependencyInjection` (`AddModbusFactory`) | `Junevy.Communication.Modbus.DependencyInjection` (`AddModbus`) |
 
-(`...` = `Junevy.Communication`)
+## Migration Map
 
-## Minimal Usage
+| 2.x | 3.0 | Note |
+|---|---|---|
+| `new ModbusTcpClient(new ModbusTcpClientConfig { Address, Port })` | `ModbusClient.Create(new TcpClientChannelConfig { Host, Port }, new ModbusClientOptions())` | Creation does not connect. |
+| `new ModbusRtuClient(new ModbusRtuClientConfig { PortName, BaudRate, … })` | `ModbusClient.Create(new SerialChannelConfig { PortName, BaudRate, … }, new ModbusClientOptions())` | RTU is the default on serial. |
+| `Connect()` / `ConnectAsync()` → `bool` | `ConnectAsync()` → `CommResult` | No synchronous API. |
+| `Disconnect()` | `DisconnectAsync()` | Later requests return `NotConnected`; there is no silent reconnect. |
+| `RetryCount` (default 3) | `RetryCount` (default 0) | Retries only `Timeout`, `ConnectionClosed` and `ProtocolViolation`. |
+| `Reconnect = true` (lazy, on the next request) | `Reconnect` in the channel configuration (background) | Off by default. |
+| `ReadHoldingRegistersAsync(slave, start, n)` → `ModbusResult<ushort[]>` | `ReadUInt16Async($"s={slave};HR{start}", n)` → `CommResult<ushort[]>` | Station is a prefix on the address. |
+| `ReadInputRegistersAsync` | `ReadUInt16Async("IR…", n)` | |
+| `ReadCoilsAsync` / `ReadDiscreteInputsAsync` | `ReadBitsAsync("C…", n)` / `ReadBitsAsync("DI…", n)` | |
+| `WriteSingleRegisterAsync` | `WriteUInt16Async("HR…", v)` | 06 by default. |
+| `WriteMultipleRegistersAsync` | `WriteUInt16Async("HR…", values)` | Splits above 123 words. |
+| `WriteSingleCoilAsync` / `WriteMultipleCoilsAsync` | `WriteBoolAsync("C…", v)` / `WriteBitsAsync("C…", values)` | |
+| `MaskWriteRegisterAsync(slave, a, and, or)` | `MaskWriteRegisterAsync("HR…", and, or)` | |
+| `ReadWriteMultipleRegistersAsync(…)` | `ReadWriteMultipleRegistersAsync(readAddress, readCount, writeAddress, writeData)` | Data is bytes. |
+| `ReadExceptionStatus`, `Diagnostics`, `GetCommEventCounter`, `GetCommEventLog`, `ReportServerId` | Not provided | |
+| `Request(ModbusRequest)`, `RequestAsync(ModbusRequest)`, `ModbusHelper.BuildRequestFrame` | Not provided | No raw PDU entry point. |
+| `ModbusResult<T>` / `ModbusErrorKind` | `CommResult<T>` / `CommErrorKind` | Numeric values match: `ModbusException` (6) is `RemoteError` (6); the exception code is in `ProtocolErrorCode`. |
+| `ModbusException` thrown | Not thrown | Argument errors return `InvalidRequest`. |
+| `IModbusFactory`, `ModbusConnectionManager`, `ModbusFactoryBuilder`, `AddModbusFactory()` | `PlcClientFactory`, `PlcClientFactoryBuilder`, `AddModbus()` | |
+| RS-485 multi-slave with one client per slave and a `slaveId` argument | One client; station prefix `s=n;` | |
+| `IModbusPduValidator`, `IModbusFrameBuilder` injection | Not provided | Validation is internal. |
 
-### TCP
+## Factory and DI
 
 ```csharp
-using Junevy.Communication.Modbus.Extensions;
-using Junevy.Communication.Modbus.Tcp;
+using Junevy.Communication.Modbus;
+using Junevy.Communication.Modbus.DependencyInjection;
+using Junevy.Communication.Plc;
+using Microsoft.Extensions.DependencyInjection;
 
-using var modbus = new ModbusTcpClient(new ModbusTcpClientConfig
+ServiceCollection services = new ServiceCollection();
+services.AddModbus();
+ServiceProvider provider = services.BuildServiceProvider();
+
+PlcClientFactory factory = provider.GetRequiredService<PlcClientFactory>();
+IPlcClient client = factory.GetOrAdd("line-1", new ModbusClientConfig
 {
-    Address = "192.168.1.100",
-    Port = 1502,               // plain property; default 502
-    ReadTimeout = 2000,
-    WriteTimeout = 2000
+    Transport = ModbusTransport.Tcp,
+    Tcp = new TcpClientChannelConfig { Host = "192.168.1.10", Port = 502 },
 });
-
-if (!modbus.Connect())
-    return;                    // Connect returns bool, does not throw
-
-var result = modbus.ReadHoldingRegisters(slaveId: 1, start: 100, length: 4);
-Console.WriteLine(result.IsSuccess
-    ? string.Join(", ", result.Data!)      // ushort[]
-    : $"{result.ErrorMessage} [{result.ErrorKind}]");
-modbus.Disconnect();
 ```
 
-### RTU
+`factory.GetOrAdd` returns the existing client for a name and ignores the new configuration. Use a new name to create a client with different settings.
 
-```csharp
-using Junevy.Communication.Modbus.Rtu;
-using System.IO.Ports;
+## Behavioural Contracts That Changed
 
-using var modbus = new ModbusRtuClient(new ModbusRtuClientConfig
-{
-    PortName = "COM3", BaudRate = 9600, Parity = Parity.None,
-    DataBits = 8, StopBits = StopBits.One
-});
-modbus.Connect();
-var coils = await modbus.ReadCoilsAsync(1, 0, 8);   // ModbusResult<bool[]>
-```
+- Results instead of exceptions: every operation returns a result. Branch on `IsSuccess`, then on `ErrorKind`.
+- Retries are off by default and retry only the three transient kinds. An exception response (`RemoteError`) is never retried.
+- A late response is discarded by its transaction ID (MBAP). It does not rebuild the TCP connection.
+- A request timeout on RTU over TCP rebuilds the connection. Wait for it with `WaitForConnectedAsync` before the next request.
+- `IR` and `DI` are read-only. A write to them returns `InvalidRequest` and sends nothing.
 
-### Factory + DI (multi-connection, recommended for services)
+## Common Mistakes When Migrating
 
-```csharp
-services.AddModbusFactory();
-var factory = provider.GetRequiredService<IModbusFactory>();
+- Calling `ConnectAsync()` and expecting a `bool`. It returns `CommResult`; check `IsSuccess`.
+- Keeping `RetryCount = 3` from 2.x. The 3.0 default is 0.
+- Passing `slaveId` as an argument. Put the station in the address: `s=2;HR100`.
+- Reading `ModbusResult.Data` without checking `IsSuccess`. `Data` is the default value on failure.
+- Expecting `Modbus` to appear in the type names. The 3.0 client is `ModbusClient`, and the typed API is the suite's `PlcClientExtensions`.
+- Creating MBAP on serial. It is rejected at creation.
 
-var plc = factory.GetOrAdd("plc-1", new ModbusTcpClientConfig
-    { Address = "192.168.1.100", Reconnect = true, RetryCount = 3 });
-
-// RS-485 multi-drop: one physical port, aliases per logical slave
-factory.GetOrAdd("rs485-bus", new ModbusRtuClientConfig { PortName = "COM3" });
-factory.RegisterAlias("slave-1", "rs485-bus");
-```
-
-### Prism / containers WITHOUT Microsoft DI
-
-Do NOT bridge `IServiceCollection` — build the factory with `ModbusFactoryBuilder` and register the instance. Zero Microsoft DI packages required:
-
-```csharp
-using Junevy.Communication.Modbus.Factory;
-
-// e.g. inside Prism's RegisterTypes(IContainerRegistry containerRegistry):
-var factory = ModbusFactoryBuilder.Create()
-    .WithLoggerFactory(loggerFactory)   // optional (Serilog-backed etc.); default NullLoggerFactory
-    .WithConnectionManager(manager)     // optional: expose/share the named-instance registry
-    .WithCreator(new MyClientCreator()) // optional: custom transport strategy; overrides a built-in creator
-    .Build();                           // each call → new independent factory
-
-containerRegistry.RegisterInstance<IModbusFactory>(factory);
-```
-
-Dispose the factory on app shutdown (it owns the connections). All other options (`WithTcpParser`/`WithRtuParser` take `IResponseParser`; `WithFrameBuilder`) default exactly like `AddModbusFactory`.
-
-Removing the master key (factory.TryRemove("rs485-bus")) also removes every alias that points to it and disposes the connection. RegisterAlias returns false when the target key does not exist.
-
-Extension methods live in the namespace `Junevy.Communication.Modbus.Extensions` and are grouped into `ModbusBitExtensions` (0x01 0x02 0x05 0x0F), `ModbusRegisterExtensions` (0x03 0x04 0x06 0x10 0x16 0x17) and `ModbusDiagnosticsExtensions` (0x07 0x08 0x0B 0x0C 0x11); always call them with extension-method syntax.
-Extension methods (all 15 function codes): `ReadCoils/DiscreteInputs/HoldingRegisters/InputRegisters(+Async)`, `WriteSingleCoil/Register`, `WriteMultipleCoils/Registers(+Async)`, `Diagnostics`, `GetCommEventCounter/Log`, `ReportServerId`, `MaskWriteRegister`, `ReadWriteMultipleRegisters`. Raw protocol: `modbus.Request(new ModbusRequest { SlaveId, FunctionCode, StartAddress, Quantity, Data })`.
-
-## Behavioral Contracts
-
-- **Transaction ID (TCP)**: auto-assigned per request by the client; matched exactly on response. Never set it yourself for transport calls.
-- **Modbus exception responses** (slave returns FC|0x80) are **terminal failures**: `IsSuccess=false`, `ErrorKind=ModbusException`, code in the message (e.g. `Code=0x02`). Never retried.
-- **Reconnect is lazy/per-request**: with `Reconnect=true` a dropped connection is physically re-established at the next request attempt (fresh TCP handshake / serial re-open), after failures marked `Timeout`/`ConnectionClosed`/`ProtocolViolation` (TCP only). No background watchdog. Note: `Disconnect()` followed by a request **silently reconnects** when `Reconnect=true` — set `Reconnect=false` to stay disconnected.
-- **Retry**: RetryCount = retries after the first attempt; RetryInterval ms between attempts. A failure that destroys the connection (TCP Timeout/ConnectionClosed, send failure) is retried only when Reconnect=true; with Reconnect=false the request returns immediately with the real ErrorKind.
-- **Thread-safety**: one request at a time per connection (`SemaphoreSlim`). Cancel `RequestAsync` via `CancellationToken` (net8.0: instant; net472: reads and connects are aborted by closing the socket, so cancellation also takes effect immediately).
-- **Timeouts**: ReadTimeout is the total deadline for receiving one complete response frame (sync and async). WriteTimeout is the deadline for sending one request frame. A timeout returns ErrorKind.Timeout.
-- **Response validation**: the parser checks MBAP/CRC framing, then the response PDU (function code equals the request function code, byte count, echoed address/quantity/value). Custom parsers implement `IResponseParser`; custom PDU rules implement `IModbusPduValidator`.
-- **Dispose**: Dispose() aborts in-flight I/O and waits for the in-flight request to exit. Requests that were running or queued return ErrorKind.ConnectionClosed; calling Request/Connect after Dispose throws ObjectDisposedException; Disconnect after Dispose is a no-op.
-
-## Upgrading 1.x → 2.0
-
-| Old | New |
-|---|---|
-| assigning `ModbusResult` properties / object initializer | `ModbusResult<T>.Success(...)` / `Fail(...)` (type is now `sealed`, properties read-only) |
-| `ModbusExtensions.ReadCoils(modbus, ...)` static call | `modbus.ReadCoils(...)` (extension syntax) or `ModbusBitExtensions.ReadCoils(modbus, ...)` |
-| `new TcpProtocolParser(logger, verifier)` | `new TcpProtocolParser(validator, logger)` |
-| `ModbusPduVerifier` | `IModbusPduValidator` / `ModbusPduValidator` |
-| `factory.GetOrAdd(key, ModbusTcpClientConfig)` | `factory.GetOrAdd(key, config)` (`IModbusConfig` overload — same call syntax) |
-| `new ModbusFactory(logger, loggerFactory, tcp, rtu, frameBuilder, manager)` | `new ModbusFactory(logger, creators, manager)`, or use `ModbusFactoryBuilder` |
-| `WithTcpParser(TcpProtocolParser)` | `WithTcpParser(IResponseParser)` |
-
-Also note (1.x → 2.0): `IModbus.ConnectAsync` takes an optional `CancellationToken` and throws `OperationCanceledException` on cancel; `Dispose` now waits for in-flight requests instead of throwing inside them.
-
-## Common Mistakes
-
-- Treating `ErrorKind` as optional — always branch on `IsSuccess` first; `ErrorKind` (`Timeout`, `ConnectionClosed`, `ProtocolViolation`, `ModbusException`, `Cancelled`, `InvalidRequest`, `Unspecified`) is for machine decisions like reconnect/alerting.
-- Retrying `ModbusException` results yourself — the client already suppresses retries for them.
-- Setting `request.ProtocolType` for transport calls — the client passes its own protocol; the property is only read by the bare frame API (`ModbusHelper.BuildRequestFrame`).
-- Building requests for 0x08/0x17 with plain payload assumptions — `Data` has per-function-code layouts (documented on `ModbusRequest.Data`).
+For the full address, framing, limit and error reference, read `using-junevy-plc` and the Modbus README.

@@ -11,7 +11,7 @@ Asynchronous .NET communication libraries for industrial equipment and factory s
 
 | Protocol | Package | Status | What it covers | Documentation |
 |---|---|---|---|---|
-| Modbus RTU / TCP | `Junevy.Communication.Modbus` | 2.0.0 | Modbus master (client) over TCP and serial RTU: read and write coils and registers, raw requests, reconnect and retry, a connection factory | [Modbus README](Junevy.Communication.Modbus/README.md) |
+| Modbus TCP / RTU / UDP | `Junevy.Communication.Modbus` | 3.0.0-preview.1 | Modbus master (client) on the PLC suite: MBAP and RTU frames over TCP, UDP and serial; read and write coils, registers and register bits; mask write (0x16) and read-write multiple (0x17); station prefix `s=n;`; see the package README for the v2 to v3 migration |
 | MELSEC MC | `Junevy.Communication.Melsec` | preview | Mitsubishi MC protocol: 3E and 4E frames (binary or ASCII) over TCP and UDP, 4C frames over serial; typed reads and writes by device address such as `D100` or `M0` | [Melsec README](Junevy.Communication.Melsec/README.md) |
 | Siemens S7 | `Junevy.Communication.Siemens` | preview | S7comm over ISO-on-TCP (port 102) for S7-1200 and S7-1500: byte-addressed `DB`, `M`, `I` and `Q` areas, typed reads and writes by address such as `DB1.DBW12`, S7 `String` and `WString` fields, PDU-size handshake | [Siemens README](Junevy.Communication.Siemens/README.md) |
 | Omron FINS | `Junevy.Communication.Omron` | preview | FINS over TCP (port 9600): `CIO`, `W`, `H`, `A`, `D` and `EM` areas, typed reads and writes by address such as `D100` or `W10.03`, node-address handshake, native bit writes | [Omron README](Junevy.Communication.Omron/README.md) |

@@ -7,7 +7,7 @@ description: Use when a .NET project references Junevy.Communication.Plc, Junevy
 
 ## Overview
 
-Address-based PLC client suite for .NET (net472 + net8.0) by Junevy, version `1.0.0-preview.1`. Three protocols sit on it: MELSEC MC, Siemens S7 and Omron FINS. Core principles:
+Address-based PLC client suite for .NET (net472 + net8.0) by Junevy, version `1.0.0-preview.1`. Four protocols sit on it: MELSEC MC, Siemens S7, Omron FINS and Modbus (see the Modbus Quick Start). Core principles:
 
 - **Result-based**: operations return `CommResult` / `CommResult<T>`. Invalid addresses, device error responses, timeouts and disconnects are results, not exceptions. Branch on `IsSuccess`, then on `ErrorKind`. Never match `ErrorMessage` text.
 - **Exceptions only at construction**: invalid configuration throws `ArgumentException` when the client is created. Cancellation returns `CommErrorKind.Cancelled`.
@@ -18,7 +18,7 @@ Address-based PLC client suite for .NET (net472 + net8.0) by Junevy, version `1.
 
 ## When NOT to Use
 
-- Modbus TCP or RTU: use `using-junevy-modbus`, which has its own API and result types.
+- Modbus TCP, RTU or UDP is a protocol on this suite (`ModbusClient`, see the Modbus Quick Start below). `using-junevy-modbus` is the v2 to v3 migration guide.
 - Byte channels without PLC semantics (raw TCP, UDP or serial): use `using-junevy-channels`.
 - FINS/UDP, Host Link over serial, S7comm-plus or symbolic access, OPC UA, SECS/GEM: not implemented. S7 and FINS here are TCP-only, and S7 is only claimed for S7-1200/1500.
 - Real-PLC validation: none of the three protocols has been checked against real hardware. MELSEC is verified against the manual's examples, S7 and FINS against the P4 plan's golden vectors. See "Not Yet Verified".
@@ -31,6 +31,7 @@ Address-based PLC client suite for .NET (net472 + net8.0) by Junevy, version `1.
 | MELSEC MC over TCP, UDP or serial | `Junevy.Communication.Melsec` | `McClient` (`IPlcClient`) | `McClientCreator` | `AddMelsec()` (`Junevy.Communication.Melsec.DependencyInjection`) |
 | Siemens S7-1200/1500 over ISO-on-TCP (port 102) | `Junevy.Communication.Siemens` | `S7Client` (`IPlcClient`) | `S7ClientCreator` | `AddSiemensS7()` (`Junevy.Communication.Siemens.DependencyInjection`) |
 | Omron FINS over TCP (port 9600) | `Junevy.Communication.Omron` | `FinsClient` (`IPlcClient`) | `FinsClientCreator` | `AddOmronFins()` (`Junevy.Communication.Omron.DependencyInjection`) |
+| Modbus TCP, RTU or UDP (MBAP and RTU frames) | `Junevy.Communication.Modbus` | `ModbusClient` (`IPlcClient`) | `ModbusClientCreator` | `AddModbus()` (`Junevy.Communication.Modbus.DependencyInjection`) |
 
 The READMEs in `Junevy.Communication.Plc`, `Junevy.Communication.Melsec`, `Junevy.Communication.Siemens` and `Junevy.Communication.Omron` have the complete option defaults, limits and device tables. Read them before you write production code.
 
@@ -133,6 +134,32 @@ public static class FinsSkillExample
 - The connect sends a FINS/TCP node-address request; `ClientNode = 0` lets the CPU assign the node number. `plc.ClientNode` and `plc.ServerNode` are `null` until that handshake has run, and a reconnect re-runs it, so the numbers can change.
 - `ClientNode = 255` throws at `Create`: it is the FINS broadcast address.
 - Only `TcpClientChannelConfig` is accepted; FINS/UDP and Host Link are not implemented.
+
+## Modbus Quick Start (TCP, RTU and UDP)
+
+Modbus is the fourth protocol on the suite (package `Junevy.Communication.Modbus`, version `3.0.0-preview.1`). The client is `ModbusClient : PlcClientBase<ModbusAddress>`, so the whole typed API applies. Create it with `ModbusClient.Create`; there is no public constructor.
+
+```csharp
+using Junevy.Communication.Modbus;
+using Junevy.Communication.Plc;
+using Junevy.Communication.Tcp;
+
+using ModbusClient client = ModbusClient.Create(
+    new TcpClientChannelConfig { Host = "192.168.1.10", Port = 502 },
+    new ModbusClientOptions { UnitId = 1 });
+
+await client.ConnectAsync();
+CommResult<ushort[]> registers = await client.ReadUInt16Async("HR100", 2);
+CommResult<bool[]> coils = await client.ReadBitsAsync("C0", 8);
+```
+
+Address forms on this client: symbolic zero-based (`HR100`, `C5`, `DI7`, `IR3`), Modicon one-based (`40101`, `400101`), a register bit (`HR100.5`) and a station prefix (`s=2;HR100`). A coil or discrete input has no bit index, and an input register or discrete input cannot be written.
+
+On serial the framing defaults to RTU. `ModbusClientOptions.Framing = ModbusFraming.Rtu` on a TCP configuration gives RTU over TCP (gateways and serial servers). `ModbusFraming.Mbap` on serial is rejected at creation.
+
+Use `ModbusClientOptions.UseSingleWriteFunctions = false` for devices that accept only 0F and 10. Use `UseMaskWriteForBits = true` to write a register bit with 0x16. The Modbus README has the function-code map, the packet limits (125 and 2000 read, 123 and 1968 write), the error kinds and the migration table from 2.x.
+
+Modbus-only operations: `MaskWriteRegisterAsync(address, andMask, orMask)` (0x16) and `ReadWriteMultipleRegistersAsync(readAddress, readCount, writeAddress, writeData)` (0x17). Neither splits into packets.
 
 ## Choosing a Transport and Frame
 
@@ -367,6 +394,7 @@ Junevy.Communication.<Name>.Tests/
 | Hook | Shape |
 |---|---|
 | `TryParseAddress` (abstract) | `bool TryParseAddress(string address, out TAddress? parsed, out string? error)` |
+| `IsReadOnly` (virtual, default `false`) | `bool (TAddress address)` — a write to a read-only address returns `InvalidRequest` before any point check; reads are not affected |
 | `GetMaxReadPoints` / `GetMaxWritePoints` (abstract) | `int (TAddress address, PlcAccess access)` — the per-packet cap counted in the `access` unit |
 | `BuildReadWordsRequest` (abstract) | `void (TAddress address, int offset, int count, IBufferWriter<byte> output)` |
 | `ParseReadWordsResponse` (abstract) | `CommResult<byte[]> (int count, ReadOnlySpan<byte> frame)` (normalised bytes) |
@@ -384,6 +412,10 @@ Junevy.Communication.<Name>.Tests/
 Only the word hooks plus `BuildWriteBitsRequest` and `ParseWriteResponse` are abstract, because every address-based protocol has them. The bit-read and byte hooks have default bodies that throw `InvalidOperationException`; the pipeline turns that into `Unspecified` and logs it at `Error`, so a protocol with no byte devices never implements the byte hooks and a caller still gets a result rather than an exception (P4-D5).
 
 The `Build*` hooks return `void`, so they cannot report an error. Put representability checks (device number ranges, point limits per encoding, address-field overflow) in `ValidateRange`. The base class calls it before any frame is built. S7 and FINS each use it to reject an access whose end number passes the area's maximum, with the message shaped as `The access on '<x>' ends at byte N, beyond the address field limit 2097151.` (S7) or `... ends at word N, beyond the address field limit 65535.` (FINS).
+
+### Protocol-specific requests
+
+`SendProtocolRequestAsync<T>(operation, buildRequest, parseResponse, cancellationToken)` (protected) sends one packet for a function code the read and write entry points do not cover. It has the same guards, operation lock, retry rules and error mapping as the entry points. Modbus uses it for 0x16 and 0x17. A null delegate or a blank operation name throws synchronously, because it is a programming error.
 
 ### Handshake, session and negotiated limits
 
@@ -489,3 +521,12 @@ These are the traps S7 and FINS hit on top of the suite. Design document section
 - When you document a protocol, compile the samples: extract every `csharp` fenced block from the package README **and** this skill into a throwaway project (`ImplicitUsings=disable`, `Nullable=enable`, `TreatWarningsAsErrors=true`, both target frameworks) instead of transcribing them. That is what caught the non-existent `AddFins()` (the method is `AddOmronFins()`), the missing `using Junevy.Communication.Plc;` for the typed readers, and the `Data` nullability above.
 
 When you add the fourth protocol, none of F3–F10 reappear: they are shared parts now (`PlcComponentWiring`, `SequenceCounter`, `BigEndianFields`, `PlcByteMemory`, `LoopbackTcp`, `Arrival.WithinAsync`), and the guide above shows the one-line call for each. F5 (hooks you cannot call directly from a protocol test) is the exception and is still yours to work around — plan for that one rather than treating it as a mistake in your design.
+
+## Lessons From the P7 Friction Log
+
+- A read-only area needs its own hook. `ValidateRange` does not know the direction of an access, so it cannot refuse writes to an input register; `IsReadOnly` does (P7-S1).
+- A protocol-specific function code (Modbus 0x16 and 0x17) needs the suite's operation lock and retries. Copying the packet loop would duplicate the retry rules; `SendProtocolRequestAsync` reuses them (P7-S2).
+- A declarative address parser cannot express a station prefix (`s=n;`) or the one-based Modicon form. The Modbus parser is protocol-specific and internal; it keeps the suite's whitespace and case rules (P7-F-A1).
+- An `IClientChannel` test double is duplicated per test project, because the shared testing library only has `IByteChannel` doubles. Candidate for the shared library (P7-F-A2).
+- The shared device simulator answers synchronously. A late TCP reply needs a stream wrapper that writes in the background, so the request loop keeps running (P7-F-A3).
+- RTU over TCP: a request timeout resets the connection, and the reconnect runs in the background. A retry that starts before the reset is visible can get `NotConnected`, because `WaitForConnectedAsync` returns at once while the state is still `Connected`. The channel layer was out of scope for P7, so this is open.

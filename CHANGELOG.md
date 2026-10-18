@@ -35,6 +35,12 @@
 
 ### 破坏性变更（Breaking）
 
+- 2026-10-19 [Modbus] 连接语义（P7-D13）：2.x 的懒重连（请求失败后在下一次请求前重建连接）改为通道的后台重连，默认关闭；`Disconnect` 之后的请求返回 `NotConnected`，不会悄悄连回；不再隐式连接，断开期间的请求立即返回 `NotConnected`。
+- 2026-10-19 [Modbus] `RetryCount` 默认值由 3 改为 0；只重试 `Timeout`、`ConnectionClosed`、`ProtocolViolation`；不提供同步 API（设计 21.1 Q2）；超时在通道配置里设置（`RequestTimeout`），不再在客户端选项里。
+- 2026-10-19 [Modbus] 错误处理（第 20 节）：`ModbusResult<T>` 与 `ModbusErrorKind` 改为 `CommResult<T>` 与 `CommErrorKind`（数值对齐）；参数错误不再抛出 `ModbusException`，返回 `InvalidRequest`；异常码在 `ProtocolErrorCode`。
+- 2026-10-19 [Modbus] 工厂与依赖注入：`IModbusFactory`、`ModbusConnectionManager`、`ModbusFactoryBuilder`、`AddModbusFactory()` 由 `PlcClientFactory`、`PlcClientFactoryBuilder`、`AddModbus()` 取代；RS-485 多从站改为地址前缀 `s=n;`（一个客户端）。
+- 2026-10-19 [Modbus] 站号范围：RTU 为 1–247（0 为广播，不支持；248–255 保留）；地址中的站号前缀按帧格式检查。
+- 2026-10-19 [Modbus] 拆包：超过单包上限的读写由套件自动拆包（2.x 对超限直接抛出 `ArgumentException`）。
 - 2026-10-19 [Modbus] 2.x 的全部公开 API 被移除，3.0.0-preview.1 尚无替代类型（P7-D16）。2.x 保留在本地 tag `modbus-v2.0.0`（指向 `c29a45b`）。迁移对照见 P7 计划第 20 节，README 的 "Migrating from 2.x" 在 Task 12 补充。
 
 ### 移除（Removed）
