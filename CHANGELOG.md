@@ -2,6 +2,32 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — P6.3（Ftp 1.0.0-preview.1：FTP 客户端）
+
+### 新增（Added）
+
+- 2026-10-18 [Ftp] 新增库 `Junevy.Communication.Ftp` 与测试项目 `Tests/Junevy.Communication.Ftp.Tests`（P6.3 计划，P63-D1 至 D17）。只做客户端，FTP 与 FTPS（显式与隐式 TLS），只用被动模式与二进制传输，只面向 .NET 8；底层为 FluentFTP 55.0.0，SDK 类型只在内部的 `Sdk/` 中出现。不做 SFTP、主动模式与 ASCII 传输。
+  - **Task 1（骨架）**：项目、测试项目与架构测试登记；英文 README 打包（Task 8 补全）。
+  - **Task 2（模型、选项与错误映射）**：`FtpClientOptions`（可从 appsettings 绑定，创建时校验并取快照，非法时抛 `ArgumentException` 族，参数名为 `options.<属性>`）、`FtpEncryption`、`FtpExistsMode`、`FtpEntry`、`FtpEntryType`、`FtpTransferProgress`、`FtpTransferStatus`；`Sdk/FtpErrorMap` 统一映射应答码与异常（计划第 16 节）；`EncodingName` 经 `FtpEncodings` 解析，`GBK` 等名称注册 `CodePagesEncodingProvider`（进程级注册；用户 2026-10-18 接受现状，F2）。
+  - **Task 3（连接与 FTPS）**：`FtpClient.Create`、`ConnectAsync`、`DisconnectAsync`、释放；显式与隐式 TLS，数据连接同样加密（PROT P）；登录失败（530）返回 `AuthenticationFailed`，并发送 QUIT 后关闭控制连接（SDK 在 530 之后仍报告已连接，F9）。测试用的进程内模拟服务器（`TestSupport/`）只实现 FluentFTP 实际发出的命令，其余返回 502。
+  - **Task 4（列目录、存在性与目录操作）**：`ListAsync`（不含 `.` 与 `..`，目录不存在时失败）、`FileExistsAsync`、`DirectoryExistsAsync`、`GetFileSizeAsync`、`CreateDirectoryAsync`（逐级创建，已存在算成功）、`DeleteFileAsync`、`DeleteDirectoryAsync`（递归删除）、`RenameAsync`（源不存在时失败）。SDK 静默的情况由库先检查一次存在性，并由测试钉住（F14–F18）。
+  - **Task 5（上传与下载）**：`UploadFileAsync`、`UploadAsync`（流经只进的视图包装，SDK 忽略流的当前位置，F23）、`DownloadFileAsync`（**原子**：先写同目录的 `.part` 临时文件，成功后替换目标；失败时删除临时文件，原文件不变，Q43）、`DownloadAsync`；`Skip` 语义（下载时本地目标已存在则不连接服务器）；进度 `IProgress<FtpTransferProgress>`。上传不是原子的（F22，README 写明）。
+  - **Task 6（断线、串行与释放）**：同一客户端上的操作串行、排队而不失败（Q42：10 个并发上传只使用一条控制连接，命令没有交错）；已连接时每次操作前用 `IsStillConnected`（一条 NOOP）确认连接存活，空闲断线后下一次操作自动重连（F28）；连接级失败后关闭 SDK 连接，下一次操作重新连接（F31）；释放时进行中的操作返回失败结果、排队中的操作返回 `ConnectionClosed`、之后的操作不连接服务器（Q40）。操作中断线被报告为 `Timeout`（F30，偏离计划中的 `ConnectionClosed`，写入 README 与第 18.3 节）。
+  - **Task 7（工厂与依赖注入）**：`FtpClientFactory : NamedFactory<FtpClient>`（`GetOrAdd(name, options)`）与 `FtpServiceCollectionExtensions.AddFtpClients()`（单例，可重复调用；容器的 `ILoggerFactory` 透传给客户端；容器释放时释放客户端）。
+  - 日志：SDK 日志桥接到类别 `Junevy.Communication.Ftp.Sdk`；SDK 的主机、用户名、密码脱敏开关保持默认且不可打开（P63-D15）；密码与文件内容在任何级别都不记录（测试钉住）。
+  - 测试：`Junevy.Communication.Ftp.Tests`（net8.0，176 个用例，Debug 全部通过）。
+- 2026-10-18 [Ftp] **操作日志**（P63-D15，审阅 R1）：每个操作结束时记录一条日志（内部 `FtpOperation`）：成功记 Debug（操作名、远程路径、耗时，传输带字节数），失败记 Warning（分类与应答码），调用方取消记 Debug；耗时从拿到串行门开始计算。下载的本地替换移入操作之内，替换失败同样进入日志。
+- 2026-10-18 [Ftp] **可定位的流上传报告百分比**（审阅设计问题 B）：`FtpStreamView` 以调用方流的当前位置为起点，内层可定位时视图也可定位，位置与长度相对于起点，因此 `Percent` 按当前位置到末尾的长度计算；不可定位的流仍为 null。
+
+### 修正（Fixed）
+
+- 2026-10-18 [Ftp] **只支持异步的流无法上传与下载**（审阅 R2）：`FtpStreamView` 原先只转发同步的 `Read` / `Write`，SDK 的异步读写回落为调用方流的同步方法，ASP.NET Core 的请求体这类禁止同步 IO 的流因此失败（`Unspecified`）。现在同步、异步与 `Span` 的读写及 `FlushAsync` 都转发给内层流，取消令牌一并传入。用例：`FtpStreamTransferTests`。
+- 2026-10-18 [Ftp] **FTPS 下的数据传输补上用例**（审阅 R3）：显式与隐式 TLS 下的列目录、上传、下载（`Tls_ListUploadAndDownload_RunOverEncryptedDataConnections`）。功能本身没有改动。
+- 2026-10-18 [Ftp] **服务器拒绝创建目录时的结果**（审阅 R4）：原先报告 "The path exists and is not a directory" 且没有应答码；现在带上 MKD 的应答码（通常 550），消息为 "The server refused to create the directory …, or a file is in the way."。内部 `FtpErrorMap.TransferFailed` 改名为 `LastReplyFailure`（传输与创建目录共用）。
+- 2026-10-18 [Ftp] **null 检查先于其他参数的检查**（审阅 R5）：`UploadFileAsync`、`UploadAsync`、`DownloadFileAsync`、`DownloadAsync`、`RenameAsync` 先检查所有参数是否为 null，例如 `UploadFileAsync("missing.txt", null)` 现在抛 `ArgumentNullException`，原先返回 `InvalidRequest`。
+- 2026-10-18 [Ftp] **释放之后的 `DownloadFileAsync`**（审阅 R6）：原先 `Skip` 且本地文件存在时返回成功（`Skipped`），`Overwrite` 时仍会创建本地父目录；现在释放之后直接返回 `ConnectionClosed`，不检查也不改动本地文件。
+- 2026-10-18 [Ftp] **连接级失败之后不再主动断开**（审阅设计问题 A）：删除生命周期中"`ConnectionClosed` 或 `Timeout` 之后发送 QUIT 并关闭"的分支。超时之后 SDK 已经把自己置为未连接，服务器关闭的连接由下一次操作前的存活检查发现；这个分支只会让 425、426（控制连接完好）之后多一次重连。用例：`ConnectionClosedReply_OnAHealthyControlConnection_DoesNotReconnect`。
+
 ## [Unreleased] — WebApi P3.2（WebApi.Server 1.0.0-preview.1：HTTP 服务端）
 
 ### 新增（Added）

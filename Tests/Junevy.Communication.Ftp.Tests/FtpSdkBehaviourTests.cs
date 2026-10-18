@@ -1,0 +1,211 @@
+using System.Diagnostics;
+using FluentFTP;
+using FluentFTP.Exceptions;
+using Junevy.Communication.Ftp.Tests.TestSupport;
+using Junevy.Communication.Testing;
+using static Junevy.Communication.Ftp.Tests.TestSupport.SdkTestClients;
+
+namespace Junevy.Communication.Ftp.Tests;
+
+/// <summary>
+/// FluentFTP 的行为钉住（P6-C14；第 18.2 节 F14–F18、F28–F31）：直接调用 SDK，断言它对"不存在"、断线与超时的实际表现。
+/// 适配层依赖这些行为（例如列空目录时是否需要本库再检查一次），SDK 升级改变行为时这些测试先失败。
+/// </summary>
+[Collection(SocketTimingCollection.Name)]
+public sealed class FtpSdkBehaviourTests
+{
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GetListing_OnAMissingDirectory_ReturnsAnEmptyArray_WithoutThrowing(bool mlst)
+    {
+        await using FakeFtpServer server = FtpFixtures.Start(new FakeFtpOptions { AdvertiseMlst = mlst });
+        await using AsyncFtpClient sdk = await ConnectAsync(server);
+
+        FtpListItem[] items = await sdk.GetListing("/missing", FtpListOption.Auto, CancellationToken.None);
+
+        Assert.Empty(items);
+        Assert.Contains(server.Commands.Snapshot(), c => c.Verb is "MLSD" or "LIST" && c.ReplyCode == 550);
+    }
+
+    [Fact]
+    public async Task FileExists_OnAMissingFile_ReturnsFalse_WithoutThrowing()
+    {
+        await using FakeFtpServer server = FtpFixtures.Start();
+        await using AsyncFtpClient sdk = await ConnectAsync(server);
+
+        bool exists = await sdk.FileExists("/docs/none.txt", CancellationToken.None);
+
+        Assert.False(exists);
+    }
+
+    [Fact]
+    public async Task DirectoryExists_OnAMissingDirectory_ReturnsFalse_WithoutThrowing()
+    {
+        await using FakeFtpServer server = FtpFixtures.Start();
+        await using AsyncFtpClient sdk = await ConnectAsync(server);
+
+        bool exists = await sdk.DirectoryExists("/missing", CancellationToken.None);
+
+        Assert.False(exists);
+    }
+
+    [Fact]
+    public async Task GetFileSize_OnAMissingFile_ReturnsTheDefaultValue_WithoutThrowing()
+    {
+        await using FakeFtpServer server = FtpFixtures.Start();
+        await using AsyncFtpClient sdk = await ConnectAsync(server);
+
+        long size = await sdk.GetFileSize("/docs/none.txt", -1, CancellationToken.None);
+
+        Assert.Equal(-1, size);
+    }
+
+    [Fact]
+    public async Task GetFileSize_WithoutSizeSupport_ReturnsTheDefaultValue_AndSendsNoSizeCommand()
+    {
+        await using FakeFtpServer server = FtpFixtures.Start(new FakeFtpOptions { AdvertiseSize = false });
+        await using AsyncFtpClient sdk = await ConnectAsync(server);
+
+        long size = await sdk.GetFileSize("/docs/recipe.txt", -1, CancellationToken.None);
+
+        Assert.Equal(-1, size);
+        Assert.DoesNotContain(server.Commands.Snapshot(), c => c.Verb == "SIZE");
+    }
+
+    [Fact]
+    public async Task CreateDirectory_OnAnExistingDirectory_ReturnsFalse_WithoutThrowing()
+    {
+        await using FakeFtpServer server = FtpFixtures.Start();
+        await using AsyncFtpClient sdk = await ConnectAsync(server);
+
+        bool created = await sdk.CreateDirectory("/docs", true, CancellationToken.None);
+
+        Assert.False(created);
+    }
+
+    [Fact]
+    public async Task DeleteFile_OnAMissingFile_ThrowsFtpCommandException_WithCode550()
+    {
+        await using FakeFtpServer server = FtpFixtures.Start();
+        await using AsyncFtpClient sdk = await ConnectAsync(server);
+
+        FtpCommandException ex = await Assert.ThrowsAsync<FtpCommandException>(
+            () => sdk.DeleteFile("/docs/none.txt", CancellationToken.None));
+
+        Assert.Equal("550", ex.CompletionCode);
+    }
+
+    [Fact]
+    public async Task Rename_OnAMissingSource_ThrowsFtpCommandException_WithCode550()
+    {
+        await using FakeFtpServer server = FtpFixtures.Start();
+        await using AsyncFtpClient sdk = await ConnectAsync(server);
+
+        FtpCommandException ex = await Assert.ThrowsAsync<FtpCommandException>(
+            () => sdk.Rename("/missing", "/x", CancellationToken.None));
+
+        Assert.Equal("550", ex.CompletionCode);
+    }
+
+    [Fact]
+    public async Task DeleteDirectory_OnAMissingDirectory_ThrowsFtpCommandException_WithCode550()
+    {
+        await using FakeFtpServer server = FtpFixtures.Start();
+        await using AsyncFtpClient sdk = await ConnectAsync(server);
+
+        FtpCommandException ex = await Assert.ThrowsAsync<FtpCommandException>(
+            () => sdk.DeleteDirectory("/missing", FtpListOption.Recursive, CancellationToken.None));
+
+        Assert.Equal("550", ex.CompletionCode);
+    }
+
+    [Fact]
+    public async Task IdleDrop_LeavesIsConnectedTrue_UntilAnIsStillConnectedCheck()
+    {
+        // F28：服务器关闭控制连接后，SDK 的 IsConnected 仍是 true；IsStillConnected 才能发现，并且对断开的连接不发送任何命令。
+        await using FakeFtpServer server = FtpFixtures.Start();
+        await using AsyncFtpClient sdk = await ConnectAsync(server);
+
+        server.DropAllControlConnections();
+        await Task.Delay(200);
+        Assert.True(sdk.IsConnected);
+
+        int before = server.Commands.Snapshot().Count;
+        Assert.False(await sdk.IsStillConnected(1000, CancellationToken.None));
+        Assert.False(sdk.IsConnected);
+        Assert.DoesNotContain(server.Commands.Snapshot().Skip(before), c => c.Verb == "NOOP");
+    }
+
+    [Fact]
+    public async Task ControlDropDuringAnOperation_SurfacesAsTimeoutException_AfterTheReadTimeout()
+    {
+        // F30：操作进行中控制连接断开：SDK 等到读超时后抛出 TimeoutException（外面可能包着 FtpException）。
+        await using FakeFtpServer server = FtpFixtures.Start();
+        server.Faults.DropConnectionOn("EPSV");
+        await using AsyncFtpClient sdk = await ConnectAsync(server);
+        var stopwatch = Stopwatch.StartNew();
+
+        Exception ex = await Assert.ThrowsAnyAsync<Exception>(
+            () => sdk.GetListing("/docs", FtpListOption.Auto, CancellationToken.None));
+
+        stopwatch.Stop();
+        Assert.NotNull(FindInner<TimeoutException>(ex));
+        Assert.True(stopwatch.ElapsedMilliseconds >= 1500, $"returned after {stopwatch.ElapsedMilliseconds} ms");
+    }
+
+    [Fact]
+    public async Task AfterATimeout_OperationWithoutConnect_ThrowsNullReferenceException_AndConnectRecovers()
+    {
+        // F31：超时之后 SDK 的状态不能直接复用：不先 Connect 就执行操作会抛出 NullReferenceException；先 Connect 则恢复正常。
+        await using FakeFtpServer server = FtpFixtures.Start();
+        server.Faults.DelayReply("MLSD", TimeSpan.FromSeconds(1));
+        var config = new FtpConfig
+        {
+            DataConnectionType = FtpDataConnectionType.AutoPassive,
+            RetryAttempts = 1,
+            ValidateAnyCertificate = true,
+            ConnectTimeout = 5000,
+            ReadTimeout = 300,
+            DataConnectionConnectTimeout = 2000,
+            DataConnectionReadTimeout = 2000,
+        };
+        await using var sdk = new AsyncFtpClient(LoopbackTcp.Host, "line1", "secret", server.Port, config);
+        await sdk.Connect(CancellationToken.None);
+        await Assert.ThrowsAnyAsync<Exception>(() => sdk.GetListing("/docs", FtpListOption.Auto, CancellationToken.None));
+        Assert.False(sdk.IsConnected);
+
+        await Assert.ThrowsAsync<NullReferenceException>(() => sdk.GetListing("/docs", FtpListOption.Auto, CancellationToken.None));
+
+        await sdk.Connect(CancellationToken.None);
+        FtpListItem[] items = await sdk.GetListing("/docs", FtpListOption.Auto, CancellationToken.None);
+        Assert.Equal(2, items.Length);
+    }
+
+    [Fact]
+    public async Task GetListing_ReturnsWithoutWaitingForTheFinalReply_WhenTheControlConnectionDrops()
+    {
+        // F29：列目录在数据读完后即返回，不等待最后的 226 应答（上传与下载则等待）。
+        await using FakeFtpServer server = FtpFixtures.Start();
+        server.Faults.DropConnectionBeforeTransferReply();
+        await using AsyncFtpClient sdk = await ConnectAsync(server);
+
+        FtpListItem[] items = await sdk.GetListing("/docs", FtpListOption.Auto, CancellationToken.None);
+
+        Assert.Equal(2, items.Length);
+    }
+
+    private static T? FindInner<T>(Exception exception)
+        where T : Exception
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is T match)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
+}
