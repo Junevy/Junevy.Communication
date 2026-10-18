@@ -2,6 +2,21 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — P6.3（Ftp 1.0.0-preview.1：FTP 客户端）
+
+### 新增（Added）
+
+- 2026-10-18 [Ftp] 新增库 `Junevy.Communication.Ftp` 与测试项目 `Tests/Junevy.Communication.Ftp.Tests`（P6.3 计划，P63-D1 至 D17）。只做客户端，FTP 与 FTPS（显式与隐式 TLS），只用被动模式与二进制传输，只面向 .NET 8；底层为 FluentFTP 55.0.0，SDK 类型只在内部的 `Sdk/` 中出现。不做 SFTP、主动模式与 ASCII 传输。
+  - **Task 1（骨架）**：项目、测试项目与架构测试登记；英文 README 打包（Task 8 补全）。
+  - **Task 2（模型、选项与错误映射）**：`FtpClientOptions`（可从 appsettings 绑定，创建时校验并取快照，非法时抛 `ArgumentException` 族，参数名为 `options.<属性>`）、`FtpEncryption`、`FtpExistsMode`、`FtpEntry`、`FtpEntryType`、`FtpTransferProgress`、`FtpTransferStatus`；`Sdk/FtpErrorMap` 统一映射应答码与异常（计划第 16 节）；`EncodingName` 经 `FtpEncodings` 解析，`GBK` 等名称注册 `CodePagesEncodingProvider`（进程级注册，待用户决定，F2）。
+  - **Task 3（连接与 FTPS）**：`FtpClient.Create`、`ConnectAsync`、`DisconnectAsync`、释放；显式与隐式 TLS，数据连接同样加密（PROT P）；登录失败（530）返回 `AuthenticationFailed`，并发送 QUIT 后关闭控制连接（SDK 在 530 之后仍报告已连接，F9）。测试用的进程内模拟服务器（`TestSupport/`）只实现 FluentFTP 实际发出的命令，其余返回 502。
+  - **Task 4（列目录、存在性与目录操作）**：`ListAsync`（不含 `.` 与 `..`，目录不存在时失败）、`FileExistsAsync`、`DirectoryExistsAsync`、`GetFileSizeAsync`、`CreateDirectoryAsync`（逐级创建，已存在算成功）、`DeleteFileAsync`、`DeleteDirectoryAsync`（递归删除）、`RenameAsync`（源不存在时失败）。SDK 静默的情况由库先检查一次存在性，并由测试钉住（F14–F18）。
+  - **Task 5（上传与下载）**：`UploadFileAsync`、`UploadAsync`（流经只进的视图包装，SDK 忽略流的当前位置，F23）、`DownloadFileAsync`（**原子**：先写同目录的 `.part` 临时文件，成功后替换目标；失败时删除临时文件，原文件不变，Q43）、`DownloadAsync`；`Skip` 语义（下载时本地目标已存在则不连接服务器）；进度 `IProgress<FtpTransferProgress>`。上传不是原子的（F22，README 写明）。
+  - **Task 6（断线、串行与释放）**：同一客户端上的操作串行、排队而不失败（Q42：10 个并发上传只使用一条控制连接，命令没有交错）；已连接时每次操作前用 `IsStillConnected`（一条 NOOP）确认连接存活，空闲断线后下一次操作自动重连（F28）；连接级失败后关闭 SDK 连接，下一次操作重新连接（F31）；释放时进行中的操作返回失败结果、排队中的操作返回 `ConnectionClosed`、之后的操作不连接服务器（Q40）。操作中断线被报告为 `Timeout`（F30，偏离计划中的 `ConnectionClosed`，写入 README 与第 18.3 节）。
+  - **Task 7（工厂与依赖注入）**：`FtpClientFactory : NamedFactory<FtpClient>`（`GetOrAdd(name, options)`）与 `FtpServiceCollectionExtensions.AddFtpClients()`（单例，可重复调用；容器的 `ILoggerFactory` 透传给客户端；容器释放时释放客户端）。
+  - 日志：SDK 日志桥接到类别 `Junevy.Communication.Ftp.Sdk`；SDK 的主机、用户名、密码脱敏开关保持默认且不可打开（P63-D15）；密码与文件内容在任何级别都不记录（测试钉住）。
+  - 测试：`Junevy.Communication.Ftp.Tests`（net8.0，176 个用例，Debug 全部通过）。
+
 ## [Unreleased] — WebApi P3.2（WebApi.Server 1.0.0-preview.1：HTTP 服务端）
 
 ### 新增（Added）
