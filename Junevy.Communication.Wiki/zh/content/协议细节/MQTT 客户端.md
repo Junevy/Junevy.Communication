@@ -91,7 +91,7 @@ Junevy.Communication.Mqtt/
 2. **公开 API 不出现 SDK 类型**：反射遍历导出类型的基类、接口与公开 / 受保护的字段、属性、方法、事件、构造函数，展开数组 / 指针 / byref / 泛型实参后检查程序集名（`SdkPublicApiWalker`）。私有成员不检查——`Sdk/` 里的内部类型用 SDK 类型是允许的。
 3. `Sdk` 命名空间以外的类型不依赖 SDK（NetArchTest 读 IL，因此方法体里的引用也算）。
 
-外加 `ArchitectureTests.SdkPrefixes` 登记的**程序集引用白名单**（Mqtt → `MQTTnet`；P6.2 → `Opc.Ua`；P6.3 → `FluentFTP`）。新增一个 SDK 包要改四处，每处一行：`SdkAdapterArchitectureTests.Adapters`（适配程序集、SDK 前缀、`Sdk` 命名空间）、`ArchitectureTests.SdkPrefixes`、`ArchitectureTests.LayerTable`（放在 `#if NET8_0_OR_GREATER` 里），以及 `Architecture.Tests.csproj` 里只在 net8.0 生效的 `ProjectReference`。
+外加 `ArchitectureTests.SdkPrefixes` 登记的**程序集引用白名单**（Mqtt → `MQTTnet`；P6.2 → `Opc.Ua`；P6.3 → `FluentFTP`）。新增一个 SDK 包要改四处，每处一行：`SdkAdapterArchitectureTests.Adapters`（适配程序集、SDK 前缀、`Sdk` 命名空间、允许引用的库）、`ArchitectureTests.SdkPrefixes`、`ArchitectureTests.LayerTable`（放在 `#if NET8_0_OR_GREATER` 里），以及 `Architecture.Tests.csproj` 里只在 net8.0 生效的 `ProjectReference`。
 
 SDK 类型与本库同名时用 `using SdkXxx = MQTTnet.Xxx;` 别名引用（P6-C5）。实测撞名的至少有 `MqttClient`、`MqttClientOptions`、`MqttProtocolVersion`、`MqttUserProperty`。
 
