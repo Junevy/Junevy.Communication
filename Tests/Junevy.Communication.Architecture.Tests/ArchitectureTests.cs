@@ -3,7 +3,6 @@ using System.Runtime.CompilerServices;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Melsec;
-using Junevy.Communication.Modbus.Tcp;
 using Junevy.Communication.Omron;
 using Junevy.Communication.Plc;
 using Junevy.Communication.Secs;
@@ -83,9 +82,8 @@ public sealed class ArchitectureTests
 #endif
     };
 
-    // 参与 InternalsVisibleTo 检查的程序集：分层表中的全部程序集，加上不在分层表中的 Modbus。Modbus 为旧库，只检查 InternalsVisibleTo，不检查引用。
-    private static readonly Assembly[] ProductionAssemblies =
-        LayerTable.Select(row => row.Assembly).Concat(new[] { typeof(ModbusTcpClient).Assembly }).ToArray();
+    // 参与 InternalsVisibleTo 检查的程序集：分层表中的全部程序集。
+    private static readonly Assembly[] ProductionAssemblies = LayerTable.Select(row => row.Assembly).ToArray();
 
     [Fact]
     public void ProductionAssemblies_GrantInternalsOnlyToTheirTestsAndTheRegisteredExceptions()

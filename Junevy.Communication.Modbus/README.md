@@ -1,5 +1,7 @@
 # Junevy.Communication.Modbus
 
+> **3.0.0-preview.1 is in progress.** The library is being rebuilt on the Plc suite (P7). The text below still describes the 2.x API and will be replaced in P7 Task 12; the 2.x code is kept at the `modbus-v2.0.0` tag.
+
 Modbus RTU/TCP master (client) communication library for .NET. It provides low-level request APIs, convenient extension methods for common function codes, and a factory for managing multiple Modbus connections.
 
 ## Target Frameworks

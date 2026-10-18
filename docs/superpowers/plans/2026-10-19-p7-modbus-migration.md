@@ -602,6 +602,20 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
   - 三个协议的测试全部通过。
   - 未发现 S1、S2 以外的套件缺口，里程碑 2 可以开始。
 
+#### Task 3（替换项目骨架，2026-10-19）
+
+- 删除（`git rm`）：`Junevy.Communication.Modbus/` 下的 2.x 生产代码 41 个 `.cs`（Core、DependencyInjection、Extensions、Factory、Rtu、Tcp、Utils）；`Tests/Junevy.Communication.Modbus.Tests/` 下的 2.x 测试 23 个 `.cs`（含 `TestSupport/`）。
+- 修改：`Junevy.Communication.Modbus/Junevy.Communication.Modbus.csproj`（导入 Common.props，覆写 `3.0.0-preview.1`，依赖 Plc、Tcp、Udp、Serial，`InternalsVisibleTo` 只给测试项目，去掉 v2 的 NuGet 直接引用与 `CopyLocalLockFileAssemblies`）；`Tests/…Modbus.Tests.csproj`（导入 Tests.props，引用 Modbus 与 Testing，与 Melsec.Tests 同形）；`Tests/Junevy.Communication.Architecture.Tests/ArchitectureTests.cs`（删除 Modbus 的特殊处理，两行）；WPF 调试工具（`Junevy.Communication.Test` 的 csproj、`App.xaml.cs`、`MainWindowViewModel.cs`）；`Junevy.Communication.Modbus/README.md`（顶部加一行迁移提示，正文在 Task 12 重写）；`CHANGELOG.md`。
+- 新增：`Tests/Junevy.Communication.Modbus.Tests/ProjectSmokeTests.cs`（2 个用例：程序集版本 3.0.0.0；信息版本以 `3.0.0-preview.1` 开头）、`SocketTimingCollection.cs`（与 Plc.Tests 同形，命名空间改为 Modbus.Tests）。
+- 先红：在 v2 代码上运行 `ProjectSmokeTests`，2 个用例失败（版本 2.0.0.0；信息版本不符）。之后才替换项目。
+- 后绿：`ProjectSmokeTests` 2/2（net472 与 net8.0）。
+- WPF 调试工具的处理：视图模型只保留窗口骨架（`MainWindowViewModel` 无成员），`App.xaml.cs` 去掉 `AddModbusFactory`。`MainWindow.xaml` 的 "Modbus RTU Test" 页签的绑定现在没有目标，运行时会有绑定错误，编译不受影响；Task 11 恢复。`ModbusData.cs`、`MbCmd.cs` 不依赖库，保留给 Task 11 使用。
+- 偏差：计划第 4 节 Task 3 没有提到 `README.md` 的提示，AGENTS.md 要求破坏性变更时更新 README。我在 README 顶部加一行迁移提示，正文仍由 Task 12 重写。
+- 偏差：Architecture 测试在 Modbus 登记进分层表（Task 4）之前不检查 Modbus 的 InternalsVisibleTo。这是计划的安排（第 3 节第 4 条），记录在此。
+- Q45：生产代码、测试与 WPF 工具中没有 v2 类型名（grep 确认）；`ModbusData` 不是 v2 类型。
+- 度量：Modbus 有效行 3304 → 0（骨架）；Plc 仍为 1285；Modbus 警告 0。
+- 三条命令：Debug 2 个警告（均为 WPF 工具 `App.xaml.cs` 的 CS8618，改动前即存在，原 31 中的一部分）、0 个错误；Release 2 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 2 / 2，Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
+
 ### 25.4 基线与度量（执行者填写）
 
 Task 0 实测（第 3 节口径；脚本 `build/metrics/*.py`，经 `runpy` 调用，未修改脚本）：
