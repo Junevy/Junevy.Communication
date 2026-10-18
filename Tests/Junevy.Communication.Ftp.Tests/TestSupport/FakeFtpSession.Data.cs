@@ -51,16 +51,7 @@ internal sealed partial class FakeFtpSession
 
         long abortAfter = server.Faults.AbortTransferAfterBytes;
         int count = abortAfter < 0 ? payload.Length : (int)Math.Min(payload.Length, abortAfter);
-        Stream dataStream = data.GetStream();
-        if (dataProtected)
-        {
-            var ssl = new System.Net.Security.SslStream(dataStream, leaveInnerStreamOpen: false);
-            await ssl.AuthenticateAsServerAsync(
-                new System.Net.Security.SslServerAuthenticationOptions { ServerCertificate = server.Certificate },
-                cancellationToken).ConfigureAwait(false);
-            dataStream = ssl;
-        }
-
+        Stream dataStream = await OpenDataStreamAsync(data, cancellationToken).ConfigureAwait(false);
         await dataStream.WriteAsync(payload.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
         await dataStream.FlushAsync(cancellationToken).ConfigureAwait(false);
         await dataStream.DisposeAsync().ConfigureAwait(false);
@@ -73,6 +64,22 @@ internal sealed partial class FakeFtpSession
         {
             await ReplyAsync(226, "Transfer complete.", cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    // PROT P 之后数据连接同样是 TLS（服务器端握手）。
+    private async Task<Stream> OpenDataStreamAsync(TcpClient data, CancellationToken cancellationToken)
+    {
+        Stream dataStream = data.GetStream();
+        if (!dataProtected)
+        {
+            return dataStream;
+        }
+
+        var ssl = new System.Net.Security.SslStream(dataStream, leaveInnerStreamOpen: false);
+        await ssl.AuthenticateAsServerAsync(
+            new System.Net.Security.SslServerAuthenticationOptions { ServerCertificate = server.Certificate },
+            cancellationToken).ConfigureAwait(false);
+        return ssl;
     }
 
     private static async Task<TcpClient?> AcceptDataAsync(TcpListener listener, CancellationToken cancellationToken)

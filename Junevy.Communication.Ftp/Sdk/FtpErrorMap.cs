@@ -14,7 +14,7 @@ namespace Junevy.Communication.Ftp.Sdk;
 internal static class FtpErrorMap
 {
     /// <summary>运行期异常 → 结果。SDK 抛出的异常不能逃出公开方法（P6-C8）。</summary>
-    /// <param name="exception">SDK 或 BCL 抛出的异常；只作诊断，不参与分类之外的决策。</param>
+    /// <param name="exception">SDK 或 BCL 抛出的异常；只作诊断。</param>
     /// <param name="cancelledByCaller">调用方的取消令牌是否已经触发。</param>
     /// <returns>带分类的失败结果。</returns>
     public static CommResult FromException(Exception exception, bool cancelledByCaller)
@@ -26,15 +26,17 @@ internal static class FtpErrorMap
             return Fail(CommErrorKind.Cancelled, null, "The operation was cancelled.", exception);
         }
 
-        // 登录异常本身是应答码异常的子类，因此排在前面：第 16 节的"登录失败"行。
-        if (exception is FtpAuthenticationException authentication)
+        // SDK 常把应答码异常包在别的异常里（例如上传失败时是 FtpException，缺少对象时是 FtpMissingObjectException），
+        // 因此沿内层异常链找第一个应答码异常。登录异常是它的子类，排在前面。
+        FtpCommandException? command = FindCommandException(exception);
+        if (command is FtpAuthenticationException authentication)
         {
             return Fail(CommErrorKind.AuthenticationFailed, ParseCode(authentication.CompletionCode), ReplyText(authentication), exception);
         }
 
-        if (exception is FtpCommandException command)
+        if (command is not null)
         {
-            return FromReply(command);
+            return FromReplyCode(command.CompletionCode, ReplyText(command), exception);
         }
 
         // TLS 的认证异常可能被 SDK 包在别的异常里，因此沿内层异常链找一遍。
@@ -46,7 +48,19 @@ internal static class FtpErrorMap
         return FromTransport(exception);
     }
 
-    /// <summary>本库检查出的请求错误：路径为空、上传的本地源文件不存在（不发送，P63-D5）。</summary>
+    /// <summary>
+    /// 传输失败但 SDK 没有抛异常（返回 Failed 或 false，例如下载中断，第 18.2 节 F24）：最后一条应答是 4xx 或 5xx 时按应答码分类
+    /// （426 → ConnectionClosed），否则为 RemoteError。
+    /// </summary>
+    /// <param name="lastReplyCode">SDK 最后一条应答的代码，可能为 null。</param>
+    /// <param name="message">失败的描述。</param>
+    /// <returns>带分类的失败结果。</returns>
+    public static CommResult TransferFailed(string? lastReplyCode, string message) =>
+        int.TryParse(lastReplyCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out int code) && code >= 400
+            ? FromReplyCode(lastReplyCode, $"The server replied {code}: {message}", null)
+            : RemoteFailure(message);
+
+    /// <summary>本库检查出的请求错误：路径为空、上传的本地源文件不存在、取值未定义（不发送，P63-D5）。</summary>
     /// <param name="message">写明具体哪一项非法。</param>
     /// <returns><see cref="CommErrorKind.InvalidRequest"/> 的结果。</returns>
     public static CommResult InvalidRequest(string message) => CommResult.Fail(message, CommErrorKind.InvalidRequest);
@@ -56,12 +70,12 @@ internal static class FtpErrorMap
     /// <returns><see cref="CommErrorKind.RemoteError"/> 的结果。</returns>
     public static CommResult RemoteObjectMissing(string message) => CommResult.Fail(message, CommErrorKind.RemoteError);
 
-    /// <summary>远程失败但没有应答码：SDK 报告的失败（例如传输状态为失败），或本库检查出的失败（例如路径是文件而不是目录）。RemoteError。</summary>
+    /// <summary>远程失败但没有应答码：SDK 报告的失败，或本库检查出的失败（例如路径是文件而不是目录）。RemoteError。</summary>
     /// <param name="message">写明失败的内容。</param>
     /// <returns><see cref="CommErrorKind.RemoteError"/> 的结果。</returns>
     public static CommResult RemoteFailure(string message) => CommResult.Fail(message, CommErrorKind.RemoteError);
 
-    /// <summary>本地文件系统错误（无法创建本地目录、写入临时文件等）：Unspecified（P63 第 16 节）。</summary>
+    /// <summary>本地文件系统错误（无法创建本地目录、写入或替换临时文件）：Unspecified（P63 第 16 节）。</summary>
     /// <param name="exception">本地文件操作抛出的异常。</param>
     /// <returns><see cref="CommErrorKind.Unspecified"/> 的结果。</returns>
     public static CommResult LocalFileSystem(Exception exception)
@@ -78,10 +92,11 @@ internal static class FtpErrorMap
     /// <returns><see cref="CommErrorKind.ConnectionClosed"/> 的结果。</returns>
     public static CommResult Disposed() => CommResult.Fail("The FTP client has been disposed.", CommErrorKind.ConnectionClosed);
 
-    // 应答码：530 是登录失败，421、425、426 表示连接或数据连接失败，452、552 是存储空间不足，502、504 是命令未实现，其余 4xx、5xx 是远程错误。
-    private static CommResult FromReply(FtpCommandException command)
+    // 应答码：530 是登录失败；421、425、426 是连接或数据连接失败；452、552 是存储空间不足；
+    // 502、504 是命令未实现；其余 4xx、5xx（含 550、553）是远程错误。
+    private static CommResult FromReplyCode(string? completionCode, string text, Exception? exception)
     {
-        long? code = ParseCode(command.CompletionCode);
+        long? code = ParseCode(completionCode);
         CommErrorKind kind = code switch
         {
             530 => CommErrorKind.AuthenticationFailed,
@@ -91,7 +106,7 @@ internal static class FtpErrorMap
             _ => CommErrorKind.RemoteError,
         };
 
-        return Fail(kind, code, ReplyText(command), command);
+        return Fail(kind, code, text, exception);
     }
 
     // 没有应答码的运行期失败：取消（释放时进行中的操作）、超时、连接失败，以及释放之后的访问。
@@ -118,6 +133,19 @@ internal static class FtpErrorMap
         }
 
         return Fail(CommErrorKind.Unspecified, null, $"The FTP operation failed with {exception.GetType().Name}: {exception.Message}", exception);
+    }
+
+    private static FtpCommandException? FindCommandException(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is FtpCommandException command)
+            {
+                return command;
+            }
+        }
+
+        return null;
     }
 
     private static bool IsTimeout(Exception exception) =>

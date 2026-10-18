@@ -1,9 +1,14 @@
 using System.Net;
 using System.Text;
+using Junevy.Communication.Core.Results;
 using Microsoft.Extensions.Logging;
 using SdkFtpClient = FluentFTP.AsyncFtpClient;
 using SdkListItem = FluentFTP.FtpListItem;
 using SdkListOption = FluentFTP.FtpListOption;
+using SdkLocalExists = FluentFTP.FtpLocalExists;
+using SdkProgress = FluentFTP.FtpProgress;
+using SdkStatus = FluentFTP.FtpStatus;
+using SdkVerify = FluentFTP.FtpVerify;
 
 namespace Junevy.Communication.Ftp.Sdk;
 
@@ -115,6 +120,97 @@ internal sealed class FtpSdkSession : IAsyncDisposable
     /// <returns>重命名完成。</returns>
     public Task RenameAsync(string from, string to, CancellationToken cancellationToken) =>
         client.Rename(from, to, cancellationToken);
+
+    /// <summary>上传本地文件。SDK 的覆盖策略先删除远程文件再上传（第 18.2 节 F22）。</summary>
+    /// <param name="localPath">本地源文件。</param>
+    /// <param name="remotePath">远程目标路径。</param>
+    /// <param name="existsMode">目标已存在时的处理方式。</param>
+    /// <param name="progress">进度接收者；可以为 null。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>传输结果。</returns>
+    public async Task<CommResult<FtpTransferStatus>> UploadFileAsync(
+        string localPath,
+        string remotePath,
+        FtpExistsMode existsMode,
+        IProgress<FtpTransferProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        SdkStatus status = await client.UploadFile(
+            localPath,
+            remotePath,
+            FtpSdkTransfers.ToRemoteExists(existsMode),
+            false,
+            SdkVerify.None,
+            Report(progress),
+            cancellationToken).ConfigureAwait(false);
+        return FtpSdkTransfers.ToResult(status, client.LastReply.Code);
+    }
+
+    /// <summary>上传流。SDK 忽略流的当前位置，因此调用方应传入 <see cref="FtpStreamView"/>。</summary>
+    /// <param name="source">源流（视图）。</param>
+    /// <param name="remotePath">远程目标路径。</param>
+    /// <param name="existsMode">目标已存在时的处理方式。</param>
+    /// <param name="progress">进度接收者；可以为 null。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>传输结果。</returns>
+    public async Task<CommResult<FtpTransferStatus>> UploadStreamAsync(
+        Stream source,
+        string remotePath,
+        FtpExistsMode existsMode,
+        IProgress<FtpTransferProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        SdkStatus status = await client.UploadStream(
+            source,
+            remotePath,
+            FtpSdkTransfers.ToRemoteExists(existsMode),
+            false,
+            Report(progress),
+            cancellationToken).ConfigureAwait(false);
+        return FtpSdkTransfers.ToResult(status, client.LastReply.Code);
+    }
+
+    /// <summary>下载到本地文件。调用方给出的路径是临时文件，由调用方替换目标（P63-D7）。</summary>
+    /// <param name="localPath">本地目标（临时）路径。</param>
+    /// <param name="remotePath">远程源文件。</param>
+    /// <param name="progress">进度接收者；可以为 null。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>传输结果。</returns>
+    public async Task<CommResult<FtpTransferStatus>> DownloadFileAsync(
+        string localPath,
+        string remotePath,
+        IProgress<FtpTransferProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        SdkStatus status = await client.DownloadFile(
+            localPath,
+            remotePath,
+            SdkLocalExists.Overwrite,
+            SdkVerify.None,
+            Report(progress),
+            cancellationToken).ConfigureAwait(false);
+        return FtpSdkTransfers.ToResult(status, client.LastReply.Code);
+    }
+
+    /// <summary>下载到流。SDK 从流的当前位置开始写。</summary>
+    /// <param name="destination">目标流（视图）。</param>
+    /// <param name="remotePath">远程源文件。</param>
+    /// <param name="progress">进度接收者；可以为 null。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>传输结果。</returns>
+    public async Task<CommResult<FtpTransferStatus>> DownloadStreamAsync(
+        Stream destination,
+        string remotePath,
+        IProgress<FtpTransferProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        bool completed = await client.DownloadStream(destination, remotePath, 0, Report(progress), cancellationToken, 0)
+            .ConfigureAwait(false);
+        return FtpSdkTransfers.ToStreamResult(completed, client.LastReply.Code);
+    }
+
+    private static IProgress<SdkProgress>? Report(IProgress<FtpTransferProgress>? progress) =>
+        progress is null ? null : new FtpSdkProgressReporter(progress);
 
     /// <summary>释放 SDK 客户端，关闭所有套接字。</summary>
     /// <returns>释放完成。</returns>

@@ -32,6 +32,30 @@ public sealed class FtpLoggingTests
     }
 
     [Fact]
+    public async Task Transfers_NeverLogFileContent_AtTraceLevel()
+    {
+        const string marker = "content-marker-7f3a9c";
+        await using FakeFtpServer server = FtpFixtures.Start();
+        using var local = new TempDirectory();
+        string source = local.File("up.txt");
+        File.WriteAllText(source, marker);
+        using var loggers = new TestLogger();
+        await using FtpClient client = FtpClient.Create(FtpTestClients.OptionsFor(server), loggers);
+
+        CommResult<FtpTransferStatus> uploaded = await client.UploadFileAsync(source, "/docs/up.txt");
+        CommResult<FtpTransferStatus> downloaded = await client.DownloadFileAsync("/docs/up.txt", local.File("copy.txt"));
+
+        Assert.True(uploaded.IsSuccess, uploaded.ToString());
+        Assert.True(downloaded.IsSuccess, downloaded.ToString());
+        Assert.NotEmpty(loggers.Entries);
+        foreach (TestLogEntry entry in loggers.Entries)
+        {
+            Assert.DoesNotContain(marker, entry.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(marker, entry.Exception?.ToString() ?? string.Empty, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void Create_WithAllowUntrustedCertificates_LogsAWarning()
     {
         using var loggers = new TestLogger();

@@ -44,6 +44,12 @@ internal sealed partial class FakeFtpSession
             case "MLSD":
                 await ListAsync(argument, machineReadable: true, cancellationToken).ConfigureAwait(false);
                 return true;
+            case "RETR":
+                await RetrieveAsync(argument, cancellationToken).ConfigureAwait(false);
+                return true;
+            case "STOR":
+                await StoreAsync(argument, cancellationToken).ConfigureAwait(false);
+                return true;
             default:
                 await ReplyAsync(502, "Command not implemented.", cancellationToken).ConfigureAwait(false);
                 return true;
