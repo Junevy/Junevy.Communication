@@ -674,6 +674,21 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - 有效行：Modbus 0（Task 3 骨架）→ 228（地址）→ 543（协议层）→ 677（分帧）。v2 为 3304（对照在 Task 15 给出）。
 - 未发现 S1、S2 以外的套件缺口。两个决定（上面的 256 字节与噪声等待）需要审阅者知悉，但不影响里程碑 3 的门槛判断。
 
+#### Task 7（配置快照、组件声明与心跳探测，P7-D7、D9、D11、D12，2026-10-19）
+
+- 新增：`Junevy.Communication.Modbus/Options/ModbusFraming.cs`（公开枚举 `Mbap`、`Rtu`）、`Options/ModbusClientOptions.cs`（公开，`PlcClientOptions` 派生；`Framing`、`UnitId` 默认 1、`UseSingleWriteFunctions` 默认 true、`UseMaskWriteForBits`、`DataFormat`）、`Options/ModbusProtocolSettings.cs`（internal 快照，`From`）、`Options/ModbusProtocolProfile.cs`（internal，`Configure`）、`Connection/ModbusReadProbe.cs`（internal，`IHealthProbe`）。
+- 测试：`Options/ModbusProtocolProfileTests.cs`（22 个用例：规则表的每个格子、串口上的 MBAP、未定义的枚举、RTU 站号范围、组件已被设置时的守卫、探测工厂、快照的默认值与校验），`Connection/ModbusReadProbeTests.cs`（9 个用例）。
+- 先红的证据（诚实说明）：与 Task 6 相同，测试与生产代码在同一次编辑中写入，没有单独运行一次红。改用变异检查：(a) 把 MBAP 的关联改为 Sequential，`DatagramWithoutAFramingChoice`、`NetworkStreamMbap`、`DatagramMbap` 失败；(b) 把探测对异常应答的处理改为不健康，`Rtu_ExceptionResponse_IsHealthy` 失败。恢复后全部通过。
+- 后绿：`Modbus.Tests` 199/199（net472 与 net8.0）。
+- 决定（计划没有给出细节）：
+  - `ModbusClientOptions` 与 `ModbusFraming` 在本 Task 加入，因为 `ModbusProtocolSettings.From` 需要它们；P7-D3 的公开面（10 个类型）在 Task 8 结束时核对。
+  - 串口上的 MBAP 在 `ModbusProtocolProfile` 中抛 `ArgumentException`（参数名 `settings`）；未定义的枚举、交付方式与介质抛 `ArgumentOutOfRangeException`。
+  - 探测使用的 MBAP 事务号来自 `MbapHeader.TransactionIds`（与客户端请求共用计数器）。测试不断言绝对值，从 `ScriptedByteChannel.LastRequest` 取出请求。
+  - 探测的站号范围检查与 RTU 的 1–247 在 `Configure` 中完成（P7-D7 的要求：在 `PlcComponentWiring.Apply` 之前）。
+- 第 2 节自查：符合。`ModbusProtocolSettings` 与选项都在构造时取快照（与 MELSEC 的做法一致）；文件作用域命名空间；公共成员有中文注释；错误消息英文。
+- 度量：Modbus 有效行 677 → 822。
+- 三条命令：Debug 2 个警告、0 个错误（WPF 工具的 CS8618，改动前即存在）；Release 2 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 199 / 199，Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
+
 ### 25.4 基线与度量（执行者填写）
 
 Task 0 实测（第 3 节口径；脚本 `build/metrics/*.py`，经 `runpy` 调用，未修改脚本）：

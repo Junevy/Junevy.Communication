@@ -15,6 +15,8 @@
 
 - 2026-10-19 [Modbus] 分帧与关联（P7 Task 6，全部 internal）：MBAP 用套件的长度字段分帧（偏移 4、宽 2、大端、修正值 0，最大帧长 260）；RTU 用 `ModbusRtuFrameDecoder` 按应答功能码与字节数确定帧长（第 21.4 节），收全后以 CRC 裁决，功能码未知或 CRC 不符时丢弃 1 个字节并重新同步；帧长超过 256 字节时抛出 `FrameDecodeException`。关联键 `ModbusTransactionKeyExtractor` 取前两个字节（大端）作为事务号。测试：`ModbusRtuFrameDecoderTests`（9 个用例）、`ModbusFramingTests`（7 个用例，含 V-M-6）。
 
+- 2026-10-19 [Modbus] 选项、协议配置与心跳探测（P7 Task 7，P7-D7、D9、D11、D12）：公开的 `ModbusFraming`（`Mbap`、`Rtu`）与 `ModbusClientOptions : PlcClientOptions`（`Framing` 为 null 时按介质决定，`UnitId` 默认 1，`UseSingleWriteFunctions`，`UseMaskWriteForBits`，`DataFormat` 默认 ABCD 字序与 ASCII 字符串）。内部的 `ModbusProtocolSettings`（快照）与 `ModbusProtocolProfile`（串口上使用 MBAP 与不支持的枚举值在套件的组件装配之前拒绝；RTU 站号范围 1–247；MBAP 为 Keyed 关联，RTU 为 Sequential）。心跳探测 `ModbusReadProbe` 读 HR0 一个字，收到格式正确的正常或异常应答即为健康。测试：`ModbusProtocolProfileTests`（22 个用例），`ModbusReadProbeTests`（9 个用例）。
+
 ### 变更（Changed）
 
 - 2026-10-19 [Modbus] 项目骨架改为 Plc 套件上的 3.0.0-preview.1（P7-D1）：csproj 导入 `build/Junevy.Communication.Common.props`，依赖 Plc、Tcp、Udp、Serial；`InternalsVisibleTo` 只给 `Junevy.Communication.Modbus.Tests`。协议实现在后续 Task 中加入，本次提交尚无公开类型。
