@@ -12,6 +12,12 @@
     <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
   </ItemGroup>
 
+  <!-- 用 appsettings 真正用的那条绑定路径验证选项（P6-C9）。 -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.2" />
+  </ItemGroup>
+
   <!-- P6-C12：FTP 的测试替身是自写的进程内模拟服务器（TestSupport/），不引用任何第三方 FTP 服务器包。 -->
 
 </Project>

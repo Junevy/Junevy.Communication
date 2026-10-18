@@ -29,4 +29,13 @@ public static class FtpTestClients
         ReadTimeout = 2000,
         DataConnectionTimeout = 2000,
     };
+
+    /// <summary>不需要模拟服务器的有效选项，用于只检查创建、工厂与注册的用例（不会真正连接）。</summary>
+    /// <param name="port">端口，默认 21。</param>
+    /// <returns>新的选项对象。</returns>
+    public static FtpClientOptions ValidOptions(int port = 21) => new()
+    {
+        Host = LoopbackTcp.Host,
+        Port = port,
+    };
 }
