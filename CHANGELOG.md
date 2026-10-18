@@ -9,6 +9,8 @@
 - 2026-10-19 [Plc] 只读地址钩子（P7-S1，计划 P7-D2）：`protected internal virtual bool IsReadOnly(TAddress address)`，默认 `false`。返回 `true` 时，`WriteAsync`、`WriteBitsAsync`（原生位写与读-改-写两条路径）、`WriteBytesAsync` 都返回 `InvalidRequest`，消息为 `The address '<Text>' is read-only.`；判断在地址解析之后、点数检查之前进行，不发请求，也不进入操作锁，断开状态下同样先返回这个失败。读取不受影响。测试：`PlcClientReadOnlyTests`（FakePlcClient 增加只读软元件 R、N、Y）。
 - 2026-10-19 [Plc] 协议专有请求（P7-S2，计划 P7-D2）：`protected Task<CommResult<T>> SendProtocolRequestAsync<T>(string operation, Action<IBufferWriter<byte>> buildRequest, Func<byte[], CommResult<T>> parseResponse, CancellationToken cancellationToken = default)`。与读写入口的守卫、操作锁、重试规则与错误映射相同（释放或未连接返回 `NotConnected` 且不发请求；`Timeout`、`ConnectionClosed`、`ProtocolViolation` 重试，`RemoteError`、`InvalidRequest` 不重试；委托异常收口为 `Unspecified` 并记录 Error；调用方取消返回 `Cancelled`）。空的委托或空白的操作名同步抛出 `ArgumentNullException` / `ArgumentException`。日志与分包日志共用格式，地址位置写操作名。测试：`PlcClientProtocolRequestTests`（13 个用例，含与 `ReadAsync` 串行的用例）。
 
+- 2026-10-19 [Modbus] 存储区与地址（P7-D4）：`ModbusDevice`（sealed，四个静态实例 `Coil`、`DiscreteInput`、`InputRegister`、`HoldingRegister`，符号 `C`、`DI`、`IR`、`HR`，只读属性由 `IsReadOnly` 给出）、`ModbusAddress : PlcAddress`（`Device` 收窄为 `ModbusDevice`，`UnitId` 为站号前缀）。地址解析器 `ModbusAddressParser`（internal）支持符号写法（零基，编号 0–65535）、Modicon 写法（一基，5 位与 6 位）、位号 `.n`（只用于寄存器，0–15）与站号前缀 `s=n;`（0–255）。帧格式的站号范围（RTU 1–247、MBAP 0–255）在客户端检查，Task 8 加入。测试：`ModbusAddressParserTests`（37 个用例，表驱动）。
+
 ### 变更（Changed）
 
 - 2026-10-19 [Modbus] 项目骨架改为 Plc 套件上的 3.0.0-preview.1（P7-D1）：csproj 导入 `build/Junevy.Communication.Common.props`，依赖 Plc、Tcp、Udp、Serial；`InternalsVisibleTo` 只给 `Junevy.Communication.Modbus.Tests`。协议实现在后续 Task 中加入，本次提交尚无公开类型。

@@ -556,6 +556,7 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 |---|---|---|---|---|
 | F-S1 | 计划 | 套件的 `ValidateRange` 不区分读写，无法拒绝写只读存储区 | 已列为 S1（P7-D2） | `IsReadOnly` 钩子 |
 | F-S2 | 计划 | 套件只有读写入口，0x16 / 0x17 无法复用操作锁与重试 | 已列为 S2（P7-D2） | `SendProtocolRequestAsync<T>` |
+| F-A1 | Task 4 | `PlcAddressParser` 只能解析“符号 + 编号 + 位号”，无法表达站号前缀 `s=n;`，也无法表达 Modicon 的一基写法（首位表示存储区，编号按位数换算） | 自写 `ModbusAddressParser`（internal），空白与大小写约定与套件一致；不改套件 | 地址解析的前缀段与编号换算钩子（与 S7 的 F1 同类），供以后的协议声明式地表达 |
 
 ### 25.3 执行汇报与偏差（执行者填写：每个 Task 的汇报、里程碑小结、偏差与是否需要审阅者决定）
 
@@ -615,6 +616,24 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - Q45：生产代码、测试与 WPF 工具中没有 v2 类型名（grep 确认）；`ModbusData` 不是 v2 类型。
 - 度量：Modbus 有效行 3304 → 0（骨架）；Plc 仍为 1285；Modbus 警告 0。
 - 三条命令：Debug 2 个警告（均为 WPF 工具 `App.xaml.cs` 的 CS8618，改动前即存在，原 31 中的一部分）、0 个错误；Release 2 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 2 / 2，Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
+
+#### Task 4（存储区与地址，P7-D4，2026-10-19）
+
+- 新增：`Junevy.Communication.Modbus/Addressing/ModbusDevice.cs`（sealed，四个静态实例，`IPlcDeviceDefinition`；内部的读写功能码）、`ModbusAddress.cs`（`PlcAddress` 派生，`Device` 收窄，`UnitId`）、`ModbusAddressParser.cs`（internal 静态类，纯语法）；测试 `Tests/…Modbus.Tests/ModbusAddressParserTests.cs`（表驱动，37 个用例 + 2 个存储区用例）。
+- 修改：`Tests/Junevy.Communication.Architecture.Tests/ArchitectureTests.cs`（分层表加一行：Modbus 允许 Plc、Channels、Core、Tcp、Udp、Serial）；`CHANGELOG.md`；本计划的 25.2 摩擦记录（F-A1）。
+- 先红：未实现时，测试项目报 CS0103 / CS0246 / CS1061（解析器、地址类型与 `Device` 等不存在）。
+- 后绿：`Modbus.Tests` 39/39（net472 与 net8.0；其中 2 个是 Task 3 的骨架用例）。
+- 表驱动覆盖：计划第 4 节列出的全部有效写法与全部非法写法；每条非法写法断言错误消息的关键词（`between`、`Modicon`、`bit index`、`unit ID`、`';'`、`after the unit ID`、`Unknown device`、`empty`）。
+- 实现决定：
+  - 站号前缀的解析只做语法（0–255）。RTU 的 1–247 与 MBAP 的 0–255 由客户端在 Task 8 检查，解析器不知道帧格式（P7-D4）。
+  - Modicon 的一基换算：5 位为后 4 位 1–9999，6 位为后 5 位 1–65536，编号 = 数值 − 1；首位只接受 0、1、3、4。
+  - 位号只在寄存器上接受（IR、HR，以及 3、4 开头的 Modicon）。线圈与离散输入带位号时返回 InvalidRequest。
+  - 符号写法按符号长度降序匹配（与 `PlcAddressParser` 的最长前缀约定一致）。
+  - 空白：整体去掉首尾空白，与套件一致；`ModbusAddress.Text` 为去掉空白后的原始文本。
+- 偏差：计划第 4 节 Task 4 的第 2 项写的是"`ModbusAddress`：`new ModbusDevice Device`、`byte? UnitId`"。我把构造函数设为 internal（只有解析器创建），这与"其余类型全部 internal"一致，公开面不变。
+- 第 2 节自查：符合。文件作用域命名空间；公共成员有中文 XML 注释（CS1591 在目标中是错误，构建通过即是证据）；错误消息为英文；没有 await，因此没有 ConfigureAwait；没有 net472 禁用 API。Q45：没有 v2 类型名。
+- 度量：Modbus 有效行 0 → 228（`effective_lines.py`）。
+- 三条命令：Debug 2 个警告、0 个错误；Release 2 个警告、0 个错误（均为 WPF 工具的 CS8618，改动前即存在）；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 39 / 39，Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
 
 ### 25.4 基线与度量（执行者填写）
 

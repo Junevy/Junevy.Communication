@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Melsec;
+using Junevy.Communication.Modbus;
 using Junevy.Communication.Omron;
 using Junevy.Communication.Plc;
 using Junevy.Communication.Secs;
@@ -57,6 +58,8 @@ public sealed class ArchitectureTests
         (typeof(S7Address).Assembly, new[] { PlcName, ChannelsName, CoreName, TcpName }),
         // Omron 同样只有 FINS/TCP（端口 9600），因此允许表里没有 Udp 与 Serial（P4-D1）。
         (typeof(FinsAddress).Assembly, new[] { PlcName, ChannelsName, CoreName, TcpName }),
+        // Modbus 是 Plc 套件上的第四个协议包（P7-D1）：可以引用全部传输包，因为它支持 TCP、UDP 与串口。
+        (typeof(ModbusDevice).Assembly, new[] { PlcName, ChannelsName, CoreName, TcpName, UdpName, SerialName }),
         (typeof(WebApiResult<>).Assembly, new[] { CoreName }),
         // Secs 是自有模型协议，不走 Plc 套件，但与它们一样直接坐在 Channels 与 Tcp 之上（P51-D1、D2）。不做 SECS-I，因此没有 Serial。
         (typeof(SecsMessage).Assembly, new[] { ChannelsName, CoreName, TcpName }),
