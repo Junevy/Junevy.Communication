@@ -58,6 +58,23 @@ public sealed class FakeFtpServer : IAsyncDisposable
     /// <summary>接受过的控制连接数。</summary>
     public int ConnectionCount => Volatile.Read(ref connectionCount);
 
+    /// <summary>
+    /// 立即关闭所有控制连接（不应答），模拟服务器端的空闲超时或网络中断。监听保持打开，之后的连接照常接受。
+    /// </summary>
+    public void DropAllControlConnections()
+    {
+        List<(FakeFtpSession Session, Task Run)> snapshot;
+        lock (sync)
+        {
+            snapshot = sessions.ToList();
+        }
+
+        foreach ((FakeFtpSession session, _) in snapshot)
+        {
+            session.Dispose();
+        }
+    }
+
     /// <summary>停止服务器：关闭监听与全部会话，等待它们结束。</summary>
     public async ValueTask DisposeAsync()
     {

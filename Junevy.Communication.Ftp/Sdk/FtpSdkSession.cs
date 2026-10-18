@@ -53,6 +53,13 @@ internal sealed class FtpSdkSession : IAsyncDisposable
     /// <returns>完成时已连接。</returns>
     public Task ConnectAsync(CancellationToken cancellationToken) => client.Connect(cancellationToken);
 
+    /// <summary>确认控制连接仍然可用。SDK 对健康的连接发送一条 NOOP；对已经断开的连接直接返回 false，并更新 <see cref="IsConnected"/>。</summary>
+    /// <param name="timeoutMilliseconds">等待 NOOP 应答的时间。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>连接仍然可用时为 true。</returns>
+    public Task<bool> IsAliveAsync(int timeoutMilliseconds, CancellationToken cancellationToken) =>
+        client.IsStillConnected(timeoutMilliseconds, cancellationToken);
+
     /// <summary>发送 QUIT 并关闭控制连接。</summary>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>断开完成。</returns>

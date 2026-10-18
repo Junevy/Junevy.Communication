@@ -110,26 +110,30 @@ internal static class FtpErrorMap
     }
 
     // 没有应答码的运行期失败：取消（释放时进行中的操作）、超时、连接失败，以及释放之后的访问。
+    // SDK 常把套接字异常包在 FtpException 里（例如上传途中断线），因此沿内层异常链逐层判断，外层的异常先匹配。
     private static CommResult FromTransport(Exception exception)
     {
-        if (exception is OperationCanceledException)
+        for (Exception? current = exception; current is not null; current = current.InnerException)
         {
-            return Fail(CommErrorKind.ConnectionClosed, null, "The operation was aborted because the client was disposed or the connection was closed.", exception);
-        }
+            if (current is OperationCanceledException)
+            {
+                return Fail(CommErrorKind.ConnectionClosed, null, "The operation was aborted because the client was disposed or the connection was closed.", exception);
+            }
 
-        if (IsTimeout(exception))
-        {
-            return Fail(CommErrorKind.Timeout, null, "The FTP operation timed out.", exception);
-        }
+            if (IsTimeout(current))
+            {
+                return Fail(CommErrorKind.Timeout, null, "The FTP operation timed out.", exception);
+            }
 
-        if (exception is ObjectDisposedException)
-        {
-            return Fail(CommErrorKind.ConnectionClosed, null, "The FTP client has been disposed.", exception);
-        }
+            if (current is ObjectDisposedException)
+            {
+                return Fail(CommErrorKind.ConnectionClosed, null, "The FTP client has been disposed.", exception);
+            }
 
-        if (exception is SocketException or IOException)
-        {
-            return Fail(CommErrorKind.ConnectionClosed, null, $"The connection failed: {exception.Message}", exception);
+            if (current is SocketException or IOException)
+            {
+                return Fail(CommErrorKind.ConnectionClosed, null, $"The connection failed: {exception.Message}", exception);
+            }
         }
 
         return Fail(CommErrorKind.Unspecified, null, $"The FTP operation failed with {exception.GetType().Name}: {exception.Message}", exception);

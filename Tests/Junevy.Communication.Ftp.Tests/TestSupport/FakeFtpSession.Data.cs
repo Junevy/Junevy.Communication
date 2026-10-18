@@ -62,7 +62,19 @@ internal sealed partial class FakeFtpSession
         }
         else
         {
+            ThrowIfDropBeforeTransferReply();
             await ReplyAsync(226, "Transfer complete.", cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    // 注入的断线：以 RST 方式关闭控制连接（LingerState 为 0，客户端立即得到连接被重置的错误），然后抛出 IOException 结束会话。
+    // 正常的 FIN 关闭会让 SDK 等到读超时（第 18.2 节 F31），这里刻意模拟的是网络层的重置。
+    private void ThrowIfDropBeforeTransferReply()
+    {
+        if (server.Faults.TryDropBeforeTransferReply())
+        {
+            tcp.LingerState = new LingerOption(enable: true, seconds: 0);
+            throw new IOException("Injected: the control connection was reset before the transfer reply.");
         }
     }
 

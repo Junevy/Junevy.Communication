@@ -117,17 +117,45 @@ internal sealed class FtpLifecycle
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, disposing.Token);
         try
         {
-            if (!session.IsConnected)
-            {
-                await ConnectSessionAsync(linked.Token).ConfigureAwait(false);
-            }
-
-            return await operation(session, linked.Token).ConfigureAwait(false);
+            await EnsureConnectedAsync(linked.Token).ConfigureAwait(false);
+            return await FinishAsync(await operation(session, linked.Token).ConfigureAwait(false)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            return Failure<T>(ex, cancellationToken);
+            return await FinishAsync(Failure<T>(ex, cancellationToken)).ConfigureAwait(false);
         }
+    }
+
+    // SDK 的 IsConnected 不会察觉服务器已经关闭控制连接（第 18.2 节 F28）：已连接时先确认连接还活着；
+    // 已经断开就关闭 SDK 的状态，再重新连接（P63-D3）。
+    private async Task EnsureConnectedAsync(CancellationToken cancellationToken)
+    {
+        if (session.IsConnected)
+        {
+            if (await session.IsAliveAsync(quitTimeout, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            if (session.IsConnected)
+            {
+                await QuitBestEffortAsync().ConfigureAwait(false);
+            }
+        }
+
+        await ConnectSessionAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    // 连接级失败（断线或超时）之后，SDK 的连接状态不可信：关闭它，下一次操作重新连接（第 18.2 节 F30、F31）。
+    private async Task<CommResult<T>> FinishAsync<T>(CommResult<T> result)
+    {
+        bool connectionFailed = result.ErrorKind is CommErrorKind.ConnectionClosed or CommErrorKind.Timeout;
+        if (!result.IsSuccess && connectionFailed && !IsDisposed && session.IsConnected)
+        {
+            await QuitBestEffortAsync().ConfigureAwait(false);
+        }
+
+        return result;
     }
 
     // 调用方取消优先于释放：两者同时发生时以调用方的取消为准。

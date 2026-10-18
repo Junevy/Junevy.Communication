@@ -91,6 +91,12 @@ internal sealed partial class FakeFtpSession : IDisposable
 
     private async Task<bool> ExecuteAsync(string verb, string argument, CancellationToken cancellationToken)
     {
+        // 直接断开：不应答，结束会话（返回 false 时 RunAsync 释放连接）。
+        if (server.Faults.TryDropConnection(verb))
+        {
+            return false;
+        }
+
         if (server.Faults.TryFailReply(verb, argument, out int faultCode))
         {
             await ReplyAsync(faultCode, "Injected failure.", cancellationToken).ConfigureAwait(false);

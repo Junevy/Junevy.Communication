@@ -70,6 +70,7 @@ internal sealed partial class FakeFtpSession
             var received = new MemoryStream();
             await stream.CopyToAsync(received, cancellationToken).ConfigureAwait(false);
             server.FileSystem.WriteFile(target, received.ToArray(), DateTime.UtcNow);
+            ThrowIfDropBeforeTransferReply();
             await ReplyAsync(226, "Transfer complete.", cancellationToken).ConfigureAwait(false);
         }
         finally
