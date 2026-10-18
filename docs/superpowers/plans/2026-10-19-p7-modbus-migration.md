@@ -781,6 +781,19 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - 第 2 节自查：符合。文档与代码中的名称一致（`MaskWriteRegisterAsync`、`ReadWriteMultipleRegistersAsync`、`AddModbus`、`ModbusClientConfig`）；v2 类型名只出现在迁移对照与 Skill 的迁移指南中（Q45 允许的位置）。
 - 三条命令：本 Task 不改代码；`test-affected` 在 Task 11 的结果仍然有效（见 Task 11）。
 
+#### Task 13（设计文档，2026-10-19）
+
+- 修改：`docs/superpowers/specs/2026-10-10-communication-core-design.md`：
+  1. 第 1 节的协议族表与第 3 节的图：Modbus 行改为"v3，P7 已迁移"，图中 `MBV3` 去掉"可选迁移"；第 3.1 节程序集表的 Modbus 行改为"Plc + Tcp + Udp + Serial，3.0.0-preview.1（P7 已迁移）"。
+  2. 第 11.2 节加一句："P7 之后 Modbus 与其他协议一致，本节的差异不再存在（见 20.12）。"
+  3. 第 17 节改为指向 20.12（P7 已完成）。
+  4. 第 19 节的 P7 标记为已完成。
+  5. 新增 20.12 实施修订（P7）：差异表（原设计、实际实现、原因，共 13 行）、第四次扩展性验证的结论（套件改动、摩擦记录、有效行对照、仍然存在的表达力缺口 F-A1、RTU over TCP 的发现）。20.12 的数字为 Task 11 时点，Task 15 复测后更新。
+  6. 第 21.1 节 Q4 注明"已在 P7 迁移（2026-10-19，用户决定原地替换）"。
+- 后绿：文档改动，无代码变化；`test-affected` 结果与 Task 11 相同（见 Task 11）。
+- 决定：20.12 的差异表按"原设计 → 实际 → 原因"组织，每一行都能追溯到计划中的编号（P7-Dx）或第 20 节。
+- 第 2 节自查：文档中的编号与计划一致（P7-D1、D2、D4 至 D9、D13 至 D16）。
+
 ### 25.4 基线与度量（执行者填写）
 
 Task 0 实测（第 3 节口径；脚本 `build/metrics/*.py`，经 `runpy` 调用，未修改脚本）：
