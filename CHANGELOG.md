@@ -2,6 +2,12 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — 项目目录整理
+
+### 变更（Changed）
+
+- 2026-10-18 [Ftp, Mqtt, OpcUa, Melsec, Omron, Siemens, Secs, Serial, Udp, WebApi, WebApi.Server] 项目根目录下的源文件按职责移入子目录（共 149 个，`git mv`，文件内容不变）：SDK 适配包分为 `Client/`、`Options/`、`Models/`、`Lifecycle/` 及各自的 `Transfers/`、`Messaging/`、`Subscriptions/`；PLC 协议分为 `Client/`、`Addressing/`、`Options/`、`Connection/`（Siemens 另有 `Extensions/`）；Secs 的 SECS-II 数据类型移入 `SecsII/`；Serial、Udp 的通道移入 `Channel/`（Udp 另有 `Options/`）；WebApi 分为 `Abstractions/`、`Options/`、`Interception/`、`Events/`、`Models/`，WebApi.Server 分为 `Server/`、`Factory/`、`Options/`、`Handlers/`、`Interception/`、`Events/`。**命名空间与公开 API 不变**（与 Channels、Plc、Tcp 的做法一致），没有行为变化。
+
 ## [Unreleased] — P6.3（Ftp 1.0.0-preview.1：FTP 客户端）
 
 ### 新增（Added）

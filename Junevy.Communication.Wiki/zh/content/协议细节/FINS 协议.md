@@ -38,11 +38,11 @@ FINS 帧本体的头 10 字节依次为 ICF、RSV、GCT、DNA、DA1、DA2、SNA�
 | `D` | `0x82` | `0x02` | Word |
 | `E0_`–`EC_`（EM 第 0–C 组） | `0xA0 + n` | `0x20 + n` | Word |
 
-表在 [FinsDeviceTable.cs](file://Junevy.Communication.Omron/FinsDeviceTable.cs)，`FinsDevice` 同时暴露 `WordAreaCode` 与 `BitAreaCode`；探测与钩子都从表里取代码，不再写一遍常量。EM 的区域代码是推导值，未经真机验证（P4-D20 ④）。
+表在 [FinsDeviceTable.cs](file://Junevy.Communication.Omron/Addressing/FinsDeviceTable.cs)，`FinsDevice` 同时暴露 `WordAreaCode` 与 `BitAreaCode`；探测与钩子都从表里取代码，不再写一遍常量。EM 的区域代码是推导值，未经真机验证（P4-D20 ④）。
 
 ## 握手与会话（P4-D9、D18）
 
-`ConnectAsync` 在 TCP 连通后先发一帧节点地址请求（命令 0），读回应答（命令 1）里的客户端节点号与服务端节点号（[FinsNodeHandshake.cs](file://Junevy.Communication.Omron/FinsNodeHandshake.cs)），写进不可变会话快照（[FinsSession.cs](file://Junevy.Communication.Omron/FinsSession.cs)，`Volatile` 整体替换）：
+`ConnectAsync` 在 TCP 连通后先发一帧节点地址请求（命令 0），读回应答（命令 1）里的客户端节点号与服务端节点号（[FinsNodeHandshake.cs](file://Junevy.Communication.Omron/Connection/FinsNodeHandshake.cs)），写进不可变会话快照（[FinsSession.cs](file://Junevy.Communication.Omron/Connection/FinsSession.cs)，`Volatile` 整体替换）：
 
 - **写入请求的 SA1 用的是应答返回的节点号，而不是请求里写的值**——请求发 0 表示"由 CPU 分配"（P4-D20 ⑥：固定客户端节点号时 CPU 究竟答什么，未验证）。
 - `FinsClient.ClientNode` 与 `FinsClient.ServerNode` 是 `byte?`，**握手之前为 null**；重连后可能变化（CPU 重新分配），要读这两个属性而不是沿用配置里的数字。
@@ -82,12 +82,12 @@ FINS 的字软元件支持原生位读写：`FinsClient` 覆写 `CanWriteBitsNat
 
 ## 心跳与重连（P4-D15）
 
-[FinsReadProbe.cs](file://Junevy.Communication.Omron/FinsReadProbe.cs) 读 `D0` 的 1 个字，收到格式正确的应答即判健康（结束码不参与判定）。请求超时或连接中断后通道重建，**重新握手会重新取得节点号**；静默设备 + 心跳失效时状态进入 `Reconnecting`（端到端用例覆盖）。
+[FinsReadProbe.cs](file://Junevy.Communication.Omron/Connection/FinsReadProbe.cs) 读 `D0` 的 1 个字，收到格式正确的应答即判健康（结束码不参与判定）。请求超时或连接中断后通道重建，**重新握手会重新取得节点号**；静默设备 + 心跳失效时状态进入 `Reconnecting`（端到端用例覆盖）。
 
 ## 代码与测试位置
 
 - 协议层（无通道依赖）：[Junevy.Communication.Omron/Protocol/](file://Junevy.Communication.Omron/Protocol/)（外壳帧、帧头、内存区、节点地址、字段编码、结束码、SID）。
-- 客户端：[FinsClient.cs](file://Junevy.Communication.Omron/FinsClient.cs)、[FinsClient.Hooks.cs](file://Junevy.Communication.Omron/FinsClient.Hooks.cs)、[FinsProtocolProfile.cs](file://Junevy.Communication.Omron/FinsProtocolProfile.cs)。
+- 客户端：[FinsClient.cs](file://Junevy.Communication.Omron/Client/FinsClient.cs)、[FinsClient.Hooks.cs](file://Junevy.Communication.Omron/Client/FinsClient.Hooks.cs)、[FinsProtocolProfile.cs](file://Junevy.Communication.Omron/Options/FinsProtocolProfile.cs)。
 - 依赖注入：[DependencyInjection/](file://Junevy.Communication.Omron/DependencyInjection/)（`FinsClientConfig` 只有 `Tcp` 与 `Options`，没有传输开关；`AddOmronFins()`；JSON 段名 `"Omron"`；`Tcp` 为 null 时创建器抛 `ArgumentException`）。
 - 测试：`Tests/Junevy.Communication.Omron.Tests/`。黄金向量逐字节核对；替身 `FinsDeviceSimulator` 踩在共享测试库 `PlcMemory` 的**字存储**上，位读写通过对覆盖的字做读-改-写实现（因此位与字共用同一份物理内存，表达不了真机上"位区与字区各自独立"的差异——本期没有用例依赖它）；真实套接字的端到端与故障用例在 `FinsEndToEnd*Tests.cs`，标注 `SocketTiming` 集合串行执行。
 

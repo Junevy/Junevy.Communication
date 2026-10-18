@@ -10,7 +10,7 @@ tags: [协议细节, Junevy.Communication, Melsec]
 
 - 帧：3E、4E（TCP、UDP）；4C 格式 4（ASCII）与格式 5（二进制，可选和校验）（串口）。
 - 命令：批量读 `0401`、批量写 `1401`（字单位子命令 `0000`，位单位子命令 `0001`）、回环测试 `0619`（心跳与人工检查）。
-- 软元件：Q/L 兼容指定；表见 [Junevy.Communication.Melsec/McDeviceTable.cs](file://Junevy.Communication.Melsec/McDeviceTable.cs)（28 行）。
+- 软元件：Q/L 兼容指定；表见 [Junevy.Communication.Melsec/Addressing/McDeviceTable.cs](file://Junevy.Communication.Melsec/Addressing/McDeviceTable.cs)（28 行）。
 - 不做：随机读写 `0403` / `1402`、多块读写 `0406` / `1406`、远程 RUN / STOP、读 CPU 型号、iQ-R 扩展软元件指定（`0002` / `0003`）、扩展指定（`008x`）、1E / 1C / 2C / 3C 帧、4C 格式 1–3。
 
 ## 常量
@@ -24,7 +24,7 @@ tags: [协议细节, Junevy.Communication, Melsec]
 | 帧识别号 | `F8` | 同上 |
 | 4C 格式 5 应答中帧识别号之后的标识 | `FFFF` | 同上 |
 
-默认访问路径：3E / 4E 二进制 `00 FF FF 03 00`，ASCII `00FF03FF00`；4C 二进制 `00 00 FF FF 03 00 00`，ASCII `0000FF03FF0000`（[McClientOptions.cs](file://Junevy.Communication.Melsec/McClientOptions.cs)）。
+默认访问路径：3E / 4E 二进制 `00 FF FF 03 00`，ASCII `00FF03FF00`；4C 二进制 `00 00 FF FF 03 00 00`，ASCII `0000FF03FF0000`（[McClientOptions.cs](file://Junevy.Communication.Melsec/Options/McClientOptions.cs)）。
 
 ## 以太网帧（3E / 4E）
 
@@ -43,7 +43,7 @@ tags: [协议细节, Junevy.Communication, Melsec]
 
 - 请求：`ENQ` + 帧识别号（`F8`）+ 访问路径（14 字符）+ ASCII 请求数据。
 - 应答：有数据时 `STX` + 帧识别号 + 数据 + `ETX` + 和校验（2 字符）；无数据时 `ACK` + 帧识别号；异常时 `NAK` + 帧识别号 + 结束码（4 字符）。
-- 和校验覆盖帧识别号到 `ETX`（P2-D16 ①，未经真机验证）。CR LF 由通道的分隔符处理（[McProtocolProfile.cs](file://Junevy.Communication.Melsec/McProtocolProfile.cs)）。
+- 和校验覆盖帧识别号到 `ETX`（P2-D16 ①，未经真机验证）。CR LF 由通道的分隔符处理（[McProtocolProfile.cs](file://Junevy.Communication.Melsec/Options/McProtocolProfile.cs)）。
 
 **格式 5（二进制，`Encoding.Binary`）**：
 
@@ -56,7 +56,7 @@ tags: [协议细节, Junevy.Communication, Melsec]
 
 ## 回环与心跳（0619）
 
-请求：子命令 `0000`、字节数（2）、数据。应答必须逐字节回显。心跳探测（[McLoopbackProbe.cs](file://Junevy.Communication.Melsec/McLoopbackProbe.cs)）发送固定数据 `1234ABCD`，不一致为 `ProtocolViolation`。手册 p.185 的 ASCII 回环示例：`0619 0000 0005 ABCDE`，应答 `0005 ABCDE`。
+请求：子命令 `0000`、字节数（2）、数据。应答必须逐字节回显。心跳探测（[McLoopbackProbe.cs](file://Junevy.Communication.Melsec/Connection/McLoopbackProbe.cs)）发送固定数据 `1234ABCD`，不一致为 `ProtocolViolation`。手册 p.185 的 ASCII 回环示例：`0619 0000 0005 ABCDE`，应答 `0005 ABCDE`。
 
 ## 上限（每个请求）
 
@@ -81,7 +81,7 @@ tags: [协议细节, Junevy.Communication, Melsec]
 ## 代码与测试位置
 
 - 协议层（无通道依赖）：[Junevy.Communication.Melsec/Protocol/](file://Junevy.Communication.Melsec/Protocol/)（字段编码、请求体、3E/4E 帧、4C 帧、校验、应答解码）。
-- 客户端：[McClient.cs](file://Junevy.Communication.Melsec/McClient.cs)、[McClient.Hooks.cs](file://Junevy.Communication.Melsec/McClient.Hooks.cs)、[McFrameExchange.cs](file://Junevy.Communication.Melsec/Protocol/McFrameExchange.cs)。
+- 客户端：[McClient.cs](file://Junevy.Communication.Melsec/Client/McClient.cs)、[McClient.Hooks.cs](file://Junevy.Communication.Melsec/Client/McClient.Hooks.cs)、[McFrameExchange.cs](file://Junevy.Communication.Melsec/Protocol/McFrameExchange.cs)。
 - 测试：[Junevy.Communication.Melsec.Tests/](file://Tests/Junevy.Communication.Melsec.Tests/)。黄金向量的单元测试在 `McEthernetFrameTests.cs` 与 `Mc4CFrameTests.cs`；端到端在 `McEndToEnd*Tests.cs`；真实串口为 `McSerialPairTests.cs`（需 `JUNEVY_SERIAL_PAIR`，默认跳过）。
 
 ## 未验证项（P2-D16）

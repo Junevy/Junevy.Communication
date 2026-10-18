@@ -4,7 +4,7 @@
 **本文引用的文件**
 - [docs/superpowers/plans/2026-10-17-p32-webapi-server.md](file://docs/superpowers/plans/2026-10-17-p32-webapi-server.md)
 - [docs/superpowers/specs/2026-10-10-communication-core-design.md](file://docs/superpowers/specs/2026-10-10-communication-core-design.md)（第 20.10 节）
-- [Junevy.Communication.WebApi.Server/WebApiServer.cs](file://Junevy.Communication.WebApi.Server/WebApiServer.cs)
+- [Junevy.Communication.WebApi.Server/Server/WebApiServer.cs](file://Junevy.Communication.WebApi.Server/Server/WebApiServer.cs)
 - [Junevy.Communication.WebApi.Server/Pipeline/RequestPipeline.cs](file://Junevy.Communication.WebApi.Server/Pipeline/RequestPipeline.cs)
 - [Junevy.Communication.WebApi.Server/Hosting/ServerEntryMiddleware.cs](file://Junevy.Communication.WebApi.Server/Hosting/ServerEntryMiddleware.cs)
 - [Junevy.Communication.WebApi.Server/Dedup/DeduplicationCache.cs](file://Junevy.Communication.WebApi.Server/Dedup/DeduplicationCache.cs)
