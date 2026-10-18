@@ -654,6 +654,26 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - 度量：Modbus 有效行 228 → 543（Protocol 层 315 行）。
 - 三条命令：Debug 2 个警告、0 个错误（WPF 工具的 CS8618，改动前即存在）；Release 2 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 152 / 152，Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
 
+#### Task 6（分帧与关联，P7-D8、D9，2026-10-19）
+
+- 新增（`Junevy.Communication.Modbus/Framing/`，全部 internal）：`ModbusRtuFrameDecoder`（`IFrameDecoder`，按第 21.4 节的长度表分帧，收全后以 CRC 裁决，功能码未知或 CRC 不符时丢 1 字节重新同步）、`ModbusRtuFrameCodecFactory`（`IFrameCodecFactory`，编码器用套件的 `PassthroughFrameEncoder.Instance`）、`ModbusStreamFraming`（`MbapOptions()` 返回 MBAP 的 `FramingOptions`；`RtuCodecs()` 返回 RTU 工厂）、`ModbusTransactionKeyExtractor`（`IFrameKeyExtractor`，前两个字节为事务号）。
+- 测试：`ModbusRtuFrameDecoderTests`（9 个用例：单帧、逐字节到达、两帧粘连、异常应答、帧前噪声、CRC 错后接正确帧、未知功能码、本地回显、超过 256 字节的异常）、`ModbusFramingTests`（7 个用例：V-M-6 的键与不足两字节，MBAP 的长度字段分帧与逐字节等待，RTU 工厂的解码）。
+- 先红的证据（诚实说明）：本 Task 的测试与生产代码在同一次编辑中写入，没有先单独运行一次红。第一次编译的唯一错误是 `PassthroughFrameEncoder` 没有公开构造函数（改为 `.Instance`）。因此改用变异检查替代：临时去掉 RTU 的 CRC 比较（改为接受任何帧），`LocalEcho`、`CrcError`、`UnknownFunctionCode`、`NoiseBeforeTheFrame` 四个用例失败；恢复后全部通过。
+- 后绿：`Modbus.Tests` 168/168（net472 与 net8.0）。
+- 解释的决定（计划没有给出细节，记录在此）：
+  - "超过 256 字节抛 FrameDecodeException" 按字面实现：候选帧的声明长度超过 256 时（即字节数 253–255）立即抛出，不等待数据。RTU ADU 的上限确实是 256，因此这样的候选不可能是帧。但是噪声中的字节可能凑出这样的候选，抛出会让通道把连接当作出错。这与 P7-D8 的"不抛异常"有张力。请审阅者决定：字面实现（抛出），或改为丢 1 字节（与功能码未知的处理一致）。
+  - 候选帧需要的字节数未到达时分帧器等待。噪声中的字节数字段很大（最多 255）时，分帧器可能等待最多 260 字节才裁决，之后的好帧会被推迟。这是 P7-D17 第 ② 项（强噪声线路上的重新同步）的一部分，没有超时兜底。
+- 第 2 节自查：符合。`IFrameDecoder` 与 `IFrameKeyExtractor` 的实现只依赖 Channels 的公开类型（`FramingOptions`、`FrameCodecFactory`、`PassthroughFrameEncoder`、`FrameDecodeException`）；没有 `Index`/`Range`；窗口缓冲在解码器实例内复用，没有在循环中使用 `stackalloc`（避免栈增长）。
+- 度量：Modbus 有效行 543 → 677。
+- 三条命令：Debug 2 个警告、0 个错误（WPF 工具的 CS8618，改动前即存在）；Release 2 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 168 / 168，Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
+
+#### 里程碑 2 小结
+
+- 协议层（Task 5、6）全部为 internal，只依赖字节与 Core/Channels 的公开类型。
+- 第 21 节的向量覆盖：21.1 的请求与应答（V-P-1…15）、21.2 的 33 条 RTU 整帧（CRC 与封装/剥离）、21.3 的 V-M-1…5 与 V-M-6、21.4 的长度表（分帧器）、21.5 的码表（`ModbusExceptionCodes`）。
+- 有效行：Modbus 0（Task 3 骨架）→ 228（地址）→ 543（协议层）→ 677（分帧）。v2 为 3304（对照在 Task 15 给出）。
+- 未发现 S1、S2 以外的套件缺口。两个决定（上面的 256 字节与噪声等待）需要审阅者知悉，但不影响里程碑 3 的门槛判断。
+
 ### 25.4 基线与度量（执行者填写）
 
 Task 0 实测（第 3 节口径；脚本 `build/metrics/*.py`，经 `runpy` 调用，未修改脚本）：

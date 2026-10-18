@@ -13,6 +13,8 @@
 
 - 2026-10-19 [Modbus] 协议层（P7 Task 5，全部 internal）：PDU 请求编码（01–06、0F、10、16、17）、正常与异常应答解码（按期望校验功能码、字节数与回显）、MBAP 头（协议号、长度、站号；事务号由进程级计数器分配）与 RTU 帧（站号、CRC-16/MODBUS，低字节在前）的封装与剥离、异常码表（只用标准的九个码的名称）。测试按第 21 节的向量命名或注释（`ModbusRequestPduTests`、`ModbusResponsePduTests`、`ModbusFrameTests`，共 113 个用例）。
 
+- 2026-10-19 [Modbus] 分帧与关联（P7 Task 6，全部 internal）：MBAP 用套件的长度字段分帧（偏移 4、宽 2、大端、修正值 0，最大帧长 260）；RTU 用 `ModbusRtuFrameDecoder` 按应答功能码与字节数确定帧长（第 21.4 节），收全后以 CRC 裁决，功能码未知或 CRC 不符时丢弃 1 个字节并重新同步；帧长超过 256 字节时抛出 `FrameDecodeException`。关联键 `ModbusTransactionKeyExtractor` 取前两个字节（大端）作为事务号。测试：`ModbusRtuFrameDecoderTests`（9 个用例）、`ModbusFramingTests`（7 个用例，含 V-M-6）。
+
 ### 变更（Changed）
 
 - 2026-10-19 [Modbus] 项目骨架改为 Plc 套件上的 3.0.0-preview.1（P7-D1）：csproj 导入 `build/Junevy.Communication.Common.props`，依赖 Plc、Tcp、Udp、Serial；`InternalsVisibleTo` 只给 `Junevy.Communication.Modbus.Tests`。协议实现在后续 Task 中加入，本次提交尚无公开类型。
