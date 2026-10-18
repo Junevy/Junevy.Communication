@@ -151,9 +151,9 @@ public sealed class FtpErrorMapTests
     }
 
     [Fact]
-    public void SdkFailureWithoutAReplyCode_IsRemoteError()
+    public void RemoteFailureWithoutAReplyCode_IsRemoteError()
     {
-        CommResult result = FtpErrorMap.SdkReportedFailure("The transfer was reported as failed.");
+        CommResult result = FtpErrorMap.RemoteFailure("The transfer was reported as failed.");
 
         AssertFailure(result, CommErrorKind.RemoteError, null);
     }

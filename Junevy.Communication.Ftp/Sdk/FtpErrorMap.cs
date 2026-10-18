@@ -56,10 +56,10 @@ internal static class FtpErrorMap
     /// <returns><see cref="CommErrorKind.RemoteError"/> 的结果。</returns>
     public static CommResult RemoteObjectMissing(string message) => CommResult.Fail(message, CommErrorKind.RemoteError);
 
-    /// <summary>SDK 报告失败但没有应答码（例如传输状态为失败，P63 第 16 节）：RemoteError。</summary>
-    /// <param name="message">写明报告的失败内容。</param>
+    /// <summary>远程失败但没有应答码：SDK 报告的失败（例如传输状态为失败），或本库检查出的失败（例如路径是文件而不是目录）。RemoteError。</summary>
+    /// <param name="message">写明失败的内容。</param>
     /// <returns><see cref="CommErrorKind.RemoteError"/> 的结果。</returns>
-    public static CommResult SdkReportedFailure(string message) => CommResult.Fail(message, CommErrorKind.RemoteError);
+    public static CommResult RemoteFailure(string message) => CommResult.Fail(message, CommErrorKind.RemoteError);
 
     /// <summary>本地文件系统错误（无法创建本地目录、写入临时文件等）：Unspecified（P63 第 16 节）。</summary>
     /// <param name="exception">本地文件操作抛出的异常。</param>

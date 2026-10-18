@@ -58,8 +58,8 @@ public sealed class FakeFtpFileSystem
     {
         lock (sync)
         {
-            FakeFtpNode parent = ParentOf(path);
-            parent.Children[Name(path)] = FakeFtpNode.File(content, modified);
+            FakeFtpNode parent = ParentNode(path);
+            parent.Children[NameOf(path)] = FakeFtpNode.File(content, modified);
         }
     }
 
@@ -106,10 +106,73 @@ public sealed class FakeFtpFileSystem
     {
         lock (sync)
         {
-            FakeFtpNode? parent = Find(ParentPath(path));
-            return parent is { IsDirectory: true } && parent.Children.TryGetValue(Name(path), out FakeFtpNode? node)
-                && !node.IsDirectory && parent.Children.Remove(Name(path));
+            FakeFtpNode? parent = Find(ParentOf(path));
+            return parent is { IsDirectory: true } && parent.Children.TryGetValue(NameOf(path), out FakeFtpNode? node)
+                && !node.IsDirectory && parent.Children.Remove(NameOf(path));
         }
+    }
+
+    /// <summary>删除目录；非递归时目录必须为空。</summary>
+    /// <param name="path">目录的绝对路径。</param>
+    /// <param name="recursive">为 true 时连同子条目一起删除。</param>
+    /// <returns>删除了则为 true；不存在、不是目录，或非递归且非空，则为 false。</returns>
+    public bool DeleteDirectory(string path, bool recursive)
+    {
+        lock (sync)
+        {
+            FakeFtpNode? parent = Find(ParentOf(path));
+            if (parent is not { IsDirectory: true } || !parent.Children.TryGetValue(NameOf(path), out FakeFtpNode? node) || !node.IsDirectory)
+            {
+                return false;
+            }
+
+            if (node.Children.Count > 0 && !recursive)
+            {
+                return false;
+            }
+
+            return parent.Children.Remove(NameOf(path));
+        }
+    }
+
+    /// <summary>重命名或移动文件与目录；源必须存在，目标不得存在，目标的父目录必须存在。</summary>
+    /// <param name="from">源路径。</param>
+    /// <param name="to">目标路径。</param>
+    /// <returns>成功为 true。</returns>
+    public bool Rename(string from, string to)
+    {
+        lock (sync)
+        {
+            FakeFtpNode? source = Find(from);
+            FakeFtpNode? targetParent = Find(ParentOf(to));
+            if (source is null || targetParent is not { IsDirectory: true } || Find(to) is not null)
+            {
+                return false;
+            }
+
+            FakeFtpNode? sourceParent = Find(ParentOf(from));
+            sourceParent!.Children.Remove(NameOf(from));
+            targetParent.Children[NameOf(to)] = source;
+            return true;
+        }
+    }
+
+    /// <summary>路径的父目录（根目录的父目录是根目录）。</summary>
+    /// <param name="path">绝对路径。</param>
+    /// <returns>父目录的绝对路径。</returns>
+    public static string ParentOf(string path)
+    {
+        string[] segments = Segments(path);
+        return segments.Length <= 1 ? "/" : "/" + string.Join('/', segments[..^1]);
+    }
+
+    /// <summary>路径的最后一段（根目录为空字符串）。</summary>
+    /// <param name="path">绝对路径。</param>
+    /// <returns>名称。</returns>
+    public static string NameOf(string path)
+    {
+        string[] segments = Segments(path);
+        return segments.Length == 0 ? string.Empty : segments[^1];
     }
 
     private FakeFtpNode? Find(string path)
@@ -126,18 +189,15 @@ public sealed class FakeFtpFileSystem
         return current;
     }
 
-    private FakeFtpNode ParentOf(string path)
+    private FakeFtpNode ParentNode(string path)
     {
-        FakeFtpNode? parent = Find(ParentPath(path));
-        return parent is { IsDirectory: true } ? parent : throw new DirectoryNotFoundException(ParentPath(path));
+        FakeFtpNode? parent = Find(ParentOf(path));
+        return parent is { IsDirectory: true } ? parent : throw new DirectoryNotFoundException(ParentOf(path));
     }
 
     private static string[] Segments(string path) =>
         path.Split('/', StringSplitOptions.RemoveEmptyEntries);
 
-    private static string Name(string path) => Segments(path)[^1];
-
-    private static string ParentPath(string path) => "/" + string.Join('/', Segments(path)[..^1]);
 }
 
 internal sealed class FakeFtpNode

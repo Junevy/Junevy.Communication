@@ -1,4 +1,5 @@
 using Junevy.Communication.Core.Results;
+using Junevy.Communication.Ftp.Sdk;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -76,6 +77,41 @@ public sealed partial class FtpClient : IDisposable, IAsyncDisposable
     /// <summary>异步释放客户端。可以重复调用，每次都等待同一次释放完成。</summary>
     /// <returns>释放完成。</returns>
     public ValueTask DisposeAsync() => lifecycle.DisposeAsync();
+
+    // 路径操作的公共流程：先检查参数（null 抛异常；空路径返回 InvalidRequest 且不连接），再在串行门内执行。
+    private async Task<CommResult<T>> PathOperationAsync<T>(
+        string path,
+        string parameter,
+        Func<FtpSdkSession, string, CancellationToken, Task<CommResult<T>>> operation,
+        CancellationToken cancellationToken)
+    {
+        if (FtpRequests.CheckPath(path, parameter) is { } invalid)
+        {
+            return invalid.As<T>();
+        }
+
+        return await lifecycle.RunAsync<T>((session, token) => operation(session, path, token), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    // 不返回值的路径操作：SDK 失败时抛出的异常由生命周期翻译为结果。
+    private async Task<CommResult> PathActionAsync(
+        string path,
+        string parameter,
+        Func<FtpSdkSession, string, CancellationToken, Task> operation,
+        CancellationToken cancellationToken)
+    {
+        CommResult<bool> result = await PathOperationAsync<bool>(
+            path,
+            parameter,
+            async (session, target, token) =>
+            {
+                await operation(session, target, token).ConfigureAwait(false);
+                return CommResult<bool>.Success(true);
+            },
+            cancellationToken).ConfigureAwait(false);
+        return result.ToResult();
+    }
 
     private void ThrowIfDisposed()
     {

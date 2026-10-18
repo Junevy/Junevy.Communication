@@ -37,7 +37,9 @@ internal sealed class FtpLifecycle
     /// <returns>连接结果。</returns>
     public async Task<CommResult> ConnectAsync(CancellationToken cancellationToken)
     {
-        CommResult<bool> result = await RunAsync(_ => Task.FromResult(true), cancellationToken).ConfigureAwait(false);
+        CommResult<bool> result = await RunAsync<bool>(
+            static (_, _) => Task.FromResult(CommResult<bool>.Success(true)),
+            cancellationToken).ConfigureAwait(false);
         return result.ToResult();
     }
 
@@ -74,7 +76,9 @@ internal sealed class FtpLifecycle
     /// <param name="operation">要执行的 SDK 操作；收到的令牌在调用方取消、客户端释放或超时时触发。</param>
     /// <param name="cancellationToken">调用方的取消令牌。</param>
     /// <returns>操作的结果。</returns>
-    public async Task<CommResult<T>> RunAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken)
+    public async Task<CommResult<T>> RunAsync<T>(
+        Func<FtpSdkSession, CancellationToken, Task<CommResult<T>>> operation,
+        CancellationToken cancellationToken)
     {
         if (IsDisposed)
         {
@@ -101,7 +105,9 @@ internal sealed class FtpLifecycle
     /// <returns>释放完成。</returns>
     public ValueTask DisposeAsync() => new(disposal.Value);
 
-    private async Task<CommResult<T>> ExecuteAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken)
+    private async Task<CommResult<T>> ExecuteAsync<T>(
+        Func<FtpSdkSession, CancellationToken, Task<CommResult<T>>> operation,
+        CancellationToken cancellationToken)
     {
         if (IsDisposed)
         {
@@ -116,8 +122,7 @@ internal sealed class FtpLifecycle
                 await ConnectSessionAsync(linked.Token).ConfigureAwait(false);
             }
 
-            T value = await operation(linked.Token).ConfigureAwait(false);
-            return CommResult<T>.Success(value);
+            return await operation(session, linked.Token).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

@@ -154,8 +154,7 @@ internal sealed partial class FakeFtpSession : IDisposable
                 await ReplyAsync(221, "Goodbye.", cancellationToken).ConfigureAwait(false);
                 return false;
             default:
-                await ReplyAsync(502, "Command not implemented.", cancellationToken).ConfigureAwait(false);
-                return true;
+                return await DispatchFileCommandAsync(verb, argument, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -203,7 +202,8 @@ internal sealed partial class FakeFtpSession : IDisposable
         await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
 
-        if (current is not null && current.ReplyCode is null)
+        // 一条命令可能有多个应答（150 与 226）：记录最后一个，它标志命令完成（Q42 据此检查串行）。
+        if (current is not null)
         {
             current.ReplyCode = code;
             current.RepliedAt = DateTime.UtcNow;
