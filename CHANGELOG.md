@@ -17,6 +17,8 @@
 
 - 2026-10-19 [Modbus] 选项、协议配置与心跳探测（P7 Task 7，P7-D7、D9、D11、D12）：公开的 `ModbusFraming`（`Mbap`、`Rtu`）与 `ModbusClientOptions : PlcClientOptions`（`Framing` 为 null 时按介质决定，`UnitId` 默认 1，`UseSingleWriteFunctions`，`UseMaskWriteForBits`，`DataFormat` 默认 ABCD 字序与 ASCII 字符串）。内部的 `ModbusProtocolSettings`（快照）与 `ModbusProtocolProfile`（串口上使用 MBAP 与不支持的枚举值在套件的组件装配之前拒绝；RTU 站号范围 1–247；MBAP 为 Keyed 关联，RTU 为 Sequential）。心跳探测 `ModbusReadProbe` 读 HR0 一个字，收到格式正确的正常或异常应答即为健康。测试：`ModbusProtocolProfileTests`（22 个用例），`ModbusReadProbeTests`（9 个用例）。
 
+- 2026-10-19 [Modbus] 客户端 `ModbusClient : PlcClientBase<ModbusAddress>`（P7 Task 8，P7-D3、D4、D5、D6、D10）：两个公开的 `Create`（按传输类型选择内置创建器，或指定创建器），没有公开构造函数。协议钩子覆盖地址（站号前缀按帧格式检查：RTU 1–247）、单包上限（读 125 字、2000 位，写 123 字、1968 线圈，寄存器位掩码写每包一位）、功能码映射（03、04、01、02、06、10、05、0F、16；单功能码规则按包判断）、只读区域（`IR`、`DI` 写入返回 `InvalidRequest`）、越界检查（结束地址不超过 65535）、线上的请求与应答校验（每包的期望在构造请求时记录一次）。测试：`ModbusClientWireTests`（26 个用例，线上字节）、`ModbusClientErrorTests`（11 个用例，错误映射与重试）、`ModbusClientCreationTests`（10 个用例，创建、地址与类型化读写）。
+
 ### 变更（Changed）
 
 - 2026-10-19 [Modbus] 项目骨架改为 Plc 套件上的 3.0.0-preview.1（P7-D1）：csproj 导入 `build/Junevy.Communication.Common.props`，依赖 Plc、Tcp、Udp、Serial；`InternalsVisibleTo` 只给 `Junevy.Communication.Modbus.Tests`。协议实现在后续 Task 中加入，本次提交尚无公开类型。

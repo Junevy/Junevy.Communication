@@ -2,7 +2,6 @@ using System.Buffers;
 using Junevy.Communication.Channels;
 using Junevy.Communication.Core.Buffers;
 using Junevy.Communication.Core.Results;
-using Junevy.Communication.Modbus.Framing;
 using Junevy.Communication.Modbus.Protocol;
 
 namespace Junevy.Communication.Modbus;
@@ -55,19 +54,10 @@ internal sealed class ModbusReadProbe : IHealthProbe
         ModbusRequestPdu.WriteReadRequest(pdu, ModbusFunctionCodes.ReadHoldingRegisters, ProbeAddress, ProbeQuantity);
 
         using var frame = new ByteBufferWriter();
-        if (framing == ModbusFraming.Mbap)
-        {
-            MbapHeader.Write(frame, MbapHeader.TransactionIds.NextUInt16(), unitId, pdu.WrittenCount);
-            ModbusBuffer.Write(frame, pdu.WrittenSpan);
-        }
-        else
-        {
-            RtuAdu.Write(frame, unitId, pdu.WrittenSpan);
-        }
+        ModbusFrames.Write(frame, framing, unitId, pdu.WrittenSpan);
 
         return frame.ToArray();
     }
 
-    private CommResult<byte[]> Unwrap(byte[] frame)
-        => framing == ModbusFraming.Mbap ? MbapHeader.Unwrap(frame, unitId) : RtuAdu.Unwrap(frame, unitId);
+    private CommResult<byte[]> Unwrap(byte[] frame) => ModbusFrames.Unwrap(frame, framing, unitId);
 }

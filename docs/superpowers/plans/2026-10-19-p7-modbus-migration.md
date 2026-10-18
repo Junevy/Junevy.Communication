@@ -557,6 +557,7 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 | F-S1 | 计划 | 套件的 `ValidateRange` 不区分读写，无法拒绝写只读存储区 | 已列为 S1（P7-D2） | `IsReadOnly` 钩子 |
 | F-S2 | 计划 | 套件只有读写入口，0x16 / 0x17 无法复用操作锁与重试 | 已列为 S2（P7-D2） | `SendProtocolRequestAsync<T>` |
 | F-A1 | Task 4 | `PlcAddressParser` 只能解析“符号 + 编号 + 位号”，无法表达站号前缀 `s=n;`，也无法表达 Modicon 的一基写法（首位表示存储区，编号按位数换算） | 自写 `ModbusAddressParser`（internal），空白与大小写约定与套件一致；不改套件 | 地址解析的前缀段与编号换算钩子（与 S7 的 F1 同类），供以后的协议声明式地表达 |
+| F-A2 | Task 8 | `PlcClientBase` 的测试替身（`ScriptedClientChannel`）在 Plc.Tests 内部，共享测试库只有 `ScriptedByteChannel`（`IByteChannel`），无法给 `IClientChannel` 的客户端使用，因此 Modbus.Tests 复制了一份（`ScriptedModbusChannel`） | 复制一个同形的替身（约 200 行）；计划第 1 节第 6 条要求改共享测试库时先记摩擦，由审阅者决定 | 在 `Junevy.Communication.Testing` 提供 `IClientChannel` 的脚本替身，供所有协议测试共用（审阅者决定） |
 
 ### 25.3 执行汇报与偏差（执行者填写：每个 Task 的汇报、里程碑小结、偏差与是否需要审阅者决定）
 
@@ -688,6 +689,25 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - 第 2 节自查：符合。`ModbusProtocolSettings` 与选项都在构造时取快照（与 MELSEC 的做法一致）；文件作用域命名空间；公共成员有中文注释；错误消息英文。
 - 度量：Modbus 有效行 677 → 822。
 - 三条命令：Debug 2 个警告、0 个错误（WPF 工具的 CS8618，改动前即存在）；Release 2 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 199 / 199，Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
+
+#### Task 8（ModbusClient，P7-D3、D5、D6、D10，2026-10-19）
+
+- 新增：`Junevy.Communication.Modbus/Client/ModbusClient.cs`（公开的 sealed 分部类；两个公开 `Create`；内部的 `Create(name, …)` 与内部构造函数；创建失败时释放通道）、`Client/ModbusClient.Hooks.cs`（协议钩子）、`Client/ModbusFrames.cs`（internal，外壳的封装与剥离，Q47）；测试 `Tests/…Modbus.Tests/Client/`：`ModbusClientWireTests`（26 个用例）、`ModbusClientErrorTests`（11 个用例）、`ModbusClientCreationTests`（10 个用例），以及 `TestSupport/ScriptedModbusChannel.cs`（脚本化的 `IClientChannel` 替身）与 `TestSupport/TestModbus.cs`（构造客户端、取出线上的 PDU 与站号、按请求的帧格式生成应答）。
+- 修改：`Client/…` 之外，`ModbusReadProbe` 改用 `ModbusFrames`（去掉重复的外壳代码）。
+- 公开面：`ModbusClient` 的公开成员为两个 `Create`（P7-D3）；构造函数是 internal（测试与 `Create` 使用），没有公开构造函数（由反射测试钉住）。
+- 决定：
+  - 钩子以 `protected override` 声明：Plc 的钩子是 `protected internal`，跨程序集的重写必须用 `protected override`（与 MELSEC 的 `McClient.Hooks.cs` 一致）。
+  - 一包的期望只在 Build 钩子中记录一次（`Expect`），解析钩子通过 `TakeExpectation` 取出（Q47）；重试时每次尝试都重新记录。
+  - 外壳（MBAP 头或 RTU 帧）由 `ModbusFrames` 统一处理，PDU 的编解码与回显校验只有一份（Q47）。
+  - MBAP 的事务号在 Build 时由 `MbapHeader.TransactionIds` 分配，解析时不检查（P7-D10）。
+  - 写入的功能码映射：一个字的包用 06（`UseSingleWriteFunctions`），否则 10；一个点的线圈包用 05，否则 0F；寄存器位在 `UseMaskWriteForBits` 开启时用 16，每个请求一位（`GetMaxWritePoints` 返回 1）。
+  - 地址的站号前缀优先，否则用选项中的默认站号；RTU 的站号范围在地址解析时检查（`TryParseAddress` 覆写中）。
+  - 测试替身不能用共享测试库的 `ScriptedByteChannel`（那是 `IByteChannel`），因此复制了一份 `ScriptedModbusChannel`（摩擦 F-A2）。
+- 先红的证据（诚实说明）：与 Task 6、7 相同，测试与生产代码在同一次编辑中写入，没有单独运行一次红。第一次编译的错误是 `protected internal` 的重写（CS0507）与缺少 `using`，修正后测试 246 个全部通过。改用变异检查：(a) 去掉"一个点用 06"的规则（`registers == 1 && settings.UseSingleWriteFunctions && false`），(b) 去掉"线圈不能按字访问"的检查，两者合起来使 `WriteOneRegister_UsesFunction06`、`WriteOf123Registers_…`、`ReadWordsOfACoil_…`、`WriteRegisterBitByReadModifyWrite_…` 失败；恢复后全部通过。
+- 后绿：`Modbus.Tests` 246/246（net472 与 net8.0）。
+- 第 2 节自查：符合。`Client/` 下的类型不引用通道的具体实现，只引用 `IClientChannel`；没有 `Index`/`Range`；公共成员的 XML 注释为中文；错误消息英文；`ConfigureAwait` 不需要（客户端没有新的 await）。
+- 度量：Modbus 有效行 822 → 1065。
+- 三条命令：Debug 2 个警告、0 个错误（WPF 工具的 CS8618，改动前即存在）；Release 2 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 246 / 246，Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
 
 ### 25.4 基线与度量（执行者填写）
 
