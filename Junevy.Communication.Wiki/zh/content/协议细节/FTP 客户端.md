@@ -12,7 +12,7 @@ tags: [协议细节, Junevy.Communication, Ftp, FTP, FTPS]
 
 - 每个 `FtpClient` 持有一条控制连接，**按需连接**：操作开始时未连接就先连接，`ConnectAsync` 可以省略（它只用来提前验证地址与凭据）。
 - **每次操作前对已连接的会话发送一条 NOOP**（`IsStillConnected`）。SDK 的 `IsConnected` 不会察觉服务器的空闲断线（F28），没有这一步，"下一次操作自动重连"无法成立。代价是每次操作多一次往返；没有定时心跳。
-- 连接级失败（断线、超时）之后 SDK 的状态不可信：库关闭它，下一次操作重新连接（F31）。
+- 连接级失败（断线、超时）之后库不主动断开：超时后 SDK 已经把自己置为未连接，下一次操作按需连接（F31）；服务器关闭的连接由下一次操作前的存活检查发现（F28）；425、426 只说明这一次传输失败，控制连接完好，下一次操作沿用它。原先"失败后关闭 SDK 连接"的分支在 P6.3 审阅中删除（设计问题 A）。
 - 同一个客户端上的操作**串行**：`SemaphoreSlim` 排队，第二个调用等待第一个完成，**不是失败**。需要并行传输时，宿主用工厂的不同名称创建多个客户端。
 
 ### 释放
@@ -29,16 +29,16 @@ tags: [协议细节, Junevy.Communication, Ftp, FTP, FTPS]
 
 - **上传不是原子的**。`UploadFileAsync`、`UploadAsync`：覆盖时 SDK 先删远程文件再上传（F22），中途失败时远程文件可能消失。本期不做原子上传（设计第 19 节排除）。
 - **下载是原子的**。`DownloadFileAsync` 先写同目录的 `<文件名>.<随机串>.part` 临时文件，成功后 `File.Move(…, overwrite: true)` 替换目标；失败时删除临时文件，原文件不变（Q43）。父目录不存在时创建。
-- **流**：`UploadAsync` 从流的当前位置读到末尾，`DownloadAsync` 从当前位置写；库不释放调用方的流。SDK 忽略流的位置，所以用只进的 `FtpStreamView` 包一层（F23）。
+- **流**：`UploadAsync` 从流的当前位置读到末尾，`DownloadAsync` 从当前位置写；库不释放调用方的流。SDK 会把可定位的流定位到 0（F23），所以用 `FtpStreamView` 包一层：以调用方流的当前位置为起点，内层可定位时视图的位置与长度相对于起点，否则只能顺序读写。同步、异步与 `Span` 的读写都转发给内层流，只支持异步的流（ASP.NET Core 的请求体）同样可用（P6.3 审阅 R2）。
 - **已存在时**：`FtpExistsMode.Overwrite`（默认）或 `Skip`，`Skip` 的结果是 `FtpTransferStatus.Skipped`。下载的 `Skip` 在连接前检查本地文件，不联网；上传的 `Skip` 要查远程文件，因此需要连接。
-- **进度**：`IProgress<FtpTransferProgress>`，在 SDK 的回调线程上报告；总长未知时 `Percent` 为 null。
+- **进度**：`IProgress<FtpTransferProgress>`，在 SDK 的回调线程上报告；总长未知时 `Percent` 为 null（不可定位的流上传、服务器不报告大小的下载）。可定位的流按当前位置到末尾的长度计算百分比（P6.3 审阅设计问题 B）。
 
 ## 目录语义（P63-D8、D9、D10）
 
 | 操作 | 语义 |
 |---|---|
 | `ListAsync` | 不含 `.` 与 `..`。服务器支持 MLSD 时用 MLSD，否则解析 LIST。目录不存在时失败（库先检查：列表为空时才查目录）。 |
-| `CreateDirectoryAsync` | 逐级创建；已存在算成功；路径上是文件则 `RemoteError`。 |
+| `CreateDirectoryAsync` | 逐级创建；已存在算成功；服务器拒绝（权限不足、路径上是文件）时 `RemoteError`，带 MKD 的应答码（通常 550）。SDK 对 MKD 的任何 550 都返回 false，库先记下应答码再检查目录是否存在（F15，P6.3 审阅 R4）。 |
 | `DeleteFileAsync` | 文件不存在时 `RemoteError`（550，由 SDK 报告）。 |
 | `DeleteDirectoryAsync` | **递归删除**（SDK 的 `Recursive`）；目录不存在时 `RemoteError`（550）。 |
 | `RenameAsync` | 源不存在时 `RemoteError`（550）；目标已存在时由服务器决定。 |
@@ -92,9 +92,9 @@ tags: [协议细节, Junevy.Communication, Ftp, FTP, FTPS]
 ## SDK 行为与补偿（计划第 18.2 节 F1–F31 的要点）
 
 - **SDK 静默成功的地方，库先检查存在性**（F14–F18）：列目录为空，删除与重命名的路径。
-- **SDK 忽略流的位置**（F23）：用只进的视图包装。
+- **SDK 忽略流的位置**（F23）：用以调用方当前位置为起点的视图包装。
 - **登录失败后 SDK 仍报告已连接**（F9）：失败时发送 QUIT 并关闭。
-- **超时之后 SDK 对象不能直接复用**（F31）：不先 `Connect` 的操作抛 `NullReferenceException`。库在连接级失败后关闭连接，下一次操作按需重连。
+- **超时之后 SDK 对象不能直接复用**（F31）：不先 `Connect` 的操作抛 `NullReferenceException`。超时后 SDK 已置为未连接，库在下一次操作前按需连接。
 - **中断线 = 读超时**（F30）：见上文的 Timeout 说明。
 - **覆盖上传非原子**（F22）：文档写明，不实现原子上传。
 - **CodePages 注册是进程级的**（F2）：用户 2026-10-18 接受现状。
@@ -108,7 +108,7 @@ tags: [协议细节, Junevy.Communication, Ftp, FTP, FTPS]
 ## 依赖与日志
 
 - 依赖：`FluentFTP` 55.0.0。没有其他 SDK 依赖。
-- 日志：`ILoggerFactory` 可选。操作与失败记录远程路径、字节数和耗时；SDK 日志桥接到类别 `Junevy.Communication.Ftp.Sdk`，级别 Verbose → Trace、Info → Debug、Warn → Warning、Error → Error。**密码与文件内容在任何级别都不记录**（测试钉住）；SDK 的主机、用户名、密码脱敏开关保持默认，不允许打开（P63-D15）。
+- 日志：`ILoggerFactory` 可选。每个操作结束时记录一条（`FtpOperation`）：成功记 Debug（操作名、远程路径、耗时，传输带字节数），失败记 Warning（带分类与应答码），调用方取消记 Debug；耗时不含排队等待（P6.3 审阅 R1）；SDK 日志桥接到类别 `Junevy.Communication.Ftp.Sdk`，级别 Verbose → Trace、Info → Debug、Warn → Warning、Error → Error。**密码与文件内容在任何级别都不记录**（测试钉住）；SDK 的主机、用户名、密码脱敏开关保持默认，不允许打开（P63-D15）。
 
 ## DI 与 Skill
 
