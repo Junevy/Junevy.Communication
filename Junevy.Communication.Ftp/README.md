@@ -102,15 +102,15 @@ CommResult<FtpTransferStatus> sent = await client.UploadAsync(buffer, "/recipes/
 - **Existing targets.** `FtpExistsMode.Overwrite` (the default) replaces the target. `FtpExistsMode.Skip` returns success with `FtpTransferStatus.Skipped` and leaves the target unchanged. For a download the local file is checked before anything is sent, so a skipped download does not contact the server. For an upload the check is on the remote file, so it needs a connection.
 - **Downloads are atomic.** A download to a file first writes a temporary file (`<name>.<random>.part`) in the same directory, then replaces the target. If the transfer fails, the temporary file is deleted and the existing local file keeps its old content. Missing local parent directories are created.
 - **Uploads are not atomic.** With `Overwrite` the SDK removes the remote file and then uploads it, so a failure in the middle can leave no remote file at all. If the device must never see a partial file, upload to a temporary name and rename it once the upload succeeds (`RenameAsync`).
-- **Streams.** `UploadAsync` reads from the stream's current position to its end. `DownloadAsync` writes from the current position. A failed stream download leaves the bytes it has already written in the stream. The library never disposes the stream you pass in.
-- **Progress** is reported as `FtpTransferProgress` with `TransferredBytes` and `Percent`. `Percent` is null when the total length is unknown. Progress callbacks run on the SDK's thread, so they must not block.
+- **Streams.** `UploadAsync` reads from the stream's current position to its end. `DownloadAsync` writes from the current position. A failed stream download leaves the bytes it has already written in the stream. The library never disposes the stream you pass in. Streams that only support asynchronous I/O, such as an ASP.NET Core request or response body, work too.
+- **Progress** is reported as `FtpTransferProgress` with `TransferredBytes` and `Percent`. `Percent` is null when the total length is unknown: an upload from a stream that cannot seek, or a download from a server that does not report the file size. For a seekable stream, `Percent` is measured over the bytes from the current position to the end. Progress callbacks run on the SDK's thread, so they must not block.
 
 ## Directory semantics
 
 | Operation | Behaviour |
 |---|---|
 | `ListAsync(dir)` | Returns the entries of `dir`, without `.` and `..`. Uses `MLSD` when the server supports it, otherwise parses `LIST`. A missing directory fails with `RemoteError`; an empty directory succeeds with an empty list. |
-| `CreateDirectoryAsync(dir)` | Creates every missing level. A directory that already exists counts as success. If the path is a file, the call fails with `RemoteError`. |
+| `CreateDirectoryAsync(dir)` | Creates every missing level. A directory that already exists counts as success. If the server refuses (for example no permission, or a file at the path), the call fails with `RemoteError` and the server's reply code, usually `550`. |
 | `DeleteFileAsync(path)` | A missing file fails with `RemoteError` (reply `550`). |
 | `DeleteDirectoryAsync(dir)` | **Recursive.** Deletes the directory with all its files and subdirectories. A missing directory fails with `RemoteError` (reply `550`). It does not only delete empty directories. |
 | `RenameAsync(from, to)` | A missing source fails with `RemoteError` (reply `550`). When `to` already exists, the server decides whether it is replaced or the call fails. |
@@ -195,7 +195,7 @@ FtpClient client = factory.GetOrAdd("line1", new FtpClientOptions { Host = "file
 
 ## Logging
 
-Pass an `ILoggerFactory` to `Create` to receive logs. The client logs operations with the remote path, byte counts and duration, and failures at Warning. SDK logs are bridged to the same factory under the category `Junevy.Communication.Ftp.Sdk` at Trace, Debug, Warning and Error. **Passwords and file contents are never logged, at any level.** The SDK's host, user name and password redaction stays on and cannot be switched off.
+Pass an `ILoggerFactory` to `Create` to receive logs. Each operation is logged when it ends: at Debug with the operation name, the remote path, the duration and, for transfers, the byte count; failures at Warning with the `ErrorKind` and the reply code; cancellation by the caller at Debug. Time spent waiting behind another operation on the same client is not counted in the duration. SDK logs are bridged to the same factory under the category `Junevy.Communication.Ftp.Sdk` at Trace, Debug, Warning and Error. **Passwords and file contents are never logged, at any level.** The SDK's host, user name and password redaction stays on and cannot be switched off.
 
 ## Verification status
 

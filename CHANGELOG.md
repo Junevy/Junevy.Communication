@@ -16,6 +16,17 @@
   - **Task 7（工厂与依赖注入）**：`FtpClientFactory : NamedFactory<FtpClient>`（`GetOrAdd(name, options)`）与 `FtpServiceCollectionExtensions.AddFtpClients()`（单例，可重复调用；容器的 `ILoggerFactory` 透传给客户端；容器释放时释放客户端）。
   - 日志：SDK 日志桥接到类别 `Junevy.Communication.Ftp.Sdk`；SDK 的主机、用户名、密码脱敏开关保持默认且不可打开（P63-D15）；密码与文件内容在任何级别都不记录（测试钉住）。
   - 测试：`Junevy.Communication.Ftp.Tests`（net8.0，176 个用例，Debug 全部通过）。
+- 2026-10-18 [Ftp] **操作日志**（P63-D15，审阅 R1）：每个操作结束时记录一条日志（内部 `FtpOperation`）：成功记 Debug（操作名、远程路径、耗时，传输带字节数），失败记 Warning（分类与应答码），调用方取消记 Debug；耗时从拿到串行门开始计算。下载的本地替换移入操作之内，替换失败同样进入日志。
+- 2026-10-18 [Ftp] **可定位的流上传报告百分比**（审阅设计问题 B）：`FtpStreamView` 以调用方流的当前位置为起点，内层可定位时视图也可定位，位置与长度相对于起点，因此 `Percent` 按当前位置到末尾的长度计算；不可定位的流仍为 null。
+
+### 修正（Fixed）
+
+- 2026-10-18 [Ftp] **只支持异步的流无法上传与下载**（审阅 R2）：`FtpStreamView` 原先只转发同步的 `Read` / `Write`，SDK 的异步读写回落为调用方流的同步方法，ASP.NET Core 的请求体这类禁止同步 IO 的流因此失败（`Unspecified`）。现在同步、异步与 `Span` 的读写及 `FlushAsync` 都转发给内层流，取消令牌一并传入。用例：`FtpStreamTransferTests`。
+- 2026-10-18 [Ftp] **FTPS 下的数据传输补上用例**（审阅 R3）：显式与隐式 TLS 下的列目录、上传、下载（`Tls_ListUploadAndDownload_RunOverEncryptedDataConnections`）。功能本身没有改动。
+- 2026-10-18 [Ftp] **服务器拒绝创建目录时的结果**（审阅 R4）：原先报告 "The path exists and is not a directory" 且没有应答码；现在带上 MKD 的应答码（通常 550），消息为 "The server refused to create the directory …, or a file is in the way."。内部 `FtpErrorMap.TransferFailed` 改名为 `LastReplyFailure`（传输与创建目录共用）。
+- 2026-10-18 [Ftp] **null 检查先于其他参数的检查**（审阅 R5）：`UploadFileAsync`、`UploadAsync`、`DownloadFileAsync`、`DownloadAsync`、`RenameAsync` 先检查所有参数是否为 null，例如 `UploadFileAsync("missing.txt", null)` 现在抛 `ArgumentNullException`，原先返回 `InvalidRequest`。
+- 2026-10-18 [Ftp] **释放之后的 `DownloadFileAsync`**（审阅 R6）：原先 `Skip` 且本地文件存在时返回成功（`Skipped`），`Overwrite` 时仍会创建本地父目录；现在释放之后直接返回 `ConnectionClosed`，不检查也不改动本地文件。
+- 2026-10-18 [Ftp] **连接级失败之后不再主动断开**（审阅设计问题 A）：删除生命周期中"`ConnectionClosed` 或 `Timeout` 之后发送 QUIT 并关闭"的分支。超时之后 SDK 已经把自己置为未连接，服务器关闭的连接由下一次操作前的存活检查发现；这个分支只会让 425、426（控制连接完好）之后多一次重连。用例：`ConnectionClosedReply_OnAHealthyControlConnection_DoesNotReconnect`。
 
 ## [Unreleased] — WebApi P3.2（WebApi.Server 1.0.0-preview.1：HTTP 服务端）
 

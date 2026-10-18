@@ -38,4 +38,22 @@ public sealed class FtpInvalidPathTests
         await Assert.ThrowsAsync<ArgumentNullException>(() => client.RenameAsync("/docs/recipe.txt", null!));
         Assert.Equal(0, server.ConnectionCount);
     }
+
+    [Fact]
+    public async Task NullArgument_ThrowsBeforeTheOtherArgumentsAreChecked()
+    {
+        // null 是编程错误，先于其他参数的取值检查（P6.3 审阅 R5）：另一个参数非法时同样抛出，而不是返回 InvalidRequest。
+        await using FtpClient client = FtpClient.Create(FtpTestClients.ValidOptions());
+        using var source = new MemoryStream();
+
+        ArgumentNullException upload = await Assert.ThrowsAsync<ArgumentNullException>(() => client.UploadFileAsync("missing.txt", null!));
+        ArgumentNullException stream = await Assert.ThrowsAsync<ArgumentNullException>(() => client.UploadAsync(source, null!, (FtpExistsMode)99));
+        ArgumentNullException download = await Assert.ThrowsAsync<ArgumentNullException>(() => client.DownloadFileAsync("", null!));
+        ArgumentNullException rename = await Assert.ThrowsAsync<ArgumentNullException>(() => client.RenameAsync(null!, ""));
+
+        Assert.Equal("remotePath", upload.ParamName);
+        Assert.Equal("remotePath", stream.ParamName);
+        Assert.Equal("localPath", download.ParamName);
+        Assert.Equal("remotePath", rename.ParamName);
+    }
 }

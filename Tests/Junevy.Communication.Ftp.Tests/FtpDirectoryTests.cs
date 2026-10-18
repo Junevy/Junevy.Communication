@@ -46,7 +46,24 @@ public sealed class FtpDirectoryTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(CommErrorKind.RemoteError, result.ErrorKind);
+        Assert.Equal(550, result.ProtocolErrorCode);
         Assert.True(server.FileSystem.FileExists("/docs/recipe.txt"));
+    }
+
+    [Fact]
+    public async Task CreateDirectory_RefusedByTheServer_IsRemoteError_WithTheReplyCode()
+    {
+        // SDK 对 MKD 的任何 550 都返回 false（第 18.2 节 F15）：例如权限不足时，结果带上 MKD 的应答码，消息不说"已存在"（P6.3 审阅 R4）。
+        await using FakeFtpServer server = FtpFixtures.Start();
+        server.Faults.FailCommand("MKD", 550, "/locked");
+        await using FtpClient client = FtpClient.Create(FtpTestClients.OptionsFor(server));
+
+        CommResult result = await client.CreateDirectoryAsync("/locked");
+
+        Assert.Equal(CommErrorKind.RemoteError, result.ErrorKind);
+        Assert.Equal(550, result.ProtocolErrorCode);
+        Assert.Contains("refused to create the directory /locked", result.ErrorMessage, StringComparison.Ordinal);
+        Assert.False(server.FileSystem.DirectoryExists("/locked"));
     }
 
     [Fact]

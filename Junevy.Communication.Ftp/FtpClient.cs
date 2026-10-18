@@ -79,10 +79,12 @@ public sealed partial class FtpClient : IDisposable, IAsyncDisposable
     public ValueTask DisposeAsync() => lifecycle.DisposeAsync();
 
     // 路径操作的公共流程：先检查参数（null 抛异常；空路径返回 InvalidRequest 且不连接），再在串行门内执行。
+    // 操作收到的 FtpOperation 的 Target 就是已检查过的路径；传输操作在其中填入字节数（P63-D15）。
     private async Task<CommResult<T>> PathOperationAsync<T>(
+        string name,
         string path,
         string parameter,
-        Func<FtpSdkSession, string, CancellationToken, Task<CommResult<T>>> operation,
+        Func<FtpSdkSession, FtpOperation, CancellationToken, Task<CommResult<T>>> run,
         CancellationToken cancellationToken)
     {
         if (FtpRequests.CheckPath(path, parameter) is { } invalid)
@@ -90,23 +92,26 @@ public sealed partial class FtpClient : IDisposable, IAsyncDisposable
             return invalid.As<T>();
         }
 
-        return await lifecycle.RunAsync<T>((session, token) => operation(session, path, token), cancellationToken)
+        var operation = new FtpOperation(name, path);
+        return await lifecycle.RunAsync<T>(operation, (session, token) => run(session, operation, token), cancellationToken)
             .ConfigureAwait(false);
     }
 
     // 不返回值的路径操作：SDK 失败时抛出的异常由生命周期翻译为结果。
     private async Task<CommResult> PathActionAsync(
+        string name,
         string path,
         string parameter,
-        Func<FtpSdkSession, string, CancellationToken, Task> operation,
+        Func<FtpSdkSession, string, CancellationToken, Task> action,
         CancellationToken cancellationToken)
     {
         CommResult<bool> result = await PathOperationAsync<bool>(
+            name,
             path,
             parameter,
-            async (session, target, token) =>
+            async (session, operation, token) =>
             {
-                await operation(session, target, token).ConfigureAwait(false);
+                await action(session, operation.Target, token).ConfigureAwait(false);
                 return CommResult<bool>.Success(true);
             },
             cancellationToken).ConfigureAwait(false);

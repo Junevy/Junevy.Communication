@@ -73,6 +73,27 @@ public sealed class FtpReleaseTests
     }
 
     [Fact]
+    public async Task DownloadFileAfterRelease_IsConnectionClosed_AndLeavesTheLocalSideAlone()
+    {
+        // 释放之后不做任何本地检查或改动（P6.3 审阅 R6）：Skip 不返回 Skipped，Overwrite 不创建父目录。
+        using var local = new TempDirectory();
+        string existing = local.File("recipe.txt");
+        File.WriteAllText(existing, "local");
+        string nested = local.File(Path.Combine("nested", "recipe.txt"));
+        await using FakeFtpServer server = FtpFixtures.Start();
+        FtpClient client = FtpClient.Create(FtpTestClients.OptionsFor(server));
+        await client.DisposeAsync();
+
+        CommResult<FtpTransferStatus> skipped = await client.DownloadFileAsync("/docs/recipe.txt", existing, FtpExistsMode.Skip);
+        CommResult<FtpTransferStatus> overwritten = await client.DownloadFileAsync("/docs/recipe.txt", nested);
+
+        Assert.Equal(CommErrorKind.ConnectionClosed, skipped.ErrorKind);
+        Assert.Equal(CommErrorKind.ConnectionClosed, overwritten.ErrorKind);
+        Assert.False(Directory.Exists(local.File("nested")));
+        Assert.Equal(0, server.ConnectionCount);
+    }
+
+    [Fact]
     public async Task ReleaseAndGarbageCollection_LeaveNoUnobservedTaskExceptions()
     {
         int unobserved = 0;

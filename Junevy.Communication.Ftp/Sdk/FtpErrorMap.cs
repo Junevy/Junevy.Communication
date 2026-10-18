@@ -49,13 +49,13 @@ internal static class FtpErrorMap
     }
 
     /// <summary>
-    /// 传输失败但 SDK 没有抛异常（返回 Failed 或 false，例如下载中断，第 18.2 节 F24）：最后一条应答是 4xx 或 5xx 时按应答码分类
-    /// （426 → ConnectionClosed），否则为 RemoteError。
+    /// SDK 报告失败但没有抛异常（传输返回 Failed 或 false，例如下载中断，第 18.2 节 F24；创建目录返回 false，F15）：
+    /// 最后一条应答是 4xx 或 5xx 时按应答码分类（426 → ConnectionClosed，550 → RemoteError），否则为 RemoteError。
     /// </summary>
     /// <param name="lastReplyCode">SDK 最后一条应答的代码，可能为 null。</param>
     /// <param name="message">失败的描述。</param>
     /// <returns>带分类的失败结果。</returns>
-    public static CommResult TransferFailed(string? lastReplyCode, string message) =>
+    public static CommResult LastReplyFailure(string? lastReplyCode, string message) =>
         int.TryParse(lastReplyCode, NumberStyles.Integer, CultureInfo.InvariantCulture, out int code) && code >= 400
             ? FromReplyCode(lastReplyCode, $"The server replied {code}: {message}", null)
             : RemoteFailure(message);

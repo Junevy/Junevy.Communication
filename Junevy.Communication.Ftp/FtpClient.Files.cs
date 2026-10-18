@@ -11,27 +11,38 @@ public sealed partial class FtpClient
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>删除结果。</returns>
     public Task<CommResult> DeleteFileAsync(string remotePath, CancellationToken cancellationToken = default) =>
-        PathActionAsync(remotePath, nameof(remotePath), (session, path, token) => session.DeleteFileAsync(path, token), cancellationToken);
+        PathActionAsync("DeleteFile", remotePath, nameof(remotePath), (session, path, token) => session.DeleteFileAsync(path, token), cancellationToken);
 
-    /// <summary>逐级创建远程目录。已经存在的目录算成功；路径上是文件则失败（RemoteError）。</summary>
+    /// <summary>
+    /// 逐级创建远程目录。已经存在的目录算成功；服务器拒绝创建（例如权限不足，或路径上是文件）时失败（RemoteError，带服务器的应答码）。
+    /// </summary>
     /// <param name="remotePath">远程目录路径。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>创建结果。</returns>
     public async Task<CommResult> CreateDirectoryAsync(string remotePath, CancellationToken cancellationToken = default)
     {
         CommResult<bool> result = await PathOperationAsync<bool>(
+            "CreateDirectory",
             remotePath,
             nameof(remotePath),
-            async (session, path, token) =>
+            async (session, operation, token) =>
             {
-                // SDK 对已存在的目录返回 false：只要路径确实是目录就算成功。
-                if (await session.CreateDirectoryAsync(path, token).ConfigureAwait(false)
-                    || await session.DirectoryExistsAsync(path, token).ConfigureAwait(false))
+                string path = operation.Target;
+                if (await session.CreateDirectoryAsync(path, token).ConfigureAwait(false))
                 {
                     return CommResult<bool>.Success(true);
                 }
 
-                return FtpErrorMap.RemoteFailure($"The path exists and is not a directory: {path}").As<bool>();
+                // SDK 对 MKD 的任何 550 都返回 false（已存在、权限不足、路径上是文件）：先记下 MKD 的应答码，
+                // 再确认路径是不是已经存在的目录。
+                string? refusal = session.LastReplyCode;
+                if (await session.DirectoryExistsAsync(path, token).ConfigureAwait(false))
+                {
+                    return CommResult<bool>.Success(true);
+                }
+
+                return FtpErrorMap.LastReplyFailure(refusal, $"The server refused to create the directory {path}, or a file is in the way.")
+                    .As<bool>();
             },
             cancellationToken).ConfigureAwait(false);
         return result.ToResult();
@@ -42,21 +53,26 @@ public sealed partial class FtpClient
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>删除结果。</returns>
     public Task<CommResult> DeleteDirectoryAsync(string remotePath, CancellationToken cancellationToken = default) =>
-        PathActionAsync(remotePath, nameof(remotePath), (session, path, token) => session.DeleteDirectoryAsync(path, token), cancellationToken);
+        PathActionAsync("DeleteDirectory", remotePath, nameof(remotePath), (session, path, token) => session.DeleteDirectoryAsync(path, token), cancellationToken);
 
     /// <summary>重命名或移动远程条目。源不存在时失败（RemoteError，应答码 550）；目标已存在时的行为由服务器决定。</summary>
     /// <param name="remotePath">源路径。</param>
     /// <param name="newRemotePath">目标路径。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>重命名结果。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="remotePath"/> 或 <paramref name="newRemotePath"/> 为 null。</exception>
     public async Task<CommResult> RenameAsync(string remotePath, string newRemotePath, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(remotePath);
+        ArgumentNullException.ThrowIfNull(newRemotePath);
+
         if (FtpRequests.CheckPath(newRemotePath, nameof(newRemotePath)) is { } invalid)
         {
             return invalid;
         }
 
         return await PathActionAsync(
+            "Rename",
             remotePath,
             nameof(remotePath),
             (session, path, token) => session.RenameAsync(path, newRemotePath, token),

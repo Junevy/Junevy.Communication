@@ -27,7 +27,7 @@ internal static class FtpSdkTransfers
     {
         SdkStatus.Success => CommResult<FtpTransferStatus>.Success(FtpTransferStatus.Transferred),
         SdkStatus.Skipped => CommResult<FtpTransferStatus>.Success(FtpTransferStatus.Skipped),
-        _ => FtpErrorMap.TransferFailed(lastReplyCode, "The transfer failed.").As<FtpTransferStatus>(),
+        _ => FtpErrorMap.LastReplyFailure(lastReplyCode, "The transfer failed.").As<FtpTransferStatus>(),
     };
 
     /// <summary>下载到流的结果：SDK 返回 false 表示传输未完成。</summary>
@@ -37,5 +37,5 @@ internal static class FtpSdkTransfers
     public static CommResult<FtpTransferStatus> ToStreamResult(bool completed, string? lastReplyCode) =>
         completed
             ? CommResult<FtpTransferStatus>.Success(FtpTransferStatus.Transferred)
-            : FtpErrorMap.TransferFailed(lastReplyCode, "The transfer failed.").As<FtpTransferStatus>();
+            : FtpErrorMap.LastReplyFailure(lastReplyCode, "The transfer failed.").As<FtpTransferStatus>();
 }

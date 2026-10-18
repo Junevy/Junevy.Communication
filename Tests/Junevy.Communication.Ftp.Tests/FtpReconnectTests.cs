@@ -79,6 +79,27 @@ public sealed class FtpReconnectTests
     }
 
     [Fact]
+    public async Task ConnectionClosedReply_OnAHealthyControlConnection_DoesNotReconnect()
+    {
+        // 426 只说明这一次传输失败，控制连接完好：失败后不主动断开，下一次操作沿用同一条连接（P6.3 审阅设计问题 A）。
+        using var local = new TempDirectory();
+        string source = local.File("up.bin");
+        File.WriteAllText(source, "0123456789");
+        await using FakeFtpServer server = FtpFixtures.Start();
+        server.Faults.FailCommand("STOR", 426, times: 1);
+        await using FtpClient client = FtpClient.Create(FtpTestClients.OptionsFor(server));
+
+        CommResult<FtpTransferStatus> refused = await client.UploadFileAsync(source, "/docs/a.bin");
+        CommResult<FtpTransferStatus> next = await client.UploadFileAsync(source, "/docs/a.bin");
+
+        Assert.Equal(CommErrorKind.ConnectionClosed, refused.ErrorKind);
+        Assert.Equal(426, refused.ProtocolErrorCode);
+        Assert.True(next.IsSuccess, next.ToString());
+        Assert.Equal(1, server.ConnectionCount);
+        Assert.DoesNotContain(server.Commands.Snapshot(), c => c.Verb == "QUIT");
+    }
+
+    [Fact]
     public async Task DisconnectAsync_ThenAnOperation_ReconnectsOnDemand()
     {
         await using FakeFtpServer server = FtpFixtures.Start();

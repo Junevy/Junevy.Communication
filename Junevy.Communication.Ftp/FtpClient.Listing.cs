@@ -16,10 +16,12 @@ public sealed partial class FtpClient
     /// <exception cref="ArgumentNullException"><paramref name="remoteDirectory"/> 为 null。</exception>
     public Task<CommResult<IReadOnlyList<FtpEntry>>> ListAsync(string remoteDirectory, CancellationToken cancellationToken = default) =>
         PathOperationAsync<IReadOnlyList<FtpEntry>>(
+            "List",
             remoteDirectory,
             nameof(remoteDirectory),
-            async (session, path, token) =>
+            async (session, operation, token) =>
             {
+                string path = operation.Target;
                 IReadOnlyList<FtpEntry> entries = await session.ListAsync(path, token).ConfigureAwait(false);
 
                 // 列表为空时再确认目录确实存在，区分"空目录"与"不存在"（P63-D9）。
@@ -39,10 +41,11 @@ public sealed partial class FtpClient
     /// <returns>存在与否。</returns>
     public Task<CommResult<bool>> FileExistsAsync(string remotePath, CancellationToken cancellationToken = default) =>
         PathOperationAsync<bool>(
+            "FileExists",
             remotePath,
             nameof(remotePath),
-            async (session, path, token) =>
-                CommResult<bool>.Success(await session.FileExistsAsync(path, token).ConfigureAwait(false)),
+            async (session, operation, token) =>
+                CommResult<bool>.Success(await session.FileExistsAsync(operation.Target, token).ConfigureAwait(false)),
             cancellationToken);
 
     /// <summary>远程目录是否存在。不存在不是错误，返回 false。</summary>
@@ -51,10 +54,11 @@ public sealed partial class FtpClient
     /// <returns>存在与否。</returns>
     public Task<CommResult<bool>> DirectoryExistsAsync(string remotePath, CancellationToken cancellationToken = default) =>
         PathOperationAsync<bool>(
+            "DirectoryExists",
             remotePath,
             nameof(remotePath),
-            async (session, path, token) =>
-                CommResult<bool>.Success(await session.DirectoryExistsAsync(path, token).ConfigureAwait(false)),
+            async (session, operation, token) =>
+                CommResult<bool>.Success(await session.DirectoryExistsAsync(operation.Target, token).ConfigureAwait(false)),
             cancellationToken);
 
     /// <summary>远程文件的大小（字节）。</summary>
@@ -63,10 +67,12 @@ public sealed partial class FtpClient
     /// <returns>大小；文件不存在或服务器不报告大小时失败（RemoteError，没有应答码）。</returns>
     public Task<CommResult<long>> GetFileSizeAsync(string remotePath, CancellationToken cancellationToken = default) =>
         PathOperationAsync<long>(
+            "GetFileSize",
             remotePath,
             nameof(remotePath),
-            async (session, path, token) =>
+            async (session, operation, token) =>
             {
+                string path = operation.Target;
                 long? size = await session.GetFileSizeAsync(path, token).ConfigureAwait(false);
                 return size is { } value
                     ? CommResult<long>.Success(value)

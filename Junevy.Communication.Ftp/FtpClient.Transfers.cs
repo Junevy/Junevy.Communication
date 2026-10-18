@@ -3,7 +3,8 @@ using Junevy.Communication.Ftp.Sdk;
 
 namespace Junevy.Communication.Ftp;
 
-// 上传与下载（P63-D5–D7、D11）。本地的前置条件在连接之前检查：本地源文件不存在、目标路径为空，都不会连接服务器。
+// 上传与下载（P63-D5–D7、D11）。参数先全部检查 null，再检查取值；本地的前置条件在连接之前检查：
+// 本地源文件不存在、目标路径为空，都不会连接服务器。
 public sealed partial class FtpClient
 {
     /// <summary>
@@ -23,6 +24,9 @@ public sealed partial class FtpClient
         IProgress<FtpTransferProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(localPath);
+        ArgumentNullException.ThrowIfNull(remotePath);
+
         if (FtpRequests.CheckLocalSource(localPath, nameof(localPath)) is { } invalidSource)
         {
             return invalidSource.As<FtpTransferStatus>();
@@ -34,14 +38,24 @@ public sealed partial class FtpClient
         }
 
         return await PathOperationAsync<FtpTransferStatus>(
+            "UploadFile",
             remotePath,
             nameof(remotePath),
-            (session, path, token) => session.UploadFileAsync(localPath, path, existsMode, progress, token),
+            async (session, operation, token) =>
+            {
+                CommResult<FtpTransferStatus> result = await session
+                    .UploadFileAsync(localPath, operation.Target, existsMode, progress, token)
+                    .ConfigureAwait(false);
+                operation.TransferredBytes = result is { IsSuccess: true, Data: FtpTransferStatus.Transferred }
+                    ? new FileInfo(localPath).Length
+                    : 0;
+                return result;
+            },
             cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// 从流上传到远程路径。从流的当前位置读到末尾；库不释放调用方的流。
+    /// 从流上传到远程路径。从流的当前位置读到末尾；库不释放调用方的流。可定位的流能报告百分比。
     /// </summary>
     /// <param name="source">源流。</param>
     /// <param name="remotePath">远程目标路径。</param>
@@ -58,6 +72,7 @@ public sealed partial class FtpClient
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(remotePath);
 
         if (FtpRequests.CheckExistsMode(existsMode, nameof(existsMode)) is { } invalidMode)
         {
@@ -65,9 +80,18 @@ public sealed partial class FtpClient
         }
 
         return await PathOperationAsync<FtpTransferStatus>(
+            "Upload",
             remotePath,
             nameof(remotePath),
-            (session, path, token) => session.UploadStreamAsync(new FtpStreamView(source), path, existsMode, progress, token),
+            async (session, operation, token) =>
+            {
+                var view = new FtpStreamView(source);
+                CommResult<FtpTransferStatus> result = await session
+                    .UploadStreamAsync(view, operation.Target, existsMode, progress, token)
+                    .ConfigureAwait(false);
+                operation.TransferredBytes = view.TransferredBytes;
+                return result;
+            },
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -79,7 +103,7 @@ public sealed partial class FtpClient
     /// <param name="existsMode">本地目标已存在时的处理方式：覆盖，或跳过（结果为 Skipped，本地内容不变，不连接服务器）。</param>
     /// <param name="progress">进度报告；可以为 null。</param>
     /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>传输结果。</returns>
+    /// <returns>传输结果；客户端已释放时为 ConnectionClosed，不检查也不改动本地文件。</returns>
     /// <exception cref="ArgumentNullException"><paramref name="remotePath"/> 或 <paramref name="localPath"/> 为 null。</exception>
     public async Task<CommResult<FtpTransferStatus>> DownloadFileAsync(
         string remotePath,
@@ -88,19 +112,20 @@ public sealed partial class FtpClient
         IProgress<FtpTransferProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        if (FtpRequests.CheckPath(remotePath, nameof(remotePath)) is { } invalidRemote)
+        ArgumentNullException.ThrowIfNull(remotePath);
+        ArgumentNullException.ThrowIfNull(localPath);
+
+        if ((FtpRequests.CheckPath(remotePath, nameof(remotePath))
+            ?? FtpRequests.CheckLocalTarget(localPath, nameof(localPath))
+            ?? FtpRequests.CheckExistsMode(existsMode, nameof(existsMode))) is { } invalid)
         {
-            return invalidRemote.As<FtpTransferStatus>();
+            return invalid.As<FtpTransferStatus>();
         }
 
-        if (FtpRequests.CheckLocalTarget(localPath, nameof(localPath)) is { } invalidTarget)
+        // 释放之后不做任何本地检查或改动（P6-C8）：跳过与创建父目录都发生在这之后。
+        if (lifecycle.IsDisposed)
         {
-            return invalidTarget.As<FtpTransferStatus>();
-        }
-
-        if (FtpRequests.CheckExistsMode(existsMode, nameof(existsMode)) is { } invalidMode)
-        {
-            return invalidMode.As<FtpTransferStatus>();
+            return FtpErrorMap.Disposed().As<FtpTransferStatus>();
         }
 
         if (existsMode == FtpExistsMode.Skip && File.Exists(localPath))
@@ -113,20 +138,33 @@ public sealed partial class FtpClient
             return directoryError.As<FtpTransferStatus>();
         }
 
+        // 替换目标也在操作之内，因此它的失败同样进入操作日志；临时文件的清理在门外进行，SDK 抛出的异常同样覆盖。
         string temporary = FtpLocalFile.TemporaryPathFor(localPath);
         CommResult<FtpTransferStatus> transfer = await PathOperationAsync<FtpTransferStatus>(
+            "DownloadFile",
             remotePath,
             nameof(remotePath),
-            (session, path, token) => session.DownloadFileAsync(temporary, path, progress, token),
+            async (session, operation, token) =>
+            {
+                CommResult<FtpTransferStatus> downloaded = await session
+                    .DownloadFileAsync(temporary, operation.Target, progress, token)
+                    .ConfigureAwait(false);
+                if (!downloaded.IsSuccess)
+                {
+                    return downloaded;
+                }
+
+                operation.TransferredBytes = new FileInfo(temporary).Length;
+                return FtpLocalFile.Commit(temporary, localPath);
+            },
             cancellationToken).ConfigureAwait(false);
 
         if (!transfer.IsSuccess)
         {
             FtpLocalFile.TryDelete(temporary);
-            return transfer;
         }
 
-        return FtpLocalFile.Commit(temporary, localPath);
+        return transfer;
     }
 
     /// <summary>
@@ -144,12 +182,22 @@ public sealed partial class FtpClient
         IProgress<FtpTransferProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(remotePath);
         ArgumentNullException.ThrowIfNull(destination);
 
         CommResult<FtpTransferStatus> result = await PathOperationAsync<FtpTransferStatus>(
+            "Download",
             remotePath,
             nameof(remotePath),
-            (session, path, token) => session.DownloadStreamAsync(new FtpStreamView(destination), path, progress, token),
+            async (session, operation, token) =>
+            {
+                var view = new FtpStreamView(destination);
+                CommResult<FtpTransferStatus> downloaded = await session
+                    .DownloadStreamAsync(view, operation.Target, progress, token)
+                    .ConfigureAwait(false);
+                operation.TransferredBytes = view.TransferredBytes;
+                return downloaded;
+            },
             cancellationToken).ConfigureAwait(false);
         return result.ToResult();
     }

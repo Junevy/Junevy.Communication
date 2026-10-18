@@ -99,11 +99,11 @@ FtpClient client = factory.GetOrAdd("line1", options);
 | `IsConnected` | The SDK's state. It can stay `true` after the server dropped an idle connection, until the next operation. |
 | `ListAsync` | Entries without `.` and `..`. A missing directory is `RemoteError`; an empty one succeeds. |
 | `FileExistsAsync`, `DirectoryExistsAsync`, `GetFileSizeAsync` | `CommResult<bool>` and `CommResult<long>`. A missing file or an unknown size is `RemoteError`. |
-| `CreateDirectoryAsync` | Creates missing levels. An existing directory is success; a file in the way is `RemoteError`. |
+| `CreateDirectoryAsync` | Creates missing levels. An existing directory is success; a refusal (no permission, a file in the way) is `RemoteError` with the reply code. |
 | `DeleteFileAsync`, `DeleteDirectoryAsync`, `RenameAsync` | `DeleteDirectoryAsync` is recursive. Renaming onto an existing target depends on the server. |
 | `UploadFileAsync`, `UploadAsync` | **Not atomic.** `Overwrite` (default) or `Skip`. Progress is `IProgress<FtpTransferProgress>`. |
 | `DownloadFileAsync` | **Atomic:** writes a temporary file, then replaces the target. `Skip` checks the local file before connecting. |
-| `DownloadAsync` | Writes to a stream you own; the library does not dispose it. |
+| `DownloadAsync` | Writes to a stream you own from its current position; the library does not dispose it. Async-only streams (an ASP.NET Core body) work. |
 | `Dispose` / `DisposeAsync` | Repeatable. A transfer in progress finishes as a failed result. Afterwards `ConnectAsync` and `DisconnectAsync` throw `ObjectDisposedException`, and other operations return `ConnectionClosed`. |
 
 The full option table, the error table and the "Verification status" are in [Junevy.Communication.Ftp/README.md](file://Junevy.Communication.Ftp/README.md).
@@ -114,5 +114,6 @@ The full option table, the error table and the "Verification status" are in [Jun
 - SDK types never appear in this library's public API; every result is a `CommResult`.
 - A drop during an operation is reported as `Timeout` after `ReadTimeout`, not as `ConnectionClosed`. The SDK waits for a reply that never comes.
 - Times in `FtpEntry.Modified` are as the server reports them. No time-zone conversion is done.
-- Passwords and file contents are never logged. SDK logs go to the category `Junevy.Communication.Ftp.Sdk`.
+- Passwords and file contents are never logged. Each operation is logged when it ends (Debug with path, duration and bytes; Warning on failure). SDK logs go to the category `Junevy.Communication.Ftp.Sdk`.
+- `FtpTransferProgress.Percent` is null for an upload from a stream that cannot seek; a seekable stream reports it over the bytes from its current position.
 - Verified only against the in-process fake FTP server used by the tests. It has not been verified against vsftpd, FileZilla Server, IIS FTP, or device FTP servers.

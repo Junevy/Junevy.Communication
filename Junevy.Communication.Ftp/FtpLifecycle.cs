@@ -41,6 +41,7 @@ internal sealed class FtpLifecycle
     public async Task<CommResult> ConnectAsync(CancellationToken cancellationToken)
     {
         CommResult<bool> result = await RunAsync<bool>(
+            new FtpOperation("Connect", "control connection"),
             static (_, _) => Task.FromResult(CommResult<bool>.Success(true)),
             cancellationToken).ConfigureAwait(false);
         return result.ToResult();
@@ -78,14 +79,30 @@ internal sealed class FtpLifecycle
 
     /// <summary>
     /// 在串行门内执行一个操作：未连接时先按需连接（P63-D3），再执行，任何失败都翻译成结果。
-    /// 释放之后直接返回 <see cref="CommErrorKind.ConnectionClosed"/>。
+    /// 释放之后直接返回 <see cref="CommErrorKind.ConnectionClosed"/>。每个操作结束时记录一条日志（P63-D15）。
     /// </summary>
     /// <typeparam name="T">操作的返回值类型（非空引用或值类型）。</typeparam>
-    /// <param name="operation">要执行的 SDK 操作；收到的令牌在调用方取消、客户端释放或超时时触发。</param>
+    /// <param name="operation">操作的日志信息（操作名、目标、字节数与耗时）。</param>
+    /// <param name="run">要执行的 SDK 操作；收到的令牌在调用方取消、客户端释放或超时时触发。</param>
     /// <param name="cancellationToken">调用方的取消令牌。</param>
     /// <returns>操作的结果。</returns>
     public async Task<CommResult<T>> RunAsync<T>(
-        Func<FtpSdkSession, CancellationToken, Task<CommResult<T>>> operation,
+        FtpOperation operation,
+        Func<FtpSdkSession, CancellationToken, Task<CommResult<T>>> run,
+        CancellationToken cancellationToken)
+    {
+        CommResult<T> result = await RunGatedAsync(operation, run, cancellationToken).ConfigureAwait(false);
+        operation.LogCompletion(logger, result.ToResult());
+        return result;
+    }
+
+    /// <summary>释放客户端。可以重复调用，每次都等待同一次释放完成。</summary>
+    /// <returns>释放完成。</returns>
+    public ValueTask DisposeAsync() => new(disposal.Value);
+
+    private async Task<CommResult<T>> RunGatedAsync<T>(
+        FtpOperation operation,
+        Func<FtpSdkSession, CancellationToken, Task<CommResult<T>>> run,
         CancellationToken cancellationToken)
     {
         if (IsDisposed)
@@ -104,7 +121,8 @@ internal sealed class FtpLifecycle
 
         try
         {
-            return await ExecuteAsync(operation, cancellationToken).ConfigureAwait(false);
+            operation.Start();
+            return await ExecuteAsync(run, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -112,12 +130,10 @@ internal sealed class FtpLifecycle
         }
     }
 
-    /// <summary>释放客户端。可以重复调用，每次都等待同一次释放完成。</summary>
-    /// <returns>释放完成。</returns>
-    public ValueTask DisposeAsync() => new(disposal.Value);
-
+    // 连接级失败（断线或超时）之后不在这里关闭连接：超时后 SDK 已经把自己置为未连接（第 18.2 节 F31），
+    // 下一次操作按需连接；服务器关闭的连接由下一次操作前的存活检查发现（F28）。
     private async Task<CommResult<T>> ExecuteAsync<T>(
-        Func<FtpSdkSession, CancellationToken, Task<CommResult<T>>> operation,
+        Func<FtpSdkSession, CancellationToken, Task<CommResult<T>>> run,
         CancellationToken cancellationToken)
     {
         if (IsDisposed)
@@ -129,11 +145,11 @@ internal sealed class FtpLifecycle
         try
         {
             await EnsureConnectedAsync(linked.Token).ConfigureAwait(false);
-            return await FinishAsync(await operation(session, linked.Token).ConfigureAwait(false)).ConfigureAwait(false);
+            return await run(session, linked.Token).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            return await FinishAsync(Failure<T>(ex, cancellationToken)).ConfigureAwait(false);
+            return Failure<T>(ex, cancellationToken);
         }
     }
 
@@ -155,18 +171,6 @@ internal sealed class FtpLifecycle
         }
 
         await ConnectSessionAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    // 连接级失败（断线或超时）之后，SDK 的连接状态不可信：关闭它，下一次操作重新连接（第 18.2 节 F30、F31）。
-    private async Task<CommResult<T>> FinishAsync<T>(CommResult<T> result)
-    {
-        bool connectionFailed = result.ErrorKind is CommErrorKind.ConnectionClosed or CommErrorKind.Timeout;
-        if (!result.IsSuccess && connectionFailed && !IsDisposed && session.IsConnected)
-        {
-            await QuitBestEffortAsync().ConfigureAwait(false);
-        }
-
-        return result;
     }
 
     // 调用方取消优先于释放：两者同时发生时以调用方的取消为准。

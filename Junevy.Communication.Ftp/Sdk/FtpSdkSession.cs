@@ -48,6 +48,9 @@ internal sealed class FtpSdkSession : IAsyncDisposable
     /// <summary>SDK 报告的控制连接状态。</summary>
     public bool IsConnected => client.IsConnected;
 
+    /// <summary>SDK 收到的最后一条应答的代码；用于 SDK 只返回 false、不抛异常的失败（例如 MKD 的 550，第 18.2 节 F15）。</summary>
+    public string? LastReplyCode => client.LastReply.Code;
+
     /// <summary>建立控制连接并登录。</summary>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>完成时已连接。</returns>
@@ -99,7 +102,7 @@ internal sealed class FtpSdkSession : IAsyncDisposable
         return size < 0 ? null : size;
     }
 
-    /// <summary>逐级创建目录。SDK 对已存在的目录返回 false。</summary>
+    /// <summary>逐级创建目录。SDK 对 MKD 的任何 550（已存在、权限不足、路径上是文件）都返回 false，应答码见 <see cref="LastReplyCode"/>。</summary>
     /// <param name="path">目录路径。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>SDK 报告是否创建了目录。</returns>
