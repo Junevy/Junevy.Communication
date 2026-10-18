@@ -69,7 +69,7 @@ internal static class FtpClientOptionsValidator
         }
     }
 
-    // 3.1.1 式的规则：只有密码、没有用户名没有意义（登录时服务器要求先给用户名）。
+    // 只有密码、没有用户名没有意义：FTP 登录先发 USER，再发 PASS。
     private static void RequireUserNameWithPassword(FtpClientOptions options)
     {
         if (options.Password is not null && options.UserName is null)

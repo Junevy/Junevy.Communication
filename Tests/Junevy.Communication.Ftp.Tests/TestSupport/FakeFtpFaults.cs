@@ -14,7 +14,6 @@ public sealed class FakeFtpFaults
     private readonly List<ReplyFault> replyFaults = new();
     private readonly List<DelayFault> delayFaults = new();
     private readonly List<DropFault> dropFaults = new();
-    private int closeAfterCommand;
     private long abortTransferAfterBytes = -1;
     private int dataRejectCode;
 
@@ -61,16 +60,6 @@ public sealed class FakeFtpFaults
         lock (sync)
         {
             dropFaults.Add(new DropFault(TransferDropVerb, times));
-        }
-    }
-
-    /// <summary>在第 <paramref name="commandNumber"/> 条命令应答之后关闭控制连接（从 1 计数，按连接计）。</summary>
-    /// <param name="commandNumber">命令序号。</param>
-    public void CloseControlConnectionAfter(int commandNumber)
-    {
-        lock (sync)
-        {
-            closeAfterCommand = commandNumber;
         }
     }
 
@@ -147,14 +136,6 @@ public sealed class FakeFtpFaults
         }
 
         return TimeSpan.Zero;
-    }
-
-    internal bool ShouldCloseAfter(int commandNumber)
-    {
-        lock (sync)
-        {
-            return closeAfterCommand > 0 && commandNumber == closeAfterCommand;
-        }
     }
 
     internal long AbortTransferAfterBytes

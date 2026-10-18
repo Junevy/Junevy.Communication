@@ -28,6 +28,11 @@
 - 2026-10-18 [Ftp] **释放之后的 `DownloadFileAsync`**（审阅 R6）：原先 `Skip` 且本地文件存在时返回成功（`Skipped`），`Overwrite` 时仍会创建本地父目录；现在释放之后直接返回 `ConnectionClosed`，不检查也不改动本地文件。
 - 2026-10-18 [Ftp] **连接级失败之后不再主动断开**（审阅设计问题 A）：删除生命周期中"`ConnectionClosed` 或 `Timeout` 之后发送 QUIT 并关闭"的分支。超时之后 SDK 已经把自己置为未连接，服务器关闭的连接由下一次操作前的存活检查发现；这个分支只会让 425、426（控制连接完好）之后多一次重连。用例：`ConnectionClosedReply_OnAHealthyControlConnection_DoesNotReconnect`。
 
+### 变更（Changed）
+
+- 2026-10-18 [Ftp] 清理（审阅 R7，无行为变化）：内部 `FtpErrorMap.FromException` 删除恒为 false 的 `cancelledByCaller` 参数（调用方取消只经 `Cancelled()`）；生命周期字段 `quitTimeout` 改名为 `replyTimeout`（它同时是存活检查的超时）；尽力发送 QUIT 的两条 Debug 日志不再写 "during disposal"（它也用于登录失败与存活检查失败之后）；校验器中来自 MQTT 的 "3.1.1" 注释改写；测试替身删除没有用例使用的 `CloseControlConnectionAfter`。
+- 2026-10-18 [文档] 审阅 R8：设计 20.11 第 6 行与 F14–F18 的概括改正（删除与重命名会抛 550，不是静默成功）；"串行门是否移入 Core"给出结论（不移入）；根 `readme.md` 不再说 HTTP 服务端"计划中"。
+
 ## [Unreleased] — WebApi P3.2（WebApi.Server 1.0.0-preview.1：HTTP 服务端）
 
 ### 新增（Added）

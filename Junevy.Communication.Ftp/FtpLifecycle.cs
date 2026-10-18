@@ -18,14 +18,14 @@ internal sealed class FtpLifecycle
     private readonly CancellationTokenSource disposing = new();
     private readonly Lazy<Task> disposal;
     private readonly ILogger logger;
-    private readonly int quitTimeout;
+    private readonly int replyTimeout;
     private int disposed;
 
     public FtpLifecycle(FtpConnectionSettings settings, ILoggerFactory loggerFactory)
     {
         session = new FtpSdkSession(settings, loggerFactory);
         logger = loggerFactory.CreateLogger<FtpLifecycle>();
-        quitTimeout = settings.ReadTimeout;
+        replyTimeout = settings.ReadTimeout;
         disposal = new Lazy<Task>(DisposeCoreAsync, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
@@ -159,7 +159,7 @@ internal sealed class FtpLifecycle
     {
         if (session.IsConnected)
         {
-            if (await session.IsAliveAsync(quitTimeout, cancellationToken).ConfigureAwait(false))
+            if (await session.IsAliveAsync(replyTimeout, cancellationToken).ConfigureAwait(false))
             {
                 return;
             }
@@ -180,7 +180,7 @@ internal sealed class FtpLifecycle
             ? FtpErrorMap.Cancelled()
             : IsDisposed
                 ? FtpErrorMap.Disposed()
-                : FtpErrorMap.FromException(exception, cancelledByCaller: false);
+                : FtpErrorMap.FromException(exception);
         return result.As<T>();
     }
 
@@ -224,18 +224,18 @@ internal sealed class FtpLifecycle
 
     private async Task QuitBestEffortAsync()
     {
-        using var timeout = new CancellationTokenSource(quitTimeout);
+        using var timeout = new CancellationTokenSource(replyTimeout);
         try
         {
             await session.DisconnectAsync(timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            logger.LogDebug("The FTP QUIT during disposal timed out.");
+            logger.LogDebug("The best-effort FTP QUIT timed out; the control connection was closed locally.");
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "The FTP QUIT during disposal failed.");
+            logger.LogDebug(ex, "The best-effort FTP QUIT failed; the control connection was closed locally.");
         }
     }
 }
