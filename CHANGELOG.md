@@ -11,6 +11,8 @@
 
 - 2026-10-19 [Modbus] 存储区与地址（P7-D4）：`ModbusDevice`（sealed，四个静态实例 `Coil`、`DiscreteInput`、`InputRegister`、`HoldingRegister`，符号 `C`、`DI`、`IR`、`HR`，只读属性由 `IsReadOnly` 给出）、`ModbusAddress : PlcAddress`（`Device` 收窄为 `ModbusDevice`，`UnitId` 为站号前缀）。地址解析器 `ModbusAddressParser`（internal）支持符号写法（零基，编号 0–65535）、Modicon 写法（一基，5 位与 6 位）、位号 `.n`（只用于寄存器，0–15）与站号前缀 `s=n;`（0–255）。帧格式的站号范围（RTU 1–247、MBAP 0–255）在客户端检查，Task 8 加入。测试：`ModbusAddressParserTests`（37 个用例，表驱动）。
 
+- 2026-10-19 [Modbus] 协议层（P7 Task 5，全部 internal）：PDU 请求编码（01–06、0F、10、16、17）、正常与异常应答解码（按期望校验功能码、字节数与回显）、MBAP 头（协议号、长度、站号；事务号由进程级计数器分配）与 RTU 帧（站号、CRC-16/MODBUS，低字节在前）的封装与剥离、异常码表（只用标准的九个码的名称）。测试按第 21 节的向量命名或注释（`ModbusRequestPduTests`、`ModbusResponsePduTests`、`ModbusFrameTests`，共 113 个用例）。
+
 ### 变更（Changed）
 
 - 2026-10-19 [Modbus] 项目骨架改为 Plc 套件上的 3.0.0-preview.1（P7-D1）：csproj 导入 `build/Junevy.Communication.Common.props`，依赖 Plc、Tcp、Udp、Serial；`InternalsVisibleTo` 只给 `Junevy.Communication.Modbus.Tests`。协议实现在后续 Task 中加入，本次提交尚无公开类型。

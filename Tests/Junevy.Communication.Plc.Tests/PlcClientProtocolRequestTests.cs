@@ -168,37 +168,32 @@ public sealed class PlcClientProtocolRequestTests
     [Fact(Timeout = 20000)]
     public async Task Send_RunsSeriallyWithReadAsync()
     {
-        var channel = new ScriptedClientChannel();
-        channel.Enqueue(CommResult<byte[]>.Success(new byte[] { 0x00, 0x01 }));
-        channel.Enqueue(CommResult<byte[]>.Success(new byte[] { 0x00, 0x12, 0x34 }));
+        // 协议请求的应答被挂起：它在操作锁内保持在途。此时发出的读取必须排队，不能抢先发出请求。
+        // 挂起的是异步应答（不阻塞线程池），因此在负载下也不会因线程饥饿而改变结果。
+        var channel = new GatedClientChannel();
+        channel.Inner.Enqueue(CommResult<byte[]>.Success(new byte[] { 0x00, 0x01 }));
+        channel.Inner.Enqueue(CommResult<byte[]>.Success(new byte[] { 0x00, 0x12, 0x34 }));
         var client = new ProtocolRequestClient(channel);
-        using var entered = new ManualResetEventSlim();
-        using var release = new ManualResetEventSlim();
+        channel.HoldNextReply();
 
-        // 协议请求的解析阻塞在操作锁内；此时发出的读取必须排队，不能抢先发出请求。
-        Task<CommResult<byte>> protocol = client.SendAsync("CustomOp", BuildTwoBytes, frame =>
-        {
-            entered.Set();
-            release.Wait(TimeSpan.FromSeconds(10));
-            return ParseSecondByte(frame);
-        });
-        await Polling.WaitUntilAsync(() => entered.IsSet);
+        Task<CommResult<byte>> protocol = client.SendAsync("CustomOp", BuildTwoBytes, ParseSecondByte);
+        await Polling.WaitUntilAsync(() => channel.Inner.Requests.Count == 1);
 
         Task<CommResult<byte[]>> read = client.ReadAsync("D10", 1);
         for (int i = 0; i < 100; i++)
             await Task.Yield();
 
-        Assert.Single(channel.Requests);
+        Assert.Single(channel.Inner.Requests);
         Assert.False(read.IsCompleted);
 
-        release.Set();
+        channel.Release();
         CommResult<byte> protocolResult = await Arrival.WithinAsync(protocol, 10000);
         CommResult<byte[]> readResult = await Arrival.WithinAsync(read, 10000);
 
         Assert.True(protocolResult.IsSuccess);
         Assert.True(readResult.IsSuccess);
-        Assert.Equal(new byte[] { 0x16, 0x01 }, channel.Requests[0]);
-        Assert.Equal(2, channel.Requests.Count);
+        Assert.Equal(new byte[] { 0x16, 0x01 }, channel.Inner.Requests[0]);
+        Assert.Equal(2, channel.Inner.Requests.Count);
     }
 
     /// <summary>暴露协议专有请求的测试客户端。</summary>

@@ -635,6 +635,25 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - 度量：Modbus 有效行 0 → 228（`effective_lines.py`）。
 - 三条命令：Debug 2 个警告、0 个错误；Release 2 个警告、0 个错误（均为 WPF 工具的 CS8618，改动前即存在）；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 39 / 39，Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
 
+#### Task 5（协议层，纯字节，Q44，2026-10-19）
+
+- 新增（`Junevy.Communication.Modbus/Protocol/`，全部 internal，不引用通道类型）：`ModbusFunctionCodes`、`ModbusBuffer`（写字节的小工具）、`ModbusCrc`（CRC-16/MODBUS，支持分段累加）、`ModbusBits`（位打包，最低位在前）、`ModbusExceptionCodes`（九个标准码的名称与消息）、`ModbusExpectation`（一包的期望）、`ModbusRequestPdu`（请求编码）、`ModbusResponsePdu`（应答解码与回显校验）、`MbapHeader`（写头、校验与剥离，进程级 `TransactionIds`）、`RtuAdu`（封装与剥离）。
+- 命名偏差：计划的 `ModbusPdu` 拆成 `ModbusRequestPdu` 与 `ModbusResponsePdu`，两者都在 300 行以内；职责不变（计划允许命名调整）。
+- 测试：`Tests/…Modbus.Tests/Protocol/`：`ModbusRequestPduTests`（V-P-1…15 的请求）、`ModbusResponsePduTests`（V-P-1…15 的应答、异常、回显与字节数校验、位打包）、`ModbusFrameTests`（33 条 RTU 向量的 CRC、RTU 封装与剥离、MBAP 封装与剥离、V-M-1…5、事务号不检查）。共 113 个用例。
+- 向量覆盖：
+  - 21.1：V-P-1…15 的请求全部逐字节比对；应答中 V-P-1、2、3、4、10 解码为数据，V-P-5…9、12…15 为回显，V-P-11 为异常（`RemoteError` 码 2，消息逐字比对）。
+  - 21.2：33 条整帧的 CRC 全部重算比对（`Crc_MatchesTheTrailingChecksumOfEveryRtuVector`）；请求帧与应答帧分别有封装与剥离用例；V-R-15 与 V-R-20 的异常路径有剥离用例。
+  - 21.3：V-M-1、2、4 的封装与剥离，V-M-3 异常，V-M-5 协议号非 0 的 `ProtocolViolation`。V-M-6（键提取）归 Task 6。
+  - 21.4 帧长表、21.5 上限：归 Task 6（分帧）与 Task 8（上限）。
+- 第 21 节之外的要求（计划第 9 条）：回显不符（05 的值、06 的地址、0F 的数量、16 的掩码）各一条；字节数不符；未知异常码的消息不带名称；位打包（V-P-1、V-P-7）的逐位期望；MBAP 长度字段与帧长不一致。
+- 向量与计划对照：没有发现计划或向量的错误。21.2 的 33 条 CRC 与 Task 0 用 v2 `Crc16Helper` 的结果一致。
+- 先红：未实现时，测试项目报 CS0234 / CS0246（协议类型与命名空间不存在）。
+- 后绿：`Modbus.Tests` 152/152（net472 与 net8.0；其中 2 个是 Task 3 的骨架用例，37 个是 Task 4 的解析用例）。
+- 修正（针对 Task 2 的报告）：Task 2 的 `Send_RunsSeriallyWithReadAsync` 在一次 `test-affected` 的负载运行中（net472）失败，原因是测试在解析委托里阻塞线程池线程（`ManualResetEventSlim.Wait`）。负载下 `Task.Yield` 饥饿，读取要等到 10 秒超时后才放行，断言在那时才看到第二个请求。我把挂起的方式改为 `GatedClientChannel`（`TestSupport/`）：应答异步挂起，不占用线程。Task 2 报告中"负载下稳定"的说法不成立，以本次为准。修正后：Plc.Tests 连续三次 283/283；变异检查（去掉操作锁）在新测试上仍然失败（29 ms）。
+- 第 2 节自查：符合。`Protocol/` 只依赖 Core（`BigEndianFields`、`ByteBufferWriter` 的测试用、`CommResult`、`SequenceCounter`）；没有 `Index`/`Range`（net472 禁用清单）；公共成员无；错误消息英文，注释中文。Q44：`Protocol/` 中没有通道类型引用（grep 确认）。
+- 度量：Modbus 有效行 228 → 543（Protocol 层 315 行）。
+- 三条命令：Debug 2 个警告、0 个错误（WPF 工具的 CS8618，改动前即存在）；Release 2 个警告、0 个错误；`test-affected -Base c29a45b -NoBuild` 全部通过，0 失败：Architecture 15 / 12，Melsec 184（跳过 1）/ 184（跳过 1），Modbus 152 / 152，Omron 260 / 260，Plc 283 / 283，Siemens 316 / 316。
+
 ### 25.4 基线与度量（执行者填写）
 
 Task 0 实测（第 3 节口径；脚本 `build/metrics/*.py`，经 `runpy` 调用，未修改脚本）：
