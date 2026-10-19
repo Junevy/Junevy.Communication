@@ -148,16 +148,7 @@ public abstract partial class ChannelSessionViewModel : SessionViewModel
     }
 
     /// <summary>把库的通道状态映射为页签状态（计划第 5.2 节）。</summary>
-    protected void OnChannelStateChanged(ConnectionState state)
-    {
-        State = state switch
-        {
-            ConnectionState.Connecting => SessionState.Connecting,
-            ConnectionState.Connected => SessionState.Connected,
-            ConnectionState.Reconnecting => SessionState.Reconnecting,
-            _ => SessionState.NotConnected,
-        };
-    }
+    protected void OnChannelStateChanged(ConnectionState state) => State = ConnectionStates.ToSessionState(state);
 
     /// <summary>请求与接收使用的选项：超时来自超时编辑器；匹配器模式下按规则匹配应答。</summary>
     protected RequestOptions ToRequestOptions() => new()

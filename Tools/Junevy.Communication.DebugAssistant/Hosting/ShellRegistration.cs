@@ -1,3 +1,4 @@
+using Junevy.Communication.DebugAssistant.Protocols.Plc;
 using Junevy.Communication.DebugAssistant.Sessions;
 using Junevy.Communication.DebugAssistant.Services;
 using Junevy.Communication.DebugAssistant.Shell;
@@ -24,6 +25,7 @@ public static class ShellRegistration
             provider.GetRequiredService<TimeProvider>(),
             provider.GetRequiredService<IFileDialogService>(),
             provider.GetRequiredService<INotificationService>()));
+        services.AddSingleton<ITransportCreatorProvider, TransportCreatorProvider>();
         services.AddSessionServices();
         services.AddSingleton(new WorkspaceStore(WorkspaceStore.DefaultPath));
         services.AddSingleton<WorkspaceService>();

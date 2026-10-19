@@ -210,6 +210,16 @@ public sealed class EditorMappingTests
     }
 
     [Fact]
+    public void ProtocolOwnedChannel_HidesFramingCorrelationAndHandshake_ButKeepsTheRest()
+    {
+        var owned = new ChannelSettingsEditor(ChannelTransport.Tcp, protocolOwnsChannelFraming: true);
+        var own = new ChannelSettingsEditor(ChannelTransport.Tcp);
+
+        Assert.Equal((false, false, false, true), (owned.ShowsFraming, owned.ShowsCorrelation, owned.ShowsHandshake, owned.ShowsSocketAndTls));
+        Assert.Equal((true, true, true), (own.ShowsFraming, own.ShowsCorrelation, own.ShowsHandshake));
+    }
+
+    [Fact]
     public void ChannelSettings_AreValid_WhenEveryEditorIs()
     {
         var settings = new ChannelSettingsEditor();

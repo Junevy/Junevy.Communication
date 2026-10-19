@@ -21,9 +21,12 @@ public enum ChannelTransport
 /// </summary>
 public sealed class ChannelSettingsEditor
 {
-    public ChannelSettingsEditor(ChannelTransport transport = ChannelTransport.Tcp)
+    /// <param name="transport">通道类型。</param>
+    /// <param name="protocolOwnsChannelFraming">为真时分帧、关联与握手由协议决定（PLC 页签），界面不显示这些分组。</param>
+    public ChannelSettingsEditor(ChannelTransport transport = ChannelTransport.Tcp, bool protocolOwnsChannelFraming = false)
     {
         Transport = transport;
+        ProtocolOwnsChannelFraming = protocolOwnsChannelFraming;
         Framing = new FramingEditor();
         Correlation = new CorrelationEditor();
         Heartbeat = new HeartbeatEditor();
@@ -40,8 +43,17 @@ public sealed class ChannelSettingsEditor
 
     public ChannelTransport Transport { get; }
 
-    /// <summary>数据报没有分帧（库会拒绝），串口与 TCP 有分帧。</summary>
-    public bool ShowsFraming => Transport != ChannelTransport.Udp;
+    /// <summary>分帧、关联与握手由协议决定（例如 PLC 协议）。</summary>
+    public bool ProtocolOwnsChannelFraming { get; }
+
+    /// <summary>数据报没有分帧（库会拒绝），串口与 TCP 有分帧；协议决定分帧时不显示。</summary>
+    public bool ShowsFraming => Transport != ChannelTransport.Udp && !ProtocolOwnsChannelFraming;
+
+    /// <summary>关联方式只在通道自己决定分帧时显示。</summary>
+    public bool ShowsCorrelation => !ProtocolOwnsChannelFraming;
+
+    /// <summary>连接后的握手只在通道自己决定时显示。</summary>
+    public bool ShowsHandshake => !ProtocolOwnsChannelFraming;
 
     /// <summary>套接字与 TLS 只属于 TCP。</summary>
     public bool ShowsSocketAndTls => Transport == ChannelTransport.Tcp;

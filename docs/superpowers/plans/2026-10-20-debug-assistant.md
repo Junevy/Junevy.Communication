@@ -775,10 +775,12 @@ internal interface ISimulatorEngine
 | F-3 | MC 的 `McDeviceTable`、FINS 的 `FinsDeviceTable` 是 internal，助手无法列出全部软元件或区域 | 助手维护一份显示用的表，并用 `ParseAddress` 测试其一致性 | 公开只读的设备列表（Modbus 的 `ModbusDevice` 已经是公开的静态实例） |
 | F-4 | `HsmsEquipment` 只能按 S/F 登记处理器，没有"观察所有收到的消息"的事件；没有登记的主消息只能在日志中看到头部 | 由自动应答规则登记的 S/F 可以显示正文；其余只显示头部 | 增加只读的 `MessageReceived` 事件 |
 | F-5 | Secs README 写"Body text in SML is reserved for `Trace`"，但代码中没有任何 `Trace` 级别的日志 | 不影响助手 | 修改 README 的措辞（"目前不记录正文"），或者实现 Trace 日志，需要用户决定 |
-| F-7 | 分隔符、起止标记、心跳内容等文本只能按 UTF-8 解释（`ByteSequenceParser`），无法选择 GBK 等编码 | 助手的字节输入可以选择编码；要用 GBK 的分隔符，写成 `hex:` 形式 | 为这些配置增加编码选项（或接受 `hex:` 作为唯一做法） |
 | F-6 | `TcpServerConfig.Port` 不接受 0（`TcpServerOptions` 要求 1–65535），无法让系统选择端口。测试只能先探测一个空闲端口（回环地址，有极小的竞争） | 测试用 `FreePort` 探测空闲端口 | 允许 `Port = 0` 由系统选择，`LocalEndPoint` 已经给出实际端口，因此改动很小 |
-| F-9 | 白名单与最大会话数拒绝的连接不产生任何事件，只有库的警告日志（`Rejected the connection from …`）。界面的操作记录看不到被拒绝的连接 | 原因显示在页签的日志面板里（警告级别） | 增加 `SessionRejected` 事件（远端、原因），助手即可写入操作记录 |
+| F-7 | 分隔符、起止标记、心跳内容等文本只能按 UTF-8 解释（`ByteSequenceParser`），无法选择 GBK 等编码 | 助手的字节输入可以选择编码；要用 GBK 的分隔符，写成 `hex:` 形式 | 为这些配置增加编码选项（或接受 `hex:` 作为唯一做法） |
 | F-8 | 库在构造期校验的参数规则只有英文消息：UDP 非定向不能用内置心跳、UDP 与串口的内置心跳必须填写 `ExpectedReply`。界面只能原样显示英文 | 页签在界面上用一行中文说明同一规则；连接失败时操作记录显示库的消息 | 参数错误提供参数名与错误码，助手即可本地化 |
+| F-9 | 白名单与最大会话数拒绝的连接不产生任何事件，只有库的警告日志（`Rejected the connection from …`）。界面的操作记录看不到被拒绝的连接 | 原因显示在页签的日志面板里（警告级别） | 增加 `SessionRejected` 事件（远端、原因），助手即可写入操作记录 |
+| F-10 | 字序与字符串编码只能在各协议的选项类型上设置（`DataFormat`，每个协议一个属性，可空）。基类 `PlcClientOptions` 没有这个属性，公共面板无法统一设置 | 面板只在用户覆盖时生成 `PlcDataFormat`，由协议页签把它赋给自己的选项（Task 8 起） | 把 `DataFormat` 放到 `PlcClientOptions` 基类上，公共面板即可统一设置 |
+| F-11 | `ConnectionStatistics` 只有内部构造函数，测试替身无法返回统计对象（`IConnectable.Statistics`） | 假客户端的 `Statistics` 抛出 `NotSupportedException`；面板不读取统计 | 提供公共构造函数，或把统计抽象为接口 |
 
 ### 33.3 执行汇报与偏差（执行者填写：每个 Task 的汇报、门槛汇报、偏差与需要审阅者决定的事）
 
@@ -959,6 +961,35 @@ internal interface ISimulatorEngine
   3. UDP 与 TCP 服务端的工作区参数没有升级 `schemaVersion`（Task 5 偏差 1，Task 6）。
   4. 白名单与最大会话数拒绝的连接没有事件（F-9）。
 - 本门槛不需要改库：继续执行 Task 7。
+
+**Task 7（PLC 公共面板）**
+
+- 做了什么：
+  - `PlcSessionViewModel`（抽象）：协议页签只实现 `CreateClient()`（协议包的客户端）与参数的保存、恢复（调用 `CapturePanel` / `ApplyPanel`）。提供连接与断开、地址实时校验（调用 `ParseAddress`，未连接时临时创建客户端，不发报文）、类型化读写、监控表、套件选项。连接中断或断开时停止监控。
+  - `PlcValueType`、`PlcValueCodec`（文本与值的转换，逗号分隔，整数可写 `0x` 位模式）、`PlcTypedAccess`（类型到 `IPlcClient` 方法的映射；结果保留库的错误种类、消息与协议错误码）。
+  - `PlcPoller`：轮询循环与立即刷新，用信号量保证两者不重叠；上一轮未完成时跳过本轮；停止后不再开始新的一轮。
+  - `PlcOptionsEditor`：重试次数（0 至 100）、重试间隔（1 至 600000 毫秒）、读改写位；字序与字符串编码可以覆盖协议的默认值（界面标出默认值）。未覆盖时不设置协议的 `DataFormat`。
+  - `ITransportCreatorProvider`：`TransportCreatorProvider` 返回库内置的 TCP、UDP 与串口创建器，在 `ShellRegistration` 注册。这是 PLC 页签的测试接缝（计划 Task 7 第 2 条）。
+  - `ChannelSettingsEditor` 增加 `protocolOwnsChannelFraming`：为真时 `ShowsFraming`、`ShowsCorrelation`、`ShowsHandshake` 为假，通道参数视图按它隐藏对应分组。
+  - `ConnectionStates.ToSessionState`：连接状态到页签状态的映射，通道页签与 PLC 页签共用（原来在 `ChannelSessionViewModel` 中）。
+  - 视图 `PlcPanelView`：地址与校验结果、类型、数量或长度、读写、读取结果、套件选项（可折叠）、监控表（地址、类型、数量、当前值、新值、状态、更新时间，行内写入与删除）。
+  - `PlcPanelSettings`（通道参数、选项、地址与类型、监控表）供协议页签嵌入自己的参数。监控行 `PlcMonitorRow`。
+- 测试：`DebugAssistant.Tests` 共 306 条，全部通过（本期新增 84 条，含参数化用例）。
+  - 值的转换（`PlcValueCodecTests`）：每种类型取边界值（Int16 的 ±32767 与 0x 位模式，UInt16 的 65535，Int32、UInt32、Int64、UInt64 的最大最小值），超出范围、格式错误与空输入都给出 `FormatException`；浮点数往返不变形；位、字节与字节数组的写法。
+  - 类型化读写（`PlcTypedAccessTests`）：每种类型经内存中的假客户端写入后读回，结果相同；字符串往返；无效地址返回 `InvalidRequest` 且没有值；协议错误保留错误种类、消息与协议错误码。
+  - 轮询（`PlcPollerTests`）：周期执行，停止后不再执行；上一轮未完成时跳过本轮，被阻塞的一轮结束后继续执行；刷新等待进行中的一轮，两者不重叠；重复开始不留下第二个循环。
+  - 页签（`PlcSessionViewModelTests`）：连接、写入与读取的操作记录与显示值；未连接时读取记为未连接；地址校验显示存储区与编号，无效地址显示解析器的消息，空地址显示提示；无效值被拒绝且不发送；客户端拒绝连接时记录失败；写入后监控行立即刷新（没有轮询）；轮询在断开时停止，之后不再读取；掉线时停止监控；行内写入新值后清空并刷新；套件选项只在覆盖时生成数据格式；无效选项拒绝连接；面板参数经工作区 JSON 往返，监控表顺序保持。
+  - 选项与传输（`PlcOptionsAndTransportTests`）：选项映射到 `PlcClientOptions`，范围校验；数据格式只在覆盖时生成；三种传输的创建器类型。
+  - 视图（`PlcPanelViewTests`）：公共面板的 XAML 能加载，监控表是 `DataGrid`。
+  - 通道参数（`EditorMappingTests`，+1）：协议决定分帧时，分帧、关联与握手隐藏，超时与套接字保留。
+  - 稳定性：PLC、通道与视图测试连续运行 3 次（173 条），每次全部通过。
+- 偏差与需要审阅者决定的事：
+  1. 测试用的假客户端（`FakePlcClient`）直接实现 `IPlcClient`，不经过协议包。协议包的 `Create(transport, transportCreator, …)` 重载与真实报文的测试留给 Task 8（Modbus），那里用 `RecordingChannelCreator` 检查传入的配置与组件。本 Task 只验证公共面板。
+  2. 字序与字符串编码只能在各协议的选项上设置（摩擦 F-10）：公共面板只在覆盖时生成 `PlcDataFormat`，协议页签把它赋给自己的选项。
+  3. `ConnectionStatistics` 没有公开构造函数，假客户端的 `Statistics` 不可用（摩擦 F-11）。面板不显示统计，因此不影响测试。
+  4. 轮询使用真实时间（`PeriodicTimer`）。测试用 50 毫秒间隔和有限的等待，阻塞类测试只检查"不增加"与"等待后增加"，不检查精确的次数，以避免时序脆弱。
+  5. 写入后的立即刷新会等待正在进行的一轮结束（不并行读取），因此刷新可能比写入晚一个轮询周期。
+  6. `PlcClientOptions` 的重试与读改写位由协议页签在创建客户端时通过 `PlcOptionsEditor.ApplyTo` 写入（Task 8 实现）。
 
 ### 33.4 基线与度量（执行者填写）
 

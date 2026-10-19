@@ -14,7 +14,8 @@
                 <local:FramingSectionView DataContext="{Binding Framing}" />
             </Border>
 
-            <!-- 关联 -->
+            <!-- 关联：协议决定分帧时不显示 -->
+            <Border Visibility="{Binding ShowsCorrelation, Converter={StaticResource BoolToVisibility}}">
             <jv:GroupBox Header="请求与应答的关联" Margin="0,0,0,8">
                 <StackPanel DataContext="{Binding Correlation}">
                     <WrapPanel Margin="0,0,0,6">
@@ -46,6 +47,7 @@
                     </WrapPanel>
                 </StackPanel>
             </jv:GroupBox>
+            </Border>
 
             <!-- 心跳与重连 -->
             <local:HeartbeatSectionView DataContext="{Binding Heartbeat}" />
@@ -127,7 +129,9 @@
             </jv:GroupBox>
 
             <!-- 握手 -->
-            <local:HandshakeSectionView DataContext="{Binding Handshake}" />
+            <Border Visibility="{Binding ShowsHandshake, Converter={StaticResource BoolToVisibility}}">
+                <local:HandshakeSectionView DataContext="{Binding Handshake}" />
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>
