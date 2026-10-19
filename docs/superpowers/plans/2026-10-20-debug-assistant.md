@@ -782,6 +782,9 @@ internal interface ISimulatorEngine
 | F-10 | 字序与字符串编码只能在各协议的选项类型上设置（`DataFormat`，每个协议一个属性，可空）。基类 `PlcClientOptions` 没有这个属性，公共面板无法统一设置 | 面板只在用户覆盖时生成 `PlcDataFormat`，由协议页签把它赋给自己的选项（Task 8 起） | 把 `DataFormat` 放到 `PlcClientOptions` 基类上，公共面板即可统一设置 |
 | F-11 | `ConnectionStatistics` 只有内部构造函数，测试替身无法返回统计对象（`IConnectable.Statistics`） | 假客户端的 `Statistics` 抛出 `NotSupportedException`；面板不读取统计 | 提供公共构造函数，或把统计抽象为接口 |
 | F-12 | 掩码写（0x16）与读写多个寄存器（0x17）只在 `ModbusClient` 的具体类型上，`IPlcClient` 没有这两个方法。通用面板无法调用它们，协议页签只能转换为具体类型 | Modbus 页签通过 `PlcSessionViewModel.CurrentClient` 取得具体类型 | 把这两个操作放进 PLC 的扩展接口（例如 `IModbusClient`）或 `IPlcClient` 的扩展方法，协议无关的代码即可调用 |
+| F-13 | S7 的 `ReadS7StringAsync` / `ReadS7WStringAsync` 只返回文字，声明长度与实际长度无法从结果取得 | 页签在读取后另读一次头部（2 或 4 字节）显示长度；两次读取之间 PLC 的值可能变化 | 返回包含头部信息的结果（文字、声明长度、实际长度） |
+| F-14 | S7 的远端 TSAP 只在库内部计算（`CotpFrames.RemoteTsap` 是 private），页面无法显示连接实际使用的值 | 助手按 README 的公式计算（`S7Tsap`），测试用计划的三条向量核对 | 在 `S7ClientOptions` 或 `S7Client` 上公开远端 TSAP |
+| F-15 | S7 的单包上限只在库内部计算（`S7Session.MaxReadBytes` 等是 internal），页面无法显示协商后实际生效的值 | 助手按 README 的公式换算（`S7PduLimits`），测试用计划的向量核对 | 在 `S7Client` 上公开读、写的单包字节数 |
 
 ### 33.3 执行汇报与偏差（执行者填写：每个 Task 的汇报、门槛汇报、偏差与需要审阅者决定的事）
 
@@ -1046,6 +1049,32 @@ internal interface ISimulatorEngine
   4. 和校验在网络帧下界面禁用，值原样保留并传给库（库只在 4C 帧中使用它，`McProtocolSettings`）。
   5. Release 构建与 `test-affected -Repeat 3` 按计划留到门槛 2（Task 14 之后）；本 Task 只跑了 Debug 构建与 DebugAssistant 测试项目。
   6. 库的公开 API 未变，Skills 与库的 README 无需更新；本 Task 不修改知识库。
+
+**Task 10（S7 页、FINS 页）**
+
+- 做了什么：
+  - S7 页签 `S7SessionViewModel`（基于 `PlcSessionViewModel`，计划第 7.4 节，ISO-on-TCP 端口 102）：机架（0 至 7）、槽号（0 至 31）与连接类型（PG、OP、Basic）；远端 TSAP 由 `S7Tsap` 计算并显示（本地 TSAP 0x0100），机架或槽号超出范围时显示原因并在连接前拒绝。连接后显示协商的 `NegotiatedPduSize` 与由它算出的单包上限（`S7PduLimits`：读 PDU−18、写 PDU−28 字节，并换算为字）。地址说明写出数据块与字节（`DB1 的字节 12`），`MX0.0` 一类写法由库拒绝并显示原因。
+  - S7 字符串面板：`String`（1 至 254）与 `WString`（1 至 16382）的读写，长度越界时先检查并记录，不发送报文；读取后再读一次头部，显示声明长度与实际长度（`S7StringLimits`）。
+  - S7 帮助区：PLC 端三项设置（允许 PUT/GET、取消优化块访问、开放 102 端口）、地址写法（`MX0.0` 写作 `M0.0`）、单包上限表与错误分类说明。
+  - FINS 页签 `FinsSessionViewModel`（FINS/TCP，端口 9600）：客户端节点（0 由 CPU 分配，1 至 254 为固定节点，255 被拒绝）、目的网络与单元（0 至 255，`FinsNodes`）；连接后显示握手得到的客户端与服务端节点，请求固定节点而 CPU 给出不同节点时标出差异；区域速查表 `FinsAreas`（CIO、W、H、A、D 与 E0_–EC_，共 18 项，字区与位区代码以十六进制显示；表由助手维护，见摩擦 F-3）；说明区：十进制地址与位号、原生位写跨字、字节语义（高字节）、结束码屏蔽。
+  - 参数 `S7Settings`（登记为 `s7`）与 `FinsSettings`（登记为 `fins`）；页签工厂注册；数据模板；视图 `S7PageView` 与 `FinsPageView`。
+- 测试：`DebugAssistant.Tests` 共 513 条，全部通过（本期新增 69 条）；含 COM20 ↔ COM21 虚拟串口对连续运行 3 次，每次全部通过。
+  - TSAP（`S7SupportTests`）：三条向量（PG 0/1 → 0x0101，OP 0/2 → 0x0202，Basic 2/5 → 0x0345）；本地 TSAP；机架与槽号的范围（边界接受，越界说明）。
+  - 单包上限：240 → 读 222、写 212 字节（字 111、106）；960 → 读 942、写 932 字节（字 471、466）。
+  - String 与 WString 的长度范围（8 条，1、254、16382 接受，0、255、16383 拒绝）；字符串头部（String 2 字节，WString 4 字节）。
+  - S7 页签（`S7SessionViewModelTests`，9 条）：远端 TSAP 的显示与越界；机架越界在连接前被拒绝，且没有创建通道；连接参数传给库（TCP 配置）；`DB1.DBB12` 的地址说明与 `MX0.0` 的拒绝；字符串长度越界不发送报文；未连接时字符串操作被记录；设置经工作区 JSON 往返。
+  - FINS（`FinsSupportTests`，33 条）：区域表 18 项且符号唯一；每一项用 `FinsClient.ParseAddress` 核对字区与位区代码（18 条）；区域代码的十六进制写法；节点范围（0、1、254 接受，−1、256 拒绝，255 单独说明）；网络号与单元号的范围。
+  - FINS 页签（`FinsSessionViewModelTests`，4 条）：节点 255 在连接前被拒绝；连接参数传给库；地址说明使用十进制编号与位号（`W10.03`）；设置往返。
+  - 页面（`SiemensAndFinsPageViewTests`，2 条）：S7 视图加载并绑定到页签；FINS 区域表列出 18 项。
+  - 解决方案：`dotnet build Junevy.Communication.slnx --no-incremental`（Debug）0 错误、0 警告。库的生产代码未改动（DA-D15）。
+- 偏差与需要审阅者决定的事：
+  1. S7 字符串的头部是再读一次取得的，因为库的字符串读取不返回头部（摩擦 F-13）。两次读取之间 PLC 的值可能变化，头部显示与文字不一定属于同一时刻。请审阅者确认，或接受把头部放进库的返回值。
+  2. 远端 TSAP 与单包上限由助手按 README 的公式计算，库内部没有公开它们（摩擦 F-14、F-15）。测试核对的是计划与 README 的数值，不是库的内部值。
+  3. S7 的地址说明覆盖了基类的写法，改为"DB1 的字节 12"，以便显示数据块号；其他区域的说明与基类一致。
+  4. S7 与 FINS 都只有 TCP，因此没有传输选择器。库的 `Create` 对其他传输抛出 `NotSupportedException`，计划也没有要求其他传输。
+  5. 错误分类未另设界面字段：头部错误（类与码）与数据项返回码由操作记录的消息与协议码分别给出（消息各不相同）。请审阅者确认这一做法满足"分别显示"。
+  6. 节点 255 与机架、槽号的越界在调用库之前检查，给出中文说明；库抛出的是英文的 `ArgumentOutOfRangeException`（摩擦 F-8 已记录）。
+  7. Release 构建与 `test-affected -Repeat 3` 仍按计划留到门槛 2（Task 14 之后）；本 Task 只跑了 Debug 构建与 DebugAssistant 测试项目。
 
 ### 33.4 基线与度量（执行者填写）
 

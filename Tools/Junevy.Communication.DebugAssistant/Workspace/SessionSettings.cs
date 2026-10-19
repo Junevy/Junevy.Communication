@@ -1,7 +1,9 @@
 using System.Text.Json.Serialization;
 using Junevy.Communication.DebugAssistant.Protocols.Channels.Settings;
+using Junevy.Communication.DebugAssistant.Protocols.Fins;
 using Junevy.Communication.DebugAssistant.Protocols.Melsec;
 using Junevy.Communication.DebugAssistant.Protocols.Modbus;
+using Junevy.Communication.DebugAssistant.Protocols.Siemens;
 
 namespace Junevy.Communication.DebugAssistant.Workspace;
 
@@ -16,5 +18,7 @@ namespace Junevy.Communication.DebugAssistant.Workspace;
 [JsonDerivedType(typeof(SerialSettings), "serial")]
 [JsonDerivedType(typeof(ModbusSettings), "modbus")]
 [JsonDerivedType(typeof(McSettings), "mc")]
+[JsonDerivedType(typeof(S7Settings), "s7")]
+[JsonDerivedType(typeof(FinsSettings), "fins")]
 [JsonDerivedType(typeof(TcpServerSettings), "tcpServer")]
 public abstract record SessionSettings;

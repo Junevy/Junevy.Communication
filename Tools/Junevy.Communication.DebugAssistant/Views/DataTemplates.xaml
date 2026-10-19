@@ -7,7 +7,11 @@
                     xmlns:modbus="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Modbus"
                     xmlns:modbusViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Modbus"
                     xmlns:melsec="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Melsec"
-                    xmlns:melsecViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Melsec">
+                    xmlns:melsecViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Melsec"
+                    xmlns:siemens="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Siemens"
+                    xmlns:siemensViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Siemens"
+                    xmlns:fins="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Fins"
+                    xmlns:finsViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Fins">
 
     <!-- 页签内容：按视图模型类型选择视图（计划第 5.2 节）。每种页签完成后在这里加一条。 -->
     <DataTemplate DataType="{x:Type sessions:PlaceholderSessionViewModel}">
@@ -32,6 +36,14 @@
 
     <DataTemplate DataType="{x:Type melsec:McSessionViewModel}">
         <melsecViews:McPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type siemens:S7SessionViewModel}">
+        <siemensViews:S7PageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type fins:FinsSessionViewModel}">
+        <finsViews:FinsPageView />
     </DataTemplate>
 
     <DataTemplate DataType="{x:Type channels:TcpServerSessionViewModel}">
