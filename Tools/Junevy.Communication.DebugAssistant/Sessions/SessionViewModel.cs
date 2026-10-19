@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.DebugAssistant.Logging;
 using Junevy.Communication.DebugAssistant.Shell;
+using Junevy.Communication.DebugAssistant.Workspace;
 using Microsoft.Extensions.Logging;
 
 namespace Junevy.Communication.DebugAssistant.Sessions;
@@ -119,6 +120,12 @@ public abstract partial class SessionViewModel : ObservableObject, IAsyncDisposa
             _loggerFactory.Dispose();
         }
     }
+
+    /// <summary>当前参数，用于保存工作区与导出（计划 DA-D11）。密码等敏感字段不包含在内。</summary>
+    public abstract SessionSettings CaptureSettings();
+
+    /// <summary>把保存的参数应用到页签。只在未连接时调用；参数类型与协议不符时抛出 <see cref="ArgumentException"/>。</summary>
+    public abstract void ApplySettings(SessionSettings settings);
 
     /// <summary>记录一次操作（界面线程）。</summary>
     protected void RecordOperation(OperationRecord record)

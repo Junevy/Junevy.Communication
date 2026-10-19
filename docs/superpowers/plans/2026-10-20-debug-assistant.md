@@ -846,6 +846,21 @@ internal interface ISimulatorEngine
   6. 日志面板的高度暂时固定为 260；计划第 6 节的 GridSplitter 可调高度留给页面布局的统一实现（Task 5 起，各协议页签共用）。
   7. 日志的时间戳使用创建条目时的本地时间。
 
+**Task 3（工作区）**
+
+- 做了什么：
+  - 参数基类 `SessionSettings`（`[JsonPolymorphic]`，判别字段 `type`），目前只有 `PlaceholderSettings`；每种协议完成时在这里加一行 `[JsonDerivedType]`（DA-D19）。`SessionViewModel` 新增抽象成员 `CaptureSettings()` 与 `ApplySettings()`，占位页签实现为空参数。
+  - `WorkspaceDocument`（`schemaVersion: 1`，页签列表，选中下标）与 `WorkspaceSession`（种类以文本保存，遇到未知种类时可以跳过）。
+  - `WorkspaceStore`：读取时，损坏、为空或版本不符的文件改名为 `.bak` 保留，以空工作区启动，并返回说明；写入时先写 `workspace.json.tmp`，再替换原文件。默认位置是 `%LocalAppData%\Junevy.Communication\DebugAssistant\workspace.json`。
+  - `WorkspaceService`：`Capture`、`Restore`（未知种类与参数不符的页签被跳过并说明；选中项随之重新计算）、单个页签的导入与导出（`.json`）。
+  - 主窗口：启动时在 `App` 中调用 `RestoreWorkspace()`；退出时 `ShutdownAsync` 先保存工作区，再并发释放（DA-D9 的顺序）；工具栏新增"保存工作区""导入页签""导出当前页签"。
+- 测试：`DebugAssistant.Tests` 共 109 条，全部通过（本期新增 18 条）。覆盖计划 Task 3 的每一条：保存与读取往返、损坏文件、版本不符、写入中途失败保持原文件、未知种类跳过、19 种的参数往返（`SingleSessionFile_RoundTripsEveryKind_WithItsSettingsType`）、密码字段标记 `[JsonIgnore]`（反射扫描，目前没有密码字段，因此这一条在各协议加入参数类型之前是空转的）、启动恢复、退出前保存、手动保存的通知、导入与导出的往返、导出命令的可用条件。测试不写用户的工作区（每个测试实例使用临时目录）。
+- 偏差与需要审阅者决定的事：
+  1. 版本不符的文件同样改名为 `.bak`（而不是只提示）。否则以空工作区启动后，退出时的保存会覆盖用户的数据。这是有意的选择，请审阅者确认。
+  2. "写入中途失败"的测试通过占用临时文件名（一个同名目录）来制造失败。在 Windows 上抛出的是 `UnauthorizedAccessException`，测试接受任何异常，界面层两种都捕获。
+  3. 参数类型的检查目前只覆盖占位参数；每种协议的 Task 会补充它的往返测试（计划要求的做法）。
+  4. 导出的单页签文件与工作区文件使用同一格式（`schemaVersion` 加一个页签），导入时只取第一个页签。
+
 ### 33.4 基线与度量（执行者填写）
 
 基线（改动前，提交 `fe82d79`），由 `build/metrics` 的脚本统计，生产代码范围为 Core、Channels、Tcp、Udp、Serial、Plc、Melsec 的 `*.cs`（213 个文件，排除 obj、bin）：

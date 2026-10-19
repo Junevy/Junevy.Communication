@@ -1,7 +1,9 @@
+using System.IO;
 using Junevy.Communication.DebugAssistant.Hosting;
 using Junevy.Communication.DebugAssistant.Services;
 using Junevy.Communication.DebugAssistant.Sessions;
 using Junevy.Communication.DebugAssistant.Shell;
+using Junevy.Communication.DebugAssistant.Workspace;
 using Junevy.Communication.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -21,6 +23,8 @@ internal static class TestShell
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(log);
         services.AddShellServices();
+        // 测试永远不写用户的工作区：默认放到一个临时目录（测试可以用 overrides 再换成别的路径）。
+        services.AddSingleton(new WorkspaceStore(Path.Combine(Path.GetTempPath(), "junevy-da-tests", Guid.NewGuid().ToString("N"), "workspace.json")));
         services.AddSingleton<IUiDispatcher>(new ManualUiDispatcher());
         services.AddSingleton<TimeProvider>(new FakeClock());
         services.AddSingleton<IFileDialogService>(new FakeFileDialogService());

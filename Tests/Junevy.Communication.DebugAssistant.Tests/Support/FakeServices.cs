@@ -9,9 +9,12 @@ internal sealed class FakeFileDialogService : IFileDialogService
     /// <summary>保存对话框返回的路径；null 表示用户取消。</summary>
     public string? SaveTo { get; set; }
 
+    /// <summary>打开对话框返回的路径；null 表示用户取消。</summary>
+    public string? OpenFrom { get; set; }
+
     public string? PickSaveFile(string title, string suggestedFileName, string filter) => SaveTo;
 
-    public string? PickOpenFile(string title, string filter) => null;
+    public string? PickOpenFile(string title, string filter) => OpenFrom;
 }
 
 /// <summary>把通知记录下来，便于断言。</summary>

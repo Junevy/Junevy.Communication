@@ -1,5 +1,6 @@
 using Junevy.Communication.DebugAssistant.Sessions;
 using Junevy.Communication.DebugAssistant.Shell;
+using Junevy.Communication.DebugAssistant.Workspace;
 
 namespace Junevy.Communication.DebugAssistant.Tests.Support;
 
@@ -20,6 +21,12 @@ internal sealed class ScriptedSession : SessionViewModel
     }
 
     public void SetState(SessionState state) => State = state;
+
+    public override SessionSettings CaptureSettings() => new PlaceholderSettings();
+
+    public override void ApplySettings(SessionSettings settings)
+    {
+    }
 
     public void Record(OperationRecord record) => RecordOperation(record);
 

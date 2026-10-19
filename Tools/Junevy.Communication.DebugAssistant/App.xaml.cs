@@ -34,10 +34,9 @@ public partial class App : Application
         builder.Services.AddShellServices();
         _host = builder.Build();
 
-        var window = new Views.Shell.MainWindow
-        {
-            DataContext = _host.Services.GetRequiredService<MainWindowViewModel>()
-        };
+        var viewModel = _host.Services.GetRequiredService<MainWindowViewModel>();
+        viewModel.RestoreWorkspace();
+        var window = new Views.Shell.MainWindow { DataContext = viewModel };
         MessageBarService.SetPresenter((MessageBarPresenter)window.FindName("NotificationPresenter"));
         window.Closing += OnMainWindowClosing;
         MainWindow = window;

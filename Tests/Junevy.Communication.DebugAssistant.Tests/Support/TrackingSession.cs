@@ -1,5 +1,6 @@
 using Junevy.Communication.DebugAssistant.Sessions;
 using Junevy.Communication.DebugAssistant.Shell;
+using Junevy.Communication.DebugAssistant.Workspace;
 
 namespace Junevy.Communication.DebugAssistant.Tests.Support;
 
@@ -24,6 +25,12 @@ internal sealed class TrackingSession : SessionViewModel
 
     /// <summary>设置后，释放会抛出该异常。</summary>
     public Exception? DisposeFailure { get; set; }
+
+    public override SessionSettings CaptureSettings() => new PlaceholderSettings();
+
+    public override void ApplySettings(SessionSettings settings)
+    {
+    }
 
     public override async ValueTask DisposeAsync()
     {

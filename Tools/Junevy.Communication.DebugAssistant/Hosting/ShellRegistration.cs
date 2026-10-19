@@ -2,6 +2,7 @@ using Junevy.Communication.DebugAssistant.Sessions;
 using Junevy.Communication.DebugAssistant.Services;
 using Junevy.Communication.DebugAssistant.Shell;
 using Junevy.Communication.DebugAssistant.Views.Platform;
+using Junevy.Communication.DebugAssistant.Workspace;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Junevy.Communication.DebugAssistant.Hosting;
@@ -24,6 +25,8 @@ public static class ShellRegistration
             provider.GetRequiredService<IFileDialogService>(),
             provider.GetRequiredService<INotificationService>()));
         services.AddSessionServices();
+        services.AddSingleton(new WorkspaceStore(WorkspaceStore.DefaultPath));
+        services.AddSingleton<WorkspaceService>();
         services.AddTransient<MainWindowViewModel>();
         return services;
     }

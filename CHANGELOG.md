@@ -10,6 +10,7 @@
 - 2026-10-20 [DebugAssistant] 验证：WPF 测试进程里 `WebApiServer` 可以启动与停止，OPC UA 客户端程序集加载无绑定错误（`RuntimeSmokeTests`）。
 - 2026-10-20 [DebugAssistant] Task 1（外壳）：左侧 `jv:TreeView` 按 19 种协议分四组（PLC、工厂系统、自定义协议、模拟设备），双击叶节点打开页签、双击分组只展开或收起；右侧 `jv:TabControl` 的页签标题可以双击或按 F2 改名（标题与视图模型双向绑定），可以关闭（先释放会话、限时 5 秒，再移除；释放失败写日志）；默认名称为"协议短名 #n"。工具栏"关闭全部页签"需确认。退出时并发释放全部会话，总时限 10 秒。每种协议暂用占位页签，随各协议的 Task 替换。
 - 2026-10-20 [DebugAssistant] Task 2（会话基础设施）：`SessionViewModel` 基类（状态、连接与断开命令及取消、操作记录上限 500、页签私有的日志工厂）；三种结果统一映射为 `OperationRecord`（`CommResult`、`WebApiResult<T>`、`SecsResult`，错误种类显示中文名称）；页签的报文与日志：`SessionLog`（有界队列，每 100 ms 批量刷新，暂停、筛选、清空、导出为 .txt，统计），报文由库的 Debug 日志模板识别（TX / RX，TCP 与 UDP 两种端点，超过 256 字节的截断帧）；底部的报文与日志面板（DataGrid 虚拟化，HEX / ASCII / 时间戳列）；通知条与文件对话框服务；架构测试（表示层程序集不得出现在视图无关的命名空间里）。
+- 2026-10-20 [DebugAssistant] Task 3（工作区）：工作区保存在 `%LocalAppData%\Junevy.Communication\DebugAssistant\workspace.json`（`schemaVersion: 1`，记录页签的种类、标题、参数与选中项；不保存密码）。启动时恢复（页签一律未连接），退出时先保存再释放会话。文件损坏或版本不符时改名为 `.bak` 保留，以空工作区启动并给出提示；未知的协议种类被跳过并提示；写入先写临时文件再替换，失败时原文件保持不变。工具栏新增"保存工作区""导入页签""导出当前页签"（单个页签的 `.json`）。
 
 ## [Unreleased] — Channels：连接丢失后当场离开 Connected（重试等待重建的连接）
 

@@ -12,6 +12,9 @@
         <Border DockPanel.Dock="Top" Padding="8,6" BorderThickness="0,0,0,1"
                 BorderBrush="{DynamicResource Theme.Brush.Border.Divider}">
             <StackPanel Orientation="Horizontal">
+                <jv:Button Content="保存工作区" Command="{Binding SaveWorkspaceCommand}" Margin="0,0,8,0" />
+                <jv:Button Content="导入页签" Command="{Binding ImportSessionCommand}" Margin="0,0,8,0" />
+                <jv:Button Content="导出当前页签" Command="{Binding ExportSessionCommand}" Margin="0,0,8,0" />
                 <jv:Button Content="关闭全部页签" Command="{Binding CloseAllSessionsCommand}" Margin="0,0,8,0" />
                 <jv:Button Content="切换主题" Command="{Binding ToggleThemeCommand}" />
             </StackPanel>
