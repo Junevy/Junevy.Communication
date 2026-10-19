@@ -26,12 +26,7 @@ public sealed class ModbusEndToEndTcpTests
         await using var slave = new ModbusTcpSlave(framing, new ModbusSlave(framing, memory));
         using ModbusClient client = await ConnectAsync(slave.Port, framing);
 
-        Assert.True((await client.WriteUInt16Async("HR10", 0x1234)).IsSuccess);
-        Assert.Equal((ushort)0x1234, (await client.ReadUInt16Async("HR10")).Data);
-        Assert.Equal((ushort)0x0042, (await client.ReadUInt16Async("IR5")).Data);
-        Assert.True((await client.WriteBoolAsync("C3", true)).IsSuccess);
-        Assert.True((await client.ReadBoolAsync("C3")).Data);
-        Assert.True((await client.ReadBoolAsync("DI7")).Data);
+        await ModbusScenarios.FourAreasRoundTripAsync(client);
     }
 
     [Theory(Timeout = 60000)]

@@ -36,11 +36,8 @@ internal partial class PlcRequestPipeline<TAddress> where TAddress : PlcAddress
 
     private async Task<CommResult<bool>> WriteWordsCoreAsync(string address, ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
     {
-        if (!TryResolve(address, out TAddress? target, out CommResult? failure))
+        if (!TryResolveWritable(address, out TAddress? target, out CommResult? failure))
             return failure.As<bool>();
-        CommResult? readOnly = CheckWritable(target);
-        if (readOnly is not null)
-            return readOnly.As<bool>();
         if (target.BitIndex is not null)
             return Invalid<bool>("A bit index is not allowed in WriteAsync; use WriteBitsAsync to write single bits.");
         if (data.Length == 0)

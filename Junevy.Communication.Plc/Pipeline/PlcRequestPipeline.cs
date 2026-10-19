@@ -113,6 +113,17 @@ internal sealed partial class PlcRequestPipeline<TAddress> where TAddress : PlcA
         return false;
     }
 
+    // 写入的入口：先解析地址，再拒绝只读地址（P7-S1）。拒绝发生在点数检查之前，因此不发请求，也不进入操作锁。
+    private bool TryResolveWritable(string address, [NotNullWhen(true)] out TAddress? target, [NotNullWhen(false)] out CommResult? failure)
+    {
+        if (!TryResolve(address, out target, out failure))
+            return false;
+        failure = CheckWritable(target);
+        if (failure is not null)
+            return false;
+        return true;
+    }
+
     // 只读地址的写入（P7-S1）：在点数检查之前拒绝，因此不发请求，也不进入操作锁。
     private CommResult? CheckWritable(TAddress target)
         => client.IsReadOnly(target)

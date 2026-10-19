@@ -29,6 +29,8 @@
 
 ### 变更（Changed）
 
+- 2026-10-19 [Plc] 写入入口合并只读检查（P7 度量修正，行为不变）：`PlcRequestPipeline` 新增 `TryResolveWritable`，把地址解析与 `IsReadOnly` 检查合成一个入口，供 `WriteWordsCoreAsync`、`WriteBitsCoreAsync`、`WriteBytesCoreAsync` 使用。原来三处相同的六行检查在生产代码中形成重复窗口，合并后 15 个生产目录的重复窗口回到 P7 前的 35。
+- 2026-10-19 [Test] Modbus 端到端的四区域往返断言抽为 `ModbusScenarios.FourAreasRoundTripAsync`（TCP、UDP、串口共用，仅测试，行为不变）。
 - 2026-10-19 [Modbus] 项目骨架改为 Plc 套件上的 3.0.0-preview.1（P7-D1）：csproj 导入 `build/Junevy.Communication.Common.props`，依赖 Plc、Tcp、Udp、Serial；`InternalsVisibleTo` 只给 `Junevy.Communication.Modbus.Tests`。协议实现在后续 Task 中加入，本次提交尚无公开类型。
 - 2026-10-19 [Architecture] 删除 Modbus 的特殊处理（不再引用 2.x 的类型）。Modbus 在 Task 4 登记进分层表之前，不参与分层与 InternalsVisibleTo 检查。
 - 2026-10-19 [Test] WPF 调试工具去掉对 Modbus 的引用与启动时的注册，视图模型恢复为窗口骨架；调试页签的绑定在 Task 11 恢复前不可用（运行时绑定错误，不影响编译）。

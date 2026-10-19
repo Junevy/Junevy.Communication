@@ -23,12 +23,7 @@ public sealed class ModbusEndToEndSerialTests
         using ModbusClient client = session.Client(requestTimeout: 2000);
         Assert.True((await client.ConnectAsync()).IsSuccess);
 
-        Assert.True((await client.WriteUInt16Async("HR10", 0x1234)).IsSuccess);
-        Assert.Equal((ushort)0x1234, (await client.ReadUInt16Async("HR10")).Data);
-        Assert.Equal((ushort)0x0042, (await client.ReadUInt16Async("IR5")).Data);
-        Assert.True((await client.WriteBoolAsync("C3", true)).IsSuccess);
-        Assert.True((await client.ReadBoolAsync("C3")).Data);
-        Assert.True((await client.ReadBoolAsync("DI7")).Data);
+        await ModbusScenarios.FourAreasRoundTripAsync(client);
     }
 
     [Fact(Timeout = 60000)]
