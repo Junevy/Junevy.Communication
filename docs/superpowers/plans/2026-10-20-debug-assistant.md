@@ -1076,6 +1076,21 @@ internal interface ISimulatorEngine
   6. 节点 255 与机架、槽号的越界在调用库之前检查，给出中文说明；库抛出的是英文的 `ArgumentOutOfRangeException`（摩擦 F-8 已记录）。
   7. Release 构建与 `test-affected -Repeat 3` 仍按计划留到门槛 2（Task 14 之后）；本 Task 只跑了 Debug 构建与 DebugAssistant 测试项目。
 
+**Task 11（模拟设备的公共部分）**
+
+- 做了什么：
+  - `Simulators/Memory`：`MemoryArea<T>` 与 `WordArea`、`BitArea`、`ByteArea`（加锁读写，越界抛出 `ArgumentOutOfRangeException`，写入后在锁外触发 `Changed`）；`SimulatorMemory` 登记与查找（名称不分大小写，重复登记抛出异常），`TakeDirtyAreas` 汇总变化的区域。
+  - `Simulators/Faults`：`FaultPlan`（不可变记录）与 `FaultInjector`（替换时校验：延迟 0 至 60000 毫秒，强制错误码 0 至 0xFFFF；`TakeForRequest` 取得快照并清除一次性的断开）。
+  - `Simulators/Hosting`：`ISimulatorEngine`（公开）、`SimulatorReply`（应答、不应答或断开）、`SimulatorConnection`（会话状态 `Items`）、内部的 `SimulatorRequestProcessor`（断开在引擎之前生效；不应答只抑制应答，引擎仍处理请求；延迟交给宿主）、`SimulatorHost`（由配置类型选择 TCP 服务端、UDP 或串口）、`SimulatorRequestEventArgs`（请求日志）。
+- 测试：DebugAssistant.Tests 新增 28 条（`Simulators` 命名空间）：存储区 11 条（越界读写、变化事件、名称登记、汇总、并发读写无撕裂）；故障注入 8 条（读回、范围、延迟上限、一次性断开）；宿主 7 条（TCP 回显与请求日志、不应答后会话保持、延迟、强制错误码、断开、UDP 回显、串口 COM20 ↔ COM21 回显）；边界 2 条（不引用协议包与 WPF，不开放内部成员）。引擎用测试替身 `EchoEngine`。
+- 偏差与需要审阅者决定的事：
+  1. `ISimulatorEngine.Handle` 比计划的签名多一个参数 `FaultPlan`：强制错误码的格式与校验破坏的字节都与协议有关，只能由引擎实现。其余不变。
+  2. 破坏校验（`CorruptChecksum`）属于引擎，本 Task 没有测试它；在 Task 12 用 RTU 的 CRC 与 4C 的和校验测试。
+  3. 宿主的应答经单一队列按顺序发送，因此延迟会阻塞之后的应答（与单线程的真实设备一致）。请审阅者确认。
+  4. 串口没有会话，"断开"表示关闭并重新打开端口。
+  5. 公开的表面比计划的"少量 public"多：`ISimulatorEngine`、`SimulatorHost`、存储区与故障类型、请求日志参数。应用需要它们创建引擎与宿主。
+  6. 库的生产代码未改动。
+
 ### 33.4 基线与度量（执行者填写）
 
 基线（改动前，提交 `fe82d79`），由 `build/metrics` 的脚本统计，生产代码范围为 Core、Channels、Tcp、Udp、Serial、Plc、Melsec 的 `*.cs`（213 个文件，排除 obj、bin）：
