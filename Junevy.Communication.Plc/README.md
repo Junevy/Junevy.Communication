@@ -139,7 +139,7 @@ Only construction errors (invalid configuration) throw `ArgumentException`.
 | `RetryInterval` | `1000` ms | How long to wait for the link to come back before a retry |
 | `AllowReadModifyWriteBits` | `false` | Allows writing one bit of a word device by reading and writing the word, under the client's operation lock. Each such write logs a warning |
 
-Retries apply to each request separately: when a large read is split into packets, only the packet that failed is retried. A retry happens only when the link is restored within `RetryInterval`; otherwise the real failure is returned.
+Retries apply to each request separately: when a large read is split into packets, only the packet that failed is retried. A retry happens only when the link is restored within `RetryInterval`; otherwise the real failure is returned. When the failure dropped the connection (a TCP request timeout with `ResetOnRequestTimeout`, which MELSEC 3E, S7, FINS and Modbus RTU over TCP use, or a connection closed mid-request), the channel has already left `Connected`, so the retry waits for the rebuilt connection rather than resending on the old one.
 
 ## Ownership
 
@@ -185,8 +185,13 @@ Which hooks you have to override is decided by the units your device table conta
 | `BuildReadBytesRequest` / `ParseReadBytesResponse` / `BuildWriteBytesRequest` | virtual, default throws | only protocols with a byte device (S7). `offset` and `count` are in bytes |
 | `CanWriteBitsNatively(address)` | virtual, default `address.Unit == PlcAddressUnit.Bit` | protocols that can write a single bit of a word or byte area override it to `true` (FINS, S7). When it is `false`, a word device writes bits by read-modify-write under `AllowReadModifyWriteBits`, and a byte device returns `NotSupported` |
 | `ValidateRange(address, access, count)` | virtual, default success | protocols that cannot represent some range override it; it runs before any frame is sent |
+| `IsReadOnly(address)` | virtual, default `false` | protocols with read-only areas (for example input registers) override it. A write to a read-only address returns `InvalidRequest` before any point check, without sending a frame or taking the operation lock; reads are not affected |
 
 A default hook that is not overridden throws `InvalidOperationException`, which the pipeline reports as `Unspecified` with an error log — so a protocol never has to write an empty implementation for a hook it does not use.
+
+### Protocol-specific requests (P7-S2)
+
+`SendProtocolRequestAsync<T>(operation, buildRequest, parseResponse, cancellationToken)` (protected) sends one packet for a function code the read and write entry points do not cover (for example Modbus 0x16 and 0x17). It uses the same guards, operation lock, retry rules and error mapping as the entry points: disposed or disconnected returns `NotConnected` without sending, `Timeout`, `ConnectionClosed` and `ProtocolViolation` are retried under `RetryCount`, `RemoteError` and `InvalidRequest` are not, a hook exception becomes `Unspecified` with an error log, and a caller cancellation returns `Cancelled`. A null delegate or a blank `operation` throws synchronously, because it is a programming error.
 
 Protocol state that a handshake discovers (a negotiated PDU size, a node address) belongs in an immutable session snapshot that the `Create` method hands to both the channel's `IConnectionInitializer` and the client, and the hooks read the current snapshot; see the S7 and FINS packages for the pattern.
 

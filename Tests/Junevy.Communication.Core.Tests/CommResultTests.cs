@@ -98,7 +98,7 @@ public sealed class CommResultTests
     [Fact]
     public void ErrorKindValues_MatchModbusErrorKind()
     {
-        // 设计文档第 4 节：0–7 与 ModbusErrorKind 数值一一对应（RemoteError 对应 Modbus 的 ModbusException）；8–11 为通道族新增。
+        // 设计文档第 4 节：0–7 与 Modbus 2.x 的 ModbusErrorKind 数值一一对应（RemoteError 对应 2.x 的 ModbusException）；8–11 为通道族新增。
         var expected = new (int Value, string Name)[]
         {
             (0, "None"), (1, "Unspecified"), (2, "InvalidRequest"), (3, "ConnectionClosed"),

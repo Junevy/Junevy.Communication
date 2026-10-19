@@ -11,6 +11,7 @@ internal sealed class FakeConnectionDriver : IConnectionDriver
     private readonly object sync = new object();
     private readonly Func<int, CancellationToken, Task<CommResult>> open;
     private readonly List<DisconnectReason> closeReasons = new List<DisconnectReason>();
+    private readonly List<string> calls = new List<string>();
     private int openCalls;
     private int closeCalls;
 
@@ -39,10 +40,23 @@ internal sealed class FakeConnectionDriver : IConnectionDriver
         }
     }
 
+    /// <summary>OpenAsync 与 CloseAsync 的调用顺序（<c>open</c> / <c>close</c>）。</summary>
+    public IReadOnlyList<string> Calls
+    {
+        get
+        {
+            lock (sync)
+                return calls.ToList();
+        }
+    }
+
     /// <inheritdoc />
     public Task<CommResult> OpenAsync(CancellationToken cancellationToken)
     {
         int attempt = Interlocked.Increment(ref openCalls);
+        lock (sync)
+            calls.Add("open");
+
         return open(attempt, cancellationToken);
     }
 
@@ -51,7 +65,10 @@ internal sealed class FakeConnectionDriver : IConnectionDriver
     {
         Interlocked.Increment(ref closeCalls);
         lock (sync)
+        {
             closeReasons.Add(reason);
+            calls.Add("close");
+        }
 
         return Task.CompletedTask;
     }

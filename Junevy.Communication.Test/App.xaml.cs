@@ -55,7 +55,8 @@ namespace Junevy.Communication.Test
                 builder.ClearProviders();
                 builder.AddSerilog();
             });
-            container.AddModbusFactory();
+
+            container.AddModbus();
 
             this.Provider = container.BuildServiceProvider();
         }

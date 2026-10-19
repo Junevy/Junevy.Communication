@@ -2,6 +2,81 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — Channels：连接丢失后当场离开 Connected（重试等待重建的连接）
+
+### 修复（Fixed）
+
+- 2026-10-19 [Channels] **请求超时重建连接之后，重试落在正在拆除的旧连接上**（P7 审查发现）：字节流客户端在 `CorrelationMode.Sequential` 且 `ResetOnRequestTimeout = true`（TCP 默认）时，请求超时经 `StreamChannel.ResetAfterExpiry` → `ChannelStopSequence.Fault` → `ConnectionSupervisor.ReportConnectionLost` 报告丢失，而监督器只把处理调度到后台，后台关闭旧连接之后才离开 `Connected`。这段时间里 `IsConnected` 仍为 true、`WaitForConnectedAsync` 立即返回 true，Plc 套件的重试（`PlcPacketExchange.ExchangeAsync`）因此在旧连接上重发，以 `ConnectionClosed`（"The stream channel is closed."）结束，而不是等待重连。受影响的是所有在字节流上按顺序关联的 Plc 协议：S7、FINS、MELSEC 3E/4C、Modbus RTU over TCP（MBAP 按事务号关联，不重建连接，不受影响）；在超时之后自己调用 `WaitForConnectedAsync` 的用户代码同样受影响。另一条同类路径：对端在请求进行中关闭连接时，`Fault` 先以 `ConnectionClosed` 失败在途请求、再报告丢失，重试同样可能看到 `Connected`。
+  - **修复**：`ReportConnectionLost` 对当前代次的报告**当场**离开 Connected（启用重连且非用户断开时进入 Reconnecting 并启动重连循环，否则进入 Disconnected），旧连接记为待关闭，由后台任务在生命周期锁下关闭；`ConnectAsync`、重连循环的每次打开（`OpenOnceAsync`）、`DisconnectAsync` 与释放在持锁后先关闭它，驱动不会在旧连接之上打开新连接。`ChannelStopSequence.Fault` 改为先调用 `onFault`、再以 `ConnectionClosed` 失败在途等待者。删除 `ScheduleLossLocked`、`HandleConnectionLostAsync` 与 `lossScheduledGeneration`（同一代次只处理一次由"状态已离开 Connected"保证）。不涉及任何协议包的代码。
+  - **用例**：先红后绿。`StreamClientChannelTests.RequestTimeoutReset_WaitForConnectedWaitsForTheRebuiltConnection`（修复前 `OpenCount` 为 1 而不是 2）、`McEndToEndTcpTests.RequestTimeout_RebuildsTheConnection_AndTheRetrySucceedsOnTheNewOne`（MELSEC 3E，`RetryCount = 1`，第一个请求不回复；修复前以 "The stream channel is closed." 失败）、`ModbusEndToEndTcpTests.RetryCountOne_FirstRequestDropped_SecondSucceeds` 改为 MBAP 与 RTU 两种帧的 Theory（修复前 RTU 失败）。另加：`StreamClientChannelTests.PeerClosesDuringRequest_FailureIsSeenAfterLeavingConnected`；`StreamChannelTests.Fault_ReportsTheLossBeforeFailingWaiters`（确定性地钉住 `Fault` 的顺序，`StreamRig` 增加 `FaultObserver`）；`SupervisorTests` 的 `Lost_LeavesConnectedBeforeReportReturns`、`Lost_ThenConnectAtOnce_ClosesTheLostConnectionBeforeOpening`、`Lost_ThenDisconnectAtOnce_TheLostConnectionIsClosedOnReturn`（`FakeConnectionDriver` 增加调用顺序 `Calls`）。变异检查：恢复 `Fault` 的旧顺序时 `Fault_ReportsTheLossBeforeFailingWaiters` 失败（两个目标）；去掉 `OpenOnceAsync` 的先关闭时 `Lost_ThenConnectAtOnce…` 失败（3/3）；去掉 `DisconnectAsync` 的先关闭**未被**检出（后台关闭总是先取得生命周期锁），该防护保留。
+  - **度量**：Channels 有效行 4763 → 4765；`ConnectionSupervisor` 691 → 696 行；生产重复窗口 24 不变；没有超过 60 行的方法。
+  - **验收**：`dotnet build Junevy.Communication.slnx --no-incremental` 的 Debug 与 Release 均 0 错误，警告只有 WPF 调试工具 `Junevy.Communication.Test` 既有的 2 条；`pwsh build/test-affected.ps1 -Base 0b3eafa -NoBuild -Repeat 3` 选中 17 个测试项目，三遍均为 7200 通过、0 失败、8 跳过（30 个测试宿主；未设置 `JUNEVY_SERIAL_PAIR`）。Channels.Tests 319 → 325、Modbus.Tests 307 → 308（另 1 跳过）、Melsec.Tests 184 → 185（另 1 跳过），每个目标。
+
+### 变更（Changed）
+
+- 2026-10-19 [Channels] 行为契约（设计文档 20.1 第 43 项）：连接丢失的 `StateChanged`（Connected → Reconnecting / Disconnected）在旧连接释放**之前**入队；从报告丢失到后台关闭完成的这段时间里，`SendAsync`、`RequestAsync`、`ReceiveAsync` 返回 `NotConnected`（原为 `ConnectionClosed`，"The stream channel is closed."），与"断开期间立即返回 `NotConnected`"一致；Plc 套件在这段时间开始的操作同样返回 `NotConnected`（与 Reconnecting 期间相同，不重试）。`IConnectable` 的签名与文档不变。
+- 2026-10-19 [Modbus.Tests] `AwaitRebuiltConnectionAsync` 不再先轮询 `!IsConnected`，直接 `WaitForConnectedAsync`。
+- 2026-10-19 [文档] 删除 P7 记下的已知问题：Modbus README 的 "Heartbeat and reconnect" 一节改写为重试会等待重建的连接；`Skills/using-junevy-plc` 删除 P7 教训中的对应条目，错误表补充"重试等待重建的连接"；设计文档 20.12 的"本期发现"改为已修复。`Junevy.Communication.Channels/README.md`、`Junevy.Communication.Plc/README.md`、`Skills/using-junevy-channels`、`Skills/using-junevy-modbus` 同步补充新的时序。
+
+## [Unreleased] — P7（Modbus 3.0.0-preview.1：迁移到 Plc 套件；Plc 套件扩展）
+
+### 新增（Added）
+
+- 2026-10-19 [Plc] 只读地址钩子（P7-S1，计划 P7-D2）：`protected internal virtual bool IsReadOnly(TAddress address)`，默认 `false`。返回 `true` 时，`WriteAsync`、`WriteBitsAsync`（原生位写与读-改-写两条路径）、`WriteBytesAsync` 都返回 `InvalidRequest`，消息为 `The address '<Text>' is read-only.`；判断在地址解析之后、点数检查之前进行，不发请求，也不进入操作锁，断开状态下同样先返回这个失败。读取不受影响。测试：`PlcClientReadOnlyTests`（FakePlcClient 增加只读软元件 R、N、Y）。
+- 2026-10-19 [Plc] 协议专有请求（P7-S2，计划 P7-D2）：`protected Task<CommResult<T>> SendProtocolRequestAsync<T>(string operation, Action<IBufferWriter<byte>> buildRequest, Func<byte[], CommResult<T>> parseResponse, CancellationToken cancellationToken = default)`。与读写入口的守卫、操作锁、重试规则与错误映射相同（释放或未连接返回 `NotConnected` 且不发请求；`Timeout`、`ConnectionClosed`、`ProtocolViolation` 重试，`RemoteError`、`InvalidRequest` 不重试；委托异常收口为 `Unspecified` 并记录 Error；调用方取消返回 `Cancelled`）。空的委托或空白的操作名同步抛出 `ArgumentNullException` / `ArgumentException`。日志与分包日志共用格式，地址位置写操作名。测试：`PlcClientProtocolRequestTests`（13 个用例，含与 `ReadAsync` 串行的用例）。
+
+- 2026-10-19 [Modbus] 存储区与地址（P7-D4）：`ModbusDevice`（sealed，四个静态实例 `Coil`、`DiscreteInput`、`InputRegister`、`HoldingRegister`，符号 `C`、`DI`、`IR`、`HR`，只读属性由 `IsReadOnly` 给出）、`ModbusAddress : PlcAddress`（`Device` 收窄为 `ModbusDevice`，`UnitId` 为站号前缀）。地址解析器 `ModbusAddressParser`（internal）支持符号写法（零基，编号 0–65535）、Modicon 写法（一基，5 位与 6 位）、位号 `.n`（只用于寄存器，0–15）与站号前缀 `s=n;`（0–255）。帧格式的站号范围（RTU 1–247、MBAP 0–255）在客户端检查，Task 8 加入。测试：`ModbusAddressParserTests`（37 个用例，表驱动）。
+
+- 2026-10-19 [Modbus] 协议层（P7 Task 5，全部 internal）：PDU 请求编码（01–06、0F、10、16、17）、正常与异常应答解码（按期望校验功能码、字节数与回显）、MBAP 头（协议号、长度、站号；事务号由进程级计数器分配）与 RTU 帧（站号、CRC-16/MODBUS，低字节在前）的封装与剥离、异常码表（只用标准的九个码的名称）。测试按第 21 节的向量命名或注释（`ModbusRequestPduTests`、`ModbusResponsePduTests`、`ModbusFrameTests`，共 113 个用例）。
+
+- 2026-10-19 [Modbus] 分帧与关联（P7 Task 6，全部 internal）：MBAP 用套件的长度字段分帧（偏移 4、宽 2、大端、修正值 0，最大帧长 260）；RTU 用 `ModbusRtuFrameDecoder` 按应答功能码与字节数确定帧长（第 21.4 节），收全后以 CRC 裁决，功能码未知、字节数超过规范上限 250 或 CRC 不符时，丢弃 1 个字节并重新同步，不抛异常（第一轮验收 R1 修正）。关联键 `ModbusTransactionKeyExtractor` 取前两个字节（大端）作为事务号。测试：`ModbusRtuFrameDecoderTests`（9 个用例）、`ModbusFramingTests`（7 个用例，含 V-M-6）。
+
+- 2026-10-19 [Modbus] 选项、协议配置与心跳探测（P7 Task 7，P7-D7、D9、D11、D12）：公开的 `ModbusFraming`（`Mbap`、`Rtu`）与 `ModbusClientOptions : PlcClientOptions`（`Framing` 为 null 时按介质决定，`UnitId` 默认 1，`UseSingleWriteFunctions`，`UseMaskWriteForBits`，`DataFormat` 默认 ABCD 字序与 ASCII 字符串）。内部的 `ModbusProtocolSettings`（快照）与 `ModbusProtocolProfile`（串口上使用 MBAP 与不支持的枚举值在套件的组件装配之前拒绝；RTU 站号范围 1–247；MBAP 为 Keyed 关联，RTU 为 Sequential）。心跳探测 `ModbusReadProbe` 读 HR0 一个字，收到格式正确的正常或异常应答即为健康。测试：`ModbusProtocolProfileTests`（22 个用例），`ModbusReadProbeTests`（9 个用例）。
+
+- 2026-10-19 [Modbus] 客户端 `ModbusClient : PlcClientBase<ModbusAddress>`（P7 Task 8，P7-D3、D4、D5、D6、D10）：两个公开的 `Create`（按传输类型选择内置创建器，或指定创建器），没有公开构造函数。协议钩子覆盖地址（站号前缀按帧格式检查：RTU 1–247）、单包上限（读 125 字、2000 位，写 123 字、1968 线圈，寄存器位掩码写每包一位）、功能码映射（03、04、01、02、06、10、05、0F、16；单功能码规则按包判断）、只读区域（`IR`、`DI` 写入返回 `InvalidRequest`）、越界检查（结束地址不超过 65535）、线上的请求与应答校验（每包的期望在构造请求时记录一次）。测试：`ModbusClientWireTests`（26 个用例，线上字节）、`ModbusClientErrorTests`（11 个用例，错误映射与重试）、`ModbusClientCreationTests`（10 个用例，创建、地址与类型化读写）。
+
+- 2026-10-19 [Modbus] 掩码写寄存器（0x16）与读写多个寄存器（0x17）（P7 Task 9，P7-D15）：`MaskWriteRegisterAsync(address, andMask, orMask)` 只接受不带位号的保持寄存器，发送一个请求并要求应答原样回显；`ReadWriteMultipleRegistersAsync(readAddress, readCount, writeAddress, writeData)` 两个地址都必须是不带位号的保持寄存器且站号相同，读 1–125 字、写 1–121 字，不拆包，返回读出的字节。两者经套件的协议专有请求入口（`SendProtocolRequestAsync`）发送，享有操作锁、重试与错误映射；参数不合法时不发请求。测试：`ModbusClientCommandTests`（25 个用例）。
+
+- 2026-10-19 [Modbus] 端到端矩阵与设备替身（P7 Task 10，仅测试）：`ModbusSlave`（替身，在 PlcMemory 上实现 01–06、0F、10、16、17，越界为异常码 02，站号集合之外不回复，可丢弃第 n 个请求，可在回复前加噪声）、`ModbusTcpSlave` 与 `DelayingStream`（TCP 上的迟到应答，延迟的写入在后台完成，不阻塞后续请求）、测试用的 RTU 请求分帧。端到端：`ModbusEndToEndTcpTests`、`ModbusEndToEndUdpTests`、`ModbusEndToEndSerialTests`（另有一个真实串口对的用例，未设置 `JUNEVY_SERIAL_PAIR` 时跳过）。
+
+- 2026-10-19 [Modbus] 依赖注入（P7 Task 11，P7-D14）：`ModbusTransport`（Tcp、Udp、Serial）、`ModbusClientConfig : IPlcClientConfig`（`Transport`、`Tcp`、`Udp`、`Serial`、`Options`）、`ModbusClientCreator : IPlcClientCreator`、`AddModbus()`（幂等，与 `AddMelsec()` 共存）。测试：`ModbusDependencyInjectionTests`（11 个用例，含 appsettings 形状的 JSON 绑定）。
+
+- 2026-10-19 [WPF 调试工具] 调试工具移植到 v3（P7 Task 11）：经 `AddModbus()` 与 `PlcClientFactory` 连接（TCP 或串口），读写 C、DI、IR、HR，结果显示在表格中。不追求与 2.x 界面逐项相同；删除只服务于 2.x 界面的 `MbCmd.cs`、`Regions.cs`、`EnumToBoolConverter.cs`、`LengthEnableConverter.cs`。
+
+### 修复（Fixed）— 第一轮验收（2026-10-20）
+
+- 2026-10-20 [Modbus] RTU 分帧器不再因线路噪声抛异常（R1）：读应答的字节数超过规范上限 250（125 个寄存器或 2000 个点）时视为噪声，与功能码未知、CRC 不符一样丢弃 1 个字节后重新同步。此前字节数 252–255 会让解码器抛 `FrameDecodeException`：RTU over TCP 上通道以 `ProtocolViolation` 断开，串口上通道丢弃整个缓冲，连同紧随其后的正确应答。测试：`ByteCountBeyondTheSpecification_IsNoiseAndTheFollowingFrameIsDelivered`（字节数 251 与 253，修正前抛异常）。
+- 2026-10-20 [Modbus.Tests] 补上掩码写多位的测试（R2）：`WriteSeveralRegisterBitsWithMaskWrite_SendsOneMaskWritePerBitAcrossTheRegisterBoundary`（三个点三个 16 请求，第三个落在下一个寄存器的位 0）与端到端 `MaskWriteSeveralBits_AcrossTwoRegisters_ChangesOnlyThoseBits`。此前把寄存器写位的单包上限从 1 改为 16 时（多点写入会悄悄只写第一位），没有测试失败。
+- 2026-10-20 [Modbus] README "Heartbeat and reconnect" 一节的开头改正（R3）：只有 RTU over TCP（Sequential）在请求超时后重建连接，MBAP 按事务号关联、不重建。
+
+### 变更（Changed）— 第一轮验收（2026-10-20）
+
+- 2026-10-20 [Modbus] 删除 `Protocol/ModbusBuffer`，改用 Core 的 `BigEndianFields.WriteUInt8` / `WriteBytes`（R4，新增协议指南 F8）；RTU 站号范围只在 `RtuAdu.MinimumUnitId` / `MaximumUnitId` / `IsValidUnitId` 定义一次，客户端的地址检查与协议配置共用（R5）。行为不变。
+- 2026-10-20 [Testing, Plc.Tests, Modbus.Tests] `IClientChannel` 的脚本替身移入共享测试库：`Junevy.Communication.Testing.ScriptedClientChannel`（public，由 Plc.Tests 的同名类型原样迁入），删除 Modbus.Tests 的副本 `ScriptedModbusChannel`，两个测试项目改用它（R7，P7 摩擦 F-A2）。消除两者之间的 37 个测试重复窗口。
+- 2026-10-20 [Core, Channels, Tcp, WebApi, Core.Tests] 7 处注释仍指向已删除的 2.x 类型（`IModbus`、`ModbusFactoryBuilder`、`ModbusConnectionManager`、`ModbusErrorKind`、`ModbusTcpClient`），改为注明来自 2.x（tag `modbus-v2.0.0`）或指向现有类型（R9，只改注释）。
+- 2026-10-20 [Plc] `PlcRequestPipeline.TryResolveWritable` 的结尾简化为 `return failure is null;`，与 `CheckWritable` 重复的注释合并（R10，行为不变）。
+
+### 变更（Changed）
+
+- 2026-10-19 [Plc] 写入入口合并只读检查（P7 度量修正，行为不变）：`PlcRequestPipeline` 新增 `TryResolveWritable`，把地址解析与 `IsReadOnly` 检查合成一个入口，供 `WriteWordsCoreAsync`、`WriteBitsCoreAsync`、`WriteBytesCoreAsync` 使用。原来三处相同的六行检查在生产代码中形成重复窗口，合并后 15 个生产目录的重复窗口回到 P7 前的 35。
+- 2026-10-19 [Test] Modbus 端到端的四区域往返断言抽为 `ModbusScenarios.FourAreasRoundTripAsync`（TCP、UDP、串口共用，仅测试，行为不变）。
+- 2026-10-19 [Modbus] 项目骨架改为 Plc 套件上的 3.0.0-preview.1（P7-D1）：csproj 导入 `build/Junevy.Communication.Common.props`，依赖 Plc、Tcp、Udp、Serial；`InternalsVisibleTo` 只给 `Junevy.Communication.Modbus.Tests`。
+- 2026-10-19 [Architecture] 删除 Modbus 的特殊处理（不再引用 2.x 的类型）；Modbus 登记进分层表（允许 Plc、Channels、Core、Tcp、Udp、Serial），与其他协议包一样参加分层、InternalsVisibleTo 与第三方白名单三项检查。
+
+### 破坏性变更（Breaking）
+
+- 2026-10-19 [Modbus] 连接语义（P7-D13）：2.x 的懒重连（请求失败后在下一次请求前重建连接）改为通道的后台重连，默认关闭；`Disconnect` 之后的请求返回 `NotConnected`，不会悄悄连回；不再隐式连接，断开期间的请求立即返回 `NotConnected`。
+- 2026-10-19 [Modbus] `RetryCount` 默认值由 3 改为 0；只重试 `Timeout`、`ConnectionClosed`、`ProtocolViolation`；不提供同步 API（设计 21.1 Q2）；超时在通道配置里设置（`RequestTimeout`），不再在客户端选项里。
+- 2026-10-19 [Modbus] 错误处理（第 20 节）：`ModbusResult<T>` 与 `ModbusErrorKind` 改为 `CommResult<T>` 与 `CommErrorKind`（数值对齐）；参数错误不再抛出 `ModbusException`，返回 `InvalidRequest`；异常码在 `ProtocolErrorCode`。
+- 2026-10-19 [Modbus] 工厂与依赖注入：`IModbusFactory`、`ModbusConnectionManager`、`ModbusFactoryBuilder`、`AddModbusFactory()` 由 `PlcClientFactory`、`PlcClientFactoryBuilder`、`AddModbus()` 取代；RS-485 多从站改为地址前缀 `s=n;`（一个客户端）。
+- 2026-10-19 [Modbus] 站号范围：RTU 为 1–247（0 为广播，不支持；248–255 保留）；地址中的站号前缀按帧格式检查。
+- 2026-10-19 [Modbus] 拆包：超过单包上限的读写由套件自动拆包（2.x 对超限直接抛出 `ArgumentException`）。
+- 2026-10-19 [Modbus] 2.x 的全部公开 API 被移除，由 3.0 的 `ModbusClient`、`ModbusClientOptions` 等 9 个公开类型取代（P7-D3、D16）。2.x 保留在本地 tag `modbus-v2.0.0`（指向 `c29a45b`）。迁移对照见 `Junevy.Communication.Modbus/README.md` 的 "Migrating from 2.x" 与 `Skills/using-junevy-modbus`。
+
+### 移除（Removed）
+
+- 2026-10-19 [Modbus] 删除 2.x 的生产代码（41 个文件）与测试（23 个文件）。v2 的 `IModbus`、`ModbusResult`、`ModbusErrorKind`、`ModbusRequest`、`ModbusTcpClient`、`ModbusRtuClient`、`ModbusTransportBase`、`IModbusFactory`、`ModbusConnectionManager` 等类型不再存在。
+
 ## [Unreleased] — 项目目录整理
 
 ### 变更（Changed）

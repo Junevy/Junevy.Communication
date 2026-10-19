@@ -5,188 +5,101 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="clr-namespace:Junevy.Communication.Test"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    Title="MainWindow"
-    Width="665"
-    Height="380"
+    Title="Modbus debug (v3)"
+    Width="760"
+    Height="420"
     d:DataContext="{d:DesignInstance Type=local:MainWindowViewModel}"
     mc:Ignorable="d">
 
     <Window.Resources>
         <local:BoolToColorConverter x:Key="BoolToColor" />
         <local:ReverseBoolConverter x:Key="ReverseBool" />
-        <local:EnumToBoolConverter x:Key="EnumToBool" />
-        <local:LengthEnableConverter x:Key="LengthEnable" />
     </Window.Resources>
 
-    <Grid>
+    <Grid Margin="5">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
+        <GroupBox Grid.Column="0" Header="Connection">
+            <StackPanel Margin="10">
+                <TextBlock Text="Transport" />
+                <ComboBox
+                    IsEnabled="{Binding IsConnected, Converter={StaticResource ReverseBool}}"
+                    ItemsSource="{Binding Transports}"
+                    SelectedItem="{Binding Transport, Mode=TwoWay}" />
 
-        <Grid Grid.Column="0">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="*" />
-                <RowDefinition MaxHeight="20" />
-            </Grid.RowDefinitions>
+                <TextBlock Margin="0,8,0,0" Text="Host" />
+                <TextBox
+                    IsEnabled="{Binding IsConnected, Converter={StaticResource ReverseBool}}"
+                    Text="{Binding Host, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
-            <GroupBox
-                Grid.Row="0"
-                Margin="5,5,5,0"
-                Header="Modbus RTU Test">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
+                <TextBlock Margin="0,8,0,0" Text="Port" />
+                <TextBox
+                    IsEnabled="{Binding IsConnected, Converter={StaticResource ReverseBool}}"
+                    Text="{Binding Port, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
-                    <StackPanel
-                        Grid.Column="0"
-                        Margin="15,10,10,10"
-                        HorizontalAlignment="Left">
-                        <TextBlock Text="Port Name" />
-                        <ComboBox
-                            Width="120"
-                            IsEnabled="{Binding IsConnected, Converter={StaticResource ReverseBool}}"
-                            ItemsSource="{Binding Serials}"
-                            SelectedItem="{Binding Config.PortName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Margin="0,8,0,0" Text="Serial port" />
+                <ComboBox
+                    IsEnabled="{Binding IsConnected, Converter={StaticResource ReverseBool}}"
+                    ItemsSource="{Binding Serials}"
+                    SelectedItem="{Binding PortName, Mode=TwoWay}" />
 
-                        <TextBlock Margin="0,10,0,0" Text="Baud Rate" />
-                        <ComboBox
-                            Width="120"
-                            IsEnabled="{Binding IsConnected, Converter={StaticResource ReverseBool}}"
-                            ItemsSource="{Binding BaudRates}"
-                            SelectedValue="{Binding Config.BaudRate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Margin="0,8,0,0" Text="Baud rate" />
+                <ComboBox
+                    IsEnabled="{Binding IsConnected, Converter={StaticResource ReverseBool}}"
+                    ItemsSource="{Binding BaudRates}"
+                    SelectedItem="{Binding BaudRate, Mode=TwoWay}" />
 
-                        <TextBlock Margin="0,10,0,0" Text="Data Bits" />
-                        <ComboBox
-                            Width="120"
-                            IsEnabled="{Binding IsConnected, Converter={StaticResource ReverseBool}}"
-                            ItemsSource="{Binding Bits}"
-                            SelectedValue="{Binding Config.DataBits, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Margin="0,8,0,0" Text="Unit ID" />
+                <TextBox Text="{Binding UnitId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
-                        <TextBlock Margin="0,10,0,0" Text="Parity" />
-                        <ComboBox
-                            Width="120"
-                            IsEnabled="{Binding IsConnected, Converter={StaticResource ReverseBool}}"
-                            ItemsSource="{Binding ParityList}"
-                            SelectedValue="{Binding Config.Parity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
+                    <Button Command="{Binding ConnectCommand}" Content="Connect" Padding="12,2" />
+                    <Button Margin="8,0,0,0" Command="{Binding DisconnectCommand}" Content="Disconnect" Padding="12,2" />
+                </StackPanel>
 
-                        <TextBlock Margin="0,10,0,0" Text="Stop Bit" />
-                        <ComboBox
-                            Width="120"
-                            IsEnabled="{Binding IsConnected, Converter={StaticResource ReverseBool}}"
-                            ItemsSource="{Binding StopBitsList}"
-                            SelectedValue="{Binding Config.StopBits, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                    </StackPanel>
+                <TextBlock Margin="0,12,0,0" Text="{Binding Status}" TextWrapping="Wrap">
+                    <TextBlock.Foreground>
+                        <Binding Converter="{StaticResource BoolToColor}" Path="IsConnected" />
+                    </TextBlock.Foreground>
+                </TextBlock>
+            </StackPanel>
+        </GroupBox>
 
-                    <StackPanel
-                        Grid.Column="1"
-                        Margin="0,10,10,10"
-                        HorizontalAlignment="Left">
+        <GroupBox Grid.Column="1" Header="Registers and coils">
+            <StackPanel Margin="10">
+                <TextBlock Text="Area" />
+                <ComboBox ItemsSource="{Binding Areas}" SelectedItem="{Binding Area, Mode=TwoWay}" />
 
-                        <TextBlock Text="Slave ID" />
-                        <TextBox
-                            Width="120"
-                            Height="20"
-                            FontSize="12"
-                            Text="{Binding Tx.SlaveId}" />
+                <TextBlock Margin="0,8,0,0" Text="Start" />
+                <TextBox Text="{Binding Start, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
-                        <TextBlock Margin="0,10,0,0" Text="Start" />
-                        <TextBox
-                            Width="120"
-                            Height="20"
-                            FontSize="12"
-                            Text="{Binding Tx.Start}" />
+                <TextBlock Margin="0,8,0,0" Text="Count" />
+                <TextBox Text="{Binding Count, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
-                        <TextBlock Margin="0,10,0,0" Text="Length" />
-                        <TextBox
-                            Width="120"
-                            Height="20"
-                            FontSize="12"
-                            Text="{Binding Length, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Margin="0,8,0,0" Text="Value to write (HR: number, C: 1 or 0)" />
+                <TextBox Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
-                        <TextBlock Margin="0,10,0,0" Text="Region" />
-                        <ComboBox
-                            Width="120"
-                            ItemsSource="{Binding RegionList}"
-                            SelectedValue="{Binding Tx.FunctionCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <StackPanel Margin="0,8,0,0" Orientation="Horizontal">
+                    <Button Command="{Binding ReadCommand}" Content="Read" Padding="12,2" />
+                    <Button Margin="8,0,0,0" Command="{Binding WriteCommand}" Content="Write" Padding="12,2" />
+                </StackPanel>
 
-                        <Button
-                            Width="120"
-                            Height="20"
-                            Margin="0,10,0,0"
-                            Command="{Binding ConnectCommand}"
-                            Content="Connect"
-                            IsEnabled="{Binding IsConnected, Converter={StaticResource ReverseBool}}" />
-
-                        <Button
-                            Width="120"
-                            Height="20"
-                            Margin="0,10,0,0"
-                            Command="{Binding ExecuteCommand}"
-                            Content="Execute" />
-
-                        <Button
-                            Width="120"
-                            Height="20"
-                            Margin="0,10,0,0"
-                            Command="{Binding DisconnectCommand}"
-                            Content="Disconnect" />
-                    </StackPanel>
-                </Grid>
-            </GroupBox>
-
-            <Grid Grid.Row="1">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition MaxWidth="30" />
-                    <ColumnDefinition />
-                </Grid.ColumnDefinitions>
-                <Ellipse
-                    Grid.Column="0"
-                    Width="10"
-                    Height="10"
-                    Margin="10,0,0,0"
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Center"
-                    Fill="{Binding IsConnected, Converter={StaticResource BoolToColor}}" />
-
-                <TextBlock
-                    Grid.Column="1"
-                    VerticalAlignment="Center"
-                    Text="{Binding Config.PortName}" />
-            </Grid>
-        </Grid>
-
-
-        <DataGrid
-            Grid.Column="1"
-            Width="300"
-            AutoGenerateColumns="False"
-            CanUserAddRows="False"
-            CanUserResizeColumns="False"
-            EnableRowVirtualization="True"
-            HeadersVisibility="Column"
-            HorizontalScrollBarVisibility="Hidden"
-            IsReadOnly="{Binding Tx.FunctionCode, Converter={StaticResource EnumToBool}}"
-            ItemsSource="{Binding DataList}"
-            VerticalScrollBarVisibility="Hidden">
-            <DataGrid.Columns>
-                <DataGridTextColumn
-                    Width="100"
-                    Binding="{Binding Address}"
-                    Header="0x"
-                    IsReadOnly="True" />
-                <DataGridTextColumn
-                    Width="200"
-                    Binding="{Binding Value}"
-                    Header="Value"
-                    IsReadOnly="{Binding Tx.FunctionCode, Converter={StaticResource EnumToBool}}" />
-            </DataGrid.Columns>
-
-            <!--  <DataGrid.  -->
-        </DataGrid>
+                <DataGrid
+                    Height="150"
+                    Margin="0,10,0,0"
+                    AutoGenerateColumns="False"
+                    CanUserAddRows="False"
+                    IsReadOnly="True"
+                    ItemsSource="{Binding DataList}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Binding="{Binding Address}" Header="Address" />
+                        <DataGridTextColumn Binding="{Binding Value}" Header="Value" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </StackPanel>
+        </GroupBox>
     </Grid>
-
 </Window>

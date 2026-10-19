@@ -104,7 +104,8 @@ internal sealed class ChannelStopSequence
     }
 
     /// <summary>
-    /// 连接丢失（计划 8.2）：同一实例至多报告一次。先以 <c>ConnectionClosed</c> 失败在途等待者，再调用 <c>onFault</c>。
+    /// 连接丢失（计划 8.2）：同一实例至多报告一次。先调用 <c>onFault</c>，再以 <c>ConnectionClosed</c> 失败在途等待者：
+    /// 等待者看到失败时，所有者已经离开 Connected，紧接着的 <c>WaitForConnectedAsync</c> 会等待重建的连接，而不是立即返回。
     /// 停止过程中的任何故障都不报告（停止由所有者发起）。
     /// </summary>
     /// <param name="reason">断开原因。</param>
@@ -115,7 +116,6 @@ internal sealed class ChannelStopSequence
             return;
 
         logger.LogWarning(exception, "The {Kind} channel lost its connection: {Reason}.", kind, reason);
-        table.FailAll(CommResult.Fail("The connection was lost.", CommErrorKind.ConnectionClosed, null, exception));
         try
         {
             onFault(reason, exception);
@@ -124,6 +124,8 @@ internal sealed class ChannelStopSequence
         {
             logger.LogError(callbackFailure, "The fault callback of the {Kind} channel threw an exception.", kind);
         }
+
+        table.FailAll(CommResult.Fail("The connection was lost.", CommErrorKind.ConnectionClosed, null, exception));
     }
 
     /// <summary>

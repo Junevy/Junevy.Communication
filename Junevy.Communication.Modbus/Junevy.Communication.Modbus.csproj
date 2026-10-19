@@ -1,48 +1,28 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-	<PropertyGroup>
-		<TargetFrameworks>net472;net8.0</TargetFrameworks>
-		<ImplicitUsings>enable</ImplicitUsings>
-		<Nullable>enable</Nullable>
+  <Import Project="..\build\Junevy.Communication.Common.props" />
 
-		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-		<!-- NuGet 包信息 -->
-		<PackageId>Junevy.Communication.Modbus</PackageId>
-		<Version>2.0.0</Version>
-		<Authors>Junevy</Authors>
-		<Company>Junevy</Company>
-		<Description>
-			This is a modern, fast, high performence library of Modbus.
-			Feature:
-			1) Used the async programming: All of operate of the modbus can be async.
-			2) Lazy auto connect: auto connect the target host when sending or reading fail if detect the host error.
-			3) Thread safety: Have the feature taht thread safety.
-			4) Easy to use: Provide a method that one step injection to Microsoft Dependency Injection.
-		</Description>
-		<PackageTags>modbus rtu and tcp communication</PackageTags>
-		<RepositoryUrl>https://github.com/Junevy/Junevy.Communication</RepositoryUrl>
-		<PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-		<LangVersion>latest</LangVersion>
-		<GenerateDocumentationFile>true</GenerateDocumentationFile>
-		<!-- 公共成员 XML 注释尚未全覆盖（CS1591），文档全覆盖为后续专项；此处仅要求生成文档文件供 NuGet 使用 -->
-		<NoWarn>$(NoWarn);CS1591</NoWarn>
-		<PackageLicenseExpression>MIT</PackageLicenseExpression>
-		<PackageReadmeFile>README.md</PackageReadmeFile>
-	</PropertyGroup>
+  <!-- 3.0.0-preview.1：原地替换为 Plc 套件的第四个协议包（P7-D1）。覆写 Common.props 中的默认版本。 -->
+  <PropertyGroup>
+    <Version>3.0.0-preview.1</Version>
+    <PackageId>Junevy.Communication.Modbus</PackageId>
+    <Description>Modbus TCP, RTU and UDP clients built on the Junevy.Communication.Plc address-based suite.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
 
-	<ItemGroup>
-		<None Include="README.md" Pack="true" PackagePath="\" />
-	</ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
-	<ItemGroup>
-		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
-		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
-		<PackageReference Include="System.Buffers" Version="4.5.1" />
-		<PackageReference Include="System.IO.Ports" Version="8.0.0" />
-		<PackageReference Include="System.Memory" Version="4.5.5" />
-		<PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" />
-	</ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Junevy.Communication.Plc\Junevy.Communication.Plc.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.Tcp\Junevy.Communication.Tcp.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.Udp\Junevy.Communication.Udp.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.Serial\Junevy.Communication.Serial.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Junevy.Communication.Modbus.Tests" />
+  </ItemGroup>
 
 </Project>

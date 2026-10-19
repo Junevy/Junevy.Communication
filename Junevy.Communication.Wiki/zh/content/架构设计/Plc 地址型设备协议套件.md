@@ -88,6 +88,24 @@ tags: [架构设计, Junevy.Communication, Plc]
 - 协议的测试替身（MELSEC 为 `McDeviceAdapter`、S7 为 `S7DeviceSimulator`、FINS 为 `FinsDeviceSimulator`）把请求翻译成存储操作，挂在 `DeviceSimulator` 上。
 - 已知短板（P4）：`PlcMemory` 只有字粒度存储，按字节组织的存储要替身自带（S7 的 `Dictionary<(S7Area, int), byte[]>` + "块不存在 / 越过块尾"两种错误码）；字软元件的原生位写要改写覆盖的字，与 `PlcMemory` 自带的位字典不能并存（F7）。测试库还缺"最小可重连 / 可心跳的 TCP 配置"与带超时的到达助手，导致端到端故障脚手架在协议之间同形（F6、F10）。
 
+## P7 变更：只读地址与协议专有请求（P7-S1、S2）
+
+P7 把 Modbus 迁移到套件时，套件补了两项通用能力，其余接口不变（[[变更与决策/Modbus v2 归档/API参考/核心接口与传输基类]] 的 2.x 设计已取代）：
+
+- **`IsReadOnly(TAddress)`**（S1，虚方法，默认 `false`）：返回 `true` 的地址不能被写入，包括读-改-写。写入返回 `InvalidRequest`，消息为 `The address '<x>' is read-only.`，不发送任何数据。Modbus 用它拒绝写 `IR` 与 `DI`（[ModbusClient.Hooks.cs](file://Junevy.Communication.Modbus/Client/ModbusClient.Hooks.cs)）。
+- **`SendProtocolRequestAsync<T>(operation, buildRequest, parseResponse, ct)`**（S2，`protected`）：发送协议专有的请求，即不属于标准读写钩子的命令（Modbus 的 0x16 掩码写与 0x17 读写多个寄存器）。它与普通操作共用操作锁、取消与异常收口，因此不会与同一客户端上的读写交错。`parseResponse` 接收应答字节，返回 `CommResult<T>`。
+
+两项都是可选的：不覆写 `IsReadOnly` 的协议行为不变，不发送协议专有请求的协议也不需要知道 S2。
+
+## 扩展性（P7 实测结论）
+
+P7 是第四次扩展性验证：把 Modbus（2.x 的同步 + 异步双轨、自有的通道与重连）迁移到套件，用来检验"第四个协议能否在不改通道层和其他协议的前提下迁移"。
+
+- **套件改动只有两项**：S1（约 14 个有效行）与 S2（约 40 个有效行）。Melsec、Siemens、Omron 的生产代码与测试未改动。
+- **摩擦记录**（计划第 25.2 节）：F-S1、F-S2 是套件缺口，已由两项钩子覆盖；F-A1 是声明式地址解析器不能表达站号前缀与 Modicon 的一基地址，Modbus 因此自写解析器，这是**仍然存在的表达力缺口**，审阅者决定不扩展套件（没有第三个使用者）；F-A2 与 F-A3 是测试库的缺口：`IClientChannel` 测试替身已移入共享测试库（`ScriptedClientChannel`），设备替身的异步回复延迟只有 Modbus 一个使用者，留在 Modbus.Tests。
+- **P7 期间通道层未改**：期间发现的"请求超时重建连接与紧接着的重试竞争"随后在通道层修复（设计文档 20.1 第 43 项，2026-10-19 通道修复，见 [[行为契约/重连重试与并发模型]]）。
+- 具体的有效行对照与 Task 15 的复测数字见设计文档第 20.12 节与计划第 25.4 节。
+
 ## 扩展性（P2 实测结论）
 
 P2 用 MELSEC 检验了套件的扩展性。协议只写了地址、帧、钩子、组件与工厂，连接、重连、心跳、超时、拆包、重试、类型化读写、日志与 DI 都由套件与通道族提供。摩擦记录（计划第 20.2 节）的主要结论：

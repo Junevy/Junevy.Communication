@@ -150,6 +150,15 @@ public abstract partial class PlcClientBase<TAddress> where TAddress : PlcAddres
     /// <returns>允许时返回成功结果。</returns>
     protected internal virtual CommResult ValidateRange(TAddress address, PlcAccess access, int count) => CommResult.Success();
 
+    /// <summary>
+    /// 地址是否只读（例如只读的存储区）。返回 <c>true</c> 时，任何写入（字、位、字节，包括读-改-写）都返回 <c>InvalidRequest</c>：
+    /// 在点数检查之前拒绝，不发请求，也不进入操作锁；读取不受影响。默认返回 <c>false</c>。
+    /// <see cref="ValidateRange"/> 不区分读写，只读区域必须由这个钩子拒绝（P7-S1）。
+    /// </summary>
+    /// <param name="address">已解析的地址。</param>
+    /// <returns>地址只读时返回 true。</returns>
+    protected internal virtual bool IsReadOnly(TAddress address) => false;
+
     // 可选钩子未被协议覆写时的失败：流水线把它收口为 Unspecified 并记录 Error（P4-D5）。
     private InvalidOperationException HookNotImplemented(string hook)
         => new InvalidOperationException($"{GetType().Name} does not implement the {hook} hook; a protocol must override it to support this access.");

@@ -12,7 +12,7 @@ namespace Junevy.Communication.Channels.Lifecycle;
 /// </summary>
 /// <remarks>
 /// 锁层次：<c>lifecycleGate</c>（长操作，持有期间可以调用驱动）→ <c>stateSync</c>（短临界区：只改字段、写事件队列，不调用驱动与事件处理器）。
-/// <see cref="ReportConnectionLost"/> 可从任意线程（解析循环、计时器）调用：只做检查并调度后台处理，不等待任何锁或停止流程，因此不会与调用方自锁。
+/// <see cref="ReportConnectionLost"/> 可从任意线程（解析循环、计时器）调用：当场离开 Connected，旧连接的关闭交给后台，不等待任何锁或停止流程，因此不会与调用方自锁。
 /// 状态事件由单个派发任务处理；派发上下文（<c>stateDispatchScope</c>）内的 <see cref="DisposeAsync"/> 不等待该派发任务结束（计划 D16）。
 /// </remarks>
 internal sealed class ConnectionSupervisor : IAsyncDisposable
@@ -41,7 +41,7 @@ internal sealed class ConnectionSupervisor : IAsyncDisposable
     private (DisconnectReason Reason, Exception? Exception)? pendingLoss;
     private bool userDisconnected;
     private bool disposed;
-    private long lossScheduledGeneration = -1;
+    private (DisconnectReason Reason, Exception? Exception)? lostConnection;
     private CancellationTokenSource? reconnectSource;
     private Task? reconnectTask;
     private Task? stateDispatchTask;
@@ -170,6 +170,7 @@ internal sealed class ConnectionSupervisor : IAsyncDisposable
         {
             // 持有生命周期锁时再次停止：等待锁期间 ConnectAsync 可能清除了标记，并在打开失败后启动了新的循环。
             await CancelAndAwaitReconnectLoopAsync().ConfigureAwait(false);
+            await CloseLostConnectionAsync().ConfigureAwait(false);
 
             ConnectionState current = state;
             if (current == ConnectionState.Connected)
@@ -237,7 +238,7 @@ internal sealed class ConnectionSupervisor : IAsyncDisposable
     /// <summary>
     /// 报告连接丢失（可从任意线程调用，不阻塞）。代次不等于当前连接，或状态不是 Connected，则忽略；
     /// 但若报告属于正在打开的连接（驱动仍在执行 <c>OpenAsync</c>），则记住该故障，在连接建立后立即按丢失处理。
-    /// 实际处理（关闭、重连）在后台进行，调用方不需要等待。
+    /// 状态在返回之前已离开 Connected（进入 Reconnecting 或 Disconnected）；旧连接的关闭与重连在后台进行，调用方不需要等待。
     /// </summary>
     /// <param name="generation">报告所属连接的代次。</param>
     /// <param name="reason">断开原因。</param>
@@ -252,10 +253,8 @@ internal sealed class ConnectionSupervisor : IAsyncDisposable
             long current = generationCounter;
             if (state == ConnectionState.Connected && generation == current)
             {
-                // 同一代次只处理一次：重复报告（例如多个故障源同时报告）被忽略。
-                if (lossScheduledGeneration != generation)
-                    ScheduleLossLocked(generation, reason, exception);
-
+                // 同一代次只处理一次：状态已离开 Connected，重复报告（例如多个故障源同时报告）走不到这里。
+                LeaveConnectedLocked(reason, exception);
                 return;
             }
 
@@ -302,6 +301,7 @@ internal sealed class ConnectionSupervisor : IAsyncDisposable
             await lifecycleGate.WaitAsync().ConfigureAwait(false);
             try
             {
+                await CloseLostConnectionAsync().ConfigureAwait(false);
                 await CloseDriverAsync(DisconnectReason.Disposed, 0).ConfigureAwait(false);
                 SetState(ConnectionState.Disposed, DisconnectReason.Disposed, null, 0);
             }
@@ -325,9 +325,11 @@ internal sealed class ConnectionSupervisor : IAsyncDisposable
         }
     }
 
-    // 打开一次（调用方持有生命周期锁）。成功时完成连接（代次、统计、Connected 事件，并处理打开期间的故障）；失败时只返回结果，由调用方决定状态。
+    // 打开一次（调用方持有生命周期锁）。先关闭尚未关闭的丢失连接，驱动不会在旧连接之上打开新连接。
+    // 成功时完成连接（代次、统计、Connected 事件，并处理打开期间的故障）；失败时只返回结果，由调用方决定状态。
     private async Task<CommResult> OpenOnceAsync(CancellationToken cancellationToken, int reconnectAttempt)
     {
+        await CloseLostConnectionAsync().ConfigureAwait(false);
         lock (stateSync)
         {
             openInProgress = true;
@@ -421,7 +423,7 @@ internal sealed class ConnectionSupervisor : IAsyncDisposable
         {
             (DisconnectReason reason, Exception? exception) = pendingLoss.Value;
             pendingLoss = null;
-            ScheduleLossLocked(next, reason, exception);
+            LeaveConnectedLocked(reason, exception);
         }
     }
 
@@ -446,51 +448,54 @@ internal sealed class ConnectionSupervisor : IAsyncDisposable
         }
     }
 
-    // 调度连接丢失的后台处理（stateSync 下调用）。同一代次只调度一次。
-    private void ScheduleLossLocked(long generation, DisconnectReason reason, Exception? exception)
+    // 当前连接丢失（stateSync 下调用，状态为 Connected）：当场按策略进入 Reconnecting（并启动循环）或 Disconnected，
+    // 报告返回时 State、IsConnected 与 WaitForConnectedAsync 已经一致。旧连接记为待关闭，由后台任务在生命周期锁下关闭；
+    // 抢先取得生命周期锁的打开、断开与释放也会先关闭它。
+    private void LeaveConnectedLocked(DisconnectReason reason, Exception? exception)
     {
-        lossScheduledGeneration = generation;
-        LifecycleSupport.StartDetached(() => HandleConnectionLostAsync(generation, reason, exception));
+        lostConnection = (reason, exception);
+        if (reconnectPolicy != null && !userDisconnected)
+        {
+            SetStateLocked(ConnectionState.Reconnecting, reason, exception, 0);
+            StartReconnectLoopLocked();
+        }
+        else
+        {
+            SetStateLocked(ConnectionState.Disconnected, reason, exception, 0);
+        }
+
+        LifecycleSupport.StartDetached(CloseLostConnectionInBackgroundAsync);
     }
 
-    // 连接丢失的后台处理：获取生命周期锁 → 再次校验 → 关闭该代次 → 按策略进入 Reconnecting 或 Disconnected。
-    private async Task HandleConnectionLostAsync(long generation, DisconnectReason reason, Exception? exception)
+    // 丢失连接的后台关闭：取得生命周期锁后关闭（已被其他持锁者关闭时为空操作）。
+    private async Task CloseLostConnectionInBackgroundAsync()
     {
         await lifecycleGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            bool reconnect;
-            lock (stateSync)
-            {
-                if (disposed || state != ConnectionState.Connected || generationCounter != generation)
-                    return;
-
-                reconnect = reconnectPolicy != null && !userDisconnected;
-            }
-
-            logger.LogWarning(exception, "Connection {Name} was lost: {Reason}.", name, reason);
-            await CloseDriverAsync(reason, 0).ConfigureAwait(false);
-
-            lock (stateSync)
-            {
-                if (disposed)
-                    return;
-
-                if (reconnect && !userDisconnected)
-                {
-                    SetStateLocked(ConnectionState.Reconnecting, reason, exception, 0);
-                    StartReconnectLoopLocked();
-                }
-                else
-                {
-                    SetStateLocked(ConnectionState.Disconnected, reason, exception, 0);
-                }
-            }
+            await CloseLostConnectionAsync().ConfigureAwait(false);
         }
         finally
         {
             lifecycleGate.Release();
         }
+    }
+
+    // 关闭待关闭的丢失连接（调用方持有生命周期锁）；没有待关闭的连接时为空操作。
+    private async Task CloseLostConnectionAsync()
+    {
+        (DisconnectReason Reason, Exception? Exception)? lost;
+        lock (stateSync)
+        {
+            lost = lostConnection;
+            lostConnection = null;
+        }
+
+        if (lost == null)
+            return;
+
+        logger.LogWarning(lost.Value.Exception, "Connection {Name} was lost: {Reason}.", name, lost.Value.Reason);
+        await CloseDriverAsync(lost.Value.Reason, 0).ConfigureAwait(false);
     }
 
     // 后台重连循环（独立的取消源）：退避 → 获取生命周期锁 → 打开一次。成功即结束；耗尽则回到 Disconnected（ReconnectExhausted）。

@@ -30,6 +30,7 @@ internal sealed partial class PlcRequestPipeline<TAddress> where TAddress : PlcA
     private readonly PlcPipelineSettings settings;
     private readonly WordOrder wordOrder;
     private readonly ILogger logger;
+    private readonly PlcPacketExchange exchange;
     private readonly PlcTransfer<TAddress> transfer;
 
     // 同一客户端内的操作串行执行：包括拆包的全部分包，以及读-改-写的读与写。
@@ -53,7 +54,8 @@ internal sealed partial class PlcRequestPipeline<TAddress> where TAddress : PlcA
         this.settings = settings;
         wordOrder = dataFormat.WordOrder;
         this.logger = logger;
-        transfer = new PlcTransfer<TAddress>(client, new PlcPacketExchange(channel, settings, logger));
+        exchange = new PlcPacketExchange(channel, settings, logger);
+        transfer = new PlcTransfer<TAddress>(client, exchange);
     }
 
     /// <summary>
@@ -110,6 +112,21 @@ internal sealed partial class PlcRequestPipeline<TAddress> where TAddress : PlcA
         failure = CommResult.Fail(error!, CommErrorKind.InvalidRequest);
         return false;
     }
+
+    // 写入的入口：先解析地址，再拒绝只读地址（P7-S1）。拒绝发生在点数检查之前，因此不发请求，也不进入操作锁。
+    private bool TryResolveWritable(string address, [NotNullWhen(true)] out TAddress? target, [NotNullWhen(false)] out CommResult? failure)
+    {
+        if (!TryResolve(address, out target, out failure))
+            return false;
+
+        failure = CheckWritable(target);
+        return failure is null;
+    }
+
+    private CommResult? CheckWritable(TAddress target)
+        => client.IsReadOnly(target)
+            ? CommResult.Fail($"The address '{target.Text}' is read-only.", CommErrorKind.InvalidRequest)
+            : null;
 
     // 位访问的入口检查：点数是否允许由协议的 ValidateRange 决定。
     private CommResult? CheckBitAccess(TAddress target, int points) => Rejection(client.ValidateRange(target, PlcAccess.Bits, points));

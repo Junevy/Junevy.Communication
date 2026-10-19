@@ -1,260 +1,284 @@
 # Junevy.Communication.Modbus
 
-Modbus RTU/TCP master (client) communication library for .NET. It provides low-level request APIs, convenient extension methods for common function codes, and a factory for managing multiple Modbus connections.
+Modbus master (client) for .NET, built on the Junevy.Communication address-based PLC suite. Version 3.0.0-preview.1.
 
-## Target Frameworks
+- Frames: MBAP (Modbus TCP and Modbus UDP) and RTU (serial, RTU over TCP, RTU over UDP).
+- Transports: TCP, UDP and serial.
+- Targets: `net472` and `net8.0`.
+- Async only. Every public operation returns a `CommResult` or `CommResult<T>`; no operation throws for communication or device failures.
 
-- .NET Framework 4.7.2 (`net472`)
-- .NET 8 (`net8.0`)
+Version 3 replaces the 2.x API. If you are upgrading from 2.x, read [Migrating from 2.x](#migrating-from-2x) first. The 2.x code is kept at the `modbus-v2.0.0` tag.
 
-Project path:
+## Quick start
+
+### Modbus TCP (MBAP)
+
+```csharp
+using Junevy.Communication.Modbus;
+using Junevy.Communication.Plc;
+using Junevy.Communication.Tcp;
+using Junevy.Communication.Core.Results;
+
+using ModbusClient client = ModbusClient.Create(
+    new TcpClientChannelConfig { Host = "192.168.1.10", Port = 502 },
+    new ModbusClientOptions { UnitId = 1 });
+
+CommResult connected = await client.ConnectAsync();
+CommResult<ushort[]> registers = await client.ReadUInt16Async("HR100", 2);
+CommResult written = await client.WriteUInt16Async("HR100", 1234);
+```
+
+### RTU over a serial port
+
+On a serial transport the default framing is RTU, so no framing option is needed.
+
+```csharp
+using Junevy.Communication.Modbus;
+using Junevy.Communication.Plc;
+using Junevy.Communication.Serial;
+using Junevy.Communication.Core.Results;
+
+using ModbusClient client = ModbusClient.Create(
+    new SerialChannelConfig { PortName = "COM3", BaudRate = 9600 },
+    new ModbusClientOptions { UnitId = 1 });
+
+await client.ConnectAsync();
+CommResult<bool[]> coils = await client.ReadBitsAsync("C0", 8);
+```
+
+### RTU over TCP (a gateway or a serial server)
+
+```csharp
+using Junevy.Communication.Modbus;
+using Junevy.Communication.Tcp;
+
+using ModbusClient client = ModbusClient.Create(
+    new TcpClientChannelConfig { Host = "192.168.1.20", Port = 502 },
+    new ModbusClientOptions { Framing = ModbusFraming.Rtu, UnitId = 3 });
+```
+
+### One connection, several stations
+
+Put the station in the address prefix. One client can poll a whole RS-485 bus.
+
+```csharp
+using Junevy.Communication.Core.Results;
+using Junevy.Communication.Modbus;
+using Junevy.Communication.Tcp;
+using ModbusClient client = ModbusClient.Create(
+    new TcpClientChannelConfig { Host = "192.168.1.10", Port = 502 },
+    new ModbusClientOptions());
+await client.ConnectAsync();
+CommResult<ushort[]> first = await client.ReadUInt16Async("s=1;HR0", 1);
+CommResult<ushort[]> second = await client.ReadUInt16Async("s=2;HR0", 1);
+```
+
+## Addresses
+
+An address is `[s=<station>;]<area><number>[.<bit>]`, case-insensitive.
+
+| Form | Example | Meaning |
+|---|---|---|
+| Symbolic (zero-based) | `HR100` | Holding register 100 (protocol address 100) |
+| Symbolic | `C5`, `DI7`, `IR3` | Coil, discrete input, input register |
+| Modicon (one-based) | `40101` | Holding register 100 (the first digit selects the area) |
+| Modicon, six digits | `400101` | Holding register 100 |
+| Bit of a register | `HR100.5` | Bit 5 of register 100 (bit 0 is the least significant) |
+| Station prefix | `s=2;HR100` | Station 2 for this request |
+
+- Area digits in the Modicon form: `0` coil, `1` discrete input, `3` input register, `4` holding register. Five digits give numbers 0 to 9998 (`40001` to `49999`); six digits give numbers 0 to 65535 (`400001` to `465536`).
+- Numbers are decimal and must be 0 to 65535. The address must not run past 65535.
+- A bit index is allowed only on registers (`IR`, `HR`) and only from 0 to 15. Coils and discrete inputs are bit devices and have no bit index.
+- The station prefix is 0 to 255. On RTU it must be 1 to 247 (`0` is broadcast, which is not supported; 248 to 255 are reserved).
+- Without a prefix the request uses `ModbusClientOptions.UnitId`.
+
+## Function codes and single-request limits
+
+| Operation | Address area | Function code |
+|---|---|---|
+| Read words | `HR` / `IR` | 03 / 04 |
+| Read bits | `C` / `DI` | 01 / 02 |
+| Write words | `HR` | 06 for one word (when `UseSingleWriteFunctions` is true), otherwise 10 |
+| Write bits | `C` | 05 for one point (when `UseSingleWriteFunctions` is true), otherwise 0F |
+| Write a bit of a register | `HR` | 16 (mask write) when `UseMaskWriteForBits` is true; otherwise read-modify-write when `AllowReadModifyWriteBits` is true; otherwise `NotSupported` |
+| Write to `IR` or `DI` | — | Rejected with `InvalidRequest`; nothing is sent |
+
+The single-write rule applies to each packet. A 124-word write sends 123 words with 10, then one word with 06.
+
+Operations split into packets automatically:
+
+| Limit | Value |
+|---|---|
+| Read registers per packet | 125 |
+| Read bits per packet | 2000 |
+| Write registers per packet | 123 |
+| Write coils per packet | 1968 |
+| Mask write | one bit per request |
+
+Reads of coils and discrete inputs by bit, and register writes by word, all split at these limits. `MaskWriteRegisterAsync` and `ReadWriteMultipleRegistersAsync` never split.
+
+## Typed access
+
+The typed extensions from the suite apply: `ReadInt16Async`, `ReadUInt16Async`, `ReadInt32Async`, `ReadUInt32Async`, `ReadFloatAsync`, `ReadDoubleAsync`, `ReadBoolAsync`, `ReadStringAsync`, and the matching `Write…Async` methods.
+
+Multi-register values are ordered by `ModbusClientOptions.DataFormat`. The default is `ABCD` (high word first) with ASCII strings. Use `new PlcDataFormat(WordOrder.CDAB)` for low-word-first devices.
+
+```csharp
+using Junevy.Communication.Core.Buffers;
+using Junevy.Communication.Modbus;
+using Junevy.Communication.Plc;
+
+var options = new ModbusClientOptions { DataFormat = new PlcDataFormat(WordOrder.CDAB) };
+```
+
+## Options
+
+`ModbusClientOptions` adds the Modbus options to the suite options (`RetryCount`, `RetryInterval`, `AllowReadModifyWriteBits`).
+
+| Option | Default | Meaning |
+|---|---|---|
+| `Framing` | `null` | `ModbusFraming.Mbap` or `ModbusFraming.Rtu`. `null` means RTU on serial and MBAP on network transports. MBAP on serial is rejected. |
+| `UnitId` | `1` | Station used when the address has no prefix. |
+| `UseSingleWriteFunctions` | `true` | Use 05 and 06 for single points and words. Set to `false` for devices that accept only 0F and 10. |
+| `UseMaskWriteForBits` | `false` | Write register bits with 0x16 (atomic on the device). |
+| `DataFormat` | ABCD, ASCII | Word order and string encoding. |
+| `RetryCount` | `0` | Retries for `Timeout`, `ConnectionClosed` and `ProtocolViolation`. |
+| `RetryInterval` | `1000` | Milliseconds to wait for the connection before a retry. |
+| `AllowReadModifyWriteBits` | `false` | Allow a register bit write by read-modify-write when mask write is off. |
+
+Timeouts and connection behaviour belong to the channel configuration: `RequestTimeout`, `ConnectTimeout`, `SendTimeout`, `Heartbeat`, `Reconnect`, `ResetOnRequestTimeout`.
+
+## Mask write and read-write multiple
+
+```csharp
+using Junevy.Communication.Core.Results;
+using Junevy.Communication.Modbus;
+using Junevy.Communication.Tcp;
+using ModbusClient client = ModbusClient.Create(
+    new TcpClientChannelConfig { Host = "192.168.1.10", Port = 502 },
+    new ModbusClientOptions());
+await client.ConnectAsync();
+// 0x16: result = (current AND andMask) OR (orMask AND NOT andMask). One request, atomic on the device.
+CommResult masked = await client.MaskWriteRegisterAsync("HR100", andMask: 0xFFDF, orMask: 0x0020);
+
+// 0x17: the device writes first, then reads. Both addresses must be holding registers on the same station.
+CommResult<byte[]> readBack = await client.ReadWriteMultipleRegistersAsync(
+    readAddress: "HR3", readCount: 6, writeAddress: "HR14", writeData: new byte[] { 0x00, 0xFF, 0x00, 0xFF });
+```
+
+`ReadWriteMultipleRegistersAsync` takes 1 to 125 registers to read and 1 to 121 registers (2 to 242 bytes) to write. It returns the bytes read, two per register, in big-endian order.
+
+## Error handling
+
+Every operation returns a result. Check `IsSuccess` and read `ErrorKind`.
+
+| Kind | Meaning | Retried |
+|---|---|---|
+| `RemoteError` | The device returned an exception response. `ProtocolErrorCode` is the exception code (01 to 0B). | No |
+| `ProtocolViolation` | A response had the wrong station, function, byte count, echo or CRC. | Yes |
+| `Timeout` | No response within `RequestTimeout`. A late response is discarded. | Yes |
+| `ConnectionClosed` | The connection closed during the request. | Yes |
+| `NotConnected` | The client is disposed or not connected. Nothing is sent. | No |
+| `InvalidRequest` | Bad address, count or argument. Nothing is sent. | No |
+| `NotSupported` | The combination is not supported (for example a bit write without a mask-write or read-modify-write option). | No |
+| `Cancelled` | The caller cancelled. | No |
+| `Unspecified` | An unexpected failure. The error is logged. | No |
+
+The message of an exception response names the standard codes:
 
 ```text
-Junevy.Communication.Modbus/Junevy.Communication.Modbus.csproj
+Modbus exception 0x02 (Illegal Data Address) for function 0x03.
 ```
 
-## Supported Function Codes
+The nine standard names are 01 Illegal Function, 02 Illegal Data Address, 03 Illegal Data Value, 04 Server Device Failure, 05 Acknowledge, 06 Server Device Busy, 08 Memory Parity Error, 0A Gateway Path Unavailable and 0B Gateway Target Device Failed to Respond. Other codes have no name.
 
-| Code | Name | Extension method |
-|---|---|---|
-| `0x01` | Read Coils | `ReadCoils` / `ReadCoilsAsync` |
-| `0x02` | Read Discrete Inputs | `ReadDiscreteInputs` / `ReadDiscreteInputsAsync` |
-| `0x03` | Read Holding Registers | `ReadHoldingRegisters` / `ReadHoldingRegistersAsync` |
-| `0x04` | Read Input Registers | `ReadInputRegisters` / `ReadInputRegistersAsync` |
-| `0x05` | Write Single Coil | `WriteSingleCoil` / `WriteSingleCoilAsync` |
-| `0x06` | Write Single Register | `WriteSingleRegister` / `WriteSingleRegisterAsync` |
-| `0x07` | Read Exception Status | `ReadExceptionStatus` / `ReadExceptionStatusAsync` |
-| `0x08` | Diagnostics | `Diagnostics` / `DiagnosticsAsync` |
-| `0x0B` | Get Comm Event Counter | `GetCommEventCounter` / `GetCommEventCounterAsync` |
-| `0x0C` | Get Comm Event Log | `GetCommEventLog` / `GetCommEventLogAsync` |
-| `0x0F` | Write Multiple Coils | `WriteMultipleCoils` / `WriteMultipleCoilsAsync` |
-| `0x10` | Write Multiple Registers | `WriteMultipleRegisters` / `WriteMultipleRegistersAsync` |
-| `0x11` | Report Server ID | `ReportServerId` / `ReportServerIdAsync` |
-| `0x16` | Mask Write Register | `MaskWriteRegister` / `MaskWriteRegisterAsync` |
-| `0x17` | Read/Write Multiple Registers | `ReadWriteMultipleRegisters` / `ReadWriteMultipleRegistersAsync` |
+## Heartbeat and reconnect
 
-## Minimal Usage: Manual `new`
+The heartbeat reads one holding register (`HR0`, one word) from the default station. A correctly formatted response is healthy, and so is an exception response, because a device that answers with an exception still has a working link. Only a wrong station, function or format is unhealthy.
 
-### Modbus TCP
+The heartbeat and the background reconnect are off by default. Enable them in the channel configuration:
 
 ```csharp
-using Junevy.Communication.Modbus.Extensions;
-using Junevy.Communication.Modbus.Tcp;
-
-using var modbus = new ModbusTcpClient(new ModbusTcpClientConfig
+using Junevy.Communication.Channels;
+var config = new TcpClientChannelConfig
 {
-    Address = "192.168.1.100",
+    Host = "192.168.1.10",
     Port = 502,
-    ConnectTimeout = 2000,
-    ReadTimeout = 2000,
-    WriteTimeout = 2000
-});
-
-if (!modbus.Connect())
-{
-    Console.WriteLine("Connect failed.");
-    return;
-}
-
-var result = modbus.ReadHoldingRegisters(slaveId: 1, start: 0, length: 4);
-Console.WriteLine(result.IsSuccess
-    ? string.Join(", ", result.Data!)
-    : result.ErrorMessage);
-
-modbus.Disconnect();
+    Heartbeat = new HeartbeatOptions { Enabled = true, Interval = 5000, Timeout = 2000, MaxFailures = 3 },
+    Reconnect = new ReconnectOptions { Enabled = true },
+};
 ```
 
-### Modbus RTU
+MBAP matches replies by transaction ID, so a request timeout keeps the TCP connection and a late reply is dropped. RTU over TCP has no transaction ID: a request timeout resets the connection (`ResetOnRequestTimeout`, on by default) and it is rebuilt in the background. The client has left `Connected` when the `Timeout` result returns, so a `RetryCount` retry waits for the rebuilt connection (up to `RetryInterval`). Without retries, a request sent before the connection is back returns `NotConnected`; wait with `WaitForConnectedAsync` first.
+
+## Dependency injection
 
 ```csharp
-using System.IO.Ports;
-using Junevy.Communication.Modbus.Extensions;
-using Junevy.Communication.Modbus.Rtu;
-
-using var modbus = new ModbusRtuClient(new ModbusRtuClientConfig
-{
-    PortName = "COM3",
-    BaudRate = 9600,
-    Parity = Parity.None,
-    DataBits = 8,
-    StopBits = StopBits.One,
-    ReadTimeout = 2000,
-    WriteTimeout = 2000
-});
-
-modbus.Connect();
-
-var write = modbus.WriteSingleRegister(slaveId: 1, start: 100, value: 1234);
-Console.WriteLine(write.IsSuccess ? "Write OK" : write.ErrorMessage);
-
-modbus.Disconnect();
-```
-
-## Recommended Usage: Factory + DI
-
-```csharp
+using Junevy.Communication.Modbus;
 using Junevy.Communication.Modbus.DependencyInjection;
-using Junevy.Communication.Modbus.Extensions;
-using Junevy.Communication.Modbus.Factory;
-using Junevy.Communication.Modbus.Tcp;
+using Junevy.Communication.Plc;
 using Microsoft.Extensions.DependencyInjection;
 
-var services = new ServiceCollection();
+ServiceCollection services = new ServiceCollection();
+services.AddModbus();
+ServiceProvider provider = services.BuildServiceProvider();
 
-services.AddLogging();
-services.AddModbusFactory();
-
-using var provider = services.BuildServiceProvider();
-var factory = provider.GetRequiredService<IModbusFactory>();
-
-var plc = factory.GetOrAdd("plc-1", new ModbusTcpClientConfig
+PlcClientFactory factory = provider.GetRequiredService<PlcClientFactory>();
+IPlcClient client = factory.GetOrAdd("line-1", new ModbusClientConfig
 {
-    Address = "192.168.1.100",
-    Port = 502,
-    Reconnect = true,
-    RetryCount = 3,
-    RetryInterval = 200
-});
-
-plc.Connect();
-
-var coils = await plc.ReadCoilsAsync(slaveId: 1, start: 0, length: 8);
-Console.WriteLine(coils.IsSuccess
-    ? string.Join(", ", coils.Data!)
-    : coils.ErrorMessage);
-
-plc.Disconnect();
-```
-
-For RS-485 multi-drop RTU scenarios, register one physical RTU connection and add aliases for logical slave names:
-
-```csharp
-factory.GetOrAdd("rs485-bus", new ModbusRtuClientConfig { PortName = "COM3" });
-factory.RegisterAlias("slave-1", "rs485-bus");
-factory.RegisterAlias("slave-2", "rs485-bus");
-```
-
-## Manual Construction Without Microsoft DI (Prism, etc.)
-
-For host containers that do not use `IServiceCollection` (Prism, DryIoc, Unity, ...), build the factory with `ModbusFactoryBuilder` and register the instance directly. Unset options mirror the `AddModbusFactory` defaults; no Microsoft DI package is required:
-
-```csharp
-using Junevy.Communication.Modbus.Factory;
-using Microsoft.Extensions.Logging;
-
-// e.g. inside Prism's RegisterTypes(IContainerRegistry containerRegistry):
-var loggerFactory = LoggerFactory.Create(b => b.AddSerilog(Log.Logger)); // or NullLoggerFactory.Instance
-var factory = ModbusFactoryBuilder.Create()
-    .WithLoggerFactory(loggerFactory)      // optional: used by the factory and every client it creates
-    .WithConnectionManager(manager)        // optional: share the registry with the host container
-    .Build();
-
-containerRegistry.RegisterInstance<IModbusFactory>(factory);
-```
-
-`Build()` returns a new, independent factory per call. Dispose the factory on application shutdown (it owns the connections).
-
-## Custom Transports
-
-`IModbusFactory` creates clients through `IModbusClientCreator` strategies resolved by configuration type, so a new transport needs no change to the factory:
-
-```csharp
-public sealed class MyClientCreator : IModbusClientCreator
-{
-    public Type ConfigType => typeof(MyConfig);          // exact config type
-    public void Normalize(IModbusConfig c) { /* fill defaults */ }
-    public IModbus Create(IModbusConfig c) => new MyClient((MyConfig)c);
-    public string Describe(IModbusConfig c) => "gateway-1";
-}
-```
-
-Register it after `AddModbusFactory()`: `services.AddSingleton<IModbusClientCreator, MyClientCreator>();`
-Without a DI container: `ModbusFactoryBuilder.Create().WithCreator(new MyClientCreator()).Build()`
-
-## Custom response validation
-
-Implement `IModbusPduValidator` and pass it to `new TcpProtocolParser(validator)` / `new RtuProtocolParser(validator)`.
-Pass the parser to `ModbusFactoryBuilder.WithTcpParser` / `WithRtuParser`.
-
-## Raw Request API
-
-When a device uses custom behavior, call `Request` / `RequestAsync` directly:
-
-```csharp
-using Junevy.Communication.Modbus.Core.Models;
-
-var raw = plc.Request(new ModbusRequest
-{
-    SlaveId = 1,
-    FunctionCode = ModbusFunctionCode.Diagnostics,
-    Data = new byte[] { 0x00, 0x00, 0x12, 0x34 }
+    Transport = ModbusTransport.Tcp,
+    Tcp = new TcpClientChannelConfig { Host = "192.168.1.10", Port = 502 },
+    Options = new ModbusClientOptions { UnitId = 1 },
 });
 ```
 
-`ModbusRequest` is a pure data class. `Data` has a per-function-code layout (documented on the property); the transport never mutates a request you pass in.
+`ModbusClientConfig` binds from configuration. Its `Transport` selects one of `Tcp`, `Udp` or `Serial`, and that configuration must be present. `AddModbus()` and `AddMelsec()` can be used together in one factory.
 
-## Transaction ID (TCP)
+## Not provided
 
-You do not need to manage `TransactionId` for TCP requests. The client assigns an auto-incrementing transaction id per logical request (wrapping at `ushort.MaxValue`) before sending, and matches responses by exact transaction id — a late response from a previous request can never be paired with a new one. Manual assignment only affects the bare frame-building API (`ModbusHelper.BuildRequestFrame`).
+- Modbus ASCII.
+- Server (slave) mode.
+- Diagnostic functions (07, 08, 0B, 0C, 11), file records (14, 15), FIFO (18) and device identification (2B).
+- Broadcast (station 0).
+- Custom function codes and a raw PDU entry point.
+- A synchronous API.
 
-## Error Classification
+## Migrating from 2.x
 
-Every failed `ModbusResult` carries a machine-readable `ErrorKind` (`ModbusErrorKind`) in addition to `ErrorMessage`:
+Version 3 keeps the wire behaviour and the same function codes, but it changes the API and some defaults.
 
-| Kind | Meaning |
-|---|---|
-| `Unspecified` | Default for legacy/uncategorized failures |
-| `InvalidRequest` | The request failed local validation before being sent |
-| `ConnectionClosed` | The connection was down, dropped, or could not be (re)established |
-| `Timeout` | Connect/read/write timeout |
-| `ProtocolViolation` | Malformed frame, invalid length, or CRC failure (TCP: the connection is discarded) |
-| `ModbusException` | The slave answered with a Modbus exception response (the exception code is in the message, e.g. `Code=0x02`) |
-| `Cancelled` | The `CancellationToken` fired before completion |
+| 2.x | 3.0.0-preview.1 | Note |
+|---|---|---|
+| `new ModbusTcpClient(new ModbusTcpClientConfig { Address, Port })` | `ModbusClient.Create(new TcpClientChannelConfig { Host, Port }, new ModbusClientOptions())` | Creation does not connect. Use `ConnectAsync()`. |
+| `new ModbusRtuClient(new ModbusRtuClientConfig { PortName, BaudRate, … })` | `ModbusClient.Create(new SerialChannelConfig { PortName, BaudRate, … }, new ModbusClientOptions())` | `FrameReadInterval` is gone. RTU frames are delimited by their function code. |
+| RTU over a TCP gateway (not supported in 2.x) | `ModbusClientOptions { Framing = ModbusFraming.Rtu }` on a TCP config | New in 3.0. |
+| `Connect()` / `ConnectAsync()` returning `bool` | `ConnectAsync()` returns `CommResult` | There is no synchronous API. |
+| `Disconnect()` | `DisconnectAsync()` | After disconnect, requests return `NotConnected` and do not reconnect silently. |
+| `IsConnected` | `IsConnected`, `State`, `StateChanged` | |
+| `Reconnect = true` (lazy reconnect on the next request) | `Reconnect` in the channel configuration (background reconnect) | Off by default. |
+| `RetryCount` (default 3), `RetryInterval` | `RetryCount` (default 0), `RetryInterval` | Retries only `Timeout`, `ConnectionClosed` and `ProtocolViolation`. |
+| `ConnectTimeout`, `ReadTimeout`, `WriteTimeout` | `ConnectTimeout` / `SendTimeout` / `RequestTimeout` on the channel configuration | |
+| `ReadHoldingRegistersAsync(slave, start, n)` returning `ModbusResult<ushort[]>` | `ReadUInt16Async($"s={slave};HR{start}", n)` returning `CommResult<ushort[]>` | `ReadAsync` returns raw bytes. |
+| `ReadInputRegistersAsync` | `ReadUInt16Async("IR…", n)` | |
+| `ReadCoilsAsync`, `ReadDiscreteInputsAsync` | `ReadBitsAsync("C…", n)`, `ReadBitsAsync("DI…", n)` | |
+| `WriteSingleRegisterAsync(slave, a, v)` | `WriteUInt16Async("HR…", v)` | Uses 06 by default. |
+| `WriteMultipleRegistersAsync(slave, a, values)` | `WriteUInt16Async("HR…", values)` or `WriteAsync("HR…", bytes)` | Packets split above 123 words. |
+| `WriteSingleCoilAsync`, `WriteMultipleCoilsAsync` | `WriteBoolAsync("C…", v)`, `WriteBitsAsync("C…", values)` | |
+| `MaskWriteRegisterAsync(slave, a, and, or)` | `MaskWriteRegisterAsync("HR…", and, or)` | Bits of registers can also use `UseMaskWriteForBits`. |
+| `ReadWriteMultipleRegistersAsync(…)` | `ReadWriteMultipleRegistersAsync(readAddress, readCount, writeAddress, writeData)` | Data is bytes. |
+| `ReadExceptionStatus`, `Diagnostics`, `GetCommEventCounter`, `GetCommEventLog`, `ReportServerId` | Not provided | Diagnostic functions are out of scope. |
+| `Request(ModbusRequest)`, `RequestAsync(ModbusRequest)`, `ModbusHelper.BuildRequestFrame` | Not provided | There is no raw PDU entry point. |
+| `ModbusResult<T>`, `ModbusErrorKind` | `CommResult<T>`, `CommErrorKind` | Equal numbers: `ModbusException` (6) is `RemoteError` (6). The exception code is in `ProtocolErrorCode`. |
+| `ModbusException` (thrown) | Not thrown; argument errors return `InvalidRequest` | |
+| `IModbusFactory`, `ModbusConnectionManager`, `ModbusFactoryBuilder`, `AddModbusFactory()` | `PlcClientFactory`, `PlcClientFactoryBuilder`, `AddModbus()` | |
+| RS-485 multi-slave with one client per slave and `slaveId` argument | One client and a station prefix (`s=n;`) | |
+| `IModbusPduValidator`, `IModbusFrameBuilder` injection | Not provided | Validation is internal to the protocol. |
 
-Extension methods live in the namespace `Junevy.Communication.Modbus.Extensions` and are grouped into `ModbusBitExtensions` (0x01 0x02 0x05 0x0F), `ModbusRegisterExtensions` (0x03 0x04 0x06 0x10 0x16 0x17) and `ModbusDiagnosticsExtensions` (0x07 0x08 0x0B 0x0C 0x11); always call them with extension-method syntax.
+## Verification status
 
-Modbus exception responses are terminal: they are returned immediately as failed results and are never retried.
-
-## Reconnect and Retry
-
-Both TCP and RTU transports support request-level retry and optional reconnect:
-
-```csharp
-var tcp = new ModbusTcpClient(new ModbusTcpClientConfig
-{
-    Address = "192.168.1.100",
-    Port = 502,
-    Reconnect = true,
-    RetryCount = 3,
-    RetryInterval = 200,
-    ConnectTimeout = 2000,
-    ReadTimeout = 2000,
-    WriteTimeout = 2000
-});
-
-var rtu = new ModbusRtuClient(new ModbusRtuClientConfig
-{
-    PortName = "COM3",
-    Reconnect = true,
-    RetryCount = 3,
-    RetryInterval = 200
-});
-```
-
-Behavior:
-
-- `RetryCount` is the number of retries after the first attempt. For TCP, a timeout or a closed connection can only be retried when `Reconnect = true`; with `Reconnect = false` the request returns immediately with the real error (`Timeout` / `ConnectionClosed`).
-- When `Reconnect = true`, a failed or closed TCP socket is recreated before the next retry. Note: this also applies after an explicit `Disconnect()` — the next request silently reconnects. Set `Reconnect = false` if you want `Disconnect()` to stay disconnected.
-- For RTU, a faulted or closed serial port is closed and reopened before the next retry.
-- Modbus exception responses are never retried (terminal failures).
-- Communication failures are returned as `ModbusResult.Fail(...)` where possible instead of escaping as unhandled exceptions; parameter-validation errors throw standard exceptions (`ArgumentException` etc.).
-
-## Notes
-
-- One request at a time is serialized per connection with `SemaphoreSlim`.
-- `ConnectAsync(CancellationToken)` throws `OperationCanceledException` when cancelled and returns `false` when the connection fails or times out.
-- Dispose() aborts in-flight I/O and waits for the in-flight request to exit. Requests that were running or queued return ErrorKind.ConnectionClosed; calling Request/Connect after Dispose throws ObjectDisposedException; Disconnect after Dispose is a no-op.
-- RTU frames use CRC16 verification.
-- TCP responses validate MBAP protocol id, transaction id, and unit id.
-- Register addresses are protocol-level zero-based addresses.
-- For industrial field use, keep polling intervals larger than the slave response time, set explicit timeouts, enable reconnect for long-running services, and log failed requests with enough device context to diagnose wiring/network faults.
+- The library has been tested against simulated devices in the test suite, not against real hardware. It has not been checked with Modbus Poll, Modbus Slave or any other third-party tool.
+- Resynchronisation of RTU frames on a noisy line has not been measured.
+- Mask write (0x16) is not supported by every device. Where it is not, the device returns exception 01.
+- Some devices accept only 0F and 10 and reject 05 and 06. Set `UseSingleWriteFunctions = false` for them.
+- Station 0 and station 255 mean different things on TCP gateways depending on the vendor.
+- RTU over UDP is rare. It is implemented from the specification only.

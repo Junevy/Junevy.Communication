@@ -76,6 +76,7 @@ factory.RegisterAlias("scanner-main", "scanner");
 | any | `Dispose` | Disposed |
 
 - `DisconnectReason` (on `StateChanged` and in `Reason`): `None`, `UserRequested`, `RemoteClosed`, `SendFailed`, `RequestTimeout`, `HeartbeatFailed`, `IdleTimeout`, `PartialFrameTimeout`, `ProtocolViolation`, `AuthenticationFailed`, `ReconnectExhausted`, `Error`, `Disposed`.
+- A lost link leaves Connected **at the moment it is detected**, before the old connection is released and before in-flight requests fail with `ConnectionClosed`. So `IsConnected` is already false when a request returns `Timeout` (TCP reset) or `ConnectionClosed`, and a `WaitForConnectedAsync` called right after waits for the rebuilt connection instead of returning at once. The old connection is closed in the background, and always before the next open.
 - `ConnectAsync` while already Connected returns success at once. While Reconnecting it cancels the background loop and tries once immediately.
 - A failed `ConnectAsync` returns the failure; it does not throw. The `ErrorKind` is `Timeout`, `ConnectionClosed`, `AuthenticationFailed` or `InvalidRequest` (TLS certificate could not be loaded).
 - `DisconnectAsync` is graceful. It stops background reconnection, fails in-flight requests with `ConnectionClosed`, and delivers frames already received within `DisconnectTimeout`. Nothing reconnects afterwards: call `ConnectAsync` again. After `Dispose` it is a no-op.
@@ -267,7 +268,7 @@ sealed class CommandMatcher : IResponseMatcher
 Timeouts and late replies:
 
 - `RequestTimeout` (default 2000 ms) runs from the moment the frame is written until the matching reply arrives. `RequestOptions.Timeout` overrides it for one call.
-- TCP `Sequential` with the default `ResetOnRequestTimeout = true`: a request timeout drops the connection, and it is re-established if reconnect is enabled. A **caller cancellation while waiting for the reply** is treated the same way.
+- TCP `Sequential` with the default `ResetOnRequestTimeout = true`: a request timeout drops the connection, and it is re-established if reconnect is enabled. A **caller cancellation while waiting for the reply** is treated the same way. When the `Timeout` result comes back, the channel is already Reconnecting (or Disconnected): the next request returns `NotConnected` until the rebuilt connection is up, so wait with `WaitForConnectedAsync` before you retry.
 - Otherwise a timeout is followed by the late-reply window (`LateReplyWindow`, default −1 = `RequestTimeout`). Serial and UDP always use it. TCP uses it when `ResetOnRequestTimeout = false`.
 - Late-reply window, `Sequential`: frames that arrive inside it are dropped and counted in `FramesDropped`, and the request lock stays held, so the next request cannot mistake one for its own reply.
 - Late-reply window, `Keyed`: up to 256 recently timed-out keys are remembered for the window. A reply with a remembered key is logged as a warning and dropped.

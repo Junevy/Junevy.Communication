@@ -1,60 +1,25 @@
-﻿using Junevy.Communication.Modbus.Core.Framing;
-using Junevy.Communication.Modbus.Core.Interfaces;
-using Junevy.Communication.Modbus.Core.Parsing;
-using Junevy.Communication.Modbus.Factory;
+using Junevy.Communication.Plc;
+using Junevy.Communication.Plc.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Junevy.Communication.Modbus.DependencyInjection;
 
-/// <summary>
-/// Extension methods for registering Modbus services in the DI container.
-/// </summary>
+/// <summary>Modbus 的依赖注入扩展（P7-D14）。</summary>
 public static class ModbusServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers <see cref="IModbusFactory"/> and its dependencies as singletons.
+    /// 注册 Modbus 的创建器，并注册套件的客户端工厂（<see cref="PlcClientFactory"/>）。可以重复调用，与 <c>AddMelsec</c> 共存。
     /// </summary>
-    public static IServiceCollection AddModbusFactory(this IServiceCollection services)
+    /// <param name="services">服务集合。</param>
+    /// <returns>同一服务集合。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 为 null。</exception>
+    public static IServiceCollection AddModbus(this IServiceCollection services)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));
 
-        // Ensure a logger factory is available
-        services.TryAddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
-
-        // Ensure a logger is available so DI can select the ModbusFactory constructor
-        // and inject the container-registered IModbusConnectionManager and creators
-        services.TryAddSingleton<ILogger<ModbusFactory>>(sp =>
-            sp.GetRequiredService<ILoggerFactory>().CreateLogger<ModbusFactory>());
-
-        // Register the PDU validator shared by both parsers
-        services.TryAddSingleton<IModbusPduValidator, ModbusPduValidator>();
-        services.TryAddSingleton<IModbusFrameBuilder, ModbusFrameBuilder>();
-
-        // Register protocol-specific parsers
-        services.TryAddSingleton<TcpProtocolParser>();
-        services.TryAddSingleton<RtuProtocolParser>();
-
-        // Register the connection manager for standalone use
-        services.TryAddSingleton<IModbusConnectionManager, ModbusConnectionManager>();
-
-        // Built-in client creation strategies. These use AddSingleton (not TryAdd) so a creator
-        // registered by the caller AFTER AddModbusFactory() wins — last registration wins.
-        services.AddSingleton<IModbusClientCreator>(sp => new TcpClientCreator(
-            sp.GetRequiredService<ILoggerFactory>(),
-            sp.GetRequiredService<TcpProtocolParser>(),
-            sp.GetRequiredService<IModbusFrameBuilder>()));
-        services.AddSingleton<IModbusClientCreator>(sp => new RtuClientCreator(
-            sp.GetRequiredService<ILoggerFactory>(),
-            sp.GetRequiredService<RtuProtocolParser>(),
-            sp.GetRequiredService<IModbusFrameBuilder>()));
-
-        // Register the factory (receives creators and the manager via DI)
-        services.TryAddSingleton<IModbusFactory, ModbusFactory>();
-
-        return services;
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IPlcClientCreator, ModbusClientCreator>());
+        return services.AddPlcClients();
     }
 }

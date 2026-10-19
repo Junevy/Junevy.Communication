@@ -21,7 +21,7 @@
 | 协议族 | 成员 | 族内共享什么 | 对外 API |
 |---|---|---|---|
 | **字节通道族** | TCP、TLS、UDP、串口 | 连接生命周期、分帧、请求-应答关联、心跳、重连、超时 | `IClientChannel` / `IByteChannel` |
-| **地址型设备协议族** | MELSEC MC、S7、欧姆龙 FINS、Modbus（v3 迁移后） | 建立在字节通道族之上：请求管线、类型化读写、地址解析、拆包、字节序 | `IPlcClient` + 类型化扩展方法 |
+| **地址型设备协议族** | MELSEC MC、S7、欧姆龙 FINS、Modbus（v3，P7 已迁移） | 建立在字节通道族之上：请求管线、类型化读写、地址解析、拆包、字节序 | `IPlcClient` + 类型化扩展方法 |
 | **SECS** | HSMS、GEM（不做 SECS-I，见 21.1 Q13） | **内部**复用字节通道族的实现 | 原生：SECS-II 消息、HSMS 状态、GEM 状态 |
 | **SDK 协议** | OPC UA、MQTT、FTP、厂商 DLL | 只用 Core 工具 | 原生：保留各 SDK 的模型 |
 | **无状态请求** | WebAPI（REST、SOAP）、HTTP 服务端 | 只用 Core 工具 | 原生：HTTP 语义 |
@@ -63,7 +63,7 @@ graph TB
         MC["Melsec"]
         S7["Siemens"]
         FINS["Omron"]
-        MBV3["Modbus v3（可选迁移）"]
+        MBV3["Modbus v3（P7 已迁移）"]
         SECS["Secs"]
         WEB["WebApi"]
         UA["OpcUa / Mqtt / Ftp"]
@@ -105,7 +105,7 @@ graph TB
 | `Junevy.Communication.Siemens` / `.Omron`       | S7、FINS                                                                             | Plc + 所需传输包                                                                                                 | P4       |
 | `Junevy.Communication.Secs`                     | SECS-II、HSMS-SS（设备端），之后是 GEM；不做 SECS-I                                       | Channels + Tcp                                                                                              | P5       |
 | `Junevy.Communication.Mqtt` / `.OpcUa` / `.Ftp` | SDK 适配：只做客户端，**只面向 net8.0**（Q9–Q12）                                                 | Core + 对应第三方 SDK（MQTTnet 5、OPC Foundation .NET Standard 2.0、FluentFTP）                                           | P6       |
-| `Junevy.Communication.Modbus`                   | 现有，本期不动                                                                             | 现状                                                                                                          | P7 可选迁移  |
+| `Junevy.Communication.Modbus`                   | Plc + Tcp + Udp + Serial，3.0.0-preview.1（P7 已迁移，见 20.12） | MBAP 与 RTU 帧；2.x 只保留在 tag `modbus-v2.0.0` | P7 已完成 |
 | `Junevy.Communication.Testing`                  | 测试套件（内部共享测试工程，暂不发布）                                                                 | Channels                                                                                                    | P1 起持续扩充 |
 
 **依赖规则**：
@@ -430,7 +430,7 @@ public class ChannelComponents
 
 - 驱动接口 `IConnectionDriver { OpenAsync(ct); CloseAsync(reason, drainTimeout); }`，TCP、UDP、串口各自实现。握手（TLS 包装与 `IConnectionInitializer`）在 `OpenAsync` 内、同一个握手时限内完成，不单独暴露 `InitializeAsync`；`CloseAsync` 的排空时限即 `DisconnectTimeout`（20.1）。
 - 生命周期锁串行化 Connect、Disconnect、重连尝试；它与发送锁是两把锁，断线期间发送立即得到 `NotConnected`。
-- `ReportConnectionLost(generation, reason, exception)` 可从任意线程调用。**连接代次**：每次连上加 1，旧代次的报告直接忽略，防止旧 socket 迟到的异常打断新连接。
+- `ReportConnectionLost(generation, reason, exception)` 可从任意线程调用。**连接代次**：每次连上加 1，旧代次的报告直接忽略，防止旧 socket 迟到的异常打断新连接。当前代次的报告**当场**离开 Connected（进入 Reconnecting 或 Disconnected），旧连接在后台关闭，且任何重新打开之前先关闭它；字节通道先报告丢失、再以 `ConnectionClosed` 失败在途请求（20.1 第 43 项）。
 - 状态事件经单消费者队列**按顺序**、在**锁外**触发，事件处理器里调用 `DisconnectAsync` 不会死锁。
 
 ### 6.2 FrameRouter / StreamChannel / DatagramChannel（internal）
@@ -757,9 +757,9 @@ public class UdpChannelConfig : IChannelConfig
 |---|---|
 | `ConnectAsync` 成功 | Connecting → Connected，启动接收、派发、心跳 |
 | `ConnectAsync` 失败 | 返回 Fail；`Reconnect.OnInitialFailure = true` 时同时转入后台重连 |
-| 对端关闭 / 读异常 / 端口被拔出 | 在途请求立即以 `ConnectionClosed` 结束；启用重连 → Reconnecting，否则 → Disconnected |
+| 对端关闭 / 读异常 / 端口被拔出 | 在途请求立即以 `ConnectionClosed` 结束；启用重连 → Reconnecting，否则 → Disconnected。状态在在途请求失败之前就已离开 Connected，旧连接在后台关闭（20.1 第 43 项） |
 | 发送超时、发送异常或取消正在写出的帧 | 本次返回失败；连接断开，后续同上。取消写出同样断开（可能已写出半帧，D10）；取消发生在等待发送锁期间只返回 `Cancelled`（20.1） |
-| 请求超时 | 返回 `Timeout`；TCP `Sequential` + `ResetOnRequestTimeout` 时断开重建；串口/UDP 进入迟到应答丢弃窗口。Sequential 模式下用户取消等待应答与超时同样处理（D10） |
+| 请求超时 | 返回 `Timeout`；TCP `Sequential` + `ResetOnRequestTimeout` 时断开重建（`Timeout` 返回时已离开 Connected，`WaitForConnectedAsync` 等待重建的连接，20.1 第 43 项）；串口/UDP 进入迟到应答丢弃窗口。Sequential 模式下用户取消等待应答与超时同样处理（D10） |
 | 帧超长或分帧异常 | `ProtocolViolation`：TCP 断开并重连；串口丢弃缓冲继续。握手积压超过 64 帧同样按 `ProtocolViolation` 处理（20.1）；UDP 例外：丢弃该数据报并计 `ProtocolErrors`，不断开 |
 | 心跳连续失败 N 次 | `HeartbeatFailed`：断开并重连。探测返回 `NotConnected`，或因通道忙未写出任何帧时，不计为失败（20.1） |
 | 断开期间 `SendAsync` / `RequestAsync` | 立即返回 `NotConnected`，不排队、不隐式连接 |
@@ -769,6 +769,8 @@ public class UdpChannelConfig : IChannelConfig
 | 事件处理器抛异常 | 捕获并记日志，不影响接收循环 |
 
 ### 11.2 与 Modbus "懒重连"决策的差异
+
+P7 之后 Modbus 与其他协议一致，本节的差异不再存在（见 20.12）。
 
 Modbus 选择了**懒重连、不要看门狗**（工业轮询的请求天然周期性）。新通道**有意采用后台主动重连**：设备主动上报的场景可能长时间没有发送，懒重连无从触发；接收循环本来就常驻，能第一时间发现断线；同时解决了"`Disconnect()` 之后下一次请求悄悄重连"的已知坑。**Modbus 本身不受影响。**上线时在知识库写成新的决策条目。
 
@@ -1215,11 +1217,8 @@ public sealed class OutboxItem
 
 ## 17. Modbus 的演进路径
 
-- **本期不改 Modbus 的任何代码**（Q4）。
-- Plc 套件的请求管线直接以 `ModbusTransportBase` 已验证的规则为蓝本（请求串行化、重试规则 A–F、Dispose 契约），类型化读写以 `ModbusRegisterExtensions` / `ModbusPayloadCodec` 为蓝本。
-- 以后迁移（破坏性 v3.0，届时单独确认）时，Modbus 成为套件的第三个使用者：TCP 走 `TcpClientChannel` + `LengthField` + 按 TID 的 `Keyed` 关联（顺带获得同一连接上的并发在途请求），RTU 走 `SerialChannel`，RTU over TCP、Modbus over UDP 成为配置组合；地址写成 `40001` 或 `HR100`。
-
----
+- **已完成（P7，2026-10-19）**：Modbus 迁移到 Plc 套件，版本 3.0.0-preview.1。实施修订、差异表与第四次扩展性验证见 20.12。
+- 迁移的前提（套件补两项能力：只读地址、协议专有请求）见 12.3 与 20.12。
 
 ## 18. 测试与验收
 
@@ -1254,7 +1253,7 @@ public sealed class OutboxItem
 | P4.5 / P4.6 | 协议共用件（`BigEndianFields`、`SequenceCounter`、组件装配）；共享测试库整理 |
 | P5 | SECS（设备端）：**P5.1 SECS-II + HSMS-SS 已完成** → P5.2 GEM。不做 SECS-I（21.1 Q13） |
 | P6 | SDK 协议（只做客户端，只面向 net8.0）：**P6.1 MQTT 已完成** → **P6.2 OPC UA 已完成** → **P6.3 FTP 已完成**（见 20.11）。**P6 全部完成** |
-| P7（可选，破坏性） | Modbus 迁移到 Plc 套件（v3.0） |
+| P7（**已完成**，2026-10-19，破坏性） | Modbus 迁移到 Plc 套件（3.0.0-preview.1，见 20.12） |
 
 P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份"新增协议指南"的更新（Skill + 知识库），把这次接入中踩到的坑写进去。
 
@@ -1329,6 +1328,7 @@ P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份
 | 40 | 7.2、11.3 | 服务端心跳探测由 `TcpChannelComponents.SessionHealthProbeFactory`（`Func<ITcpSession, IHealthProbe>`）提供，与客户端的探测概念重复 | 删除该属性，服务端改用基类的 `ChannelComponents.HealthProbeFactory`（参数类型为 `IByteChannel`，传入的仍是该会话）；服务端仍拒绝 `HealthProbe`。P1 为 preview（1.0.0-preview.1），不保留过渡别名 | 计划第 20 节（本补丁任务 A，preview 期内的调整；第 0 节 D1） |
 | 41 | 3.1 | 依赖列表把 `System.Memory`、`Microsoft.Bcl.AsyncInterfaces`、`System.Threading.Channels` 列为所有目标的依赖，net8.0 下重复 | 三者改为只在 net472 引用（条件化）；`System.IO.Pipelines` 两个目标都保留（不在 `Microsoft.NETCore.App` 中）。打包结果：Core 的 net8.0 依赖组只剩两个 `Microsoft.Extensions.*.Abstractions`，Channels 的 net8.0 依赖组为 Core + `System.IO.Pipelines`，net472 组不变 | 计划第 20 节（本补丁任务 C；审阅者核对 .NET 8 共享框架） |
 | 42 | 7.2 | `TryGetSession` 的 `out ITcpSession? session` 没有可空性特性，返回 true 后调用方仍须判空 | 增加 `[NotNullWhen(true)]`（只改注解，源码与二进制兼容）。net472 上 Tcp、Udp 经 `InternalsVisibleTo` 同时看到自己与 Channels 的内部补丁特性（CS0436），`Common.props` 仅在 net472 上抑制该警告 | 计划第 20 节（收尾补丁审阅者验收） |
+| 43 | 6.1、11.1 | 未说明报告连接丢失到状态变化之间的时序（实现：报告只调度后台处理，关闭旧连接之后才离开 Connected；字节通道先失败在途请求、再报告丢失） | 当前代次的报告在返回之前离开 Connected（Reconnecting 或 Disconnected，`StateChanged` 随即入队），旧连接记为待关闭，由后台在生命周期锁下关闭，`ConnectAsync`、重连的每次打开与 `DisconnectAsync` 也会先关闭它；`ChannelStopSequence.Fault` 改为先调用 `onFault`、再以 `ConnectionClosed` 失败在途等待者。结果：请求以 `Timeout`（TCP 重建）或 `ConnectionClosed` 返回时 `IsConnected` 已为 false，紧接着的 `WaitForConnectedAsync` 等待重建的连接，此窗口内的请求得到 `NotConnected`（原为 `ConnectionClosed`） | P7 审查发现（2026-10-19）：Plc 套件的重试在 `WaitForConnectedAsync` 立即返回后落在正在拆除的旧连接上（S7、FINS、MELSEC 3E/4C、Modbus RTU over TCP）；用户选择"当场离开 Connected"方案 |
 
 ---
 
@@ -1616,6 +1616,38 @@ P6.3（计划 `docs/superpowers/plans/2026-10-12-p63-ftp.md`，Task 0–11）是
 
 **P6 全部完成**：MQTT（P6.1）、OPC UA（P6.2）、FTP（P6.3）三个 SDK 适配包均已按计划完成，且只面向 net8.0、只做客户端。
 
+### 20.12 实施修订（P7）
+
+本节记录 P7（Modbus 迁移到 Plc 套件，3.0.0-preview.1）与本设计的差异，以及第四次扩展性验证的结论。计划：`docs/superpowers/plans/2026-10-19-p7-modbus-migration.md`（P7-D1 至 P7-D18）。
+
+**差异表**
+
+| 项 | 原设计 | 实际实现 | 原因 |
+|---|---|---|---|
+| 迁移方式 | 第三个使用者，可选，破坏性 v3.0（第 17 节） | 原地替换；2.x 只保留在本地 tag `modbus-v2.0.0` | P7-D1、D16，用户决定 |
+| 连接与重连 | 懒重连（11.2） | 后台重连，默认关闭；`Disconnect` 之后不连回；不隐式连接 | P7-D13：与其他协议一致，11.2 的差异消失 |
+| 重试默认值 | 3（2.x） | 0 | P7-D13 |
+| 同步 API | 双轨（Q2 的例外） | 只有异步 | P7-D13，设计 21.1 Q2 |
+| RTU 分帧 | 串口的 IdleGap 分帧 | 按应答功能码与字节数定长（第 21.4 节的长度表），收全后以 CRC 裁决；IdleGap 被协议声明取代 | P7-D8：帧长可由功能码推出，不依赖时序 |
+| 关联 | MBAP 按 TID 的 `Keyed`；RTU 顺序 | 同 | P7-D9 |
+| 地址语法 | 第 17 节：`40001` 或 `HR100` | 两种写法，外加站号前缀 `s=n;`；寄存器位 `.n` | P7-D4：站号前缀是用户决定 |
+| 套件改动 | 第 17 节：不改套件的前提下迁移 | 套件新增两项：只读地址钩子（S1）与协议专有请求（S2），其余不改 | P7-D2：0x16 与 0x17 需要套件的操作锁与重试 |
+| 功能码范围 | 全部 | 01–06、0F、10、16、17；诊断、文件记录、FIFO、设备标识、广播不做 | P7-D1 |
+| 寄存器位写入 | 不做隐式读-改-写（12.6） | 默认拒绝；`UseMaskWriteForBits` 打开后用 0x16 原子写入；`AllowReadModifyWriteBits` 才做读-改-写 | P7-D5 |
+| 拆包 | 库内拆包 | 套件拆包；0x16 与 0x17 不拆包 | P7-D6、D15 |
+| 错误分类 | `ModbusErrorKind`（数值对齐） | `CommErrorKind`（同值对齐）；异常码在 `ProtocolErrorCode` | 第 20 节 |
+| 工厂与依赖注入 | `IModbusFactory`、`AddModbusFactory()` | `PlcClientFactory`、`AddModbus()` | P7-D14 |
+
+**第四次扩展性验证的结论**（Task 15 复测；数字与计划第 25.4 节一致）
+
+- 套件改动只有两项：S1（`IsReadOnly`，约 14 个有效行）与 S2（`SendProtocolRequestAsync`，约 40 个有效行）。Melsec、Siemens、Omron 的生产代码与测试未改动，测试数不变。
+- 摩擦记录（计划第 25.2 节）：F-S1、F-S2（套件缺口，已由两项钩子覆盖）；F-A1（声明式地址解析器无法表达站号前缀与 Modicon 的一基写法，Modbus 自写解析器）；F-A2（`IClientChannel` 测试替身只能复制，共享测试库缺少；第一轮验收后移入共享测试库，即 `ScriptedClientChannel`）；F-A3（共享的设备替身同步回复，TCP 的迟到应答需要后台写入的包装流）。
+- 有效行对照：Modbus v2 3304；Modbus v3 1215（含 DI 与协议层）；Plc 1285（+54，S1、S2；Task 15 为消除重复窗口合并了写入入口的只读检查，去重后仍为 1285）；Melsec 1247；Siemens 1271；Omron 692。
+- 结论：第四个协议在不改通道层、不改 Melsec、Siemens、Omron 的前提下迁移，套件只增加两个小钩子。仍然存在的表达力缺口是 F-A1：声明式解析器不能表达站号前缀与一基地址，因此协议需要自写解析器。这个缺口没有被 S1、S2 覆盖。审阅者决定**不扩展套件**：自写解析器的两个协议（S7、Modbus）的语法差别很大，没有第三个使用者，抽象它们得不偿失。
+- 本期发现的"请求超时重建连接与紧接着的重试竞争"已在通道层修复（2026-10-19，20.1 第 43 项）：RTU over TCP 的重试等待重建的连接。
+
+---
+
 ## 21. 决策记录
 
 ### 21.1 已确认（2026-10-10）
@@ -1625,7 +1657,7 @@ P6.3（计划 `docs/superpowers/plans/2026-10-12-p63-ftp.md`，Task 0–11）是
 | Q1 | 程序集拆分 | 通用部分与传输分包，每种传输一个包（R1 进一步细化通用部分） |
 | Q2 | 同步 / 异步 | 新模块只提供异步；"同步 + 异步双轨"的约定只适用于 Modbus。理由：OPC UA、MQTT 等 SDK 本身只有异步接口；新模块依赖常驻的后台循环（接收、派发、心跳、重连），同步版只能阻塞等待异步实现，没有实际价值 |
 | Q3 | 依赖 | 允许微软一方的 BCL 扩展包（Pipelines、Channels、System.Text.Json）；第三方包只允许出现在 SDK 适配包中 |
-| Q4 | Modbus | 本期不动；以后作为 Plc 套件的使用者单独评估 v3 迁移 |
+| Q4 | Modbus | 本期不动；以后作为 Plc 套件的使用者单独评估 v3 迁移。**已在 P7 迁移（2026-10-19，用户决定原地替换）**，见 20.12 |
 | E1 | 串口、UDP | 纳入 P1 |
 | E2 | TLS | 纳入 P1，默认关闭 |
 | E3 | WPF 调试页 | 暂不做 |

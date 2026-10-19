@@ -12,6 +12,8 @@ namespace Junevy.Communication.Plc.Pipeline;
 /// </summary>
 internal sealed class PlcPacketExchange
 {
+    private const string ProtocolRequestOperation = "SendProtocolRequestAsync";
+
     private readonly IClientChannel channel;
     private readonly PlcPipelineSettings settings;
     private readonly ILogger logger;
@@ -100,6 +102,30 @@ internal sealed class PlcPacketExchange
 
         CommResult<byte[]> reply = await channel.RequestAsync(request.WrittenMemory, cancellationToken: cancellationToken).ConfigureAwait(false);
         return reply.IsSuccess ? parseResponse(reply.Data) : reply.ToResult();
+    }
+
+    /// <summary>
+    /// 发送一个协议专有请求（一包）并解析应答（P7-S2）。重试与日志规则与读写相同；日志的地址位置写操作名。
+    /// </summary>
+    /// <typeparam name="T">解析后的结果类型。</typeparam>
+    /// <param name="operation">操作名称，用于日志与错误消息。</param>
+    /// <param name="buildRequest">写入请求字节。</param>
+    /// <param name="parseResponse">解析应答字节；每次尝试都会调用，结果为最后一次尝试的结果。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>解析结果。</returns>
+    public async Task<CommResult<T>> ExchangeProtocolRequestAsync<T>(string operation, Action<IBufferWriter<byte>> buildRequest,
+                                                                     Func<byte[], CommResult<T>> parseResponse, CancellationToken cancellationToken)
+    {
+        CommResult<T>? parsed = null;
+        CommResult result = await RunPacketsAsync(ProtocolRequestOperation, operation, 1, 1,
+            (offset, chunk, token) => ExchangeAsync(buildRequest, frame =>
+            {
+                parsed = parseResponse(frame);
+                return parsed.ToResult();
+            }, token),
+            cancellationToken).ConfigureAwait(false);
+
+        return result.IsSuccess ? parsed! : result.As<T>();
     }
 
     // 只有链路层的临时性失败才重试；对端的错误码、参数错误与取消都是终态。

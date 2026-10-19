@@ -93,7 +93,7 @@
 |---|---|
 | `CommResult` | 不可变、不带数据。`Success()` 返回缓存的单例；`Fail(string message, CommErrorKind kind, long? protocolErrorCode = null, Exception? exception = null)`，`kind` 不能为 `None`（抛 `ArgumentException`）。属性：`IsSuccess`、`ErrorKind`、`ErrorMessage`、`ProtocolErrorCode`、`Exception`；`As<T>()` 把失败转换为带数据类型的失败 |
 | `CommResult<T>` | `Success(T data)`、`Fail(...)`；`Data`；`ToResult()`；`As<TOther>()` |
-| `CommErrorKind` | `None`=0、`Unspecified`=1、`InvalidRequest`=2、`ConnectionClosed`=3、`Timeout`=4、`ProtocolViolation`=5、`RemoteError`=6、`Cancelled`=7、`NotConnected`=8、`AuthenticationFailed`=9、`ResourceExhausted`=10、`NotSupported`=11。0 至 7 与 Modbus 的 `ModbusErrorKind` 数值一致 |
+| `CommErrorKind` | `None`=0、`Unspecified`=1、`InvalidRequest`=2、`ConnectionClosed`=3、`Timeout`=4、`ProtocolViolation`=5、`RemoteError`=6、`Cancelled`=7、`NotConnected`=8、`AuthenticationFailed`=9、`ResourceExhausted`=10、`NotSupported`=11。0 至 7 与 2.x Modbus 的 `ModbusErrorKind` 数值一致（2.x 已归档，3.0 直接使用 `CommErrorKind`） |
 | `IBackoffPolicy` | `int? GetDelay(int attempt)`：`attempt` 从 1 开始；返回毫秒数，返回 `null` 表示放弃。实现必须线程安全 |
 | `FixedIntervalBackoff(int interval, int maxAttempts = 0)` | 每次等待相同的毫秒数；`maxAttempts = 0` 表示无限 |
 | `ExponentialBackoff(int initialInterval, int maxInterval, double multiplier = 2.0, double jitter = 0.2, int maxAttempts = 0, Random? random = null)` | 第 n 次基础等待 `min(maxInterval, initialInterval × multiplier^(n−1))`，乘以 `1 + jitter × (2r − 1)`，结果取整并夹在 `[0, maxInterval]`。线程安全 |

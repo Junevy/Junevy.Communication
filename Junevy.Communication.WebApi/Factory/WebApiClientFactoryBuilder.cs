@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 namespace Junevy.Communication.WebApi.Factory;
 
 /// <summary>
-/// 无 DI 容器的宿主（例如 Prism）使用的 <see cref="WebApiClientFactory"/> 构建器，用法与 <c>ChannelFactoryBuilder</c>、<c>ModbusFactoryBuilder</c> 一致。
+/// 无 DI 容器的宿主（例如 Prism）使用的 <see cref="WebApiClientFactory"/> 构建器，用法与 <c>ChannelFactoryBuilder</c>、<c>PlcClientFactoryBuilder</c> 一致。
 /// </summary>
 public sealed class WebApiClientFactoryBuilder
 {
