@@ -41,6 +41,15 @@ internal static class ChannelTestKit
         return page;
     }
 
+    /// <summary>TCP 服务端页签，监听回环地址上的 <paramref name="port"/>（由测试用 <see cref="FreePort"/> 取得）。</summary>
+    public static TcpServerSessionViewModel TcpServerPage(ManualUiDispatcher dispatcher, int port)
+    {
+        var page = new TcpServerSessionViewModel(ProtocolCatalog.Get(ProtocolKind.TcpServer), FakeServices.Create(dispatcher));
+        page.Settings.ListenAddress = "127.0.0.1";
+        page.Settings.Port = port;
+        return page;
+    }
+
     public static UdpSessionViewModel UdpPage(ManualUiDispatcher dispatcher) =>
         new(ProtocolCatalog.Get(ProtocolKind.Udp), FakeServices.Create(dispatcher));
 

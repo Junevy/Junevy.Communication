@@ -3,20 +3,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:jv="github.com.junevy"
              xmlns:common="clr-namespace:Junevy.Communication.DebugAssistant.Common;assembly=Junevy.Communication.DebugAssistant">
-    <UserControl.Resources>
-        <ObjectDataProvider x:Key="EncodingChoices" MethodName="GetValues" ObjectType="{x:Type sys:Enum}"
-                            xmlns:sys="clr-namespace:System;assembly=mscorlib">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="common:EncodingChoice" />
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
-        <ObjectDataProvider x:Key="ChecksumKinds" MethodName="GetValues" ObjectType="{x:Type sys:Enum}"
-                            xmlns:sys="clr-namespace:System;assembly=mscorlib">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="common:ChecksumKind" />
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
-    </UserControl.Resources>
 
     <Grid>
         <Grid.ColumnDefinitions>

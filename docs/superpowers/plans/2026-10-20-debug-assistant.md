@@ -777,6 +777,7 @@ internal interface ISimulatorEngine
 | F-5 | Secs README 写"Body text in SML is reserved for `Trace`"，但代码中没有任何 `Trace` 级别的日志 | 不影响助手 | 修改 README 的措辞（"目前不记录正文"），或者实现 Trace 日志，需要用户决定 |
 | F-7 | 分隔符、起止标记、心跳内容等文本只能按 UTF-8 解释（`ByteSequenceParser`），无法选择 GBK 等编码 | 助手的字节输入可以选择编码；要用 GBK 的分隔符，写成 `hex:` 形式 | 为这些配置增加编码选项（或接受 `hex:` 作为唯一做法） |
 | F-6 | `TcpServerConfig.Port` 不接受 0（`TcpServerOptions` 要求 1–65535），无法让系统选择端口。测试只能先探测一个空闲端口（回环地址，有极小的竞争） | 测试用 `FreePort` 探测空闲端口 | 允许 `Port = 0` 由系统选择，`LocalEndPoint` 已经给出实际端口，因此改动很小 |
+| F-9 | 白名单与最大会话数拒绝的连接不产生任何事件，只有库的警告日志（`Rejected the connection from …`）。界面的操作记录看不到被拒绝的连接 | 原因显示在页签的日志面板里（警告级别） | 增加 `SessionRejected` 事件（远端、原因），助手即可写入操作记录 |
 | F-8 | 库在构造期校验的参数规则只有英文消息：UDP 非定向不能用内置心跳、UDP 与串口的内置心跳必须填写 `ExpectedReply`。界面只能原样显示英文 | 页签在界面上用一行中文说明同一规则；连接失败时操作记录显示库的消息 | 参数错误提供参数名与错误码，助手即可本地化 |
 
 ### 33.3 执行汇报与偏差（执行者填写：每个 Task 的汇报、门槛汇报、偏差与需要审阅者决定的事）
@@ -909,6 +910,55 @@ internal interface ISimulatorEngine
   5. 广播测试依赖本机环境：`BroadcastFactAttribute` 在发现测试时探测本机能否把广播投递到本机的监听端口，不能则跳过并写明原因。本机探测通过，测试执行，没有跳过。
   6. 连接前的校验（`ChannelSettingsEditor.IsValid`）是本 Task 新增的：计划 U7 要求输入校验，这里补上"连接时拒绝"。
   7. 完整解决方案构建（Debug 与 Release）与 `build/test-affected.ps1` 留到门槛 1（Task 6 之后）。本 Task 只构建并测试了调试助手的测试项目（Debug，0 错误、0 警告）。
+
+**Task 6（TCP 服务端页）**
+
+- 做了什么：
+  - 页签 `TcpServerSessionViewModel`（会话列表的一行为 `ServerSession`）。每次启动都创建新的库 `TcpServer`（DA-D9），因此停止后可以再次启动，并使用当前参数；启动失败（端口被占用等）与参数校验失败都作为操作记录显示。
+  - 参数 `TcpServerEditor`：监听地址、端口、等待队列、最大会话数、远端白名单（逗号或换行分隔，留空不限）、停止超时；每个会话使用的分帧、心跳、超时（会话握手、会话空闲、半帧、发送、请求、请求超时后重建、迟到应答窗口）、套接字、握手，以及 TLS（`ServerTlsEditor`：服务器证书来自证书存储或 PFX，可要求客户端证书，检查吊销）。映射到 `TcpServerConfig` 与 `TcpChannelComponents.Initializer`。
+  - 会话列表：编号、远端、连接时间、TLS、统计（每秒刷新）。可向选中的会话发送，广播（操作记录显示送达的会话数），关闭选中的会话。会话的连接与断开各记一条操作记录（断开附带库的 `DisconnectReason`）。
+  - 自动应答 `AutoReplyRule`：匹配前缀（空表示所有帧），回显收到的帧或回复指定内容；规则按顺序检查，第一条匹配的生效。规则编译后交给库的事件线程只读使用；回复失败记入操作记录，成功不记录。
+  - 收到的帧显示在页签的列表中，来源为会话编号与远端地址。连接栏的按钮为"启动"与"停止"（`SessionViewModel.ConnectText` / `DisconnectText`），统计显示会话数与最大会话数。
+  - 参数随工作区与导出保存（`TcpServerSettings`，登记为 `tcpServer`）。
+  - 视图：监听参数、连接栏、会话参数（可折叠）、会话列表与发送区、自动应答规则与收到的帧、操作记录、日志面板。
+  - 视图拆分：分帧、心跳、套接字、握手四个分组从 `ChannelSettingsView` 拆出为 `FramingSectionView`、`HeartbeatSectionView`、`SocketSectionView`、`HandshakeSectionView`，两个页签共用；共用的枚举列表与分帧样式移到应用级资源 `Views/Channels/ChannelSettingsResources.xaml`（`App.xaml` 合并）。
+  - 修正（Task 4 的代码）：客户端 TLS 的证书来源下拉框原来以 `ComboBoxItem` 绑定到枚举，选择不会写入视图模型；改为枚举列表。
+  - 修正（Task 5 的代码）：`ShowReceived` 与发送历史的"最新在前、有上限"逻辑两处重复，合并为 `BoundedCollection.InsertNewest`。
+- 测试：`DebugAssistant.Tests` 共 222 条，全部通过（本期新增 13 条）。
+  - 服务端（`TcpServerPageTests`，11 条）：客户端页连接服务端页，会话出现在列表中，客户端的帧显示在服务端（来源与会话一致）；广播到达客户端页，操作记录为"已发送到 1 个会话"；发送给选中的会话只到达那一个客户端；关闭选中的会话只断开那一个；回显规则回复请求；匹配规则只回复匹配的帧（不匹配的请求超时）；无效的规则（十六进制错误、回复为空）被拒绝并记录；白名单拒绝其他地址；最大会话数拒绝超出的客户端；停止后会话断开，再次启动后新客户端可以连接；参数校验失败时拒绝启动。
+  - 往返（`ChannelSettingsRoundTripTests`，+1）：服务端的全部分节与两条自动应答规则经工作区文件往返后保持不变。
+  - 视图（`ChannelPageViewTests`，+1）：服务端页的 XAML 能加载，日志面板绑定到页签自己的 `LogPanel`。
+  - 稳定性：通道与视图测试连续运行 3 次，每次 88 条全部通过。
+- 偏差与需要审阅者决定的事：
+  1. 默认监听地址是 `0.0.0.0`（与库一致），即默认对所有网卡开放。调试工具常用来接受现场设备，因此保持这一默认；如审阅者希望默认只监听本机，改为 `127.0.0.1` 即可。请审阅者确认。
+  2. 服务端参数只包含计划第 7.13 节列出的项目。`Correlation`、`RestartOnFault`（重连选项）与 `ReceiveQueueCapacity` 没有暴露：服务端页没有请求功能，计划也没有列出它们。
+  3. 连接超时与断开超时对服务端不适用，服务端的超时分组只显示其余字段。
+  4. 自动应答只回复收到的帧。服务端页不发请求，因此没有对应的应答规则。
+  5. 服务端自行停止（不是用户请求）时页签进入"故障"状态。这段代码没有测试覆盖：库没有公开的故障注入手段。
+  6. 白名单与最大会话数拒绝的连接不产生事件，界面只能在日志面板看到原因（摩擦 F-9）。
+  7. 停止服务端时，会话的关闭不记录"会话断开"操作记录（停止开始时即清除了服务端的归属，之后的会话事件被忽略）。日志面板仍有库的记录。这是一处已知的不完整，作为偏差记录，不影响功能。
+  8. 服务端的 TLS 与客户端的 TLS 分开成两个编辑器：参数不同（服务器证书与"要求客户端证书"，对比客户端证书与目标主机名）。
+
+**门槛 1 汇报（里程碑 2 结束：Task 6）**
+
+- 外壳（Task 1）：19 种页签的分组树（双击叶节点打开，双击分组展开或收起）；页签可改名（双击或 F2）与关闭（先释放会话，限时 5 秒）；"关闭全部页签"需确认；退出时先保存工作区，再并发释放会话（总时限 10 秒）。
+- 工作区（Task 3）：保存、启动恢复（页签一律未连接）、导入与导出单个页签；损坏或版本不符的文件改名为 `.bak` 保留。
+- 日志采集（Task 2）：页签私有的日志工厂；库的四种 Debug 模板识别为报文（TX 与 RX，TCP 与 UDP 两种端点），超过 256 字节的帧标记为截断；有界队列，每 100 毫秒批量刷新；面板支持筛选、暂停、清空、导出与统计。
+- 四个自定义协议页：TCP 客户端、UDP、串口（Task 5），TCP 服务端（Task 6）。串口的真实对测试在 COM20 ↔ COM21 上单独运行并通过。
+- 摩擦记录（第 33.2 节）：F-1 至 F-9，其中 F-8（英文参数消息）与 F-9（拒绝的连接没有事件）是本门槛新增的；F-6 与 F-7 仍然适用。
+- 测试：`DebugAssistant.Tests` 共 222 条，通过 221，跳过 1（串口真实对测试，`test-affected` 运行时未设置 `JUNEVY_SERIAL_PAIR`；单独运行时通过）。
+- 构建：`dotnet build Junevy.Communication.slnx --no-incremental`，Debug 与 Release 均为 0 错误。警告 2 条：同一条 CS8618，位于旧工具 `Junevy.Communication.Test/App.xaml.cs`，每条在工程与 WPF 临时工程中各报告一次，与基线相同；删除旧工具（Task 8）后消失。
+- `build/test-affected.ps1 -Base fe82d79 -NoBuild -Repeat 3`：**三遍没有全部通过**，所有失败如下：
+  - 第 1、2 遍：各 1 条失败，均为基线失败：`OpcUaDependencyInjectionTests.AddOpcUaClients_PassesTheContainerLoggerFactoryThrough`（第 0 节的基线中已记录，三遍中有三次失败）。
+  - 第 3 遍：另外 3 条失败。`SupervisorTests.Lost_DuringConnecting_IsHandledAfterConnect`（net472）是基线失败，前两遍通过。`PollingTests.ChecksTheConditionRepeatedlyUntilTheLimit` 与 `HeartbeatProbeBlockingTests.HeartbeatProbe_BlockedByRequestLock_IsNotCountedAsFailure` 是新出现的时序失败：它们在库的测试中，库的代码没有改动；单独运行时两个框架各 3 遍全部通过，判定为并行负载下的时序波动。
+  - 选中范围：脚本判定 `build/Junevy.Communication.Tools.props`（Task 0 新增，在 `fe82d79` 之后）为共享构建输入，因此三遍都运行了全部 31 个测试宿主，而不是只运行受影响的项目。合并到基准之后，这个选中会消失。
+- 度量：库的生产代码（213 个 `*.cs`，与基线相同的范围）：重复窗口 24（基线 24），超过 60 行的方法 0（基线 0），有效行 11763（基线 11763，逐项相同）。库的生产代码与 `Tests/Junevy.Communication.Testing` 在 `fe82d79..HEAD` 与工作区中的差异为空（DA-D15）。新代码的有效行：调试助手应用 3721、测试 3376（正式度量在 Task 21 填写）。
+- 偏差与需要审阅者决定的事（汇总）：
+  1. "三遍全绿"未达成（见上）。请审阅者确认：把两个基线失败与新出现的时序失败记为已知，并在 Task 8 之后的全量运行中再次检查。
+  2. 默认监听地址 `0.0.0.0`（Task 6 偏差 1）。
+  3. UDP 与 TCP 服务端的工作区参数没有升级 `schemaVersion`（Task 5 偏差 1，Task 6）。
+  4. 白名单与最大会话数拒绝的连接没有事件（F-9）。
+- 本门槛不需要改库：继续执行 Task 7。
 
 ### 33.4 基线与度量（执行者填写）
 

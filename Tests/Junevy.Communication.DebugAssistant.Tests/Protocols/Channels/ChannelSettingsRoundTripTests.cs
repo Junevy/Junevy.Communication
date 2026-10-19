@@ -149,6 +149,54 @@ public sealed class ChannelSettingsRoundTripTests : IDisposable
         Assert.Equal("hex:01", restored.Settings.Heartbeat.ExpectedReply);
     }
 
+    [Fact]
+    public async Task TcpServerPage_EverySection_SurvivesTheWorkspaceFile()
+    {
+        var dispatcher = new ManualUiDispatcher();
+        await using var page = ChannelTestKit.TcpServerPage(dispatcher, 5300);
+        page.Settings.ListenAddress = "127.0.0.1";
+        page.Settings.Backlog = 16;
+        page.Settings.MaxSessions = 4;
+        page.Settings.AllowedRemoteAddresses = "127.0.0.1, 10.0.0.1";
+        page.Settings.StopTimeout = 1500;
+        page.Settings.Framing.Mode = FramingMode.Delimiter;
+        page.Settings.Framing.Delimiters = "hex:0D 0A";
+        page.Settings.Heartbeat.Enabled = true;
+        page.Settings.Heartbeat.Payload = "hex:00";
+        page.Settings.Heartbeat.ExpectedReply = "hex:01";
+        page.Settings.Heartbeat.Interval = 2000;
+        page.Settings.Heartbeat.Timeout = 500;
+        page.Settings.Heartbeat.MaxFailures = 4;
+        page.Settings.Timeouts.HandshakeTimeout = 4000;
+        page.Settings.Timeouts.IdleTimeout = 60000;
+        page.Settings.Timeouts.PartialFrameTimeout = 900;
+        page.Settings.Timeouts.SendTimeout = 1200;
+        page.Settings.Timeouts.RequestTimeout = 1600;
+        page.Settings.Timeouts.ResetOnRequestTimeout = false;
+        page.Settings.Timeouts.LateReplyWindow = 500;
+        page.Settings.Socket.KeepAliveEnabled = true;
+        page.Settings.Handshake.Enabled = true;
+        page.Settings.Handshake.Send = "hex:02";
+        page.Settings.Handshake.ExpectReply = true;
+        page.Settings.Handshake.ExpectedReply = "hex:06";
+        page.Settings.Tls.Enabled = true;
+        page.Settings.Tls.Certificate = ServerCertificateKind.Pfx;
+        page.Settings.Tls.PfxPath = @"C:\certs\server.pfx";
+        page.Settings.Tls.PfxPasswordVariable = "SERVER_PFX_PASSWORD";
+        page.Settings.Tls.ClientCertificateRequired = true;
+        page.Settings.Tls.CheckCertificateRevocation = false;
+        page.AutoReplies.Add(new AutoReplyRule("hex:AA", "hex:BB", Echo: false));
+        page.AutoReplies.Add(new AutoReplyRule(string.Empty, string.Empty, Echo: true));
+
+        await using var restored = ChannelTestKit.TcpServerPage(dispatcher, 1);
+        RoundTrip(page, restored);
+
+        Assert.Equal(5300, restored.Settings.Port);
+        Assert.Equal(4, restored.Settings.MaxSessions);
+        Assert.Equal(ServerCertificateKind.Pfx, restored.Settings.Tls.Certificate);
+        Assert.Equal(page.AutoReplies, restored.AutoReplies);
+    }
+
     /// <summary>导出 <paramref name="source"/> 的参数到文件，读回后应用到 <paramref name="target"/>，并比较两边重新导出的 JSON。</summary>
     private void RoundTrip(SessionViewModel source, SessionViewModel target)
     {

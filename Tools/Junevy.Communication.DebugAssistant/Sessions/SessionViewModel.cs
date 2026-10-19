@@ -91,6 +91,12 @@ public abstract partial class SessionViewModel : ObservableObject, IAsyncDisposa
     /// <summary>操作记录，最新的在最前（计划 U6），超过上限时丢弃最旧的。</summary>
     public ObservableCollection<OperationRecord> Operations { get; } = [];
 
+    /// <summary>连接栏上"连接"按钮的文字（服务端页签为"启动"）。</summary>
+    public virtual string ConnectText => "连接";
+
+    /// <summary>连接栏上"断开"按钮的文字（服务端页签为"停止"）。</summary>
+    public virtual string DisconnectText => "断开";
+
     public IAsyncRelayCommand ConnectCommand { get; }
 
     public IRelayCommand ConnectCancelCommand { get; }

@@ -22,4 +22,8 @@
         <channelViews:SerialPageView />
     </DataTemplate>
 
+    <DataTemplate DataType="{x:Type channels:TcpServerSessionViewModel}">
+        <channelViews:TcpServerPageView />
+    </DataTemplate>
+
 </ResourceDictionary>

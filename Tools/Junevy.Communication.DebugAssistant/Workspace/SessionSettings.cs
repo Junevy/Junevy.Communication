@@ -12,4 +12,5 @@ namespace Junevy.Communication.DebugAssistant.Workspace;
 [JsonDerivedType(typeof(TcpClientSettings), "tcpClient")]
 [JsonDerivedType(typeof(UdpSettings), "udp")]
 [JsonDerivedType(typeof(SerialSettings), "serial")]
+[JsonDerivedType(typeof(TcpServerSettings), "tcpServer")]
 public abstract record SessionSettings;

@@ -355,24 +355,10 @@ public abstract partial class ChannelSessionViewModel : SessionViewModel
 
     private void AddReceived(FrameReceivedEventArgs e) => ShowReceived(e.ReceivedAt, e.Data, e.RemoteEndPoint?.ToString());
 
-    /// <summary>把一帧加入列表（最新的在最前），超过上限时丢弃最旧的。</summary>
-    private void ShowReceived(DateTimeOffset time, byte[] data, string? source)
-    {
-        ReceivedFrames.Insert(0, new ReceivedFrame(time, data, source));
-        while (ReceivedFrames.Count > MaxReceivedFrames)
-        {
-            ReceivedFrames.RemoveAt(ReceivedFrames.Count - 1);
-        }
-    }
+    private void ShowReceived(DateTimeOffset time, byte[] data, string? source) =>
+        ReceivedFrames.InsertNewest(new ReceivedFrame(time, data, source), MaxReceivedFrames);
 
-    private void AddSendHistory(string text)
-    {
-        SendHistory.Insert(0, text);
-        while (SendHistory.Count > MaxSendHistory)
-        {
-            SendHistory.RemoveAt(SendHistory.Count - 1);
-        }
-    }
+    private void AddSendHistory(string text) => SendHistory.InsertNewest(text, MaxSendHistory);
 
     private void RefreshStatistics()
     {

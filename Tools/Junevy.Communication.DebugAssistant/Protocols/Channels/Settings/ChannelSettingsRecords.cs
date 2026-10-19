@@ -41,3 +41,7 @@ public sealed record SerialSettings(
     int OpenTimeout,
     ChannelSettingsValues Channel)
     : SessionSettings;
+
+/// <summary>TCP 服务端页签的参数：<see cref="ChannelSettingsValues"/> 保存监听与会话的全部参数（<c>server</c> 节与各编辑器分节），以及自动应答规则。</summary>
+public sealed record TcpServerSettings(ChannelSettingsValues Values, IReadOnlyList<AutoReplyRule> AutoReplies)
+    : SessionSettings;

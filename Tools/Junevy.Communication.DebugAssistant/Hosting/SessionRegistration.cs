@@ -13,6 +13,7 @@ internal static class SessionRegistration
     {
         [ProtocolKind.TcpClient] = (descriptor, services) => new TcpClientSessionViewModel(descriptor, services),
         [ProtocolKind.Udp] = (descriptor, services) => new UdpSessionViewModel(descriptor, services),
+        [ProtocolKind.TcpServer] = (descriptor, services) => new TcpServerSessionViewModel(descriptor, services),
         [ProtocolKind.Serial] = (descriptor, services) => new SerialSessionViewModel(descriptor, services),
     };
 

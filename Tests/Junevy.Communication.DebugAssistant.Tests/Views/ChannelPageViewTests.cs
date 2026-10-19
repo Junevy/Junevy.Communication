@@ -57,6 +57,23 @@ public sealed class ChannelPageViewTests
         });
     }
 
+    [Fact]
+    public async Task TcpServerPageView_LoadsAndBindsItsSession()
+    {
+        var dispatcher = new ManualUiDispatcher();
+        await using var page = ChannelTestKit.TcpServerPage(dispatcher, 5000);
+
+        UiThread.Invoke(() =>
+        {
+            var view = new TcpServerPageView { DataContext = page };
+            VisualTree.Layout(view);
+
+            Assert.Same(page, view.DataContext);
+            AssertLogPanelBound(view, page);
+            Assert.NotNull(VisualTree.FindChild<System.Windows.Controls.DataGrid>(view));
+        });
+    }
+
     private static void AssertLogPanelBound(System.Windows.DependencyObject view, SessionViewModel session)
     {
         LogPanel? panel = VisualTree.FindChild<LogPanel>(view);
