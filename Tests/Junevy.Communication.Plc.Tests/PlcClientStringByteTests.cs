@@ -1,6 +1,7 @@
 using System.Text;
 using Junevy.Communication.Core.Buffers;
 using Junevy.Communication.Core.Results;
+using Junevy.Communication.Testing;
 using static Junevy.Communication.Plc.Tests.PlcTestHelpers;
 
 namespace Junevy.Communication.Plc.Tests;

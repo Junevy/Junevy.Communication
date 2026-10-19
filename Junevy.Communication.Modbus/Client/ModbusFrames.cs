@@ -1,4 +1,5 @@
 using System.Buffers;
+using Junevy.Communication.Core.Buffers;
 using Junevy.Communication.Core.Results;
 using Junevy.Communication.Modbus.Framing;
 using Junevy.Communication.Modbus.Protocol;
@@ -16,7 +17,7 @@ internal static class ModbusFrames
         if (framing == ModbusFraming.Mbap)
         {
             MbapHeader.Write(output, MbapHeader.TransactionIds.NextUInt16(), unitId, pdu.Length);
-            ModbusBuffer.Write(output, pdu);
+            BigEndianFields.WriteBytes(output, pdu);
         }
         else
         {

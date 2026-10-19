@@ -29,7 +29,7 @@
 
 - 2026-10-19 [Modbus] 协议层（P7 Task 5，全部 internal）：PDU 请求编码（01–06、0F、10、16、17）、正常与异常应答解码（按期望校验功能码、字节数与回显）、MBAP 头（协议号、长度、站号；事务号由进程级计数器分配）与 RTU 帧（站号、CRC-16/MODBUS，低字节在前）的封装与剥离、异常码表（只用标准的九个码的名称）。测试按第 21 节的向量命名或注释（`ModbusRequestPduTests`、`ModbusResponsePduTests`、`ModbusFrameTests`，共 113 个用例）。
 
-- 2026-10-19 [Modbus] 分帧与关联（P7 Task 6，全部 internal）：MBAP 用套件的长度字段分帧（偏移 4、宽 2、大端、修正值 0，最大帧长 260）；RTU 用 `ModbusRtuFrameDecoder` 按应答功能码与字节数确定帧长（第 21.4 节），收全后以 CRC 裁决，功能码未知或 CRC 不符时丢弃 1 个字节并重新同步；帧长超过 256 字节时抛出 `FrameDecodeException`。关联键 `ModbusTransactionKeyExtractor` 取前两个字节（大端）作为事务号。测试：`ModbusRtuFrameDecoderTests`（9 个用例）、`ModbusFramingTests`（7 个用例，含 V-M-6）。
+- 2026-10-19 [Modbus] 分帧与关联（P7 Task 6，全部 internal）：MBAP 用套件的长度字段分帧（偏移 4、宽 2、大端、修正值 0，最大帧长 260）；RTU 用 `ModbusRtuFrameDecoder` 按应答功能码与字节数确定帧长（第 21.4 节），收全后以 CRC 裁决，功能码未知、字节数超过规范上限 250 或 CRC 不符时，丢弃 1 个字节并重新同步，不抛异常（第一轮验收 R1 修正）。关联键 `ModbusTransactionKeyExtractor` 取前两个字节（大端）作为事务号。测试：`ModbusRtuFrameDecoderTests`（9 个用例）、`ModbusFramingTests`（7 个用例，含 V-M-6）。
 
 - 2026-10-19 [Modbus] 选项、协议配置与心跳探测（P7 Task 7，P7-D7、D9、D11、D12）：公开的 `ModbusFraming`（`Mbap`、`Rtu`）与 `ModbusClientOptions : PlcClientOptions`（`Framing` 为 null 时按介质决定，`UnitId` 默认 1，`UseSingleWriteFunctions`，`UseMaskWriteForBits`，`DataFormat` 默认 ABCD 字序与 ASCII 字符串）。内部的 `ModbusProtocolSettings`（快照）与 `ModbusProtocolProfile`（串口上使用 MBAP 与不支持的枚举值在套件的组件装配之前拒绝；RTU 站号范围 1–247；MBAP 为 Keyed 关联，RTU 为 Sequential）。心跳探测 `ModbusReadProbe` 读 HR0 一个字，收到格式正确的正常或异常应答即为健康。测试：`ModbusProtocolProfileTests`（22 个用例），`ModbusReadProbeTests`（9 个用例）。
 
@@ -43,13 +43,25 @@
 
 - 2026-10-19 [WPF 调试工具] 调试工具移植到 v3（P7 Task 11）：经 `AddModbus()` 与 `PlcClientFactory` 连接（TCP 或串口），读写 C、DI、IR、HR，结果显示在表格中。不追求与 2.x 界面逐项相同；删除只服务于 2.x 界面的 `MbCmd.cs`、`Regions.cs`、`EnumToBoolConverter.cs`、`LengthEnableConverter.cs`。
 
+### 修复（Fixed）— 第一轮验收（2026-10-20）
+
+- 2026-10-20 [Modbus] RTU 分帧器不再因线路噪声抛异常（R1）：读应答的字节数超过规范上限 250（125 个寄存器或 2000 个点）时视为噪声，与功能码未知、CRC 不符一样丢弃 1 个字节后重新同步。此前字节数 252–255 会让解码器抛 `FrameDecodeException`：RTU over TCP 上通道以 `ProtocolViolation` 断开，串口上通道丢弃整个缓冲，连同紧随其后的正确应答。测试：`ByteCountBeyondTheSpecification_IsNoiseAndTheFollowingFrameIsDelivered`（字节数 251 与 253，修正前抛异常）。
+- 2026-10-20 [Modbus.Tests] 补上掩码写多位的测试（R2）：`WriteSeveralRegisterBitsWithMaskWrite_SendsOneMaskWritePerBitAcrossTheRegisterBoundary`（三个点三个 16 请求，第三个落在下一个寄存器的位 0）与端到端 `MaskWriteSeveralBits_AcrossTwoRegisters_ChangesOnlyThoseBits`。此前把寄存器写位的单包上限从 1 改为 16 时（多点写入会悄悄只写第一位），没有测试失败。
+- 2026-10-20 [Modbus] README "Heartbeat and reconnect" 一节的开头改正（R3）：只有 RTU over TCP（Sequential）在请求超时后重建连接，MBAP 按事务号关联、不重建。
+
+### 变更（Changed）— 第一轮验收（2026-10-20）
+
+- 2026-10-20 [Modbus] 删除 `Protocol/ModbusBuffer`，改用 Core 的 `BigEndianFields.WriteUInt8` / `WriteBytes`（R4，新增协议指南 F8）；RTU 站号范围只在 `RtuAdu.MinimumUnitId` / `MaximumUnitId` / `IsValidUnitId` 定义一次，客户端的地址检查与协议配置共用（R5）。行为不变。
+- 2026-10-20 [Testing, Plc.Tests, Modbus.Tests] `IClientChannel` 的脚本替身移入共享测试库：`Junevy.Communication.Testing.ScriptedClientChannel`（public，由 Plc.Tests 的同名类型原样迁入），删除 Modbus.Tests 的副本 `ScriptedModbusChannel`，两个测试项目改用它（R7，P7 摩擦 F-A2）。消除两者之间的 37 个测试重复窗口。
+- 2026-10-20 [Core, Channels, Tcp, WebApi, Core.Tests] 7 处注释仍指向已删除的 2.x 类型（`IModbus`、`ModbusFactoryBuilder`、`ModbusConnectionManager`、`ModbusErrorKind`、`ModbusTcpClient`），改为注明来自 2.x（tag `modbus-v2.0.0`）或指向现有类型（R9，只改注释）。
+- 2026-10-20 [Plc] `PlcRequestPipeline.TryResolveWritable` 的结尾简化为 `return failure is null;`，与 `CheckWritable` 重复的注释合并（R10，行为不变）。
+
 ### 变更（Changed）
 
 - 2026-10-19 [Plc] 写入入口合并只读检查（P7 度量修正，行为不变）：`PlcRequestPipeline` 新增 `TryResolveWritable`，把地址解析与 `IsReadOnly` 检查合成一个入口，供 `WriteWordsCoreAsync`、`WriteBitsCoreAsync`、`WriteBytesCoreAsync` 使用。原来三处相同的六行检查在生产代码中形成重复窗口，合并后 15 个生产目录的重复窗口回到 P7 前的 35。
 - 2026-10-19 [Test] Modbus 端到端的四区域往返断言抽为 `ModbusScenarios.FourAreasRoundTripAsync`（TCP、UDP、串口共用，仅测试，行为不变）。
-- 2026-10-19 [Modbus] 项目骨架改为 Plc 套件上的 3.0.0-preview.1（P7-D1）：csproj 导入 `build/Junevy.Communication.Common.props`，依赖 Plc、Tcp、Udp、Serial；`InternalsVisibleTo` 只给 `Junevy.Communication.Modbus.Tests`。协议实现在后续 Task 中加入，本次提交尚无公开类型。
-- 2026-10-19 [Architecture] 删除 Modbus 的特殊处理（不再引用 2.x 的类型）。Modbus 在 Task 4 登记进分层表之前，不参与分层与 InternalsVisibleTo 检查。
-- 2026-10-19 [Test] WPF 调试工具去掉对 Modbus 的引用与启动时的注册，视图模型恢复为窗口骨架；调试页签的绑定在 Task 11 恢复前不可用（运行时绑定错误，不影响编译）。
+- 2026-10-19 [Modbus] 项目骨架改为 Plc 套件上的 3.0.0-preview.1（P7-D1）：csproj 导入 `build/Junevy.Communication.Common.props`，依赖 Plc、Tcp、Udp、Serial；`InternalsVisibleTo` 只给 `Junevy.Communication.Modbus.Tests`。
+- 2026-10-19 [Architecture] 删除 Modbus 的特殊处理（不再引用 2.x 的类型）；Modbus 登记进分层表（允许 Plc、Channels、Core、Tcp、Udp、Serial），与其他协议包一样参加分层、InternalsVisibleTo 与第三方白名单三项检查。
 
 ### 破坏性变更（Breaking）
 
@@ -59,7 +71,7 @@
 - 2026-10-19 [Modbus] 工厂与依赖注入：`IModbusFactory`、`ModbusConnectionManager`、`ModbusFactoryBuilder`、`AddModbusFactory()` 由 `PlcClientFactory`、`PlcClientFactoryBuilder`、`AddModbus()` 取代；RS-485 多从站改为地址前缀 `s=n;`（一个客户端）。
 - 2026-10-19 [Modbus] 站号范围：RTU 为 1–247（0 为广播，不支持；248–255 保留）；地址中的站号前缀按帧格式检查。
 - 2026-10-19 [Modbus] 拆包：超过单包上限的读写由套件自动拆包（2.x 对超限直接抛出 `ArgumentException`）。
-- 2026-10-19 [Modbus] 2.x 的全部公开 API 被移除，3.0.0-preview.1 尚无替代类型（P7-D16）。2.x 保留在本地 tag `modbus-v2.0.0`（指向 `c29a45b`）。迁移对照见 P7 计划第 20 节，README 的 "Migrating from 2.x" 在 Task 12 补充。
+- 2026-10-19 [Modbus] 2.x 的全部公开 API 被移除，由 3.0 的 `ModbusClient`、`ModbusClientOptions` 等 9 个公开类型取代（P7-D3、D16）。2.x 保留在本地 tag `modbus-v2.0.0`（指向 `c29a45b`）。迁移对照见 `Junevy.Communication.Modbus/README.md` 的 "Migrating from 2.x" 与 `Skills/using-junevy-modbus`。
 
 ### 移除（Removed）
 

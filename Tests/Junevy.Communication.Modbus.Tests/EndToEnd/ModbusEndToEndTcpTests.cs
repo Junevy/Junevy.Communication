@@ -229,6 +229,20 @@ public sealed class ModbusEndToEndTcpTests
         Assert.Equal((ushort)0x01FE, memory.GetWords("HR", 40, 1)[0]);
     }
 
+    [Fact(Timeout = 60000)]
+    public async Task MaskWriteSeveralBits_AcrossTwoRegisters_ChangesOnlyThoseBits()
+    {
+        // 第一轮验收 R2：HR50.15、HR51.0、HR51.1 三个点各一个掩码写；两个寄存器的其他位不变。
+        var memory = new PlcMemory();
+        memory.SetWords("HR", 50, 0x0000, 0x00F2);
+        await using var slave = new ModbusTcpSlave(ModbusFraming.Mbap, new ModbusSlave(ModbusFraming.Mbap, memory));
+        using ModbusClient client = await ConnectAsync(slave.Port, ModbusFraming.Mbap, options: new ModbusClientOptions { UseMaskWriteForBits = true });
+
+        Assert.True((await client.WriteBitsAsync("HR50.15", new[] { true, true, false })).IsSuccess);
+
+        Assert.Equal(new ushort[] { 0x8000, 0x00F1 }, memory.GetWords("HR", 50, 2));
+    }
+
     // RTU over TCP 超时后连接被重建（P7-D13）：超时返回时通道已离开 Connected，直接等待重建的连接。
     private static async Task AwaitRebuiltConnectionAsync(ModbusClient client)
         => Assert.True(await client.WaitForConnectedAsync(5000));

@@ -209,7 +209,7 @@ var config = new TcpClientChannelConfig
 };
 ```
 
-On a byte-stream transport, a request timeout resets the connection by default (`ResetOnRequestTimeout`). MBAP matches replies by transaction ID and keeps the connection; with RTU over TCP the connection is rebuilt in the background. The client has left `Connected` when the `Timeout` result returns, so a `RetryCount` retry waits for the rebuilt connection (up to `RetryInterval`). Without retries, a request sent before the connection is back returns `NotConnected`; wait with `WaitForConnectedAsync` first.
+MBAP matches replies by transaction ID, so a request timeout keeps the TCP connection and a late reply is dropped. RTU over TCP has no transaction ID: a request timeout resets the connection (`ResetOnRequestTimeout`, on by default) and it is rebuilt in the background. The client has left `Connected` when the `Timeout` result returns, so a `RetryCount` retry waits for the rebuilt connection (up to `RetryInterval`). Without retries, a request sent before the connection is back returns `NotConnected`; wait with `WaitForConnectedAsync` first.
 
 ## Dependency injection
 

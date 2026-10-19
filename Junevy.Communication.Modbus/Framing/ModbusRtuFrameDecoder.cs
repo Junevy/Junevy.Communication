@@ -1,18 +1,20 @@
 using System.Buffers;
 using Junevy.Communication.Channels;
-using Junevy.Communication.Channels.Framing;
 using Junevy.Communication.Modbus.Protocol;
 
 namespace Junevy.Communication.Modbus.Framing;
 
 /// <summary>
 /// RTU 应答的分帧器（P7-D8）：帧长由应答的功能码与字节数确定（第 21.4 节），收全后以 CRC 裁决。
-/// 功能码未知或 CRC 不符时丢弃 1 个字节并重新同步，不抛异常；帧长超过 RTU ADU 的上限时抛出 <see cref="FrameDecodeException"/>。
+/// 功能码未知、字节数超过规范上限或 CRC 不符时，丢弃 1 个字节并重新同步，不抛异常（线路噪声不会让通道断开或丢掉缓冲）。
 /// </summary>
 internal sealed class ModbusRtuFrameDecoder : IFrameDecoder
 {
     private const int MaxFrameLength = 256;
     private const int ByteCountIndex = 2;
+
+    // 读应答的字节数上限：125 个寄存器或 2000 个点都是 250 字节（规范第 6.1–6.4 节），更大的只可能是噪声。
+    private const int MaxReadByteCount = 250;
     private const int ReadOverhead = 3 + 2;   // 站号、功能码、字节数，加 CRC
     private const int ExceptionLength = 5;    // 站号、功能码、异常码，加 CRC
     private const int WriteEchoLength = 8;    // 05、06、0F、10
@@ -43,9 +45,6 @@ internal sealed class ModbusRtuFrameDecoder : IFrameDecoder
                 continue;
             }
 
-            if (length > MaxFrameLength)
-                throw new FrameDecodeException($"The RTU frame declares {length} bytes, more than the {MaxFrameLength}-byte maximum.");
-
             if (available < length)
                 break;
 
@@ -63,7 +62,7 @@ internal sealed class ModbusRtuFrameDecoder : IFrameDecoder
         return false;
     }
 
-    // 由应答的功能码确定帧长。返回 NeedMore 表示还要等字节数字段；返回 Unknown 表示功能码不认识。
+    // 由应答的功能码确定帧长。返回 NeedMore 表示还要等字节数字段；返回 Unknown 表示功能码不认识或字节数超过上限。
     private static int FrameLength(ReadOnlySpan<byte> head)
     {
         byte function = head[1];
@@ -77,7 +76,9 @@ internal sealed class ModbusRtuFrameDecoder : IFrameDecoder
             case ModbusFunctionCodes.ReadHoldingRegisters:
             case ModbusFunctionCodes.ReadInputRegisters:
             case ModbusFunctionCodes.ReadWriteMultipleRegisters:
-                return head.Length <= ByteCountIndex ? NeedMore : ReadOverhead + head[ByteCountIndex];
+                if (head.Length <= ByteCountIndex)
+                    return NeedMore;
+                return head[ByteCountIndex] > MaxReadByteCount ? Unknown : ReadOverhead + head[ByteCountIndex];
             case ModbusFunctionCodes.WriteSingleCoil:
             case ModbusFunctionCodes.WriteSingleRegister:
             case ModbusFunctionCodes.WriteMultipleCoils:

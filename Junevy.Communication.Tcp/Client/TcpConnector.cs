@@ -198,7 +198,7 @@ internal sealed class TcpConnector
     private static Task ConnectSocketAsync(Socket socket, IPEndPoint endPoint, CancellationToken token)
         => socket.ConnectAsync(endPoint, token).AsTask();
 #else
-    // net472 的 Socket 没有可取消的 ConnectAsync：把 BeginConnect 包装为任务，与取消令牌竞速（照搬 ModbusTcpClient.OpenConnectionAsync）。
+    // net472 的 Socket 没有可取消的 ConnectAsync：把 BeginConnect 包装为任务，与取消令牌竞速（做法来自 Modbus 2.x 的 ModbusTcpClient.OpenConnectionAsync，tag modbus-v2.0.0）。
     // 取消或超时时由调用方销毁 socket，使挂起的连接中止；被中止任务的异常在此观察，避免未观察的异常。
     private static async Task ConnectSocketAsync(Socket socket, IPEndPoint endPoint, CancellationToken token)
     {

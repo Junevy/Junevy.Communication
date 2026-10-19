@@ -23,7 +23,7 @@ public interface IConnectable
     event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
 
     /// <summary>
-    /// 建立连接。失败时返回失败结果；用户取消时抛出 <see cref="OperationCanceledException"/>（与 IModbus.ConnectAsync 一致）。
+    /// 建立连接。失败时返回失败结果；用户取消时抛出 <see cref="OperationCanceledException"/>（与 Modbus 2.x 的 IModbus.ConnectAsync 一致，tag modbus-v2.0.0）。
     /// </summary>
     /// <param name="cancellationToken">用户取消令牌。</param>
     /// <returns>连接结果。</returns>

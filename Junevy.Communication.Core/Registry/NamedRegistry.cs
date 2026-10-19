@@ -7,7 +7,7 @@ namespace Junevy.Communication.Core.Registry;
 
 /// <summary>
 /// 命名实例注册表：支持别名（多个逻辑名共享同一实例，例如 RS-485 多从站共用一条串口）、并发安全与移除时释放。
-/// 规则由 <c>ModbusConnectionManager</c> 泛化而来；与其不同之处是所有实例释放都在注册表锁之外进行。
+/// 规则由 Modbus 2.x 的 <c>ModbusConnectionManager</c>（tag modbus-v2.0.0）泛化而来；与其不同之处是所有实例释放都在注册表锁之外进行。
 /// </summary>
 /// <typeparam name="T">注册的实例类型。释放规则：实现 <see cref="IAsyncDisposable"/> 时优先调用 <c>DisposeAsync</c>，
 /// 否则调用 <see cref="IDisposable.Dispose"/>；都不实现则不释放。</typeparam>

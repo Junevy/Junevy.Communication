@@ -9,12 +9,12 @@ namespace Junevy.Communication.Modbus.Tests.Client;
 /// </summary>
 public sealed class ModbusClientCommandTests
 {
-    private static byte[] Pdu(ScriptedModbusChannel channel, int index, ModbusFraming framing) => TestModbus.Pdu(channel.Requests[index], framing);
+    private static byte[] Pdu(ScriptedClientChannel channel, int index, ModbusFraming framing) => TestModbus.Pdu(channel.Requests[index], framing);
 
     [Fact(Timeout = 20000)]
     public async Task MaskWriteRegister_SendsFunction16WithTheAndOrMasks()
     {
-        var channel = new ScriptedModbusChannel { Responder = TestModbus.Echoes(ModbusFraming.Mbap) };
+        var channel = new ScriptedClientChannel { Responder = TestModbus.Echoes(ModbusFraming.Mbap) };
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult result = await client.MaskWriteRegisterAsync("HR4", 0x00F2, 0x0025);
@@ -27,7 +27,7 @@ public sealed class ModbusClientCommandTests
     [Fact(Timeout = 20000)]
     public async Task MaskWriteRegister_OnRtu_IsTheVectorV_R_13()
     {
-        var channel = new ScriptedModbusChannel { Responder = TestModbus.Echoes(ModbusFraming.Rtu) };
+        var channel = new ScriptedClientChannel { Responder = TestModbus.Echoes(ModbusFraming.Rtu) };
         ModbusClient client = TestModbus.Client(channel, ModbusFraming.Rtu);
 
         CommResult result = await client.MaskWriteRegisterAsync("HR4", 0x00F2, 0x0025);
@@ -44,7 +44,7 @@ public sealed class ModbusClientCommandTests
     [InlineData("X4")]
     public async Task MaskWriteRegister_OnAnythingButAPlainHoldingRegister_IsInvalidAndSendsNothing(string address)
     {
-        var channel = new ScriptedModbusChannel();
+        var channel = new ScriptedClientChannel();
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult result = await client.MaskWriteRegisterAsync(address, 0xFFFF, 0x0000);
@@ -56,7 +56,7 @@ public sealed class ModbusClientCommandTests
     [Fact(Timeout = 20000)]
     public async Task MaskWriteRegister_EchoMismatch_IsProtocolViolation()
     {
-        var channel = new ScriptedModbusChannel
+        var channel = new ScriptedClientChannel
         {
             Responder = request => CommResult<byte[]>.Success(TestModbus.Frame(request, ModbusFraming.Mbap, 1, HexVector.ToBytes("16 00 04 00 F3 00 25"))),
         };
@@ -71,7 +71,7 @@ public sealed class ModbusClientCommandTests
     public async Task MaskWriteRegister_ExceptionResponse_IsRemoteError()
     {
         // 设备不支持 0x16 时返回异常码 01（P7-D17 ③）。
-        var channel = new ScriptedModbusChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "96 01") };
+        var channel = new ScriptedClientChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "96 01") };
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult result = await client.MaskWriteRegisterAsync("HR4", 0x00F2, 0x0025);
@@ -83,7 +83,7 @@ public sealed class ModbusClientCommandTests
     [Fact(Timeout = 20000)]
     public async Task ReadWriteMultipleRegisters_SendsFunction17AndReturnsTheReadBytes()
     {
-        var channel = new ScriptedModbusChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "17 0C 00 FE 0A CD 00 01 00 03 00 0D 00 FF") };
+        var channel = new ScriptedClientChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "17 0C 00 FE 0A CD 00 01 00 03 00 0D 00 FF") };
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult<byte[]> result = await client.ReadWriteMultipleRegistersAsync("HR3", 6, "HR14", HexVector.ToBytes("00 FF 00 FF 00 FF"));
@@ -97,7 +97,7 @@ public sealed class ModbusClientCommandTests
     [Fact(Timeout = 20000)]
     public async Task ReadWriteMultipleRegisters_OnRtu_IsTheVectorV_R_14()
     {
-        var channel = new ScriptedModbusChannel
+        var channel = new ScriptedClientChannel
         {
             Responder = TestModbus.Responds(ModbusFraming.Rtu, "17 0C 00 FE 0A CD 00 01 00 03 00 0D 00 FF"),
         };
@@ -123,7 +123,7 @@ public sealed class ModbusClientCommandTests
     [InlineData("HR3", 6, "HR65535", 4)]
     public async Task ReadWriteMultipleRegisters_InvalidArguments_AreInvalidAndSendNothing(string readAddress, int readCount, string writeAddress, int writeBytes)
     {
-        var channel = new ScriptedModbusChannel();
+        var channel = new ScriptedClientChannel();
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult<byte[]> result = await client.ReadWriteMultipleRegistersAsync(readAddress, readCount, writeAddress, new byte[writeBytes]);
@@ -135,7 +135,7 @@ public sealed class ModbusClientCommandTests
     [Fact(Timeout = 20000)]
     public async Task ReadWriteMultipleRegisters_WithDifferentStations_IsInvalid()
     {
-        var channel = new ScriptedModbusChannel();
+        var channel = new ScriptedClientChannel();
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult<byte[]> result = await client.ReadWriteMultipleRegistersAsync("s=1;HR3", 6, "s=2;HR14", new byte[6]);
@@ -147,7 +147,7 @@ public sealed class ModbusClientCommandTests
     [Fact(Timeout = 20000)]
     public async Task ReadWriteMultipleRegisters_WithTheSameStation_IsAccepted()
     {
-        var channel = new ScriptedModbusChannel
+        var channel = new ScriptedClientChannel
         {
             Responder = TestModbus.Responds(ModbusFraming.Mbap, "17 02 00 01", unit: 2),
         };
@@ -161,7 +161,7 @@ public sealed class ModbusClientCommandTests
     [Fact(Timeout = 20000)]
     public async Task ReadWriteMultipleRegisters_TimeoutIsRetriedWhenConfigured()
     {
-        var channel = new ScriptedModbusChannel();
+        var channel = new ScriptedClientChannel();
         channel.Enqueue(CommResult<byte[]>.Fail("The request timed out.", CommErrorKind.Timeout));
         channel.Enqueue(CommResult<byte[]>.Success(HexVector.ToBytes("00 01 00 00 00 05 01 17 02 00 01")));
         ModbusClient client = TestModbus.Client(channel, options: new ModbusClientOptions { RetryCount = 1 });

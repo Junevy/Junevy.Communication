@@ -14,7 +14,7 @@ internal static class ModbusRequestPdu
     /// <summary>读取请求（01、02、03、04）：起始地址与点数或字数。</summary>
     public static void WriteReadRequest(IBufferWriter<byte> output, byte functionCode, ushort address, ushort quantity)
     {
-        ModbusBuffer.WriteByte(output, functionCode);
+        BigEndianFields.WriteUInt8(output, functionCode);
         BigEndianFields.WriteUInt16(output, address);
         BigEndianFields.WriteUInt16(output, quantity);
     }
@@ -22,7 +22,7 @@ internal static class ModbusRequestPdu
     /// <summary>写单个线圈（05）。</summary>
     public static void WriteWriteSingleCoil(IBufferWriter<byte> output, ushort address, bool value)
     {
-        ModbusBuffer.WriteByte(output, ModbusFunctionCodes.WriteSingleCoil);
+        BigEndianFields.WriteUInt8(output, ModbusFunctionCodes.WriteSingleCoil);
         BigEndianFields.WriteUInt16(output, address);
         BigEndianFields.WriteUInt16(output, value ? CoilOn : CoilOff);
     }
@@ -30,7 +30,7 @@ internal static class ModbusRequestPdu
     /// <summary>写单个寄存器（06）。</summary>
     public static void WriteWriteSingleRegister(IBufferWriter<byte> output, ushort address, ushort value)
     {
-        ModbusBuffer.WriteByte(output, ModbusFunctionCodes.WriteSingleRegister);
+        BigEndianFields.WriteUInt8(output, ModbusFunctionCodes.WriteSingleRegister);
         BigEndianFields.WriteUInt16(output, address);
         BigEndianFields.WriteUInt16(output, value);
     }
@@ -41,27 +41,27 @@ internal static class ModbusRequestPdu
         var packed = new byte[ModbusBits.ByteCount(values.Length)];
         ModbusBits.Pack(values, packed);
 
-        ModbusBuffer.WriteByte(output, ModbusFunctionCodes.WriteMultipleCoils);
+        BigEndianFields.WriteUInt8(output, ModbusFunctionCodes.WriteMultipleCoils);
         BigEndianFields.WriteUInt16(output, address);
         BigEndianFields.WriteUInt16(output, (ushort)values.Length);
-        ModbusBuffer.WriteByte(output, (byte)packed.Length);
-        ModbusBuffer.Write(output, packed);
+        BigEndianFields.WriteUInt8(output, (byte)packed.Length);
+        BigEndianFields.WriteBytes(output, packed);
     }
 
     /// <summary>写多个寄存器（10）：<paramref name="words"/> 是每寄存器两字节的大端数据，长度为偶数。</summary>
     public static void WriteWriteMultipleRegisters(IBufferWriter<byte> output, ushort address, ReadOnlySpan<byte> words)
     {
-        ModbusBuffer.WriteByte(output, ModbusFunctionCodes.WriteMultipleRegisters);
+        BigEndianFields.WriteUInt8(output, ModbusFunctionCodes.WriteMultipleRegisters);
         BigEndianFields.WriteUInt16(output, address);
         BigEndianFields.WriteUInt16(output, (ushort)(words.Length / 2));
-        ModbusBuffer.WriteByte(output, (byte)words.Length);
-        ModbusBuffer.Write(output, words);
+        BigEndianFields.WriteUInt8(output, (byte)words.Length);
+        BigEndianFields.WriteBytes(output, words);
     }
 
     /// <summary>掩码写寄存器（16）：结果 = (当前值 AND andMask) OR (orMask AND NOT andMask)。</summary>
     public static void WriteMaskWriteRegister(IBufferWriter<byte> output, ushort address, ushort andMask, ushort orMask)
     {
-        ModbusBuffer.WriteByte(output, ModbusFunctionCodes.MaskWriteRegister);
+        BigEndianFields.WriteUInt8(output, ModbusFunctionCodes.MaskWriteRegister);
         BigEndianFields.WriteUInt16(output, address);
         BigEndianFields.WriteUInt16(output, andMask);
         BigEndianFields.WriteUInt16(output, orMask);
@@ -71,12 +71,12 @@ internal static class ModbusRequestPdu
     public static void WriteReadWriteMultipleRegisters(IBufferWriter<byte> output, ushort readAddress, ushort readQuantity, ushort writeAddress,
                                                        ReadOnlySpan<byte> writeWords)
     {
-        ModbusBuffer.WriteByte(output, ModbusFunctionCodes.ReadWriteMultipleRegisters);
+        BigEndianFields.WriteUInt8(output, ModbusFunctionCodes.ReadWriteMultipleRegisters);
         BigEndianFields.WriteUInt16(output, readAddress);
         BigEndianFields.WriteUInt16(output, readQuantity);
         BigEndianFields.WriteUInt16(output, writeAddress);
         BigEndianFields.WriteUInt16(output, (ushort)(writeWords.Length / 2));
-        ModbusBuffer.WriteByte(output, (byte)writeWords.Length);
-        ModbusBuffer.Write(output, writeWords);
+        BigEndianFields.WriteUInt8(output, (byte)writeWords.Length);
+        BigEndianFields.WriteBytes(output, writeWords);
     }
 }

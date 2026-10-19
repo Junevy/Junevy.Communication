@@ -1,26 +1,30 @@
 using Junevy.Communication.Channels;
 using Junevy.Communication.Core.Results;
 
-namespace Junevy.Communication.Modbus.Tests;
+namespace Junevy.Communication.Testing;
 
 /// <summary>
 /// 脚本化的 <see cref="IClientChannel"/> 测试替身：记录每个请求，按脚本或响应函数返回结果，可以模拟断开与重连。
-/// 不建立任何套接字。与 Plc.Tests 的 ScriptedClientChannel 同形（那个类型不跨程序集共享）。
+/// 不建立任何套接字；请求与应答都在内存中。协议客户端（<c>PlcClientBase</c> 的派生类型）的单元测试共用（P7 第一轮验收 R7）。
 /// </summary>
-internal sealed class ScriptedModbusChannel : IClientChannel
+public sealed class ScriptedClientChannel : IClientChannel
 {
     private readonly ConnectionStatisticsRecorder statistics = new ConnectionStatisticsRecorder();
+
     private readonly object sync = new object();
-    private readonly Queue<CommResult<byte[]>> script = new Queue<CommResult<byte[]>>();
+    private readonly Queue<ScriptedReply> script = new Queue<ScriptedReply>();
     private readonly List<byte[]> requests = new List<byte[]>();
+    private readonly List<int> waitTimeouts = new List<int>();
     private EventHandler<ConnectionStateChangedEventArgs>? stateChanged;
     private bool connected = true;
     private int disposeCount;
 
-    /// <summary>未设置脚本时，按此函数生成应答。返回 null 时该请求失败（<c>Unspecified</c>）。</summary>
+    /// <summary>未设置脚本时，按此函数生成应答（例如测试设备）。返回 null 时该请求失败（<c>Unspecified</c>）。</summary>
     public Func<byte[], CommResult<byte[]>?>? Responder { get; set; }
 
-    /// <summary><see cref="WaitForConnectedAsync"/> 被调用时是否恢复连接（模拟链路在 RetryInterval 内恢复）。</summary>
+    /// <summary>
+    /// <see cref="WaitForConnectedAsync"/> 被调用时是否恢复连接（模拟链路在 RetryInterval 内恢复）。
+    /// </summary>
     public bool ReconnectOnWait { get; set; }
 
     /// <summary>发送给通道的请求副本，按发送顺序排列。</summary>
@@ -33,18 +37,28 @@ internal sealed class ScriptedModbusChannel : IClientChannel
         }
     }
 
-    /// <summary>最后一个请求。</summary>
-    public byte[]? LastRequest
+    /// <summary>传给 <see cref="WaitForConnectedAsync"/> 的超时值，按调用顺序排列。</summary>
+    public IReadOnlyList<int> WaitTimeouts
     {
         get
         {
             lock (sync)
-                return requests.Count == 0 ? null : requests[requests.Count - 1];
+                return waitTimeouts.ToArray();
         }
     }
 
     /// <summary>Dispose 被调用的次数。</summary>
     public int DisposeCount => Volatile.Read(ref disposeCount);
+
+    /// <summary>是否有状态变化订阅者（用于验证事件转发）。</summary>
+    public bool HasStateChangedSubscribers
+    {
+        get
+        {
+            lock (sync)
+                return stateChanged != null;
+        }
+    }
 
     /// <summary>设置连接状态（测试用）。</summary>
     public bool Connected
@@ -61,16 +75,8 @@ internal sealed class ScriptedModbusChannel : IClientChannel
         }
     }
 
-    /// <summary>按脚本返回下一个应答。</summary>
-    /// <param name="reply">应答结果。</param>
-    public void Enqueue(CommResult<byte[]> reply)
-    {
-        lock (sync)
-            script.Enqueue(reply);
-    }
-
     /// <inheritdoc />
-    public string Name => "scripted-modbus";
+    public string Name => "scripted";
 
     /// <inheritdoc />
     public ConnectionState State => IsConnected ? ConnectionState.Connected : ConnectionState.Disconnected;
@@ -96,6 +102,37 @@ internal sealed class ScriptedModbusChannel : IClientChannel
         }
     }
 
+    /// <summary>引发状态变化事件，参数原样传给订阅者（测试用）。</summary>
+    /// <param name="args">要引发的参数。</param>
+    public void RaiseStateChanged(ConnectionStateChangedEventArgs args)
+    {
+        EventHandler<ConnectionStateChangedEventArgs>? handler;
+        lock (sync)
+            handler = stateChanged;
+
+        handler?.Invoke(this, args);
+    }
+
+    /// <summary>
+    /// 按脚本返回下一个应答。
+    /// </summary>
+    /// <param name="reply">应答结果。</param>
+    public void Enqueue(CommResult<byte[]> reply)
+    {
+        lock (sync)
+            script.Enqueue(new ScriptedReply(reply, disconnectAfterReply: false));
+    }
+
+    /// <summary>
+    /// 按脚本返回下一个应答，并在返回后断开连接（模拟超时或断线时链路随之丢失）。
+    /// </summary>
+    /// <param name="reply">应答结果。</param>
+    public void EnqueueWithDisconnect(CommResult<byte[]> reply)
+    {
+        lock (sync)
+            script.Enqueue(new ScriptedReply(reply, disconnectAfterReply: true));
+    }
+
     /// <inheritdoc />
     public Task<CommResult> ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -115,6 +152,7 @@ internal sealed class ScriptedModbusChannel : IClientChannel
     {
         lock (sync)
         {
+            waitTimeouts.Add(timeout);
             if (ReconnectOnWait)
                 connected = true;
 
@@ -126,7 +164,7 @@ internal sealed class ScriptedModbusChannel : IClientChannel
     public async Task<CommResult<byte[]>> RequestAsync(ReadOnlyMemory<byte> payload, RequestOptions? options = null,
                                                        CancellationToken cancellationToken = default)
     {
-        // 让出线程：并发的操作在这里有机会交错（如果客户端没有操作锁，测试就会失败）。
+        // 让出线程：并发的操作在这里有机会交错（如果套件没有操作锁，测试就会失败）。
         await Task.Yield();
 
         lock (sync)
@@ -174,9 +212,26 @@ internal sealed class ScriptedModbusChannel : IClientChannel
     // 调用方持有 sync。脚本优先；脚本耗尽后使用响应函数。
     private CommResult<byte[]> NextReply(byte[] request)
     {
-        if (script.Count > 0)
-            return script.Dequeue();
+        if (script.Count == 0)
+            return Responder?.Invoke(request) ?? CommResult<byte[]>.Fail("No scripted reply.", CommErrorKind.Unspecified);
 
-        return Responder?.Invoke(request) ?? CommResult<byte[]>.Fail("No scripted reply.", CommErrorKind.Unspecified);
+        ScriptedReply next = script.Dequeue();
+        if (next.DisconnectAfterReply)
+            connected = false;
+
+        return next.Reply;
+    }
+
+    private sealed class ScriptedReply
+    {
+        public ScriptedReply(CommResult<byte[]> reply, bool disconnectAfterReply)
+        {
+            Reply = reply;
+            DisconnectAfterReply = disconnectAfterReply;
+        }
+
+        public CommResult<byte[]> Reply { get; }
+
+        public bool DisconnectAfterReply { get; }
     }
 }

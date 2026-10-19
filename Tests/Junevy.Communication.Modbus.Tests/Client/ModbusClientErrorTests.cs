@@ -12,7 +12,7 @@ public sealed class ModbusClientErrorTests
     [Fact(Timeout = 20000)]
     public async Task ExceptionResponse_IsRemoteErrorWithTheExceptionCode()
     {
-        var channel = new ScriptedModbusChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "83 02") };
+        var channel = new ScriptedClientChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "83 02") };
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult<byte[]> result = await client.ReadAsync("HR0", 1);
@@ -25,7 +25,7 @@ public sealed class ModbusClientErrorTests
     [Fact(Timeout = 20000)]
     public async Task RemoteError_IsNotRetriedEvenWithRetriesConfigured()
     {
-        var channel = new ScriptedModbusChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "83 02") };
+        var channel = new ScriptedClientChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "83 02") };
         ModbusClient client = TestModbus.Client(channel, options: new ModbusClientOptions { RetryCount = 3 });
 
         await client.ReadAsync("HR0", 1);
@@ -37,7 +37,7 @@ public sealed class ModbusClientErrorTests
     public async Task EchoMismatch_IsProtocolViolationAndIsRetried()
     {
         int calls = 0;
-        var channel = new ScriptedModbusChannel
+        var channel = new ScriptedClientChannel
         {
             Responder = request => calls++ == 0
                 ? CommResult<byte[]>.Success(TestModbus.Frame(request, ModbusFraming.Mbap, 1, HexVector.ToBytes("06 00 01 00 04")))
@@ -54,7 +54,7 @@ public sealed class ModbusClientErrorTests
     [Fact(Timeout = 20000)]
     public async Task EchoMismatchWithoutRetries_IsProtocolViolation()
     {
-        var channel = new ScriptedModbusChannel
+        var channel = new ScriptedClientChannel
         {
             Responder = request => CommResult<byte[]>.Success(TestModbus.Frame(request, ModbusFraming.Mbap, 1, HexVector.ToBytes("06 00 01 00 04"))),
         };
@@ -69,7 +69,7 @@ public sealed class ModbusClientErrorTests
     [Fact(Timeout = 20000)]
     public async Task StationMismatch_IsProtocolViolation()
     {
-        var channel = new ScriptedModbusChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "03 02 00 01", unit: 2) };
+        var channel = new ScriptedClientChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "03 02 00 01", unit: 2) };
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult<byte[]> result = await client.ReadAsync("HR0", 1);
@@ -80,7 +80,7 @@ public sealed class ModbusClientErrorTests
     [Fact(Timeout = 20000)]
     public async Task FunctionMismatch_IsProtocolViolation()
     {
-        var channel = new ScriptedModbusChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "04 02 00 01") };
+        var channel = new ScriptedClientChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "04 02 00 01") };
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult<byte[]> result = await client.ReadAsync("HR0", 1);
@@ -91,7 +91,7 @@ public sealed class ModbusClientErrorTests
     [Fact(Timeout = 20000)]
     public async Task ByteCountMismatch_IsProtocolViolation()
     {
-        var channel = new ScriptedModbusChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "03 04 00 01 00 02") };
+        var channel = new ScriptedClientChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "03 04 00 01 00 02") };
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult<byte[]> result = await client.ReadAsync("HR0", 1);
@@ -102,7 +102,7 @@ public sealed class ModbusClientErrorTests
     [Fact(Timeout = 20000)]
     public async Task Timeout_IsReportedAndRetriedWhenConfigured()
     {
-        var channel = new ScriptedModbusChannel();
+        var channel = new ScriptedClientChannel();
         channel.Enqueue(CommResult<byte[]>.Fail("The request timed out.", CommErrorKind.Timeout));
         channel.Enqueue(CommResult<byte[]>.Fail("The request timed out.", CommErrorKind.Timeout));
         ModbusClient client = TestModbus.Client(channel, options: new ModbusClientOptions { RetryCount = 1 });
@@ -116,7 +116,7 @@ public sealed class ModbusClientErrorTests
     [Fact(Timeout = 20000)]
     public async Task InvalidAddress_IsInvalidRequestAndSendsNothing()
     {
-        var channel = new ScriptedModbusChannel();
+        var channel = new ScriptedClientChannel();
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult<byte[]> result = await client.ReadAsync("X100", 1);
@@ -129,7 +129,7 @@ public sealed class ModbusClientErrorTests
     public async Task WrongTransactionId_IsNotCheckedByTheClient()
     {
         // 事务号由通道按键匹配（P7-D10），客户端解析时不再检查。
-        var channel = new ScriptedModbusChannel
+        var channel = new ScriptedClientChannel
         {
             Responder = request => CommResult<byte[]>.Success(new byte[] { 0x77, 0x77, 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x00, 0x01 }),
         };

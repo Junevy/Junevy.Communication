@@ -17,7 +17,7 @@ internal static class TestModbus
     /// <param name="framing">帧格式。</param>
     /// <param name="options">选项；为 null 时使用默认选项。</param>
     /// <returns>客户端。</returns>
-    public static ModbusClient Client(ScriptedModbusChannel channel, ModbusFraming framing = ModbusFraming.Mbap, ModbusClientOptions? options = null)
+    public static ModbusClient Client(ScriptedClientChannel channel, ModbusFraming framing = ModbusFraming.Mbap, ModbusClientOptions? options = null)
     {
         ModbusClientOptions effective = options ?? new ModbusClientOptions();
         effective.Framing ??= framing;
@@ -44,7 +44,7 @@ internal static class TestModbus
         if (framing == ModbusFraming.Mbap)
         {
             MbapHeader.Write(buffer, transactionId, unit, pdu.Length);
-            ModbusBuffer.Write(buffer, pdu);
+            BigEndianFields.WriteBytes(buffer, pdu);
         }
         else
         {

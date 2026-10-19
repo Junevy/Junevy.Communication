@@ -493,7 +493,7 @@ For a request/response protocol whose frames carry no correlation id (S7, FINS o
 
 These are the traps the MELSEC implementation hit. The design document's section 20.2 has the full entries.
 
-- `ConnectionStatistics` and `ConnectionStateChangedEventArgs` have internal constructors. A test double that implements `IClientChannel` needs reflection or a Channels test kit. Prefer `DuplexClientChannel` from `Junevy.Communication.Testing`.
+- `ConnectionStatistics` and `ConnectionStateChangedEventArgs` have internal constructors. A test double that implements `IClientChannel` needs reflection or a Channels test kit. Prefer `ScriptedClientChannel` (scripted replies) or `DuplexClientChannel` (an in-memory stream) from `Junevy.Communication.Testing`.
 - `PlcAddress.Device` is the interface type, so a derived address exposes a shadowing `new` property. Callers that need the concrete device must cast.
 - The `Build*` hooks cannot report errors. An ASCII decimal number above 999999 cannot be encoded, so the check belongs in `ValidateRange`, and the encoder keeps a matching guard.
 - `IFrameCodecFactory` does not receive `FramingOptions.MaxFrameLength`. A custom codec factory must take the limit separately and keep it consistent with the channel's configuration.
@@ -527,5 +527,5 @@ When you add the fourth protocol, none of F3–F10 reappear: they are shared par
 - A read-only area needs its own hook. `ValidateRange` does not know the direction of an access, so it cannot refuse writes to an input register; `IsReadOnly` does (P7-S1).
 - A protocol-specific function code (Modbus 0x16 and 0x17) needs the suite's operation lock and retries. Copying the packet loop would duplicate the retry rules; `SendProtocolRequestAsync` reuses them (P7-S2).
 - A declarative address parser cannot express a station prefix (`s=n;`) or the one-based Modicon form. The Modbus parser is protocol-specific and internal; it keeps the suite's whitespace and case rules (P7-F-A1).
-- An `IClientChannel` test double is duplicated per test project, because the shared testing library only has `IByteChannel` doubles. Candidate for the shared library (P7-F-A2).
+- An `IClientChannel` test double was duplicated per test project. It now lives in the shared testing library as `ScriptedClientChannel` (scripted replies or a responder, recorded requests, simulated disconnects); use it for hook tests instead of writing another one (P7-F-A2, review R7).
 - The shared device simulator answers synchronously. A late TCP reply needs a stream wrapper that writes in the background, so the request loop keeps running (P7-F-A3).

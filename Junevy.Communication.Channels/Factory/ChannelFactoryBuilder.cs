@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 namespace Junevy.Communication.Channels;
 
 /// <summary>
-/// 无 DI 容器的宿主（例如 Prism）使用的 <see cref="ChannelFactory"/> 构建器，用法与 <c>ModbusFactoryBuilder</c> 一致。
+/// 无 DI 容器的宿主（例如 Prism）使用的 <see cref="ChannelFactory"/> 构建器，用法与 <c>PlcClientFactoryBuilder</c>、<c>WebApiClientFactoryBuilder</c> 一致。
 /// 通道族本身不内置任何创建器：传输包的创建器（例如 <c>TcpClientChannelCreator</c>）由宿主通过 <see cref="WithCreator"/> 注册。
 /// </summary>
 public sealed class ChannelFactoryBuilder

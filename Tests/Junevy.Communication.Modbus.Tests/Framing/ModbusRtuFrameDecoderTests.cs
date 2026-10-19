@@ -1,6 +1,5 @@
 using System.Buffers;
 using Junevy.Communication.Channels;
-using Junevy.Communication.Channels.Framing;
 using Junevy.Communication.Modbus.Framing;
 using Junevy.Communication.Testing;
 
@@ -106,13 +105,14 @@ public sealed class ModbusRtuFrameDecoderTests
         Assert.Equal(new[] { HexVector.ToBytes(ReadResponse) }, frames);
     }
 
-    [Fact(Timeout = 20000)]
-    public void DeclaredLengthBeyondTheMaximum_IsAFrameDecodeException()
+    [Theory(Timeout = 20000)]
+    [InlineData("FB")]   // 251：比规范上限 250 多 1
+    [InlineData("FD")]   // 253：帧长 258，超过 RTU ADU 的 256 字节
+    public void ByteCountBeyondTheSpecification_IsNoiseAndTheFollowingFrameIsDelivered(string byteCount)
     {
-        // 字节数 253 使帧长达到 258，超过 RTU ADU 的 256 字节上限。
-        var decoder = new ModbusRtuFrameDecoder();
-        var buffer = new ReadOnlySequence<byte>(HexVector.ToBytes("01 03 FD"));
+        // P7-D8：不可能出现的字节数只会来自噪声，丢弃 1 个字节后重新同步，不抛异常（第一轮验收 R1）。
+        List<byte[]> frames = DecodeAll(new ModbusRtuFrameDecoder(), HexVector.ToBytes("01 03 " + byteCount + " " + ReadResponse));
 
-        Assert.Throws<FrameDecodeException>(() => decoder.TryDecode(ref buffer, out _));
+        Assert.Equal(new[] { HexVector.ToBytes(ReadResponse) }, frames);
     }
 }

@@ -1,4 +1,5 @@
 using Junevy.Communication.Channels;
+using Junevy.Communication.Testing;
 
 namespace Junevy.Communication.Plc.Tests;
 

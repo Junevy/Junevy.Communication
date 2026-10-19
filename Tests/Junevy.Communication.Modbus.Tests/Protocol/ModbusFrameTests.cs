@@ -126,7 +126,7 @@ public sealed class ModbusFrameTests
         byte[] pdu = HexVector.ToBytes(pduHex);
 
         MbapHeader.Write(output, (ushort)transactionId, unitId, pdu.Length);
-        ModbusBuffer.Write(output, pdu);
+        BigEndianFields.WriteBytes(output, pdu);
 
         Assert.Equal(HexVector.ToBytes(frameHex), output.ToArray());
     }

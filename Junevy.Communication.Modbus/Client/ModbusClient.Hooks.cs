@@ -14,8 +14,6 @@ namespace Junevy.Communication.Modbus;
 /// </summary>
 public sealed partial class ModbusClient
 {
-    private const int MinimumRtuUnitId = 1;
-    private const int MaximumRtuUnitId = 247;
     private const int MaximumAddress = 65535;
     private const int BitsPerRegister = 16;
     private const int MaximumReadWords = 125;
@@ -31,10 +29,10 @@ public sealed partial class ModbusClient
             return false;
 
         // 站号的范围由帧格式决定（P7-D4）：RTU 为 1–247（0 是广播，不做；248–255 是保留值）。
-        if (framing == ModbusFraming.Rtu && parsed.UnitId is { } unit && (unit < MinimumRtuUnitId || unit > MaximumRtuUnitId))
+        if (framing == ModbusFraming.Rtu && parsed.UnitId is { } unit && !RtuAdu.IsValidUnitId(unit))
         {
             parsed = null;
-            error = $"The RTU unit ID in address '{address}' must be between {MinimumRtuUnitId} and {MaximumRtuUnitId}.";
+            error = $"The RTU unit ID in address '{address}' must be between {RtuAdu.MinimumUnitId} and {RtuAdu.MaximumUnitId}.";
             return false;
         }
 

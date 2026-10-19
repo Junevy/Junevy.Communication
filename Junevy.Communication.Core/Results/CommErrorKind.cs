@@ -2,7 +2,7 @@ namespace Junevy.Communication.Core.Results;
 
 /// <summary>
 /// 通道族通用的错误分类（粗粒度，供宿主统一告警与重试决策）。
-/// 数值 0–7 与 <c>ModbusErrorKind</c> 一一对应（<c>RemoteError</c> 对应 Modbus 的 <c>ModbusException</c>），未来 Modbus 迁移时可直接映射；8–11 为通道族新增。
+/// 数值 0–7 与 Modbus 2.x 的 <c>ModbusErrorKind</c> 一一对应（<c>RemoteError</c> 对应 2.x 的 <c>ModbusException</c>），Modbus 3.0 迁移时按此映射；8–11 为通道族新增。
 /// </summary>
 public enum CommErrorKind
 {

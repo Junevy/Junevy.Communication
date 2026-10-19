@@ -218,7 +218,7 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 ### 10. Task 6：分帧与关联（P7-D8、D9）
 
 1. `Framing/ModbusStreamFraming`：MBAP 返回 LengthField 的 `FramingOptions`（P7-D8），RTU 返回 `ModbusRtuFrameCodecFactory`。
-2. `ModbusRtuFrameDecoder`：第 21.4 节的长度表；收全后校验 CRC；功能码未知或 CRC 不符时丢弃 1 字节并继续；超过 256 字节抛 `FrameDecodeException`。
+2. `ModbusRtuFrameDecoder`：第 21.4 节的长度表；收全后校验 CRC；功能码未知、读应答字节数大于 250 或 CRC 不符时丢弃 1 字节并继续，不抛异常（P7-D8；原文"超过 256 字节抛 `FrameDecodeException`"与 P7-D8 矛盾，第一轮验收 R1 改正）。
 3. `ModbusTransactionKeyExtractor`：请求与应答都取第 0–1 字节；不足 2 字节时返回 false。
 4. 测试：
    - 解码器：单帧；逐字节到达；两帧粘连；异常应答帧（V-R-15）；帧前有 3 个噪声字节；CRC 错 1 位后紧跟一个正确帧，只交出正确帧；未知功能码后紧跟正确帧；本地回显（先到达一份请求 V-R-1，再到达应答 V-R-3），只交出应答；
@@ -632,6 +632,35 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - Modbus.Tests 内部 2 个窗口（TCP 与 UDP 的 `Theory` 样板）：接受。
 - Task 6–11 没有先单独跑红，改用变异检查替代：执行者诚实记录了，本轮的 24 个变异也证明测试有效，接受。下一期仍按"先红后绿"执行。
 - 第 25.3 节缺 Task 14（知识库）的汇报：补上，附 `git status --short -- Junevy.Communication.Wiki` 与 `git diff --stat -- Junevy.Communication.Wiki`。
+
+#### 第二轮：修正与复验（2026-10-20，审阅者）
+
+用户决定先修 R1–R10 再合入 master。修正由审阅者在 `feat/modbus-p7` 上完成；同一天合入了用户另开会话完成的通道修复（分支 `junevy/heuristic-nobel-ddf0d4`，提交 `3f5220d`，合并提交 `b6be97b`），以及用户自己的知识库提交 `fd73bfe`。
+
+**结论：通过。** 可以合入 master。
+
+| # | 处理 | 证据 |
+|---|---|---|
+| R1 | `ModbusRtuFrameDecoder`：读应答字节数大于 250（`MaxReadByteCount`）时与未知功能码一样丢 1 字节重新同步；删除 `FrameDecodeException` 分支。计划第 10 节第 2 条的矛盾文字一并改正 | `ByteCountBeyondTheSpecification_IsNoiseAndTheFollowingFrameIsDelivered`（字节数 251、253）。修正前的实现在 253 时抛异常，用例失败；变异 M26（上限放宽到 254）被发现 |
+| R2 | 补线上字节测试 `WriteSeveralRegisterBitsWithMaskWrite_SendsOneMaskWritePerBitAcrossTheRegisterBoundary`（`HR100.14` 起 3 点：`16 00 64 BF FF 40 00`、`16 00 64 7F FF 00 00`、`16 00 65 FF FE 00 01`）与端到端 `MaskWriteSeveralBits_AcrossTwoRegisters_ChangesOnlyThoseBits` | 第一轮存活的 M25（单包上限 1 → 16）现在被发现 |
+| R3 | 竞争本身已由通道修复解决；README 那段开头改为"MBAP 不重建、RTU over TCP 重建"，后半段（重试与 `WaitForConnectedAsync` 都等待重建的连接）沿用通道修复的写法 | — |
+| R4 | 删除 `Protocol/ModbusBuffer.cs`，6 个文件改用 `BigEndianFields.WriteUInt8` / `WriteBytes` | 生产重复窗口不变 |
+| R5 | RTU 站号范围只定义在 `RtuAdu.MinimumUnitId` / `MaximumUnitId` / `IsValidUnitId`，客户端与协议配置共用 | M3 类的用例仍通过 |
+| R6 | CHANGELOG 的 5 处中途说明改为最终状态；P7 节新增"修复 / 变更——第一轮验收"两小节 | — |
+| R7 | `Plc.Tests/TestSupport/ScriptedClientChannel.cs` 用 `git mv` 移为 `Junevy.Communication.Testing/ScriptedClientChannel.cs`（public）；删除 `ScriptedModbusChannel`；Plc.Tests 13 个文件与 Modbus.Tests 5 个文件改用它 | 测试重复窗口 164 → 127（−37，正是两份副本之间的窗口） |
+| R8 | 竞争已在通道层修复（设计 20.1 第 43 项）。设计 20.12、Skill、README 由通道修复改过；知识库 8 篇笔记由审阅者改为"已修复"，并在 `行为契约/通道重连心跳与超时.md` 补上第 43 项的行为契约 | — |
+| R9 | 7 处注释改为注明来自 2.x（tag `modbus-v2.0.0`）或指向现有类型（只改注释） | `git grep` 上述 v2 类型名，代码中只剩这些带 tag 的历史说明 |
+| R10 | `TryResolveWritable` 改为 `return failure is null;`，重复注释合并 | — |
+
+开放决策：F-A1 不扩展套件、F-A2 已移入共享测试库、F-A3 保留，已写入设计 20.12 与知识库。
+
+**复验**
+
+- 构建：Debug 与 Release（`--no-incremental`）各 0 错误、2 条警告（WPF 调试工具同一条 CS8618）。
+- 测试：`pwsh build/test-affected.ps1 -Base c29a45b -NoBuild -Repeat 3`（共享测试库与 Channels 都有改动，选中 30 个测试宿主）三遍一致：每遍通过 7206、失败 0、跳过 8（真实串口对与环境相关的用例）。Modbus 每个目标 311 + 1 跳过，Plc 283。
+- 合入通道修复后的第一遍运行出现过 1 条 Channels.Tests（net8.0）失败，之后单独运行 5 遍、全量运行 6 遍都没有复现，名字没有记录下来。按偶发记录，不作为本期的阻塞项。
+- 变异：第一轮的 24 个加上 M26，共 25 个，全部被发现。
+- 度量：16 个生产目录的重复窗口 35（10 个集群），Modbus 0；测试重复窗口 127（41 个集群），Modbus.Tests 只剩已接受的 Stream 覆写样板与 `Theory` 样板；超过 60 行的方法 0；有效行 Modbus 1202、Plc 1283。
 
 ### 25.2 扩展性摩擦记录（执行者从 Task 3 起填写；格式：现象 / 变通或缺口 / 建议的通用能力）
 

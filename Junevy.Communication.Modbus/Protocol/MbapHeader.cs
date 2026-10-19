@@ -31,7 +31,7 @@ internal static class MbapHeader
         BigEndianFields.WriteUInt16(output, transactionId);
         BigEndianFields.WriteUInt16(output, ProtocolIdentifier);
         BigEndianFields.WriteUInt16(output, (ushort)(pduLength + 1));
-        ModbusBuffer.WriteByte(output, unitId);
+        BigEndianFields.WriteUInt8(output, unitId);
     }
 
     /// <summary>

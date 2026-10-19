@@ -118,13 +118,11 @@ internal sealed partial class PlcRequestPipeline<TAddress> where TAddress : PlcA
     {
         if (!TryResolve(address, out target, out failure))
             return false;
+
         failure = CheckWritable(target);
-        if (failure is not null)
-            return false;
-        return true;
+        return failure is null;
     }
 
-    // 只读地址的写入（P7-S1）：在点数检查之前拒绝，因此不发请求，也不进入操作锁。
     private CommResult? CheckWritable(TAddress target)
         => client.IsReadOnly(target)
             ? CommResult.Fail($"The address '{target.Text}' is read-only.", CommErrorKind.InvalidRequest)

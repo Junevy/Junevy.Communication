@@ -1,16 +1,28 @@
 using System.Buffers;
+using Junevy.Communication.Core.Buffers;
 using Junevy.Communication.Core.Results;
 
 namespace Junevy.Communication.Modbus.Protocol;
 
 /// <summary>
 /// RTU 帧（串口与 RTU over TCP / UDP）：站号 1 字节、PDU、CRC 2 字节（低字节在前）。
-/// 分帧（按功能码确定帧长）在 Task 6 的解码器中完成；这里只做封装与剥离。
+/// 分帧（按功能码确定帧长）由 <c>ModbusRtuFrameDecoder</c> 完成；这里只做封装与剥离，以及 RTU 站号范围的唯一定义。
 /// </summary>
 internal static class RtuAdu
 {
     private const int UnitIdLength = 1;
     private const int CrcLength = 2;
+
+    /// <summary>RTU 站号的下限：0 是广播，本库不做（P7-D4）。</summary>
+    public const byte MinimumUnitId = 1;
+
+    /// <summary>RTU 站号的上限：248–255 是保留值（Modbus over Serial Line 2.2 节）。</summary>
+    public const byte MaximumUnitId = 247;
+
+    /// <summary>站号是否可用于 RTU 请求（1–247）。</summary>
+    /// <param name="unitId">站号。</param>
+    /// <returns>在范围内返回 true。</returns>
+    public static bool IsValidUnitId(byte unitId) => unitId >= MinimumUnitId && unitId <= MaximumUnitId;
 
     /// <summary>写入 RTU 帧：站号、PDU 与 CRC。</summary>
     /// <param name="output">目标。</param>
@@ -27,7 +39,7 @@ internal static class RtuAdu
         frame[body] = (byte)(crc & 0xFF);
         frame[body + 1] = (byte)(crc >> 8);
 
-        ModbusBuffer.Write(output, frame);
+        BigEndianFields.WriteBytes(output, frame);
     }
 
     /// <summary>

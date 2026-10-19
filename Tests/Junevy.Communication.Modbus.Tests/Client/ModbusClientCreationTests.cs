@@ -55,7 +55,7 @@ public sealed class ModbusClientCreationTests
     [Fact(Timeout = 20000)]
     public void ParseAddress_AcceptsTheStationPrefixAndRejectsACoilBitIndex()
     {
-        ModbusClient client = TestModbus.Client(new ScriptedModbusChannel());
+        ModbusClient client = TestModbus.Client(new ScriptedClientChannel());
 
         CommResult<PlcAddress> ok = client.ParseAddress("s=2;HR100.5");
         CommResult<PlcAddress> rejected = client.ParseAddress("C0.1");
@@ -67,7 +67,7 @@ public sealed class ModbusClientCreationTests
     [Fact(Timeout = 20000)]
     public async Task WriteFloat_InAbcdOrder_PutsTheHighWordFirst()
     {
-        var channel = new ScriptedModbusChannel { Responder = TestModbus.Echoes(ModbusFraming.Mbap) };
+        var channel = new ScriptedClientChannel { Responder = TestModbus.Echoes(ModbusFraming.Mbap) };
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult result = await client.WriteFloatAsync("HR0", 1.0f);
@@ -79,7 +79,7 @@ public sealed class ModbusClientCreationTests
     [Fact(Timeout = 20000)]
     public async Task WriteFloat_InCdabOrder_PutsTheLowWordFirst()
     {
-        var channel = new ScriptedModbusChannel { Responder = TestModbus.Echoes(ModbusFraming.Mbap) };
+        var channel = new ScriptedClientChannel { Responder = TestModbus.Echoes(ModbusFraming.Mbap) };
         ModbusClient client = TestModbus.Client(channel, options: new ModbusClientOptions { DataFormat = new PlcDataFormat(WordOrder.CDAB) });
 
         CommResult result = await client.WriteFloatAsync("HR0", 1.0f);
@@ -91,7 +91,7 @@ public sealed class ModbusClientCreationTests
     [Fact(Timeout = 20000)]
     public async Task ReadInt32_DecodesTwoRegistersInAbcdOrder()
     {
-        var channel = new ScriptedModbusChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "03 04 00 01 00 02") };
+        var channel = new ScriptedClientChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "03 04 00 01 00 02") };
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult<int> result = await client.ReadInt32Async("HR0");
@@ -103,7 +103,7 @@ public sealed class ModbusClientCreationTests
     [Fact(Timeout = 20000)]
     public async Task ReadBool_GetsTheBitOfTheRegisterValue()
     {
-        var channel = new ScriptedModbusChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "03 02 00 20") };
+        var channel = new ScriptedClientChannel { Responder = TestModbus.Responds(ModbusFraming.Mbap, "03 02 00 20") };
         ModbusClient client = TestModbus.Client(channel);
 
         CommResult<bool> result = await client.ReadBoolAsync("HR100.5");

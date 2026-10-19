@@ -1,6 +1,7 @@
 using Junevy.Communication.Channels;
 using Junevy.Communication.Channels.Framing;
 using Junevy.Communication.Modbus.Framing;
+using Junevy.Communication.Modbus.Protocol;
 using Junevy.Communication.Plc;
 
 namespace Junevy.Communication.Modbus;
@@ -11,9 +12,6 @@ namespace Junevy.Communication.Modbus;
 /// </summary>
 internal static class ModbusProtocolProfile
 {
-    private const byte MinimumRtuUnitId = 1;
-    private const byte MaximumRtuUnitId = 247;
-
     /// <summary>
     /// 为 Modbus 配置通道组件：MBAP 与 RTU 的分帧，关联（MBAP 为 Keyed，RTU 为 Sequential），以及读 HR0 的心跳探测。
     /// </summary>
@@ -41,10 +39,10 @@ internal static class ModbusProtocolProfile
         ModbusFraming framing = ResolveFraming(settings.Framing, medium);
         if (framing == ModbusFraming.Mbap && medium == ChannelMedium.Serial)
             throw new ArgumentException("Serial transports carry RTU frames only; set Framing to Rtu.", nameof(settings));
-        if (framing == ModbusFraming.Rtu && (settings.UnitId < MinimumRtuUnitId || settings.UnitId > MaximumRtuUnitId))
+        if (framing == ModbusFraming.Rtu && !RtuAdu.IsValidUnitId(settings.UnitId))
         {
             throw new ArgumentOutOfRangeException(nameof(settings), settings.UnitId,
-                $"The RTU unit ID must be between {MinimumRtuUnitId} and {MaximumRtuUnitId}.");
+                $"The RTU unit ID must be between {RtuAdu.MinimumUnitId} and {RtuAdu.MaximumUnitId}.");
         }
 
         bool keyed = framing == ModbusFraming.Mbap;
