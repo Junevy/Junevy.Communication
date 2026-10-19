@@ -30,7 +30,7 @@
 |---|---|---|
 | P7-D1 | **范围与包**（用户决定原地替换）：<br>• 包名 `Junevy.Communication.Modbus` 不变，版本 `3.0.0-preview.1`，与其他新包一样只构建、不 `nuget push`；<br>• csproj 改为 Import `build/Junevy.Communication.Common.props`（`net472;net8.0`、`TreatWarningsAsErrors`），在 Import 之后覆写 `<Version>`；依赖 Plc + Tcp + Udp + Serial；<br>• 支持的组合：Modbus TCP（MBAP）、RTU（串口）、RTU over TCP、Modbus UDP（MBAP）、RTU over UDP；<br>• 功能码：01、02、03、04、05、06、0F、10，以及 16、17（P7-D15）。<br>不做：Modbus ASCII、从站 / 服务端、诊断类（07、08、0B、0C、11）、文件记录（14、15）、FIFO（18）、设备标识（2B）、RTU 广播（站号 0）、自定义功能码与原始 PDU 入口、同步 API | 用户决定；设计第 17 节；v2 的读写能力全部保留，AutomationSystem 只用到 01–04、06、0F、10 |
 | P7-D2 | **允许的套件改动只有这两项**（里程碑 1）：<br>• **S1** 只读地址钩子 `protected internal virtual bool IsReadOnly(TAddress address)`，默认 `false`（Task 1）；<br>• **S2** 协议专有请求 `protected Task<CommResult<T>> SendProtocolRequestAsync<T>(…)`（Task 2）。<br>Core、Channels、Tcp、Udp、Serial **不改**。Melsec、Siemens、Omron 的生产代码与测试**不改**，测试保持全绿 | S1：套件的 `ValidateRange` 不区分读写，无法拒绝"写输入寄存器"。如果让写钩子抛异常，会被收口成 `Unspecified`，错误分类不对。S2：用户决定"套件补通用能力"；S7 读 SZL、FINS 读运行状态以后都能用 |
-| P7-D3 | **公开 API**（逐条，不多不少）：<br>• 命名空间 `Junevy.Communication.Modbus`：<br>　- `ModbusClient : PlcClientBase<ModbusAddress>`（sealed）：两个 `Create`（同 P4-D10）、`MaskWriteRegisterAsync`、`ReadWriteMultipleRegistersAsync`；**没有**公开构造函数；<br>　- `ModbusClientOptions : PlcClientOptions`；<br>　- `ModbusFraming`（`Mbap`、`Rtu`）；<br>　- `ModbusAddress : PlcAddress`：`new ModbusDevice Device`、`byte? UnitId`；<br>　- `ModbusDevice : IPlcDeviceDefinition`（sealed）：`Symbol`、`Unit`、`Radix`、`MaxNumber`、`IsReadOnly`，四个静态实例 `Coil`、`DiscreteInput`、`InputRegister`、`HoldingRegister`，构造函数 internal。<br>• 命名空间 `Junevy.Communication.Modbus.DependencyInjection`：`ModbusTransport`（`Tcp`、`Udp`、`Serial`）、`ModbusClientConfig : IPlcClientConfig`、`ModbusClientCreator : IPlcClientCreator`、`ModbusServiceCollectionExtensions.AddModbus()`。<br>其余类型全部 internal，包括协议层、分帧、键提取器、心跳探测、配置快照、`ModbusProtocolProfile`。共 10 个公开类型 | 沿用 P2.5 的单一 `Create` 入口和 P4-D10 的最小公开面；Modbus 没有握手会话，但公开 profile 只会扩大公开面，没有使用者需要它 |
+| P7-D3 | **公开 API**（逐条，不多不少）：<br>• 命名空间 `Junevy.Communication.Modbus`：<br>　- `ModbusClient : PlcClientBase<ModbusAddress>`（sealed）：两个 `Create`（同 P4-D10）、`MaskWriteRegisterAsync`、`ReadWriteMultipleRegistersAsync`；**没有**公开构造函数；<br>　- `ModbusClientOptions : PlcClientOptions`；<br>　- `ModbusFraming`（`Mbap`、`Rtu`）；<br>　- `ModbusAddress : PlcAddress`：`new ModbusDevice Device`、`byte? UnitId`；<br>　- `ModbusDevice : IPlcDeviceDefinition`（sealed）：`Symbol`、`Unit`、`Radix`、`MaxNumber`、`IsReadOnly`，四个静态实例 `Coil`、`DiscreteInput`、`InputRegister`、`HoldingRegister`，构造函数 internal。<br>• 命名空间 `Junevy.Communication.Modbus.DependencyInjection`：`ModbusTransport`（`Tcp`、`Udp`、`Serial`）、`ModbusClientConfig : IPlcClientConfig`、`ModbusClientCreator : IPlcClientCreator`、`ModbusServiceCollectionExtensions.AddModbus()`。<br>其余类型全部 internal，包括协议层、分帧、键提取器、心跳探测、配置快照、`ModbusProtocolProfile`。共 9 个公开类型（上面逐条列出 9 个；本行原写"10"是计数错误，Task 15 用反射确认为 9） | 沿用 P2.5 的单一 `Create` 入口和 P4-D10 的最小公开面；Modbus 没有握手会话，但公开 profile 只会扩大公开面，没有使用者需要它 |
 | P7-D4 | **地址语法**（自写 `ModbusAddressParser`，internal）：<br>• 形式：`[s=<站号>;]<存储区><编号>[.<位号>]`，大小写不敏感；空白的处理与套件的 `PlcAddressParser` 一致。<br>• 符号写法（**零基**，十进制编号 0–65535，就是协议地址）：`C` 线圈（位，读写）、`DI` 离散输入（位，只读）、`IR` 输入寄存器（字，只读）、`HR` 保持寄存器（字，读写）。<br>• Modicon 写法（**一基**，纯数字，首位表示存储区：0 线圈、1 离散输入、3 输入寄存器、4 保持寄存器）：<br>　- 5 位：后 4 位 `0001`–`9999`，对应编号 0–9998；<br>　- 6 位：后 5 位 `00001`–`65536`，对应编号 0–65535；<br>　- 其他长度、首位为 2 或 5–9、后几位为 0（如 `40000`）：`InvalidRequest`，消息提示 `HR100` 与 `40001` 两种写法。<br>• 位号 `.n`：只允许寄存器（`IR`、`HR` 及 3、4 开头的 Modicon 地址），十进制 0–15，位 0 是寄存器值的最低位；线圈与离散输入带位号时返回 `InvalidRequest`。<br>• 站号前缀 `s=n;`：十进制 0–255。<br>　- 由客户端的 `TryParseAddress` 按帧格式检查：MBAP 允许 0–255；RTU 只允许 1–247（0 是广播，不做；248–255 是保留值），超出时返回 `InvalidRequest`；<br>　- 没有前缀时 `ModbusAddress.UnitId` 为 null，请求使用 `ModbusClientOptions.UnitId`。<br>• `ModbusAddress.Text` 保留调用方的原文 | 设计第 17 节："地址写成 `40001` 或 `HR100`"。站号前缀是用户的决定（与 HslCommunication 相同）。声明式解析器表达不了前缀和 Modicon 写法，与 S7 同属 F1 类，Task 4 记一行摩擦 |
 | P7-D5 | **功能码映射**（"一个点"指**一个分包**只含一个点，拆包后的最后一包也按这条规则判断）：<br>• `ReadAsync`：`HR` 用 03，`IR` 用 04；<br>• `ReadBitsAsync`：`C` 用 01，`DI` 用 02；在寄存器上读位，由套件读字后取位（03 / 04）；<br>• `WriteAsync`（只有 `HR`）：一个字并且 `UseSingleWriteFunctions` 为 true 时用 06，否则用 10；<br>• `WriteBitsAsync`：<br>　- `C`：一个点并且 `UseSingleWriteFunctions` 为 true 时用 05（`FF 00` / `00 00`），否则用 0F；<br>　- `HR` 并且 `UseMaskWriteForBits` 为 true：`CanWriteBitsNatively` 返回 true，每个请求用 16 写 1 位（AND 掩码 `~(1 << n)`，OR 掩码为写 1 时 `1 << n`、写 0 时 0）；<br>　- `HR` 并且 `UseMaskWriteForBits` 为 false：走套件默认，返回 `NotSupported`；开启 `AllowReadModifyWriteBits` 时读-改-写（03 加 06 或 10）；<br>• `IR`、`DI` 上的任何写入：S1 返回 `InvalidRequest`，不发请求；<br>• `C`、`DI` 上按字（`ReadAsync`、类型化读写）或按字节访问：`ValidateRange` 返回 `InvalidRequest`，消息说明线圈与离散输入只能按位访问 | 套件的类型化读写都走字路径；用户决定寄存器写位"默认拒绝、可选 0x16"。0x16 由设备原子执行，不会与 PLC 程序抢写同一个寄存器 |
 | P7-D6 | **单包上限**（规范第 6 节）：读寄存器 125（03、04），读位 2000（01、02），写寄存器 123（10），写线圈 1968（0F），掩码写位每请求 1 位。`GetMaxReadPoints` / `GetMaxWritePoints` 按 `access` 的单位返回：`Words` 返回 125 / 123，`Bits` 在位存储区返回 2000 / 1968，在开启掩码写的 `HR` 上写位返回 1。<br>`ValidateRange`：<br>• 结束地址（字访问为 `编号 + 点数 − 1`；寄存器上的位访问换算到字）超过 65535 时返回 `InvalidRequest`；<br>• P7-D5 最后一条的拒绝也在这里。<br>超过单包上限时由套件自动拆包（**行为变化**：v2 对超限直接抛 `ArgumentException`） | 规范给出的上限；拆包是套件的能力 |
@@ -794,6 +794,18 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - 决定：20.12 的差异表按"原设计 → 实际 → 原因"组织，每一行都能追溯到计划中的编号（P7-Dx）或第 20 节。
 - 第 2 节自查：文档中的编号与计划一致（P7-D1、D2、D4 至 D9、D13 至 D16）。
 
+#### Task 15（最终度量与扩展性结论，2026-10-19）
+
+- 度量：第 3 节全部指标按第 25.4 节的"最终"列复测。生产重复窗口为 35（与基线相同）；Modbus 没有增加重复窗口，内部为 0；方法长度与超过 300 行的文件与基线相同，Modbus 为 0。
+- 偏差 1（已修正，属于 Task 15 的度量修正）：Task 11 之后、Task 15 之前，15 个目录的重复窗口为 36（比基线多 1）。来源是 `PlcRequestPipeline` 的 Words、Bits、Bytes 三个写入入口各自的只读检查（S1，Task 1）组成了相同的六行窗口。修正方式：新增私有入口 `TryResolveWritable`（解析地址后检查只读），三处写入入口改用它；行为不变，Plc.Tests 283 项全部通过。修正后为 35。CHANGELOG 的 P7 变更节已记录。
+- 偏差 2（已修正，测试）：Modbus 端到端的 TCP、UDP、串口三个测试类重复了四区域往返断言。抽为 `TestSupport/ModbusScenarios.FourAreasRoundTripAsync`，三处改为调用。仅测试，断言不变。
+- 偏差 3（未达成，留给审阅者）：计划第 3 节要求"Modbus.Tests 内部与它与其他测试项目之间都为 0"。实测：Modbus.Tests 内部为 2（一对：TCP 与 UDP 的 Theory 的属性与签名样板，两行窗口）；与其他测试项目之间为 37 个窗口（`ScriptedModbusChannel` 与 `Plc.Tests` 的 `ScriptedClientChannel`，即 F-A2）加上 `DelayingStream` 与 Channels、Ftp、Testing 的若干窗口（即 F-A3 的相关部分）。这两项是计划第 25.2 节的开放决策，本期没有合并，交由审阅者决定。
+- 偏差 4（已修正，计数错误）：P7-D3 写的是"共 10 个公开类型"，但逐条列出的是 9 个。反射确认为 9（见下），已在 P7-D3 的文字中改正。
+- 公开面（反射，`Junevy.Communication.Modbus.dll`，net8.0 Debug）：导出类型 9 个，与 P7-D3 逐条列表一致：`ModbusClient`、`ModbusClientOptions`、`ModbusFraming`、`ModbusAddress`、`ModbusDevice`、`ModbusTransport`、`ModbusClientConfig`、`ModbusClientCreator`、`ModbusServiceCollectionExtensions`。其余类型全部 internal。
+- 构建：`dotnet build Junevy.Communication.slnx` 在 Debug 与 Release 下（`--no-incremental`）均为 0 错误。警告：两个配置各 2 条，去重后为 1 条（`Junevy.Communication.Test/App.xaml.cs(15,33)` 的 CS8618，WPF 调试工具，不是本期改动，也不属于 Modbus）。Modbus 为 0 条；基线为 31 条。
+- 测试：`pwsh build/test-affected.ps1 -Base c29a45b -NoBuild -Repeat 3`，三遍结果一致：每遍 2727 通过、0 失败、4 跳过。跳过的 4 项是两个真实串口对用例（Melsec 与 Modbus 各一个，分别在 net8.0 与 net472 上），因为未设置 `JUNEVY_SERIAL_PAIR`。Modbus.Tests 每个框架 307 通过、1 跳过（共 308）。
+- 扩展性结论（第四次验证）：Modbus 迁移到套件只改动了两项（S1 `IsReadOnly`、S2 `SendProtocolRequestAsync`）。Melsec、Siemens、Omron 的生产代码与测试没有改动，测试数不变。摩擦记录见第 25.2 节，其中 F-A1（声明式解析器的表达力）仍然存在。有效行：Modbus v3 为 1215，v2 为 3304；Plc 为 1285（+54）；Melsec 1247、Siemens 1271、Omron 692 不变。
+
 ### 25.4 基线与度量（执行者填写）
 
 Task 0 实测（第 3 节口径；脚本 `build/metrics/*.py`，经 `runpy` 调用，未修改脚本）：
@@ -813,3 +825,24 @@ Task 0 实测（第 3 节口径；脚本 `build/metrics/*.py`，经 `runpy` 调�
 | 第 22 节静态用例 | `[Fact]` 159；`[Theory]` 5（`[InlineData]` 15 行；4 个 Theory 的数据来自 MemberData，未展开） |
 | 套件改动 | — |
 
+
+Task 15 最终复测（同一口径；"目标"列来自第 3 节）：
+
+| 指标 | 最终（Task 15） | 目标 | 结果 |
+|---|---|---|---|
+| 生产重复窗口，15 个目录 | 35（10 个集群） | 不增加 | 达成（Task 11 之后曾为 36，见 25.3 Task 15 偏差 1，已修正） |
+| 生产重复窗口，15 个目录 + Modbus | 35（Modbus 增加 0） | Modbus 内部与其他程序集之间都为 0 | 达成；Modbus 内部（`Modbus` 目录单独扫描）为 0 |
+| 超过 60 行的方法，15 个目录 / 含 Modbus | 0 / 0（v2 Modbus 为 8） | 0 | 达成 |
+| 超过 300 行的文件，15 个目录 | 9（与基线相同） | 不增加 | 达成 |
+| 超过 300 行的文件，Modbus | 0（v2 为 4） | 0 | 达成 |
+| 生产程序集之间的 IVT | 2（Channels → Tcp、Channels → Udp） | 2 | 达成 |
+| 有效行 | Modbus v3 **1215**（v2 3304）；Plc 1285（基线 1231，+54）；Melsec 1247；Siemens 1271；Omron 692 | 记录 | 已记录 |
+| 构建警告（`--no-incremental`，Debug / Release） | 各 2 条，去重后 1 条（WPF 调试工具 `App.xaml.cs` 的 CS8618）；Modbus 0 条；0 错误 | Modbus 0 条；总数减少 | 达成（基线 31 条，Modbus 25 条） |
+| 测试重复窗口，`Tests/` 下 451 个 `*.cs` | 164（42 行）（基线 192，P4.6 口径，文件数 445 → 451） | 不增加 | 达成（减少 28） |
+| Modbus.Tests 内部重复窗口 | 2（一对：TCP 与 UDP 的 Theory 样板） | 0 | **未达成**（见 25.3 偏差 3） |
+| Modbus.Tests 与其他测试项目之间 | 37（`ScriptedModbusChannel` ↔ `Plc.Tests` 的 `ScriptedClientChannel`）+ `DelayingStream` 的若干窗口 | 0 | **未达成**，属于 F-A2、F-A3（开放决策） |
+| Modbus 静态用例 | `[Fact]` 153；`[Theory]` 24；`[InlineData]` 121；`[MemberData]` 1；`.cs` 文件 26 | 记录（第 22 节的 v2 计数不再适用） | 已记录 |
+| 三遍 `test-affected`（`-Base c29a45b -NoBuild -Repeat 3`） | 每遍 2727 通过、0 失败、4 跳过（真实串口对，未设置 `JUNEVY_SERIAL_PAIR`）；三遍一致 | 0 失败 | 达成 |
+| Modbus.Tests（每个框架） | 307 通过、1 跳过（真实串口对），共 308 | — | 已记录 |
+| 公开类型（反射，net8.0 Debug） | 9（与 P7-D3 逐条列表一致；P7-D3 原写的"10"是计数错误，已改正） | 9 | 达成 |
+| 套件改动 | 只有 S1（`IsReadOnly`）与 S2（`SendProtocolRequestAsync`） | 只有 S1、S2 | 达成 |

@@ -1637,11 +1637,11 @@ P6.3（计划 `docs/superpowers/plans/2026-10-12-p63-ftp.md`，Task 0–11）是
 | 错误分类 | `ModbusErrorKind`（数值对齐） | `CommErrorKind`（同值对齐）；异常码在 `ProtocolErrorCode` | 第 20 节 |
 | 工厂与依赖注入 | `IModbusFactory`、`AddModbusFactory()` | `PlcClientFactory`、`AddModbus()` | P7-D14 |
 
-**第四次扩展性验证的结论**（Task 15 复测；以下数字为 Task 11 时点，最终数字见计划第 25.4 节）
+**第四次扩展性验证的结论**（Task 15 复测；数字与计划第 25.4 节一致）
 
 - 套件改动只有两项：S1（`IsReadOnly`，约 14 个有效行）与 S2（`SendProtocolRequestAsync`，约 40 个有效行）。Melsec、Siemens、Omron 的生产代码与测试未改动，测试数不变。
 - 摩擦记录（计划第 25.2 节）：F-S1、F-S2（套件缺口，已由两项钩子覆盖）；F-A1（声明式地址解析器无法表达站号前缀与 Modicon 的一基写法，Modbus 自写解析器）；F-A2（`IClientChannel` 测试替身只能复制，共享测试库缺少）；F-A3（共享的设备替身同步回复，TCP 的迟到应答需要后台写入的包装流）。
-- 有效行对照：Modbus v2 3304；Modbus v3 1215（Task 11 时点，含 DI 与协议层）；Plc 1285（+54，S1、S2）；Melsec 1247；Siemens 1271；Omron 692。
+- 有效行对照：Modbus v2 3304；Modbus v3 1215（含 DI 与协议层）；Plc 1285（+54，S1、S2；Task 15 为消除重复窗口合并了写入入口的只读检查，去重后仍为 1285）；Melsec 1247；Siemens 1271；Omron 692。
 - 结论：第四个协议在不改通道层、不改 Melsec、Siemens、Omron 的前提下迁移，套件只增加两个小钩子。仍然存在的表达力缺口是 F-A1：声明式解析器不能表达站号前缀与一基地址，因此协议需要自写解析器。这个缺口没有被 S1、S2 覆盖，留待审阅者决定是否纳入后续的套件扩展。
 - 本期发现（未修改通道层）：RTU over TCP 上，请求超时后重建连接与紧接着的重试存在竞争，重试可能得到 `NotConnected`（见计划第 25.2 节与 Skill 的 P7 教训）。
 
