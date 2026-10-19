@@ -1,5 +1,7 @@
 # ModbusRtuClient
 
+> **适用于 2.x，已被 3.0 取代，迁移见 [[协议细节/Modbus 协议]]。**
+
 <cite>
 **本文引用的文件**
 - [Junevy.Communication.Modbus/Rtu/ModbusRtuClient.cs](file://Junevy.Communication.Modbus/Rtu/ModbusRtuClient.cs)
@@ -66,7 +68,7 @@ new ModbusRtuClient(config, logger, responseParser, IModbusFrameBuilder)   // �
 
 ## RS-485 多从站
 
-一条总线 = 一个 `ModbusRtuClient` 实例（一个物理串口）。多个逻辑从站**共享**该连接，在工厂层用别名表达（`RegisterAlias("slave-1", "rs485-bus")`），逐从站用 `SlaveId` 区分。见 [[API参考/工厂与依赖注入]]。
+一条总线 = 一个 `ModbusRtuClient` 实例（一个物理串口）。多个逻辑从站**共享**该连接，在工厂层用别名表达（`RegisterAlias("slave-1", "rs485-bus")`），逐从站用 `SlaveId` 区分。见 [[变更与决策/Modbus v2 归档/API参考/工厂与依赖注入]]。
 
 ## 使用注意
 

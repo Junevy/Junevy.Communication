@@ -550,6 +550,89 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 
 ### 25.1 各 Task 验收（审阅者填写）
 
+#### 第一轮验收（2026-10-19，审阅者）
+
+**结论：不通过，修正后复验。** 架构与主体实现质量高，问题集中在一个分帧器的健壮性缺陷、一个测试缺口和两处会误导使用者的文档。R1–R3 修完、R4–R10 处理完之后复验。
+
+**复跑结果**
+
+- 构建：`dotnet build Junevy.Communication.slnx -c Debug --no-incremental` 与 Release 各 0 错误、2 条警告（同一条 WPF 调试工具 `App.xaml.cs(15,33)` 的 CS8618，P7 之前就有）。基线 31 条，Modbus 0 条。
+- 测试：`pwsh build/test-affected.ps1 -Base c29a45b -NoBuild -Repeat 3`，三遍一致：每遍通过 2727、失败 0、跳过 4（Architecture 15/12，Melsec 184+1/184+1，Modbus 307+1/307+1，Omron 260/260，Plc 283/283，Siemens 316/316）。与 25.3 Task 15 一致。
+- 真实串口对：`JUNEVY_SERIAL_PAIR=COM20,COM21` 运行 `RtuReadAndWrite_OverARealSerialPair`，net8.0 与 net472 均通过。
+- 度量（第 3 节口径，16 个生产目录）：重复窗口 35（10 个集群），Modbus 贡献 0；超过 60 行的方法 0；Modbus 没有超过 300 行的文件；有效行 Modbus 1215、Plc 1285。与 25.4 一致。
+- 公开面：9 个类型，与 P7-D3 一致（计划原写的"10"是审阅者的计数错误，执行者改正正确）。
+- 套件改动只有 S1、S2；`git diff c29a45b` 对 Melsec、Siemens、Omron 的生产代码与测试为空；Core、Channels、Tcp、Udp、Serial、Testing 为空。
+
+**变异检查**（每次只改一处，重编 net8.0 并运行受影响的测试项目，完成后 `git checkout` 还原）：24 个变异里 23 个被测试发现。
+
+| # | 变异 | 结果 |
+|---|---|---|
+| M1 | Modicon 换算不减 1 | 发现（9 个用例失败） |
+| M2 | 6 位 Modicon 上限 65536 → 65537 | 发现 |
+| M3 | RTU 站号上限 247 → 248 | 发现 |
+| M4 / M5 | 单功能码规则（06 / 05）失效 | 发现 |
+| M6 | AND 掩码不取反 | 发现 |
+| M7 | 线圈打包改为最高位在前 | 发现 |
+| M8 | RTU 解码器不校验 CRC | 发现 |
+| M9 | MBAP 改为 Sequential | 发现（迟到应答用例） |
+| M10 | 不校验回显 | 发现 |
+| M11 | 异常应答映射为 `ProtocolViolation` | 发现 |
+| M12 | S1：只读检查失效 | 发现（Plc 5、Modbus 2） |
+| M13 | S2：`RemoteError` 被重试 | 发现 |
+| M14 | 0x17 读字数上限放宽 | 发现 |
+| M15 | 不校验 MBAP 长度字段 | 发现 |
+| M16 | 不校验 RTU 站号 | 发现 |
+| M17 | 不校验字节数 | 发现 |
+| M18 | 读上限 125 → 126 | 发现 |
+| M19 | 探测把异常应答判为不健康 | 发现 |
+| M20 | 结束地址上限放宽 1 | 发现 |
+| M21 | IR 改为可写 | 发现 |
+| M22 | RTU 剥离不校验 CRC | 发现 |
+| M23 | 线圈允许按字访问 | 发现 |
+| M24 | S2 去掉操作锁 | 发现 |
+| **M25** | 开启 `UseMaskWriteForBits` 时，`HR` 写位的单包上限 1 → 16 | **未发现**（见 R2） |
+
+**必须修**
+
+- **R1 RTU 分帧器在帧长超限时抛异常**（`Framing/ModbusRtuFrameDecoder.cs`）。字节数 252–255 时声明帧长超过 256，解码器抛 `FrameDecodeException`。合法应答的字节数最多 250（125 个字或 2000 个点），超过就只可能是噪声。抛异常的后果是：RTU over TCP 上通道以 `ProtocolViolation` 断开连接；串口上通道丢弃整个缓冲，把紧随其后的正确应答一起丢掉。这与 P7-D8 的"丢弃 1 个字节后重新同步，不抛异常"矛盾。矛盾来自计划本身（第 10 节第 2 条写了"抛 FrameDecodeException"），执行者已在 Task 6 报告里指出，**按 P7-D8 处理**：字节数大于 250 视为功能码未知，丢弃 1 个字节后继续。`DeclaredLengthBeyondTheMaximum_IsAFrameDecodeException` 改为"丢弃后交出紧随其后的正确帧"。第 10 节第 2 条的文字同步改正。
+- **R2 掩码写位的多点写入没有测试**（M25 存活）。`BuildWriteBitsRequest` 在寄存器上只取 `values[0]`，依赖 `GetMaxWritePoints(Bits) == 1` 把多点写入拆成每包一位；这个上限改成 16 后，多点写入会悄悄只写第一位，现有测试全部通过。补一条线上字节测试：`UseMaskWriteForBits = true` 时 `WriteBitsAsync("HR100.14", true, false, true)` 发出 3 个 16 请求，第三个落在 `HR101` 的位 0；再补一条端到端测试，核对替身内存里三个位与相邻位。补完后 M25 必须被发现。
+- **R3 README 的重连说明有两处错误**（`Junevy.Communication.Modbus/README.md` "Heartbeat and reconnect" 的最后一段）：
+  - "On a byte-stream transport, a request timeout resets the connection by default"：MBAP 是 Keyed 关联，超时**不**重建连接（端到端用例 `MbapLateReply_…` 断言连接数为 1），只有 RTU over TCP（Sequential）才重建；
+  - "wait for it with `WaitForConnectedAsync` before the next request"：照做没有用。请求超时后，通道要等后台任务处理完断开才离开 `Connected`，在这之前 `WaitForConnectedAsync` 立即返回 true（这正是执行者报告的竞争）。测试里的做法是先等 `IsConnected` 变为 false，再等重连。
+
+  改为如实说明：MBAP 不重建；RTU over TCP 超时后重建，紧接着的请求或重试可能因此失败（已知问题，见 R8），并给出测试里那种可行的等待方式。
+
+**应该修**
+
+- **R4 `Protocol/ModbusBuffer.cs` 与 Core 重复**：`WriteByte`、`Write` 就是 Core 的 `BigEndianFields.WriteUInt8`、`WriteBytes`（P4.5 抽出的共用件，新增协议指南第八节 F8："新协议直接用，不要再写第四份"）。删除 `ModbusBuffer`，调用处改用 `BigEndianFields`。
+- **R5 RTU 站号范围写了两份**：`ModbusClient.Hooks.cs` 与 `ModbusProtocolProfile.cs` 各有一对 `MinimumRtuUnitId` / `MaximumRtuUnitId`。只保留一处（例如 `RtuAdu` 上的两个常量），两处引用它。
+- **R6 CHANGELOG 留有中途的过时说明**，改为最终状态：
+  - "破坏性变更"中的"3.0.0-preview.1 尚无替代类型……README 的 'Migrating from 2.x' 在 Task 12 补充"；
+  - "变更"中的"本次提交尚无公开类型""Modbus 在 Task 4 登记进分层表之前……""调试页签的绑定在 Task 11 恢复前不可用"；
+  - "新增"中分帧一条的"帧长超过 256 字节时抛出 `FrameDecodeException`"（随 R1 修改）。
+- **R7 F-A2 的决定：把 `IClientChannel` 的脚本替身移进共享测试库。** `ScriptedModbusChannel` 是 `Plc.Tests/TestSupport/ScriptedClientChannel.cs` 的删减副本，与它形成 37 个测试重复窗口，这正是 P4.6 要消除的那类重复。把两份合并为 `Junevy.Communication.Testing` 里的一个类型（保留两边用到的全部成员：`Enqueue`、`LastRequest`、`WaitTimeouts`、`HasStateChangedSubscribers` 等），Plc.Tests 与 Modbus.Tests 都改用它，删除两份旧文件，不留转发层。改 Testing 会让 `test-affected` 选中几乎全部测试项目，三遍全量运行一次。
+- **R8 重试竞争的描述范围不对。** 25.2、25.3 Task 10、设计 20.12、Skill 的 P7 教训与知识库 `协议细节/Modbus 协议.md` 都写成"RTU over TCP 的问题"。实际上任何字节流通道上 `Sequential` 加 `ResetOnRequestTimeout` 的客户端都会遇到：S7、FINS 与 TCP 上的 MELSEC 3E 也一样。原因是 `StreamChannel.ResetAfterExpiry` → `ConnectionSupervisor.ReportConnectionLost` 只调度后台的 `HandleConnectionLostAsync`，状态在那之前仍是 `Connected`，`PlcPacketExchange` 的重试调用 `WaitForConnectedAsync` 会立即返回 true。几处文字改为"字节流 + Sequential + `ResetOnRequestTimeout` 的通用问题，P7 之前就存在"。修复不在本期范围内，作为后续任务单独处理。
+- **R9 其他程序集里指向已删除 v2 类型的注释**：
+  - `Channels/Abstractions/IConnectable.cs:26`（`IModbus.ConnectAsync`）；
+  - `Channels/Factory/ChannelFactoryBuilder.cs:6`、`WebApi/Factory/WebApiClientFactoryBuilder.cs:6`（`ModbusFactoryBuilder`）；
+  - `Core/Registry/NamedRegistry.cs:10`（`ModbusConnectionManager`）；
+  - `Core/Results/CommErrorKind.cs:5`（"未来 Modbus 迁移时可直接映射"）；
+  - `Tcp/Client/TcpConnector.cs:201`（`ModbusTcpClient.OpenConnectionAsync`）；
+  - `Tests/Junevy.Communication.Core.Tests/CommResultTests.cs:101`。
+
+  执行者遵守第 1 节第 6 条没有改，这是正确的。现在**作为例外允许只改注释**：改成指向 v2 的 tag 或去掉过时部分，例如"规则来自 v2 的 `ModbusConnectionManager`（tag `modbus-v2.0.0`）"，CommErrorKind 改为"Modbus 3.0 已按此映射"。
+- **R10 小的整理**：`PlcRequestPipeline.TryResolveWritable` 的结尾 `if (failure is not null) return false; return true;` 改为 `return failure is null;`，它和 `CheckWritable` 上方两段几乎相同的注释合并为一段。
+
+**对执行者提出的开放问题的决定**
+
+- 256 字节的处理：按 P7-D8 重新同步（R1）。
+- F-A1（声明式解析器的表达力）：**本期与近期都不扩展套件。** 两个自写解析器（S7、Modbus）各自清楚，抽象它们没有第三个使用者；记在设计 20.12 即可。
+- F-A2：移进共享测试库（R7）。
+- F-A3：`DelayingStream` 留在 Modbus.Tests。只有一个使用者，与其他项目之间只有 Stream 覆写样板的 2 个窗口，接受。
+- Modbus.Tests 内部 2 个窗口（TCP 与 UDP 的 `Theory` 样板）：接受。
+- Task 6–11 没有先单独跑红，改用变异检查替代：执行者诚实记录了，本轮的 24 个变异也证明测试有效，接受。下一期仍按"先红后绿"执行。
+- 第 25.3 节缺 Task 14（知识库）的汇报：补上，附 `git status --short -- Junevy.Communication.Wiki` 与 `git diff --stat -- Junevy.Communication.Wiki`。
+
 ### 25.2 扩展性摩擦记录（执行者从 Task 3 起填写；格式：现象 / 变通或缺口 / 建议的通用能力）
 
 | # | Task | 现象 | 变通或缺口 | 建议的通用能力 |

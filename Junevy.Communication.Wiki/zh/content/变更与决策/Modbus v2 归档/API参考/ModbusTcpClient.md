@@ -1,5 +1,7 @@
 # ModbusTcpClient
 
+> **适用于 2.x，已被 3.0 取代，迁移见 [[协议细节/Modbus 协议]]。**
+
 <cite>
 **本文引用的文件**
 - [Junevy.Communication.Modbus/Tcp/ModbusTcpClient.cs](file://Junevy.Communication.Modbus/Tcp/ModbusTcpClient.cs)
