@@ -1174,6 +1174,28 @@ internal interface ISimulatorEngine
   3. 库的客户端没有发现与黄金向量或计划不一致之处：4C 格式 5 客户端的响应检查（帧识别号 F8、响应 ID FF FF、和校验）与 P2 计划第 13 节一致；和校验关闭时客户端不发送请求校验码，与 P2 计划一致。
 - 摩擦记录：F-16（默认分帧因传输而异，协议组件分帧时必须留空，库没有公开的默认分帧）、F-17（`McClientOptions.SumCheck` 的说明没有写明它同时决定请求是否带和校验）。
 
+**Task 15（SECS 设备端页）**
+
+- 做了什么：
+  - `Protocols/Secs/SmlParser`（公开静态，见偏差 1）与 `SmlParseException`：解析 `SecsItem.ToSml()` 的输出，支持 L、A、B、BOOLEAN、I1–I8、U1–U8、F4、F8；J 与 C2 报"不支持"；嵌套深度上限 64；数值越界、计数不符、字符串转义错误都给出行号与列号（从 1 开始）。
+  - `Protocols/Secs/SecsSettings`（`SessionSettings` 的派生，工作区类型 `secs`）、`SecsRule`（S、F、应答方式、SML；`KindText` 不写入工作区）、`SecsRuleKind`（SML 应答、中止）。
+  - `Protocols/Secs/SecsSupport`（公开静态，见偏差 1）：参数与规则、发送区的说明（中文，与库的范围一致）；正文解析；状态名称；发送结果的说明（错误名称与拒绝原因码）；五个常用模板。
+  - `Protocols/Secs/SecsSessionViewModel`：启动前校验参数并编译规则（不合法则拒绝启动，说明写明原因）；创建 `HsmsEquipment`，日志经页签的日志工厂；注册处理器后 `StartAsync`。停止时 `StopAsync` 再释放。运行中登记或删除规则立即同步到库的处理器表。处理器记录收到的主消息并给出应答（没有 W 位时不应答）。发送经 `SendAsync`，结果经 `OperationRecords.From(SecsResult)` 记入操作记录（拒绝原因码显示为十六进制）。
+  - `Views/Secs/SecsPageView`：连接与计时器（运行中只读）、会话状态与原因、规则表与登记区、发送区与模板、收到的主消息、操作与日志面板。
+  - 注册：`SessionRegistration`（`ProtocolKind.Secs`）、`DataTemplates`、`SessionSettings`（JSON 类型 `secs`）。
+- 测试（新增 44 条，全部通过）：`SmlParserTests` 24 条（每种格式的往返，第 17.3 节的样例逐行比较，空值与空列表，多层嵌套，A 中的 `\xHH` 与引号、反斜杠转义，G9 与 G17 的浮点数，NaN 与无穷，固定种子（20261020）的随机树 300 例，14 条错误位置，2 条不支持的格式）；`SecsSessionViewModelTests` 11 条（启动前拒绝并给出原因，设置往返，规则按 S/F 替换、奇数功能号与行列号，删除，工作区中的坏规则拒绝载入，模板，未运行时发送）；`SecsPageViewTests` 2 条；`SecsHsmsEndToEndTests` 7 条，与 `MiniHsmsHost`（只用 Channels 与 Tcp 的公开 API 收发字节，报文按 P5.1 计划第 17.1 节的向量构造，不引用 Secs 库）：选择会话（主动模式的 `Select.req` 头与 V-H-1 的前 10 字节一致）、被动模式选择（`Select.rsp` 与 V-H-2 逐字节一致）、S1F1 W 由规则应答 S1F2（逐字节）、S5F1 W 由主机应答 S5F2（正文逐字节，结果显示应答 SML）、主机不应答时 T3 超时并收到 S9F9（正文为 S5F1 的 10 字节头）、有规则的流缺少该功能时回 S9F5、没有规则的流回 S9F3。
+  - 验证：SECS 相关 44 条连续三次通过；DebugAssistant 测试项目 764 条通过，15 条跳过（串口对未设置），0 失败；构建 0 错误、0 警告。
+- 偏差与需要审阅者决定的事：
+  1. DA-D13 写的是 `internal` 的 `SmlParser`，但 DA 测试项目不能访问应用的 internal 成员（没有 `InternalsVisibleTo`，计划第 2 节第 7 条禁止用它绕过），因此 `SmlParser`、`SmlParseException` 与 `SecsSupport` 写成公开。它们只属于应用，不是库的 API，库的公开面没有变化。
+  2. 正文留空表示没有正文（计划未规定，与 SEMI E5 的 S1F1 W 一致）；中止规则不解析正文。
+  3. 运行中可以登记与删除规则（计划未规定），即时同步到库的处理器表；启动时编译全部规则，说明不合法的规则让启动失败，不静默丢弃。
+  4. 处理器对没有 W 位的主消息不应答（库会忽略返回值，非空时记警告；计划未规定，这样避免警告）。
+  5. 被动模式只有一条端到端用例（主机拨入后选择）；主动模式的重连与 T6 超时由库的测试覆盖，页签没有单独测试。
+  6. 发送没有取消按钮，等待时间由 T3 限制（默认 45 秒）。
+  7. F-4：收到的主消息列表只含有规则的 S/F，其余只能在日志里看到头部，页签上写明了这一点。F-5（库的 `Trace` 日志不存在）不影响页签：正文经处理器取得，不依赖日志。
+- 库未改动：`Junevy.Communication.Secs` 的 diff 为空（DA-D15）。
+- 摩擦记录：本 Task 没有新的摩擦；F-4 与 F-5 按上面的方式处理。
+
 ### 33.4 基线与度量（执行者填写）
 
 基线（改动前，提交 `fe82d79`），由 `build/metrics` 的脚本统计，生产代码范围为 Core、Channels、Tcp、Udp、Serial、Plc、Melsec 的 `*.cs`（213 个文件，排除 obj、bin）：

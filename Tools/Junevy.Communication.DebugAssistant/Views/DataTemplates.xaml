@@ -13,7 +13,9 @@
                     xmlns:fins="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Fins"
                     xmlns:finsViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Fins"
                     xmlns:simulators="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Simulators"
-                    xmlns:simulatorViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Simulators">
+                    xmlns:simulatorViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Simulators"
+                    xmlns:secs="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Secs"
+                    xmlns:secsViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Secs">
 
     <!-- 页签内容：按视图模型类型选择视图（计划第 5.2 节）。每种页签完成后在这里加一条。 -->
     <DataTemplate DataType="{x:Type sessions:PlaceholderSessionViewModel}">
@@ -50,6 +52,10 @@
 
     <DataTemplate DataType="{x:Type simulators:SimulatorSessionViewModel}">
         <simulatorViews:SimulatorPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type secs:SecsSessionViewModel}">
+        <secsViews:SecsPageView />
     </DataTemplate>
 
     <DataTemplate DataType="{x:Type channels:TcpServerSessionViewModel}">
