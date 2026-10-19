@@ -777,6 +777,7 @@ internal interface ISimulatorEngine
 | F-5 | Secs README 写"Body text in SML is reserved for `Trace`"，但代码中没有任何 `Trace` 级别的日志 | 不影响助手 | 修改 README 的措辞（"目前不记录正文"），或者实现 Trace 日志，需要用户决定 |
 | F-7 | 分隔符、起止标记、心跳内容等文本只能按 UTF-8 解释（`ByteSequenceParser`），无法选择 GBK 等编码 | 助手的字节输入可以选择编码；要用 GBK 的分隔符，写成 `hex:` 形式 | 为这些配置增加编码选项（或接受 `hex:` 作为唯一做法） |
 | F-6 | `TcpServerConfig.Port` 不接受 0（`TcpServerOptions` 要求 1–65535），无法让系统选择端口。测试只能先探测一个空闲端口（回环地址，有极小的竞争） | 测试用 `FreePort` 探测空闲端口 | 允许 `Port = 0` 由系统选择，`LocalEndPoint` 已经给出实际端口，因此改动很小 |
+| F-8 | 库在构造期校验的参数规则只有英文消息：UDP 非定向不能用内置心跳、UDP 与串口的内置心跳必须填写 `ExpectedReply`。界面只能原样显示英文 | 页签在界面上用一行中文说明同一规则；连接失败时操作记录显示库的消息 | 参数错误提供参数名与错误码，助手即可本地化 |
 
 ### 33.3 执行汇报与偏差（执行者填写：每个 Task 的汇报、门槛汇报、偏差与需要审阅者决定的事）
 
@@ -878,6 +879,36 @@ internal interface ISimulatorEngine
   5. 分帧的 `IdleGap` 无法在预览中切分（需要时间），预览会说明这一点。
   6. `ObservableValidator` 不会在属性赋值时自动校验，因此 `ValidatedEditor` 在 `OnPropertyChanged` 中补上（见代码注释）。
   7. 对不以 `hex:` 开头的文本，编码选项只用于字节输入（预览、握手、心跳）；分隔符与标记由库按 UTF-8 解释（摩擦 F-7）。
+
+**Task 5（TCP 客户端、UDP、串口页）**
+
+- 做了什么：
+  - 传输页的共同部分 `ChannelSessionViewModel`（第 7.13 节）：连接与断开（参数有校验错误时拒绝连接并提示）；发送、请求并等待应答、等待一帧；定时循环发送（间隔 10 至 3600000 毫秒，次数 0 至 1000000，停止、断开或释放后不再发送）；收到的帧（上限 200）；发送历史（上限 50）；统计每秒刷新，显示 `ConnectionStatistics` 的全部字段。子类只负责创建库的通道、映射参数与传输特有的目标。
+  - TCP 客户端页：主机、端口、本地地址与端口（0 由系统选择），以及分帧、关联、心跳、重连、超时、套接字（含 KeepAlive）、TLS（证书只保存环境变量名）、握手。
+  - UDP 页：定向（固定远端）与非定向（每次指定目标，`SendToAsync` / `RequestToAsync`）；`EnableBroadcast`、组播组、TTL、组播回环、地址复用、请求重试次数、数据报上限。非定向没有固定对端，内置心跳被库拒绝，页签用一行文字说明原因。
+  - 串口页：端口列表可刷新，不预选、不自动打开；波特率、数据位、校验、停止位、流控、DTR、RTS、读写缓冲、OpenTimeout；默认分帧为空闲间隔（界面提示 USB 转串口的延迟）；启用心跳时必须填写期待的应答（库在构造期校验，界面说明）。
+  - 参数的保存与导出：`TcpClientSettings`、`UdpSettings`、`SerialSettings` 登记在 `SessionSettings` 的多态列表里（DA-D19），`TcpClientSessionViewModel`、`UdpSessionViewModel`、`SerialSessionViewModel` 实现 `CaptureSettings` / `ApplySettings`。
+  - 对 Task 4 之前的代码的修正（由本 Task 的测试发现）：
+    1. 发送与请求命令允许同时在途（`AsyncRelayCommandOptions.AllowConcurrentExecutions`）。Keyed 关联的目的就是让请求交错，原来一个请求未完成时按钮不可用。
+    2. 定时循环的开始与停止命令的可用状态随运行状态刷新（原来不刷新，运行中仍可再开一个循环，旧循环随之无法停止）。循环持有自己的取消源，只有仍是当前一次运行时才复位状态；循环中的其他异常记入操作记录，不逃出后台任务（U7）。删除了无用的 `_periodicTask` 字段与 `await Task.CompletedTask`。
+    3. `ReceiveAsync` 收到的帧显示在帧列表中（原来只记录操作）；请求的帧列表原来没有上限，现在与接收共用同一个 `ShowReceived`。
+    4. UDP 的参数补齐 `TargetHost`、`TargetPort`、`RequestRetryCount`、`MaxDatagramSize`（原来不保存，读回后非定向的目标变成默认值）。
+- 测试：`DebugAssistant.Tests` 共 209 条，全部通过。`JUNEVY_SERIAL_PAIR=COM20,COM21` 时串口测试执行；未设置时跳过（已验证）。
+  - TCP（`TcpClientPageTests`，15 条）：6 种分帧各收发一次，对库的 `TcpServer`，两端使用同一份分帧映射，回显与负载逐字节相同；Sequential 两个请求各得自己的应答；Matcher 跳过并保留不匹配的帧；Keyed 两个交错的请求：服务端收到两个请求后先回复键 2，过 300 毫秒再回复键 1，键 1 的请求在键 2 完成时仍未完成（按到达顺序配对时不成立）；接收一帧，且被 `ReceiveAsync` 取走的帧不再经 `FrameReceived` 重复显示（库的语义，已锁定）；握手成功与应答不符；心跳失败进入 Reconnecting，应答恢复后回到 Connected；统计文字包含全部字段；参数校验失败时拒绝连接且不创建通道。
+  - UDP（`UdpPageTests`，5 条）：定向请求与应答；非定向 `SendToAsync` 投递到目标；非定向 `RequestToAsync` 取得应答；非定向使用内置心跳被拒绝并给出原因；广播（`BroadcastFact`）。
+  - 串口（`SerialPageTests`，3 条）：端口列表不预选、不打开；缺少期待应答的心跳在打开端口之前被拒绝（用不存在的端口名证明，错误是心跳规则而不是"找不到端口"）；`SerialPairFact` 的真实请求与应答，COM20 ↔ COM21。
+  - 定时循环（`ChannelPeriodicTests`，3 条）：按次数结束且之后不再发送；停止后不再发送，开始与停止命令的可用状态随之切换；断开后不再发送。
+  - 参数往返（`ChannelSettingsRoundTripTests`，3 条）：TCP、UDP、串口的每一节都设为非默认值，经工作区文件写出、读回并应用到新页签后，重新导出的 JSON 相同。
+  - 视图（`ChannelPageViewTests`，3 条）：三种传输页的 XAML 能加载，绑定到各自的视图模型，日志面板绑定到页签自己的 `LogPanel`。`SessionViewTests` 改用共享的 `VisualTree` 辅助方法。
+  - 稳定性：`Protocols.Channels` 与 `Views` 共 75 条连续运行 3 次，每次全部通过。
+- 偏差与需要审阅者决定的事：
+  1. 工作区格式：UDP 参数补齐的字段没有升级 `schemaVersion`（尚无发布版本，Task 3 的工作区文件只在本机开发环境里出现过）。请审阅者确认；如需升级，再加版本迁移。
+  2. 发送与请求同时在途：计划没有写明，这是 Keyed 关联（计划第 1 节）的需要。界面上两个请求可以同时等待，应答按键配对。
+  3. 串口与 UDP 心跳的规则由库在构造期检查，消息只有英文（摩擦 F-8）；页签用一行中文说明同一规则。
+  4. 统计文字比计划多显示最后收发时间与连接时刻（`LastSentAt`、`LastReceivedAt`、`ConnectedSince`），因为计划要求显示全部字段。
+  5. 广播测试依赖本机环境：`BroadcastFactAttribute` 在发现测试时探测本机能否把广播投递到本机的监听端口，不能则跳过并写明原因。本机探测通过，测试执行，没有跳过。
+  6. 连接前的校验（`ChannelSettingsEditor.IsValid`）是本 Task 新增的：计划 U7 要求输入校验，这里补上"连接时拒绝"。
+  7. 完整解决方案构建（Debug 与 Release）与 `build/test-affected.ps1` 留到门槛 1（Task 6 之后）。本 Task 只构建并测试了调试助手的测试项目（Debug，0 错误、0 警告）。
 
 ### 33.4 基线与度量（执行者填写）
 

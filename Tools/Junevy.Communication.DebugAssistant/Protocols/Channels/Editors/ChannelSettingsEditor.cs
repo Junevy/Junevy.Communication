@@ -1,15 +1,29 @@
 using Junevy.Communication.Channels;
+using Junevy.Communication.DebugAssistant.Protocols.Channels.Settings;
 
 namespace Junevy.Communication.DebugAssistant.Protocols.Channels.Editors;
 
+/// <summary>通道类型：决定通道参数面板显示哪些部分。</summary>
+public enum ChannelTransport
+{
+    /// <summary>TCP：分帧、关联、心跳、重连、超时、套接字与 TLS。</summary>
+    Tcp,
+
+    /// <summary>串口：分帧（默认空闲间隔）、关联、心跳、重连、超时。</summary>
+    Serial,
+
+    /// <summary>UDP：数据报没有分帧，也没有套接字与 TLS 选项。</summary>
+    Udp,
+}
+
 /// <summary>
-/// 通道参数的全部编辑器的组合（计划第 5.5 节）。传输页（TCP 客户端、UDP、串口、TCP 服务端）和 PLC 页共用它。
-/// 协议拥有的分帧与关联（PLC 与 SECS 等）由协议页决定，编辑器中的对应部分不会被映射。
+/// 通道参数的全部编辑器的组合（计划第 5.5 节）。传输页（TCP 客户端、UDP、串口）共用它；PLC 页与 TCP 服务端另有组合方式。
 /// </summary>
 public sealed class ChannelSettingsEditor
 {
-    public ChannelSettingsEditor()
+    public ChannelSettingsEditor(ChannelTransport transport = ChannelTransport.Tcp)
     {
+        Transport = transport;
         Framing = new FramingEditor();
         Correlation = new CorrelationEditor();
         Heartbeat = new HeartbeatEditor();
@@ -18,7 +32,19 @@ public sealed class ChannelSettingsEditor
         Socket = new SocketEditor();
         Tls = new TlsEditor();
         Handshake = new HandshakeEditor();
+        if (transport == ChannelTransport.Serial)
+        {
+            Framing.Mode = FramingMode.IdleGap;
+        }
     }
+
+    public ChannelTransport Transport { get; }
+
+    /// <summary>数据报没有分帧（库会拒绝），串口与 TCP 有分帧。</summary>
+    public bool ShowsFraming => Transport != ChannelTransport.Udp;
+
+    /// <summary>套接字与 TLS 只属于 TCP。</summary>
+    public bool ShowsSocketAndTls => Transport == ChannelTransport.Tcp;
 
     public FramingEditor Framing { get; }
 
@@ -38,15 +64,16 @@ public sealed class ChannelSettingsEditor
 
     /// <summary>所有编辑器都没有校验错误。</summary>
     public bool IsValid => !Framing.HasErrors && !Correlation.HasErrors && !Heartbeat.HasErrors
-        && !Reconnect.HasErrors && !Timeouts.HasErrors && !Socket.HasErrors;
+        && !Reconnect.HasErrors && !Timeouts.HasErrors && !Socket.HasErrors && !Tls.HasErrors && !Handshake.HasErrors;
 
     /// <summary>
     /// 生成库的通道部件：关联模式、键提取器与握手钩子（计划 DA-D12）。
     /// 匹配器不在这里：它按请求传入（<c>RequestOptions.Matcher</c>），见 <see cref="CorrelationEditor.ToMatchRule"/>。
     /// </summary>
-    public ChannelComponents ToComponents()
+    public TComponents ToComponents<TComponents>()
+        where TComponents : ChannelComponents, new()
     {
-        var components = new ChannelComponents
+        var components = new TComponents
         {
             Correlation = Correlation.Mode,
             Initializer = Handshake.ToInitializer(),
@@ -57,5 +84,39 @@ public sealed class ChannelSettingsEditor
         }
 
         return components;
+    }
+
+    /// <summary>保存所有编辑器的参数（工作区与导出，计划 DA-D11）。</summary>
+    public ChannelSettingsValues Capture() => new(new Dictionary<string, Dictionary<string, string>>
+    {
+        ["framing"] = EditorSnapshot.Capture(Framing),
+        ["correlation"] = EditorSnapshot.Capture(Correlation),
+        ["heartbeat"] = EditorSnapshot.Capture(Heartbeat),
+        ["reconnect"] = EditorSnapshot.Capture(Reconnect),
+        ["timeouts"] = EditorSnapshot.Capture(Timeouts),
+        ["socket"] = EditorSnapshot.Capture(Socket),
+        ["tls"] = EditorSnapshot.Capture(Tls),
+        ["handshake"] = EditorSnapshot.Capture(Handshake),
+    });
+
+    /// <summary>恢复保存的参数；缺少的节保持默认值。</summary>
+    public void Apply(ChannelSettingsValues values)
+    {
+        ApplySection(values, "framing", Framing);
+        ApplySection(values, "correlation", Correlation);
+        ApplySection(values, "heartbeat", Heartbeat);
+        ApplySection(values, "reconnect", Reconnect);
+        ApplySection(values, "timeouts", Timeouts);
+        ApplySection(values, "socket", Socket);
+        ApplySection(values, "tls", Tls);
+        ApplySection(values, "handshake", Handshake);
+    }
+
+    private static void ApplySection(ChannelSettingsValues values, string name, object editor)
+    {
+        if (values.Sections.TryGetValue(name, out Dictionary<string, string>? section))
+        {
+            EditorSnapshot.Apply(editor, section);
+        }
     }
 }

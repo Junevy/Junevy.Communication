@@ -16,35 +16,12 @@ public sealed class SessionViewTests
         UiThread.Invoke(() =>
         {
             var view = new PlaceholderSessionView { DataContext = session };
-            view.Measure(new System.Windows.Size(1000, 800));
-            view.Arrange(new System.Windows.Rect(0, 0, 1000, 800));
-            view.UpdateLayout();
+            VisualTree.Layout(view);
 
-            var panel = FindChild<LogPanel>(view);
+            var panel = VisualTree.FindChild<LogPanel>(view);
             Assert.NotNull(panel);
             Assert.Same(session.LogPanel, panel.DataContext);
-            Assert.NotNull(FindChild<DataGrid>(panel));
+            Assert.NotNull(VisualTree.FindChild<DataGrid>(panel));
         });
-    }
-
-    private static T? FindChild<T>(System.Windows.DependencyObject parent)
-        where T : System.Windows.DependencyObject
-    {
-        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
-        {
-            System.Windows.DependencyObject child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
-            if (child is T match)
-            {
-                return match;
-            }
-
-            T? nested = FindChild<T>(child);
-            if (nested is not null)
-            {
-                return nested;
-            }
-        }
-
-        return null;
     }
 }

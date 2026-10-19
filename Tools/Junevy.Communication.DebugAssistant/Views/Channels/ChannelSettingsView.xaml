@@ -2,18 +2,34 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:jv="github.com.junevy"
-             xmlns:channels="clr-namespace:Junevy.Communication.Channels;assembly=Junevy.Communication.Channels">
+             xmlns:channels="clr-namespace:Junevy.Communication.Channels;assembly=Junevy.Communication.Channels"
+             xmlns:dachannels="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Channels;assembly=Junevy.Communication.DebugAssistant"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib">
     <UserControl.Resources>
-        <ObjectDataProvider x:Key="FramingModes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}"
-                            xmlns:sys="clr-namespace:System;assembly=mscorlib">
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <ObjectDataProvider x:Key="FramingModes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="channels:FramingMode" />
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
-        <ObjectDataProvider x:Key="CorrelationModes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}"
-                            xmlns:sys="clr-namespace:System;assembly=mscorlib">
+        <ObjectDataProvider x:Key="CorrelationModes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="channels:CorrelationMode" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+        <ObjectDataProvider x:Key="LengthEncodings" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="channels:LengthFieldEncoding" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+        <ObjectDataProvider x:Key="ReconnectModes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="channels:ReconnectMode" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+        <ObjectDataProvider x:Key="KeyOrders" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="dachannels:KeyByteOrder" />
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
         <Style x:Key="ShowForDelimiter" TargetType="StackPanel">
@@ -60,8 +76,8 @@
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="0,0,8,0">
-            <!-- 分帧：每种模式只显示自己的参数 -->
-            <jv:GroupBox Header="分帧" Margin="0,0,0,8">
+            <!-- 分帧：只对 TCP 与串口显示；每种模式只显示自己的参数 -->
+            <jv:GroupBox Header="分帧" Margin="0,0,0,8" Visibility="{Binding ShowsFraming, Converter={StaticResource BoolToVisibility}}">
                 <StackPanel DataContext="{Binding Framing}">
                     <WrapPanel Margin="0,0,0,6">
                         <Label Content="模式" VerticalAlignment="Center" Margin="0,0,6,0" />
@@ -72,7 +88,7 @@
                         <TextBox Text="{Binding MaxFrameLength, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}" Width="100" />
                     </WrapPanel>
 
-                    <StackPanel x:Name="DelimiterPanel" Style="{StaticResource ShowForDelimiter}">
+                    <StackPanel Style="{StaticResource ShowForDelimiter}">
                         <TextBox Text="{Binding Delimiters, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="60" />
                         <CheckBox Content="保留分隔符" IsChecked="{Binding KeepDelimiter}" Margin="0,4,0,0" />
                         <CheckBox Content="发送时追加分隔符" IsChecked="{Binding AppendDelimiterOnSend}" />
@@ -96,7 +112,7 @@
                         </WrapPanel>
                         <WrapPanel Margin="0,4,0,0">
                             <Label Content="编码" VerticalAlignment="Center" Margin="0,0,6,0" />
-                            <TextBox Text="{Binding LengthFieldEncoding}" Width="160" IsReadOnly="True" />
+                            <ComboBox ItemsSource="{Binding Source={StaticResource LengthEncodings}}" SelectedItem="{Binding LengthFieldEncoding}" Width="180" />
                         </WrapPanel>
                     </StackPanel>
                     <StackPanel Style="{StaticResource ShowForStartEnd}">
@@ -146,19 +162,135 @@
                     <WrapPanel>
                         <TextBox Text="{Binding RequestKeyOffset, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="0,0,8,0" />
                         <TextBox Text="{Binding RequestKeyWidth, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="0,0,8,0" />
-                        <ComboBox SelectedItem="{Binding RequestKeyOrder}" Width="140">
-                            <ComboBoxItem Content="BigEndian" />
-                            <ComboBoxItem Content="LittleEndian" />
-                        </ComboBox>
+                        <ComboBox ItemsSource="{Binding Source={StaticResource KeyOrders}}" SelectedItem="{Binding RequestKeyOrder}" Width="140" />
                     </WrapPanel>
                     <TextBlock Text="键字段（应答）" Margin="0,8,0,2" />
                     <WrapPanel>
                         <TextBox Text="{Binding ResponseKeyOffset, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="0,0,8,0" />
                         <TextBox Text="{Binding ResponseKeyWidth, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="0,0,8,0" />
-                        <ComboBox SelectedItem="{Binding ResponseKeyOrder}" Width="140">
-                            <ComboBoxItem Content="BigEndian" />
-                            <ComboBoxItem Content="LittleEndian" />
+                        <ComboBox ItemsSource="{Binding Source={StaticResource KeyOrders}}" SelectedItem="{Binding ResponseKeyOrder}" Width="140" />
+                    </WrapPanel>
+                </StackPanel>
+            </jv:GroupBox>
+
+            <!-- 心跳与重连 -->
+            <jv:GroupBox Header="心跳" IsCollapsible="True" IsCollapsed="True" Margin="0,0,0,8">
+                <StackPanel DataContext="{Binding Heartbeat}">
+                    <CheckBox Content="启用心跳" IsChecked="{Binding Enabled}" />
+                    <WrapPanel Margin="0,4,0,0">
+                        <Label Content="间隔（毫秒）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding Interval, UpdateSourceTrigger=PropertyChanged}" Width="90" Margin="0,0,12,0" />
+                        <Label Content="超时（毫秒）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding Timeout, UpdateSourceTrigger=PropertyChanged}" Width="90" Margin="0,0,12,0" />
+                        <Label Content="连续失败次数" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding MaxFailures, UpdateSourceTrigger=PropertyChanged}" Width="60" />
+                    </WrapPanel>
+                    <CheckBox Content="仅在空闲时发送" IsChecked="{Binding OnlyWhenIdle}" Margin="0,4,0,0" />
+                    <WrapPanel Margin="0,4,0,0">
+                        <Label Content="心跳内容" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding Payload, UpdateSourceTrigger=PropertyChanged}" Width="180" Margin="0,0,12,0" />
+                        <Label Content="期待的应答" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding ExpectedReply, UpdateSourceTrigger=PropertyChanged}" Width="180" />
+                    </WrapPanel>
+                </StackPanel>
+            </jv:GroupBox>
+
+            <jv:GroupBox Header="重连" IsCollapsible="True" IsCollapsed="True" Margin="0,0,0,8">
+                <StackPanel DataContext="{Binding Reconnect}">
+                    <CheckBox Content="断开后自动重连" IsChecked="{Binding Enabled}" />
+                    <WrapPanel Margin="0,4,0,0">
+                        <Label Content="方式" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <ComboBox ItemsSource="{Binding Source={StaticResource ReconnectModes}}" SelectedItem="{Binding Mode}" Width="180" Margin="0,0,12,0" />
+                        <Label Content="间隔（毫秒）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding Interval, UpdateSourceTrigger=PropertyChanged}" Width="90" Margin="0,0,12,0" />
+                        <Label Content="最大间隔（毫秒）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding MaxInterval, UpdateSourceTrigger=PropertyChanged}" Width="90" />
+                    </WrapPanel>
+                    <WrapPanel Margin="0,4,0,0">
+                        <Label Content="最多次数（0 为不限）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding MaxAttempts, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="0,0,12,0" />
+                        <CheckBox Content="首次连接失败也重连" IsChecked="{Binding OnInitialFailure}" VerticalAlignment="Center" />
+                    </WrapPanel>
+                </StackPanel>
+            </jv:GroupBox>
+
+            <!-- 超时 -->
+            <jv:GroupBox Header="超时（毫秒）" IsCollapsible="True" IsCollapsed="True" Margin="0,0,0,8">
+                <StackPanel DataContext="{Binding Timeouts}">
+                    <WrapPanel>
+                        <Label Content="连接" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding ConnectTimeout, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="0,0,12,0" />
+                        <Label Content="握手" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding HandshakeTimeout, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="0,0,12,0" />
+                        <Label Content="发送" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding SendTimeout, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="0,0,12,0" />
+                        <Label Content="请求" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding RequestTimeout, UpdateSourceTrigger=PropertyChanged}" Width="80" />
+                    </WrapPanel>
+                    <WrapPanel Margin="0,4,0,0">
+                        <Label Content="空闲（0 为关闭）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding IdleTimeout, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="0,0,12,0" />
+                        <Label Content="半帧（0 为关闭）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding PartialFrameTimeout, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="0,0,12,0" />
+                        <Label Content="断开" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding DisconnectTimeout, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="0,0,12,0" />
+                        <Label Content="迟到应答窗口（-1 为默认）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding LateReplyWindow, UpdateSourceTrigger=PropertyChanged}" Width="80" />
+                    </WrapPanel>
+                    <CheckBox Content="请求超时后重建连接" IsChecked="{Binding ResetOnRequestTimeout}" Margin="0,4,0,0" />
+                </StackPanel>
+            </jv:GroupBox>
+
+            <!-- 套接字与 TLS：只对 TCP 显示 -->
+            <jv:GroupBox Header="套接字（TCP）" IsCollapsible="True" IsCollapsed="True" Margin="0,0,0,8"
+                         Visibility="{Binding ShowsSocketAndTls, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel DataContext="{Binding Socket}">
+                    <CheckBox Content="禁用 Nagle（NoDelay）" IsChecked="{Binding NoDelay}" />
+                    <WrapPanel Margin="0,4,0,0">
+                        <Label Content="接收缓冲区" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding ReceiveBufferSize, UpdateSourceTrigger=PropertyChanged}" Width="90" Margin="0,0,12,0" />
+                        <Label Content="发送缓冲区" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding SendBufferSize, UpdateSourceTrigger=PropertyChanged}" Width="90" Margin="0,0,12,0" />
+                        <Label Content="Linger（秒，-1 为默认）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding LingerTime, UpdateSourceTrigger=PropertyChanged}" Width="80" />
+                    </WrapPanel>
+                    <CheckBox Content="启用 KeepAlive" IsChecked="{Binding KeepAliveEnabled}" Margin="0,4,0,0" />
+                    <WrapPanel Margin="0,4,0,0">
+                        <Label Content="首次探测（毫秒）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding KeepAliveTime, UpdateSourceTrigger=PropertyChanged}" Width="90" Margin="0,0,12,0" />
+                        <Label Content="间隔（毫秒）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding KeepAliveInterval, UpdateSourceTrigger=PropertyChanged}" Width="90" Margin="0,0,12,0" />
+                        <Label Content="次数" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding KeepAliveRetryCount, UpdateSourceTrigger=PropertyChanged}" Width="60" />
+                    </WrapPanel>
+                </StackPanel>
+            </jv:GroupBox>
+
+            <jv:GroupBox Header="TLS（TCP）" IsCollapsible="True" IsCollapsed="True" Margin="0,0,0,8"
+                         Visibility="{Binding ShowsSocketAndTls, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel DataContext="{Binding Tls}">
+                    <CheckBox Content="启用 TLS" IsChecked="{Binding Enabled}" />
+                    <WrapPanel Margin="0,4,0,0">
+                        <Label Content="目标主机名（证书校验）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding TargetHost, UpdateSourceTrigger=PropertyChanged}" Width="180" />
+                    </WrapPanel>
+                    <CheckBox Content="检查证书吊销" IsChecked="{Binding CheckCertificateRevocation}" Margin="0,4,0,0" />
+                    <CheckBox Content="允许不受信任的服务器证书（有风险）" IsChecked="{Binding AllowUntrustedServerCertificate}" Margin="0,4,0,0" />
+                    <WrapPanel Margin="0,4,0,0">
+                        <Label Content="客户端证书（None、Store、Pfx）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <ComboBox SelectedItem="{Binding ClientCertificate}" Width="120" Margin="0,0,12,0">
+                            <ComboBoxItem Content="None" />
+                            <ComboBoxItem Content="Store" />
+                            <ComboBoxItem Content="Pfx" />
                         </ComboBox>
+                        <Label Content="指纹" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding Thumbprint, UpdateSourceTrigger=PropertyChanged}" Width="180" />
+                    </WrapPanel>
+                    <WrapPanel Margin="0,4,0,0">
+                        <Label Content="PFX 路径" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding PfxPath, UpdateSourceTrigger=PropertyChanged}" Width="240" Margin="0,0,12,0" />
+                        <Label Content="口令环境变量名" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding PfxPasswordVariable, UpdateSourceTrigger=PropertyChanged}" Width="180" />
                     </WrapPanel>
                 </StackPanel>
             </jv:GroupBox>
@@ -174,7 +306,9 @@
                     <CheckBox Content="等待应答并比较" IsChecked="{Binding ExpectReply}" Margin="0,4,0,0" />
                     <WrapPanel Margin="0,4,0,0">
                         <Label Content="期待的应答" VerticalAlignment="Center" Margin="0,0,6,0" />
-                        <TextBox Text="{Binding ExpectedReply, UpdateSourceTrigger=PropertyChanged}" Width="260" />
+                        <TextBox Text="{Binding ExpectedReply, UpdateSourceTrigger=PropertyChanged}" Width="260" Margin="0,0,12,0" />
+                        <Label Content="超时（毫秒）" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Text="{Binding ReplyTimeout, UpdateSourceTrigger=PropertyChanged}" Width="90" />
                     </WrapPanel>
                 </StackPanel>
             </jv:GroupBox>

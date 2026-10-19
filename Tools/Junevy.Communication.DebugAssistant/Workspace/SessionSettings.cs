@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Junevy.Communication.DebugAssistant.Protocols.Channels.Settings;
 
 namespace Junevy.Communication.DebugAssistant.Workspace;
 
@@ -8,4 +9,7 @@ namespace Junevy.Communication.DebugAssistant.Workspace;
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type", IgnoreUnrecognizedTypeDiscriminators = false)]
 [JsonDerivedType(typeof(PlaceholderSettings), "placeholder")]
+[JsonDerivedType(typeof(TcpClientSettings), "tcpClient")]
+[JsonDerivedType(typeof(UdpSettings), "udp")]
+[JsonDerivedType(typeof(SerialSettings), "serial")]
 public abstract record SessionSettings;

@@ -167,6 +167,10 @@ public abstract partial class SessionViewModel : ObservableObject, IAsyncDisposa
             await action(cancellationToken);
             RecordOperation(new OperationRecord(started, operation, string.Empty, clock.Elapsed, true, CommErrorKind.None, null, string.Empty));
         }
+        catch (CommFailureException failure)
+        {
+            RecordOperation(OperationRecords.From(started, operation, string.Empty, clock.Elapsed, failure.Result));
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             RecordOperation(new OperationRecord(started, operation, string.Empty, clock.Elapsed, false, CommErrorKind.Cancelled, null, "操作已取消。"));

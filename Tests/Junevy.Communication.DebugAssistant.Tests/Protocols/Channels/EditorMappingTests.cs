@@ -193,10 +193,10 @@ public sealed class EditorMappingTests
         keyed.Correlation.Mode = CorrelationMode.Keyed;
         var sequential = new ChannelSettingsEditor();
 
-        Assert.NotNull(keyed.ToComponents().KeyExtractor);
-        Assert.Equal(CorrelationMode.Keyed, keyed.ToComponents().Correlation);
-        Assert.Null(sequential.ToComponents().KeyExtractor);
-        Assert.Equal(CorrelationMode.Sequential, sequential.ToComponents().Correlation);
+        Assert.NotNull(keyed.ToComponents<ChannelComponents>().KeyExtractor);
+        Assert.Equal(CorrelationMode.Keyed, keyed.ToComponents<ChannelComponents>().Correlation);
+        Assert.Null(sequential.ToComponents<ChannelComponents>().KeyExtractor);
+        Assert.Equal(CorrelationMode.Sequential, sequential.ToComponents<ChannelComponents>().Correlation);
     }
 
     [Fact]
