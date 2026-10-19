@@ -6,8 +6,8 @@ namespace Junevy.Communication.DebugAssistant.Tests.Support;
 /// <summary>记录释放次数与释放时是否仍在页签集合中的测试页签。</summary>
 internal sealed class TrackingSession : SessionViewModel
 {
-    public TrackingSession(ProtocolDescriptor descriptor)
-        : base(descriptor)
+    public TrackingSession(ProtocolDescriptor descriptor, SessionServices dependencies)
+        : base(descriptor, dependencies)
     {
     }
 

@@ -17,6 +17,8 @@
             </StackPanel>
         </Border>
 
+        <jv:MessageBarPresenter x:Name="NotificationPresenter" DockPanel.Dock="Bottom" Margin="16,0,16,8" />
+
         <Grid Margin="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="240" MinWidth="180" />

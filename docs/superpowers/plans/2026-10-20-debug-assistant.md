@@ -775,6 +775,7 @@ internal interface ISimulatorEngine
 | F-3 | MC 的 `McDeviceTable`、FINS 的 `FinsDeviceTable` 是 internal，助手无法列出全部软元件或区域 | 助手维护一份显示用的表，并用 `ParseAddress` 测试其一致性 | 公开只读的设备列表（Modbus 的 `ModbusDevice` 已经是公开的静态实例） |
 | F-4 | `HsmsEquipment` 只能按 S/F 登记处理器，没有"观察所有收到的消息"的事件；没有登记的主消息只能在日志中看到头部 | 由自动应答规则登记的 S/F 可以显示正文；其余只显示头部 | 增加只读的 `MessageReceived` 事件 |
 | F-5 | Secs README 写"Body text in SML is reserved for `Trace`"，但代码中没有任何 `Trace` 级别的日志 | 不影响助手 | 修改 README 的措辞（"目前不记录正文"），或者实现 Trace 日志，需要用户决定 |
+| F-6 | `TcpServerConfig.Port` 不接受 0（`TcpServerOptions` 要求 1–65535），无法让系统选择端口。测试只能先探测一个空闲端口（回环地址，有极小的竞争） | 测试用 `FreePort` 探测空闲端口 | 允许 `Port = 0` 由系统选择，`LocalEndPoint` 已经给出实际端口，因此改动很小 |
 
 ### 33.3 执行汇报与偏差（执行者填写：每个 Task 的汇报、门槛汇报、偏差与需要审阅者决定的事）
 
@@ -818,6 +819,32 @@ internal interface ISimulatorEngine
   3. 图标从 iconfont 的已有字形中选取（`E600`–`E9AE` 的若干个，部分种类共用）。验收时如认为不合适再调整。
   4. U2 的范围问题与 Task 0 的第 3 条相同：`Shell/` 中的 `ProtocolTreeItem` 引用 Junevy.Controls，按计划允许；视图模型与服务层不引用。
   5. 截图未取得（同 Task 0）。
+
+**Task 2（会话基础设施：基类、结果映射、日志管线、面板、服务、架构测试）**
+
+- 做了什么：
+  - `SessionViewModel` 基类（第 5.2 节）：`Title`、`Descriptor`、`Kind`、`State` 与 `StateText`、`IsEditable`、`Operations`（上限 500，最新在前）、`ConnectCommand` / `DisconnectCommand` 与各自的取消命令（取消只在进行中可用）、`ConnectCoreAsync` / `DisconnectCoreAsync` 钩子、`DisposeAsync`（先断开，再停止日志刷新并释放日志工厂）、`PostToUi`，以及页签私有的 `SessionLoggerFactory`（最低级别 Debug，挂 `SessionLogSink`）。异常不逃出界面（U7）：取消记为 `Cancelled`，其他异常记为 `Unspecified` 并写入页签日志。`CaptureSettings` / `ApplySettings` 留到 Task 3。
+  - 结果映射（U6）：`OperationRecords` 把 `CommResult`、`CommResult<T>`、`WebApiResult<T>` 统一为 `OperationRecord`；错误种类的中文名称在 `CommErrorKindNames`（DA-D17）。`SecsResult` 的映射见偏差 1。
+  - 日志（第 5.3 节，DA-D5）：`SessionLog`（待处理队列与可见集合各有上限 5000；`Append` 可从任何线程调用，`Flush` 只在界面线程；暂停；筛选；清空；统计在写入时计数，不受暂停与队列裁剪影响）；`SessionLogSink` / `SessionLogger` / `FrameLogParser`（识别库的四种 Debug 模板，判断截断）；`SessionLogFlusher`（`PeriodicTimer` 100 ms，有待处理条目时经 `IUiDispatcher` 派发刷新）；`LogPanelViewModel`（筛选、暂停、清空、导出为 .txt、统计文字）；`Views/Sessions/LogPanel.xaml`（DataGrid 虚拟化；HEX、ASCII、时间戳列由复选框控制可见性）。
+  - 服务：`IUiDispatcher`（WPF 实现 `WpfUiDispatcher`）、`IFileDialogService`（`WpfFileDialogService`）、`INotificationService`（`WpfNotificationService` 基于 `MessageBarService`；App 启动时注册 `NotificationPresenter`）。`IConfirmService` 在 Task 1 已有。
+  - 占位页签（`PlaceholderSessionView`）内嵌日志面板，绑定到页签自己的 `LogPanel`。
+- 测试：`DebugAssistant.Tests` 共 91 条，全部通过（本期新增 53 条，其中包括 `[Theory]` 的各行）。
+  - 日志模板锁定（`LibraryFrameLogTests`）：用库的真实 `TcpClientChannel` 与 `UdpChannel` 收发，页签得到方向、长度与十六进制都正确的报文；TCP 的 `RequestAsync` 产生一条 TX 和一条 RX；超过 256 字节的帧被标记为截断，长度为完整长度；UDP 的 TX / RX 分别带有 `to {Destination}` / `from {Remote}` 的端点。
+  - 模板解析（`SessionLoggerTests`）：四种模板、不匹配的模板变成普通日志、异常摘要；后台刷新循环在有待处理条目时会派发刷新（真实计时，最长等待 5 秒）。
+  - 日志（`SessionLogTests`、`LogPanelViewModelTests`）：环形缓冲的上限（待处理与可见两处）、暂停、筛选（报文与日志、最低级别）、清空保留统计、统计、变化通知、导出（写入文件并有成功通知；取消时什么也不写）、统计文字、HEX 与 ASCII 列（不可打印字节显示为 '.'，截断的帧显示说明）。
+  - 结果映射（`OperationRecordsTests`）：每种 `CommErrorKind` 一行（12 行）；协议码十六进制；WebApi 显示远端业务码，否则显示 HTTP 状态码。
+  - 会话（`SessionViewModelTests`）：连接成功的记录与命令可用性、连接抛出异常、取消、释放先断开、操作记录上限、`PostToUi`。
+  - 架构（`LayeringRulesTests`）：`Sessions`、`Services`、`Logging`、`Workspace`、`Common`、`Protocols` 下的类型，包括嵌套类型与方法体中的 IL 引用，不得引用 PresentationFramework、PresentationCore、WindowsBase、Junevy.Controls、Microsoft.Xaml.Behaviors。**负控已做**：在 `Services/IThemeService.cs` 的方法体里临时写入 `new System.Windows.Window()`，测试失败并报告了 `IThemeService`；撤销后通过。
+  - 登记（`RegistrationRulesTests`）：19 种种类都有描述、键控服务与 DataTemplate（参数类型的检查在 Task 3 加入）。
+  - 视图（`SessionViewTests`）：占位页签的 XAML 能加载，日志面板绑定到页签自己的 `LogPanel`，面板里有 DataGrid。
+- 偏差与需要审阅者决定的事：
+  1. `SecsResult` 的映射没有单元测试：`SecsResult.Success` 与 `Failure` 是 internal，DA 无法构造。SECS 的映射（含拒绝原因码的十六进制）留到 Task 15，用真实的 HSMS 结果测试。
+  2. WebApi 的协议码：`WebApiResult` 没有协议错误码，`StatusCode` 是 int。因此显示远端业务码，没有时显示 "HTTP 404" 这类十进制文字，而不是十六进制。请审阅者确认。
+  3. 架构测试用的是 IL 扫描（`AssemblyReferenceScanner`，只依赖 `System.Reflection`），没有引入 NetArchTest：AGENTS 规定 NetArchTest 只出现在 Architecture.Tests。
+  4. 套接字测试没有放入 `SocketTiming` 集合：`Tests/Junevy.Communication.Testing` 里没有这个集合的定义。本期的套接字测试都在回环地址上运行，并且各自释放。请审阅者决定是否需要。
+  5. `TcpServer` 的端口不接受 0（摩擦 F-6），测试用 `FreePort` 先探测空闲端口。
+  6. 日志面板的高度暂时固定为 260；计划第 6 节的 GridSplitter 可调高度留给页面布局的统一实现（Task 5 起，各协议页签共用）。
+  7. 日志的时间戳使用创建条目时的本地时间。
 
 ### 33.4 基线与度量（执行者填写）
 

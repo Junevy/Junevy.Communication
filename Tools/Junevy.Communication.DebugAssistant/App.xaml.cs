@@ -3,6 +3,7 @@ using System.Text;
 using System.Windows;
 using Junevy.Communication.DebugAssistant.Hosting;
 using Junevy.Communication.DebugAssistant.Shell;
+using Junevy.Controls.Controls.Bar;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -37,6 +38,7 @@ public partial class App : Application
         {
             DataContext = _host.Services.GetRequiredService<MainWindowViewModel>()
         };
+        MessageBarService.SetPresenter((MessageBarPresenter)window.FindName("NotificationPresenter"));
         window.Closing += OnMainWindowClosing;
         MainWindow = window;
         window.Show();
