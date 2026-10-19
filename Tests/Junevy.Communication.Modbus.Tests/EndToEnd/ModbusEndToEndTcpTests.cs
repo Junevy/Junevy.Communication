@@ -195,11 +195,12 @@ public sealed class ModbusEndToEndTcpTests
         }
     }
 
-    // 只测 MBAP：RTU over TCP 的超时会重建连接，而重试可能早于重建完成（见 P7 计划第 25.2 节的发现），这里不把它当作期望。
-    [Fact(Timeout = 60000)]
-    public async Task RetryCountOne_FirstRequestDropped_SecondSucceeds()
+    // MBAP 按事务号关联，重试在原连接上进行；RTU over TCP 的超时会重建连接，重试等到新连接后再发。
+    [Theory(Timeout = 60000)]
+    [InlineData(ModbusFraming.Mbap, 1)]
+    [InlineData(ModbusFraming.Rtu, 2)]
+    public async Task RetryCountOne_FirstRequestDropped_SecondSucceeds(ModbusFraming framing, int expectedConnections)
     {
-        const ModbusFraming framing = ModbusFraming.Mbap;
         var memory = new PlcMemory();
         memory.SetWords("HR", 0, 0x0777);
         var slave = new ModbusSlave(framing, memory) { DropRequest = number => number == 1 };
@@ -210,6 +211,7 @@ public sealed class ModbusEndToEndTcpTests
 
         Assert.True(result.IsSuccess, result.ErrorMessage);
         Assert.Equal((ushort)0x0777, result.Data);
+        Assert.Equal(expectedConnections, host.AcceptedConnectionCount);
     }
 
     [Fact(Timeout = 60000)]
@@ -227,12 +229,9 @@ public sealed class ModbusEndToEndTcpTests
         Assert.Equal((ushort)0x01FE, memory.GetWords("HR", 40, 1)[0]);
     }
 
-    // RTU over TCP 超时后连接被重建（P7-D13）：先等待断开被观察到，再等待重新连接。
+    // RTU over TCP 超时后连接被重建（P7-D13）：超时返回时通道已离开 Connected，直接等待重建的连接。
     private static async Task AwaitRebuiltConnectionAsync(ModbusClient client)
-    {
-        await Polling.WaitUntilAsync(() => !client.IsConnected, 5000);
-        Assert.True(await client.WaitForConnectedAsync(5000));
-    }
+        => Assert.True(await client.WaitForConnectedAsync(5000));
 
     private static async Task<ModbusClient> ConnectAsync(int port, ModbusFraming framing, int requestTimeout = 2000, ModbusClientOptions? options = null)
     {

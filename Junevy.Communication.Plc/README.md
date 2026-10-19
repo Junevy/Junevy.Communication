@@ -139,7 +139,7 @@ Only construction errors (invalid configuration) throw `ArgumentException`.
 | `RetryInterval` | `1000` ms | How long to wait for the link to come back before a retry |
 | `AllowReadModifyWriteBits` | `false` | Allows writing one bit of a word device by reading and writing the word, under the client's operation lock. Each such write logs a warning |
 
-Retries apply to each request separately: when a large read is split into packets, only the packet that failed is retried. A retry happens only when the link is restored within `RetryInterval`; otherwise the real failure is returned.
+Retries apply to each request separately: when a large read is split into packets, only the packet that failed is retried. A retry happens only when the link is restored within `RetryInterval`; otherwise the real failure is returned. When the failure dropped the connection (a TCP request timeout with `ResetOnRequestTimeout`, which MELSEC 3E, S7, FINS and Modbus RTU over TCP use, or a connection closed mid-request), the channel has already left `Connected`, so the retry waits for the rebuilt connection rather than resending on the old one.
 
 ## Ownership
 

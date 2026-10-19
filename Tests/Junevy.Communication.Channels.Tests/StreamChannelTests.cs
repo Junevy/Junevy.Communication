@@ -138,6 +138,25 @@ public sealed class StreamChannelTests
         Assert.Equal(new[] { DisconnectReason.RequestTimeout }, rig.Faults);
     }
 
+    // 连接丢失时先报告（onFault），再以 ConnectionClosed 失败在途等待者：等待者看到失败时，所有者已经知道连接丢失。
+    [Fact]
+    public async Task Fault_ReportsTheLossBeforeFailingWaiters()
+    {
+        using DuplexStreamPair pair = DuplexStreamPair.Create();
+        await using var rig = new StreamRig(pair, Settings(), Delimiter());
+        using PendingRequest waiter = rig.Table.Register(Ascii("REQ"), null, 5000, null, CancellationToken.None);
+        bool? failedBeforeReport = null;
+        rig.FaultObserver = () => failedBeforeReport = waiter.Completion.IsCompleted;
+        rig.Start();
+
+        pair.B.Dispose();   // 对端关闭：解析循环以 RemoteClosed 报告故障。
+
+        CommResult<byte[]> result = await Arrival.WithinAsync(waiter.Completion, 3000);
+        Assert.Equal(CommErrorKind.ConnectionClosed, result.ErrorKind);
+        Assert.Equal(new[] { DisconnectReason.RemoteClosed }, rig.Faults);
+        Assert.False(failedBeforeReport);
+    }
+
     [Fact]
     public async Task Request_Timeout_NoReset_LateReplyDropped()
     {
@@ -873,6 +892,9 @@ internal sealed class StreamRig : IAsyncDisposable
     /// <summary>中止传输（abortTransport）的调用次数。</summary>
     public int AbortCount => Volatile.Read(ref abortCount);
 
+    /// <summary>故障回调（onFault）内同步执行的观察者，用于检查报告时刻的状态；可为 null。</summary>
+    public Action? FaultObserver { get; set; }
+
     /// <summary>启动通道（同时启动派发循环）。</summary>
     public void Start() => Channel.Start();
 
@@ -887,6 +909,8 @@ internal sealed class StreamRig : IAsyncDisposable
     {
         lock (sync)
             faults.Add(reason);
+
+        FaultObserver?.Invoke();
     }
 
     // 测试中的 abortTransport：计数并断开双工流（模拟销毁底层连接）。

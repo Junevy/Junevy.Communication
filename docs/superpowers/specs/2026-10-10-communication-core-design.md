@@ -430,7 +430,7 @@ public class ChannelComponents
 
 - 驱动接口 `IConnectionDriver { OpenAsync(ct); CloseAsync(reason, drainTimeout); }`，TCP、UDP、串口各自实现。握手（TLS 包装与 `IConnectionInitializer`）在 `OpenAsync` 内、同一个握手时限内完成，不单独暴露 `InitializeAsync`；`CloseAsync` 的排空时限即 `DisconnectTimeout`（20.1）。
 - 生命周期锁串行化 Connect、Disconnect、重连尝试；它与发送锁是两把锁，断线期间发送立即得到 `NotConnected`。
-- `ReportConnectionLost(generation, reason, exception)` 可从任意线程调用。**连接代次**：每次连上加 1，旧代次的报告直接忽略，防止旧 socket 迟到的异常打断新连接。
+- `ReportConnectionLost(generation, reason, exception)` 可从任意线程调用。**连接代次**：每次连上加 1，旧代次的报告直接忽略，防止旧 socket 迟到的异常打断新连接。当前代次的报告**当场**离开 Connected（进入 Reconnecting 或 Disconnected），旧连接在后台关闭，且任何重新打开之前先关闭它；字节通道先报告丢失、再以 `ConnectionClosed` 失败在途请求（20.1 第 43 项）。
 - 状态事件经单消费者队列**按顺序**、在**锁外**触发，事件处理器里调用 `DisconnectAsync` 不会死锁。
 
 ### 6.2 FrameRouter / StreamChannel / DatagramChannel（internal）
@@ -757,9 +757,9 @@ public class UdpChannelConfig : IChannelConfig
 |---|---|
 | `ConnectAsync` 成功 | Connecting → Connected，启动接收、派发、心跳 |
 | `ConnectAsync` 失败 | 返回 Fail；`Reconnect.OnInitialFailure = true` 时同时转入后台重连 |
-| 对端关闭 / 读异常 / 端口被拔出 | 在途请求立即以 `ConnectionClosed` 结束；启用重连 → Reconnecting，否则 → Disconnected |
+| 对端关闭 / 读异常 / 端口被拔出 | 在途请求立即以 `ConnectionClosed` 结束；启用重连 → Reconnecting，否则 → Disconnected。状态在在途请求失败之前就已离开 Connected，旧连接在后台关闭（20.1 第 43 项） |
 | 发送超时、发送异常或取消正在写出的帧 | 本次返回失败；连接断开，后续同上。取消写出同样断开（可能已写出半帧，D10）；取消发生在等待发送锁期间只返回 `Cancelled`（20.1） |
-| 请求超时 | 返回 `Timeout`；TCP `Sequential` + `ResetOnRequestTimeout` 时断开重建；串口/UDP 进入迟到应答丢弃窗口。Sequential 模式下用户取消等待应答与超时同样处理（D10） |
+| 请求超时 | 返回 `Timeout`；TCP `Sequential` + `ResetOnRequestTimeout` 时断开重建（`Timeout` 返回时已离开 Connected，`WaitForConnectedAsync` 等待重建的连接，20.1 第 43 项）；串口/UDP 进入迟到应答丢弃窗口。Sequential 模式下用户取消等待应答与超时同样处理（D10） |
 | 帧超长或分帧异常 | `ProtocolViolation`：TCP 断开并重连；串口丢弃缓冲继续。握手积压超过 64 帧同样按 `ProtocolViolation` 处理（20.1）；UDP 例外：丢弃该数据报并计 `ProtocolErrors`，不断开 |
 | 心跳连续失败 N 次 | `HeartbeatFailed`：断开并重连。探测返回 `NotConnected`，或因通道忙未写出任何帧时，不计为失败（20.1） |
 | 断开期间 `SendAsync` / `RequestAsync` | 立即返回 `NotConnected`，不排队、不隐式连接 |
@@ -1328,6 +1328,7 @@ P4–P6 可按业务优先级调整顺序。每个协议阶段都要附带一份
 | 40 | 7.2、11.3 | 服务端心跳探测由 `TcpChannelComponents.SessionHealthProbeFactory`（`Func<ITcpSession, IHealthProbe>`）提供，与客户端的探测概念重复 | 删除该属性，服务端改用基类的 `ChannelComponents.HealthProbeFactory`（参数类型为 `IByteChannel`，传入的仍是该会话）；服务端仍拒绝 `HealthProbe`。P1 为 preview（1.0.0-preview.1），不保留过渡别名 | 计划第 20 节（本补丁任务 A，preview 期内的调整；第 0 节 D1） |
 | 41 | 3.1 | 依赖列表把 `System.Memory`、`Microsoft.Bcl.AsyncInterfaces`、`System.Threading.Channels` 列为所有目标的依赖，net8.0 下重复 | 三者改为只在 net472 引用（条件化）；`System.IO.Pipelines` 两个目标都保留（不在 `Microsoft.NETCore.App` 中）。打包结果：Core 的 net8.0 依赖组只剩两个 `Microsoft.Extensions.*.Abstractions`，Channels 的 net8.0 依赖组为 Core + `System.IO.Pipelines`，net472 组不变 | 计划第 20 节（本补丁任务 C；审阅者核对 .NET 8 共享框架） |
 | 42 | 7.2 | `TryGetSession` 的 `out ITcpSession? session` 没有可空性特性，返回 true 后调用方仍须判空 | 增加 `[NotNullWhen(true)]`（只改注解，源码与二进制兼容）。net472 上 Tcp、Udp 经 `InternalsVisibleTo` 同时看到自己与 Channels 的内部补丁特性（CS0436），`Common.props` 仅在 net472 上抑制该警告 | 计划第 20 节（收尾补丁审阅者验收） |
+| 43 | 6.1、11.1 | 未说明报告连接丢失到状态变化之间的时序（实现：报告只调度后台处理，关闭旧连接之后才离开 Connected；字节通道先失败在途请求、再报告丢失） | 当前代次的报告在返回之前离开 Connected（Reconnecting 或 Disconnected，`StateChanged` 随即入队），旧连接记为待关闭，由后台在生命周期锁下关闭，`ConnectAsync`、重连的每次打开与 `DisconnectAsync` 也会先关闭它；`ChannelStopSequence.Fault` 改为先调用 `onFault`、再以 `ConnectionClosed` 失败在途等待者。结果：请求以 `Timeout`（TCP 重建）或 `ConnectionClosed` 返回时 `IsConnected` 已为 false，紧接着的 `WaitForConnectedAsync` 等待重建的连接，此窗口内的请求得到 `NotConnected`（原为 `ConnectionClosed`） | P7 审查发现（2026-10-19）：Plc 套件的重试在 `WaitForConnectedAsync` 立即返回后落在正在拆除的旧连接上（S7、FINS、MELSEC 3E/4C、Modbus RTU over TCP）；用户选择"当场离开 Connected"方案 |
 
 ---
 
@@ -1643,7 +1644,7 @@ P6.3（计划 `docs/superpowers/plans/2026-10-12-p63-ftp.md`，Task 0–11）是
 - 摩擦记录（计划第 25.2 节）：F-S1、F-S2（套件缺口，已由两项钩子覆盖）；F-A1（声明式地址解析器无法表达站号前缀与 Modicon 的一基写法，Modbus 自写解析器）；F-A2（`IClientChannel` 测试替身只能复制，共享测试库缺少）；F-A3（共享的设备替身同步回复，TCP 的迟到应答需要后台写入的包装流）。
 - 有效行对照：Modbus v2 3304；Modbus v3 1215（含 DI 与协议层）；Plc 1285（+54，S1、S2；Task 15 为消除重复窗口合并了写入入口的只读检查，去重后仍为 1285）；Melsec 1247；Siemens 1271；Omron 692。
 - 结论：第四个协议在不改通道层、不改 Melsec、Siemens、Omron 的前提下迁移，套件只增加两个小钩子。仍然存在的表达力缺口是 F-A1：声明式解析器不能表达站号前缀与一基地址，因此协议需要自写解析器。这个缺口没有被 S1、S2 覆盖，留待审阅者决定是否纳入后续的套件扩展。
-- 本期发现（未修改通道层）：RTU over TCP 上，请求超时后重建连接与紧接着的重试存在竞争，重试可能得到 `NotConnected`（见计划第 25.2 节与 Skill 的 P7 教训）。
+- 本期发现的"请求超时重建连接与紧接着的重试竞争"已在通道层修复（2026-10-19，20.1 第 43 项）：RTU over TCP 的重试等待重建的连接。
 
 ---
 

@@ -2,6 +2,22 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — Channels：连接丢失后当场离开 Connected（重试等待重建的连接）
+
+### 修复（Fixed）
+
+- 2026-10-19 [Channels] **请求超时重建连接之后，重试落在正在拆除的旧连接上**（P7 审查发现）：字节流客户端在 `CorrelationMode.Sequential` 且 `ResetOnRequestTimeout = true`（TCP 默认）时，请求超时经 `StreamChannel.ResetAfterExpiry` → `ChannelStopSequence.Fault` → `ConnectionSupervisor.ReportConnectionLost` 报告丢失，而监督器只把处理调度到后台，后台关闭旧连接之后才离开 `Connected`。这段时间里 `IsConnected` 仍为 true、`WaitForConnectedAsync` 立即返回 true，Plc 套件的重试（`PlcPacketExchange.ExchangeAsync`）因此在旧连接上重发，以 `ConnectionClosed`（"The stream channel is closed."）结束，而不是等待重连。受影响的是所有在字节流上按顺序关联的 Plc 协议：S7、FINS、MELSEC 3E/4C、Modbus RTU over TCP（MBAP 按事务号关联，不重建连接，不受影响）；在超时之后自己调用 `WaitForConnectedAsync` 的用户代码同样受影响。另一条同类路径：对端在请求进行中关闭连接时，`Fault` 先以 `ConnectionClosed` 失败在途请求、再报告丢失，重试同样可能看到 `Connected`。
+  - **修复**：`ReportConnectionLost` 对当前代次的报告**当场**离开 Connected（启用重连且非用户断开时进入 Reconnecting 并启动重连循环，否则进入 Disconnected），旧连接记为待关闭，由后台任务在生命周期锁下关闭；`ConnectAsync`、重连循环的每次打开（`OpenOnceAsync`）、`DisconnectAsync` 与释放在持锁后先关闭它，驱动不会在旧连接之上打开新连接。`ChannelStopSequence.Fault` 改为先调用 `onFault`、再以 `ConnectionClosed` 失败在途等待者。删除 `ScheduleLossLocked`、`HandleConnectionLostAsync` 与 `lossScheduledGeneration`（同一代次只处理一次由"状态已离开 Connected"保证）。不涉及任何协议包的代码。
+  - **用例**：先红后绿。`StreamClientChannelTests.RequestTimeoutReset_WaitForConnectedWaitsForTheRebuiltConnection`（修复前 `OpenCount` 为 1 而不是 2）、`McEndToEndTcpTests.RequestTimeout_RebuildsTheConnection_AndTheRetrySucceedsOnTheNewOne`（MELSEC 3E，`RetryCount = 1`，第一个请求不回复；修复前以 "The stream channel is closed." 失败）、`ModbusEndToEndTcpTests.RetryCountOne_FirstRequestDropped_SecondSucceeds` 改为 MBAP 与 RTU 两种帧的 Theory（修复前 RTU 失败）。另加：`StreamClientChannelTests.PeerClosesDuringRequest_FailureIsSeenAfterLeavingConnected`；`StreamChannelTests.Fault_ReportsTheLossBeforeFailingWaiters`（确定性地钉住 `Fault` 的顺序，`StreamRig` 增加 `FaultObserver`）；`SupervisorTests` 的 `Lost_LeavesConnectedBeforeReportReturns`、`Lost_ThenConnectAtOnce_ClosesTheLostConnectionBeforeOpening`、`Lost_ThenDisconnectAtOnce_TheLostConnectionIsClosedOnReturn`（`FakeConnectionDriver` 增加调用顺序 `Calls`）。变异检查：恢复 `Fault` 的旧顺序时 `Fault_ReportsTheLossBeforeFailingWaiters` 失败（两个目标）；去掉 `OpenOnceAsync` 的先关闭时 `Lost_ThenConnectAtOnce…` 失败（3/3）；去掉 `DisconnectAsync` 的先关闭**未被**检出（后台关闭总是先取得生命周期锁），该防护保留。
+  - **度量**：Channels 有效行 4763 → 4765；`ConnectionSupervisor` 691 → 696 行；生产重复窗口 24 不变；没有超过 60 行的方法。
+  - **验收**：`dotnet build Junevy.Communication.slnx --no-incremental` 的 Debug 与 Release 均 0 错误，警告只有 WPF 调试工具 `Junevy.Communication.Test` 既有的 2 条；`pwsh build/test-affected.ps1 -Base 0b3eafa -NoBuild -Repeat 3` 选中 17 个测试项目，三遍均为 7200 通过、0 失败、8 跳过（30 个测试宿主；未设置 `JUNEVY_SERIAL_PAIR`）。Channels.Tests 319 → 325、Modbus.Tests 307 → 308（另 1 跳过）、Melsec.Tests 184 → 185（另 1 跳过），每个目标。
+
+### 变更（Changed）
+
+- 2026-10-19 [Channels] 行为契约（设计文档 20.1 第 43 项）：连接丢失的 `StateChanged`（Connected → Reconnecting / Disconnected）在旧连接释放**之前**入队；从报告丢失到后台关闭完成的这段时间里，`SendAsync`、`RequestAsync`、`ReceiveAsync` 返回 `NotConnected`（原为 `ConnectionClosed`，"The stream channel is closed."），与"断开期间立即返回 `NotConnected`"一致；Plc 套件在这段时间开始的操作同样返回 `NotConnected`（与 Reconnecting 期间相同，不重试）。`IConnectable` 的签名与文档不变。
+- 2026-10-19 [Modbus.Tests] `AwaitRebuiltConnectionAsync` 不再先轮询 `!IsConnected`，直接 `WaitForConnectedAsync`。
+- 2026-10-19 [文档] 删除 P7 记下的已知问题：Modbus README 的 "Heartbeat and reconnect" 一节改写为重试会等待重建的连接；`Skills/using-junevy-plc` 删除 P7 教训中的对应条目，错误表补充"重试等待重建的连接"；设计文档 20.12 的"本期发现"改为已修复。`Junevy.Communication.Channels/README.md`、`Junevy.Communication.Plc/README.md`、`Skills/using-junevy-channels`、`Skills/using-junevy-modbus` 同步补充新的时序。
+
 ## [Unreleased] — P7（Modbus 3.0.0-preview.1：迁移到 Plc 套件；Plc 套件扩展）
 
 ### 新增（Added）

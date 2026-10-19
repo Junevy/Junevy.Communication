@@ -209,7 +209,7 @@ var config = new TcpClientChannelConfig
 };
 ```
 
-On a byte-stream transport, a request timeout resets the connection by default (`ResetOnRequestTimeout`). With RTU over TCP the connection is rebuilt in the background, so wait for it with `WaitForConnectedAsync` before the next request.
+On a byte-stream transport, a request timeout resets the connection by default (`ResetOnRequestTimeout`). MBAP matches replies by transaction ID and keeps the connection; with RTU over TCP the connection is rebuilt in the background. The client has left `Connected` when the `Timeout` result returns, so a `RetryCount` retry waits for the rebuilt connection (up to `RetryInterval`). Without retries, a request sent before the connection is back returns `NotConnected`; wait with `WaitForConnectedAsync` first.
 
 ## Dependency injection
 
