@@ -785,6 +785,8 @@ internal interface ISimulatorEngine
 | F-13 | S7 的 `ReadS7StringAsync` / `ReadS7WStringAsync` 只返回文字，声明长度与实际长度无法从结果取得 | 页签在读取后另读一次头部（2 或 4 字节）显示长度；两次读取之间 PLC 的值可能变化 | 返回包含头部信息的结果（文字、声明长度、实际长度） |
 | F-14 | S7 的远端 TSAP 只在库内部计算（`CotpFrames.RemoteTsap` 是 private），页面无法显示连接实际使用的值 | 助手按 README 的公式计算（`S7Tsap`），测试用计划的三条向量核对 | 在 `S7ClientOptions` 或 `S7Client` 上公开远端 TSAP |
 | F-15 | S7 的单包上限只在库内部计算（`S7Session.MaxReadBytes` 等是 internal），页面无法显示协商后实际生效的值 | 助手按 README 的公式换算（`S7PduLimits`），测试用计划的向量核对 | 在 `S7Client` 上公开读、写的单包字节数 |
+| F-16 | 默认分帧因传输而异：`SerialChannelConfig` 是空闲间隔（`IdleGap`，20 毫秒），`TcpClientChannelConfig` 是空分帧。协议组件提供分帧时，`ComponentPrecedence` 要求配置保持默认值，但库没有公开的"默认分帧"，调用方只能写 `new SerialChannelConfig().Framing`。助手的 `ChannelConfigs.Serial` 写成 `new FramingOptions()`，于是 Modbus 与 MC 的串口页签连接即失败（Task 14 端到端测试发现并修复，此前 Task 8、9 的测试没有真实串口） | `ChannelConfigs.Serial` 取 `new SerialChannelConfig().Framing`；串口的端到端测试同样不设置分帧 | 协议组件提供分帧时忽略配置的分帧（或在文档中写明必须留空），并为各传输提供默认分帧的常量 |
+| F-17 | `McClientOptions.SumCheck` 的说明只写"和校验（默认 true）"，没有写明它同时决定请求是否带和校验（关闭时请求不带，PLC 侧设置必须一致，见 P2 计划第 13 节）。模拟器只能从计划得知这一点 | 模拟器的分帧器按同一设置读取请求的校验码；4C 格式 5 不带和校验的端到端组合验证了这一点 | 在 `McClientOptions.SumCheck` 的注释与 Melsec README 中写明请求与应答都受影响 |
 
 ### 33.3 执行汇报与偏差（执行者填写：每个 Task 的汇报、门槛汇报、偏差与需要审阅者决定的事）
 
@@ -1120,6 +1122,57 @@ internal interface ISimulatorEngine
   4. 区的大小由模拟器决定：S7 的 I、Q、M 为 65536 字节，数据块由页签创建（`DB{n}`）；FINS 的字区各 32768 字。计划没有规定大小，越界以此为准。
   5. 测试中发现并修正的两处引擎缺陷（已在提交中包含）：FINS 的命令按主字节分派，导致 0102（写）被当成 0101（读）；节点地址请求的节点号取自错误字段。
   6. Release 构建与 `test-affected -Repeat 3` 仍按计划留到门槛 2（Task 14 之后）。
+
+**Task 14（模拟设备页与端到端矩阵）**
+
+- 做了什么：
+  - 页签 `Views/Simulators/SimulatorPageView`（计划第 7.14 节）：宿主参数、设备参数、内存表、故障注入、请求日志五个页签。视图只绑定；code-behind 只有 `InitializeComponent` 与内存表的 500 毫秒刷新定时器（页面加载时启动，卸载时停止）。视图模型 `SimulatorSessionViewModel` 的设置是 `SimulatorSettings`，不保存内存数值与故障注入。
+  - 引擎由传输决定帧：串口上的 Modbus 固定为 RTU，串口上的 MC 固定为 4C，界面的帧设置对串口无效。
+  - 内存表：字区按字显示（64 字一页，可编辑，可自增）；位区与字节区每行 16 个（1024 个元素一页，只读）；S7 的 I、Q、M 与数据块按字节区显示。`DB{n}` 由设备参数页的"新建数据块"创建（编号 1 至 65535，大小 1 至 65536 字节）。
+  - 注册：`SessionRegistration` 的四个模拟器种类、`SessionSettings` 的 `simulator` 类型、`DataTemplates`。
+  - 修复（DA 代码，Task 8、9 引入）：`ChannelConfigs.Serial` 对协议拥有的串口通道写入 `new FramingOptions()`，库的 `ComponentPrecedence` 要求保持默认值，因此 Modbus 与 MC 的串口页签连接即失败。改为 `new SerialChannelConfig().Framing`（摩擦记录 F-16）。
+  - 修复（模拟器）：(a) 4C 格式 5 的应答缺少响应 ID `FF FF`（访问路径之后），现在黄金向量 V8 的应答逐字节一致；(b) 4C 格式 5 的分帧器总是读取两个和校验字符，关闭和校验时请求永远不完整，现在由 `McFormat5FrameDecoder(sumCheck)` 按设置读取；(c) 页签的 MC 串口引擎使用界面的 3E 或 4E，串口请求无法解析，现在使用 4C。
+  - 测试（新增 131 条）：`SimulatorSessionViewModelTests` 9 条（启动与停止开关监听，站号不合法时拒绝启动，设置往返，故障注入的校验，区列表与分页，字的写入校验，位区，S7 字节区与数据块新建）；`SimulatorPageViewTests` 3 条（加载与绑定，三种表格的可见性，数据块控件只在 S7 显示）；`McSlaveTests` 新增 2 条（V8 应答逐字节，和校验关闭时的请求）；端到端 117 条（见下表）。测试支持：`SimulatorRig`（宿主与客户端配置的测试场）、`CommAssert`（失败时在消息中给出错误种类、消息与协议错误码）、`SerialPairTheoryAttribute`。
+  - 端到端矩阵（`Tests/.../Simulators/EndToEnd/`）：所有端到端测试放入不并行的集合 `SimulatorEndToEnd`，`SimulatorHostTests` 也放入（它也使用 COM20）。串口测试只使用 `JUNEVY_SERIAL_PAIR=COM20,COM21`。
+- 端到端矩阵的测试名（每个组合的六个场景：读写往返、写位、拆包、强制错误码、不应答、断开后重连）：
+
+| 协议 | 组合标识 | 测试类与场景 |
+|---|---|---|
+| Modbus | `tcp-mbap`、`tcp-rtu`、`udp-mbap`、`udp-rtu` | `ModbusEndToEndTests`：`ReadWriteRoundTrip`、`WriteBitsRoundTrip`、`SplitRead`、`ForcedErrorIsRemoteError`、`NoReplyTimesOut`、`DisconnectThenReconnect`（组合作为参数） |
+| Modbus | `serial-rtu`（COM20 / COM21） | 同上六个场景，名称后缀 `_Serial` |
+| MC | `tcp-3e-binary`、`tcp-3e-ascii`、`tcp-4e-binary`、`tcp-4e-ascii`、`udp-3e-binary`、`udp-3e-ascii`、`udp-4e-binary`、`udp-4e-ascii` | `McEndToEndTests`：同名六个场景（组合作为参数，共 8 组合） |
+| MC | `serial-4c-format5`、`serial-4c-format5-nosum`、`serial-4c-format4`、`serial-4c-format4-nosum`（COM20 / COM21） | `McEndToEndTests`：六个 `_Serial` 场景（共 4 组合，格式 5 二进制与格式 4 ASCII，各带与不带和校验） |
+| S7 | `tcp-iso` | `S7EndToEndTests`：`ReadWriteRoundTrip`、`WriteBitsRoundTrip`、`SplitRead`、`ForcedErrorIsRemoteError`、`NoReplyTimesOut`、`DisconnectThenReconnect` |
+| FINS | `tcp` | `FinsEndToEndTests`：同名六个场景 |
+| 页签 | Modbus TCP、Modbus 串口、S7 | `PageEndToEndTests`：`ModbusTcpPage_ShowsTheClientWrites_AndSendsItsOwnWrites`（页签的表格显示客户端的写入，客户端读到页签的写入，位区逐位显示）、`ModbusSerialPage_AnswersRtuThroughThePageEngine`（页签自己的串口引擎以 RTU 应答）、`S7Page_DataBlockWrittenByTheClient_ShowsInItsByteTable`（页签创建的 DB1 接受客户端写入，字节区显示） |
+
+- 测试结果：修复前首次运行，240 条中 35 条失败：页签 XAML 的类型命名空间（模拟器的枚举在 `Simulators` 程序集中）、串口分帧配置（`ChannelConfigs`）、MC 串口的引擎帧（页签与测试都用了 3E）、4C 格式 5 的应答与请求分帧、测试自身的刷新（同值赋值不触发刷新）。修复后 DebugAssistant 测试项目 **753 条全部通过**（`JUNEVY_SERIAL_PAIR=COM20,COM21`，0 跳过，0 警告，0 错误）。
+- 偏差与需要审阅者决定的事：
+  1. 内存表的 S7 字节区只读（计划 7.14 只规定了字与位的编辑），字节不能在页签中写入，只能由客户端写入。请审阅者确认是否需要字节区的编辑。
+  2. "新建数据块"放在设备参数页（计划 7.14 没有列出；Task 13 的第 4 条已写明数据块由页签创建，本 Task 补上）。
+  3. 串口上的 Modbus 与 MC 忽略界面的 RTU 与帧设置，由传输决定；界面上串口的帧选项只起说明作用。
+  4. 端到端的一致性是模拟器与客户端之间的一致性。两边都按计划与手册写成，因此一致并不证明与真机一致；P2-D16 的两项（格式 4 的和校验范围、格式 5 的错误码字节序）仍需真机验证。
+  5. Task 12 偏差 1（V8 的应答）已解决：缺少的是响应 ID `FF FF`，应答现在与向量逐字节一致（见 `McSlaveTests.V8_4CFormat5_Answer_MatchesTheDecodeVectorByteForByte`）。
+  6. `ChannelConfigs.Serial` 与 `SimulatorSessionViewModel.BuildEngine` 的两处修复是 DA 代码的修正，不改动库（DA-D15）；库的生产代码 diff 为空。
+  7. App 启动（`OnStartup`）读取用户工作区的测试隔离问题未改动，计划在 Task 20 处理。
+
+**门槛 2 汇报（Task 14 之后）**
+
+- 矩阵结果：见上表。端到端 117 条在单独运行 DebugAssistant 测试项目时全部通过（`JUNEVY_SERIAL_PAIR=COM20,COM21`，该项目 753 条全部通过，0 跳过）。
+- 门槛 2 的 Release 构建（`dotnet build Junevy.Communication.slnx -c Release`）：0 错误、0 警告。
+- `test-affected -Repeat 3` **未达到三遍全绿**。失败如实记录，未用重跑掩盖：
+  - 第一组（设置 `JUNEVY_SERIAL_PAIR=COM20,COM21`）：第 1 遍 通过 7967、失败 0；第 2 遍 通过 7964、失败 3；第 3 遍 通过 7957、失败 10。13 条失败全部是串口争用：不同的测试程序集并行运行，同时打开 COM21（或 COM20），报 `Access to the path 'COM21' is denied` 或 `对端口“COM20”的访问被拒绝`。分布：`Melsec.Tests` 的 `McSerialPairTests.Format5WithChecksum_RoundTripsOverARealSerialPair` 4 次、`Modbus.Tests` 的 `ModbusEndToEndSerialTests.RtuReadAndWrite_OverARealSerialPair` 3 次、DebugAssistant 的 `SerialPageTests.RequestAndReply_OverTheVirtualPair` 与 `SimulatorHostTests.Serial_RepliesOnTheFirstPort_ToRequestsOnTheSecond` 各 1 次、`McEndToEndTests` 的串口组合 `ForcedErrorIsRemoteError_Serial` 3 次、`Serial.Tests` 的 `RealSerialPortTests.RealPair_RoundTrip_9600_And_115200` 1 次。
+    - 这些项目逐个单独运行并设置 `JUNEVY_SERIAL_PAIR=COM20,COM21` 时全部通过：Serial.Tests 65/65（net8.0 与 net472）、Melsec.Tests 186/186、Modbus.Tests 312/312、DebugAssistant.Tests 753/753。结论：串口失败是并行争用，与断言无关；`test-affected` 不应与 `JUNEVY_SERIAL_PAIR` 同时使用。
+  - 第二组（未设置 `JUNEVY_SERIAL_PAIR`，与 Task 0 基线条件相同，串口对测试跳过）：第 1 遍 通过 7924、失败 2、跳过 23；第 2 遍 通过 7926、失败 0、跳过 23；第 3 遍 通过 7924、失败 2、跳过 23。失败共 4 次，涉及 3 个测试：
+    - `OpcUaDependencyInjectionTests.AddOpcUaClients_PassesTheContainerLoggerFactoryThrough`（第 1、3 遍）：Task 0 基线中已记录的既有失败（日志断言未匹配，时序敏感），与本期无关。
+    - `WebApiServerConcurrencyTests.StartWaitingBehindDispose_ThrowsObjectDisposed_AndNothingKeepsListening`（第 1 遍）：`StartAsync` 与 `Dispose` 竞争时抛出 `ObjectDisposedException`，测试没有捕获它。基线中没有这条；本期没有改动 WebApi 代码。原因未查明，疑为时序竞争。
+    - `TcpServerPageTests.CloseSelectedSession_DisconnectsOnlyThatClient`（DebugAssistant，第 3 遍）：关闭第一个会话后，第二个客户端的状态为 `Connecting`，期望 `Connected`。该测试在连接后立即断言了 `Connected`，所以第二个客户端确实离开过 `Connected`。原因未查明：可能是客户端页的状态更新顺序竞争，也可能是并行负载下的端口复用。没有修改断言，以免掩盖真实的状态变化。单独运行 DebugAssistant 测试项目（两次）时此测试都通过。
+- 门槛 2 结论：两组三遍都没有全绿。Task 14 的功能与端到端矩阵在单独运行时全部通过；剩下的失败是时序竞争与串口争用，见上。
+- 客户端与模拟器不一致之处：
+  1. 模拟器的四处缺陷（4C 格式 5 的响应 ID、格式 5 的分帧、MC 串口的帧、Modbus 串口的帧）都是模拟器自己的，已修复，不改库。
+  2. 页签的串口连接缺陷（`ChannelConfigs.Serial`）是 DA 的，已修复；库的 `ComponentPrecedence` 规则正确，见摩擦记录 F-16。
+  3. 库的客户端没有发现与黄金向量或计划不一致之处：4C 格式 5 客户端的响应检查（帧识别号 F8、响应 ID FF FF、和校验）与 P2 计划第 13 节一致；和校验关闭时客户端不发送请求校验码，与 P2 计划一致。
+- 摩擦记录：F-16（默认分帧因传输而异，协议组件分帧时必须留空，库没有公开的默认分帧）、F-17（`McClientOptions.SumCheck` 的说明没有写明它同时决定请求是否带和校验）。
 
 ### 33.4 基线与度量（执行者填写）
 

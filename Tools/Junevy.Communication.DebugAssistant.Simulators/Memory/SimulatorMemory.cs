@@ -23,6 +23,15 @@ public sealed class SimulatorMemory
 
     public WordArea? FindWords(string name) => Find(_words, name);
 
+    /// <summary>全部存储区的名称：先字区，再位区，最后字节区，各自按登记的先后排列。</summary>
+    public IReadOnlyList<string> AreaNames()
+    {
+        lock (_gate)
+        {
+            return [.. _words.Keys, .. _bits.Keys, .. _bytes.Keys];
+        }
+    }
+
     public BitArea? FindBits(string name) => Find(_bits, name);
 
     public ByteArea? FindBytes(string name) => Find(_bytes, name);

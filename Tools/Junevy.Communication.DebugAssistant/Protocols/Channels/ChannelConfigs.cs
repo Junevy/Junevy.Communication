@@ -88,7 +88,8 @@ internal static class ChannelConfigs
             IdleTimeout = s.Timeouts.IdleTimeout,
             PartialFrameTimeout = s.Timeouts.PartialFrameTimeout,
             LateReplyWindow = s.Timeouts.LateReplyWindow,
-            Framing = protocolOwnsChannel ? new FramingOptions() : s.Framing.ToOptions(),
+            // 协议组件提供分帧时，配置的分帧必须保持该传输的默认值（ComponentPrecedence）；串口的默认分帧是空闲间隔，不是空分帧。
+            Framing = protocolOwnsChannel ? new SerialChannelConfig().Framing : s.Framing.ToOptions(),
             Correlation = protocolOwnsChannel ? CorrelationMode.Sequential : s.Correlation.Mode,
             Heartbeat = s.Heartbeat.ToOptions(),
             Reconnect = s.Reconnect.ToOptions(),

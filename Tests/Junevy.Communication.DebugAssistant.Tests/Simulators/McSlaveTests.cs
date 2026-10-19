@@ -163,6 +163,41 @@ public sealed class McSlaveTests
     }
 
     [Fact]
+    public void V8_4CFormat5_Answer_MatchesTheDecodeVectorByteForByte()
+    {
+        var (memory, engine) = Create(McFrameKind.Frame4C, McEncodingKind.Binary);
+        bool[] bits = new bool[32];
+        bits[4] = true;
+        bits[20] = true;
+        bits[28] = true;
+        PresetBits(memory, "M", 16, bits);
+        byte[] request = Hex("10 02 12 00 F8 00 00 FF FF 03 00 00 01 04 00 00 10 10 00 00 90 02 00 10 03 42 32");
+
+        SimulatorReply reply = Send(engine, request);
+
+        // 应答为 F8、访问路径、响应 ID FF FF、完成码 00 00 与数据；和校验 37 是去转义后的字节之和（含长度）的低字节。
+        Assert.Equal(Hex("10 02 10 10 00 F8 00 00 FF FF 03 00 00 FF FF 00 00 10 10 00 10 10 10 10 10 03 33 37"), reply.Response);
+    }
+
+    [Fact]
+    public void Format5WithoutSumCheck_RequestEndsAtDleEtx_AndTheAnswerHasNoChecksum()
+    {
+        var memory = new SimulatorMemory();
+        var engine = new McSlaveEngine(memory, new McSlaveOptions(McFrameKind.Frame4C, McEncodingKind.Binary, SumCheck: false));
+        bool[] bits = new bool[32];
+        bits[4] = true;
+        bits[20] = true;
+        bits[28] = true;
+        PresetBits(memory, "M", 16, bits);
+        byte[] request = Hex("10 02 12 00 F8 00 00 FF FF 03 00 00 01 04 00 00 10 10 00 00 90 02 00 10 03");
+
+        SimulatorReply reply = Send(engine, request);
+
+        Assert.Equal(SimulatorReplyKind.Reply, reply.Kind);
+        Assert.Equal(Hex("10 02 10 10 00 F8 00 00 FF FF 03 00 00 FF FF 00 00 10 10 00 10 10 10 10 10 03"), reply.Response);
+    }
+
+    [Fact]
     public void Binary3E_UnknownCommand_IsEndCodeC059()
     {
         var (_, engine) = Create(McFrameKind.Frame3E, McEncodingKind.Binary);

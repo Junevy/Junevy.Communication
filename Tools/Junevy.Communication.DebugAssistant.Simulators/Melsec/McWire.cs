@@ -295,11 +295,14 @@ internal static class McWire
         return [.. response];
     }
 
-    /// <summary>4C 格式 5 的应答：DLE STX、长度（2 字节）、帧体、DLE ETX、和校验（两个 ASCII 字符）；帧体中的 DLE 写成 DLE DLE。</summary>
+    /// <summary>
+    /// 4C 格式 5 的应答：DLE STX、长度（2 字节）、帧识别号与访问路径、响应 ID FF FF、完成码（错误时为错误码）、数据，
+    /// 然后 DLE ETX、和校验（两个 ASCII 字符，开启时）；帧体中的 DLE 写成 DLE DLE。
+    /// </summary>
     private static byte[] BuildBinary4C(McSlaveOptions options, McRequest request, McResult result, bool corruptChecksum)
     {
         byte[] data = result.EndCode == 0 ? result.Data : [];
-        byte[] payload = [.. request.Access, (byte)result.EndCode, (byte)(result.EndCode >> 8), .. data];
+        byte[] payload = [.. request.Access, 0xFF, 0xFF, (byte)result.EndCode, (byte)(result.EndCode >> 8), .. data];
         byte[] unescaped = [(byte)payload.Length, (byte)(payload.Length >> 8), .. payload];
 
         List<byte> response = [Dle, Stx];

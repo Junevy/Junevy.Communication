@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using Junevy.Communication.DebugAssistant.Simulators.Faults;
 using Junevy.Communication.DebugAssistant.Simulators.Hosting;
+using Junevy.Communication.DebugAssistant.Tests.Simulators.EndToEnd;
 using Junevy.Communication.DebugAssistant.Tests.Support;
 using Junevy.Communication.Serial;
 using Junevy.Communication.Tcp;
@@ -18,6 +19,7 @@ namespace Junevy.Communication.DebugAssistant.Tests.Simulators;
 /// 模拟器宿主在 TCP、UDP 与串口上的收发（计划 Task 11 第 2 条）：引擎用测试替身，故障注入在线路上生效，请求日志按请求触发。
 /// 串口测试只使用环境变量给出的虚拟串口对（<c>JUNEVY_SERIAL_PAIR</c>）。
 /// </summary>
+[Collection(SimulatorEndToEndCollection.Name)]
 public sealed class SimulatorHostTests
 {
     [Fact]

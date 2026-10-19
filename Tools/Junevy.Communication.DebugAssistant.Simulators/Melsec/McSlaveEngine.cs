@@ -67,7 +67,7 @@ public sealed class McSlaveEngine : ISimulatorEngine
                 EndMarker = "\r\n",
                 KeepMarkers = false,
             }),
-            _ => new McFormat5FrameCodecFactory(),
+            _ => new McFormat5FrameCodecFactory(_options.SumCheck),
         };
     }
 
