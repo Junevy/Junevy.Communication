@@ -1,4 +1,4 @@
-namespace Junevy.Communication.Ftp.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>服务器收到的一条命令及其应答（带连接编号与时间，供串行检查 Q42 使用）。</summary>
 public sealed class FakeFtpCommand

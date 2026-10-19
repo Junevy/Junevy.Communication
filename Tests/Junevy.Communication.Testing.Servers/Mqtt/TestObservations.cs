@@ -1,4 +1,4 @@
-namespace Junevy.Communication.Mqtt.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>
 /// Broker 看到的一次 CONNECT。CONNECT 报文的字段在这里被摊平成 SDK 无关的类型，

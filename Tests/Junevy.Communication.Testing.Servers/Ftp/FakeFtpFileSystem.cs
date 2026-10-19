@@ -1,4 +1,4 @@
-namespace Junevy.Communication.Ftp.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>模拟服务器的一个条目（目录列表用）。</summary>
 public sealed record FakeFtpEntry(string Name, bool IsDirectory, long Size, DateTime Modified);

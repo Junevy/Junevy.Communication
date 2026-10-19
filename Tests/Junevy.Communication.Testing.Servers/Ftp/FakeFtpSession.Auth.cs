@@ -1,6 +1,6 @@
 using System.Net.Security;
 
-namespace Junevy.Communication.Ftp.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>登录、TLS、功能列表与选项（RFC 959、2228、2389 的子集，只含 FluentFTP 实际发出的命令）。</summary>
 internal sealed partial class FakeFtpSession

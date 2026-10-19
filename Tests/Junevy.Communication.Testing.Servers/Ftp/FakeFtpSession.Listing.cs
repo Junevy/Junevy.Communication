@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace Junevy.Communication.Ftp.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>目录列表：LIST（Unix 风格）与 MLSD（机器可读的 facts，时间为 UTC，精确到秒）。</summary>
 internal sealed partial class FakeFtpSession

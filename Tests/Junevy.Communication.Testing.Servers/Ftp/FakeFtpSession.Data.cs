@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace Junevy.Communication.Ftp.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>被动模式（PASV 与 EPSV）的应答与数据监听，以及发送与接收共用的数据连接前置检查和发送入口。</summary>
 internal sealed partial class FakeFtpSession

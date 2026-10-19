@@ -1,4 +1,6 @@
-namespace Junevy.Communication.OpcUa.Tests.TestSupport;
+using Xunit;
+
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>
 /// 全测试程序集共用的默认测试服务器（计划第 1 节第 4 条）：默认配置下整个测试集只启动一次，

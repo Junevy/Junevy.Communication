@@ -10,14 +10,22 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Junevy.Communication.Mqtt\Junevy.Communication.Mqtt.csproj" />
     <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.Testing.Servers\Junevy.Communication.Testing.Servers.csproj" />
   </ItemGroup>
 
   <!-- P6-C12：测试替身用 MQTTnet 自带的进程内 Broker；只出现在测试项目，不进生产包。 -->
   <ItemGroup>
     <PackageReference Include="MQTTnet.Server" Version="5.2.0.1603" />
     <!-- 用 appsettings 真正用的那条绑定路径验证选项（P6-C9）。 -->
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.12" />
+    <!-- 与共享的 SDK 测试服务器（Microsoft.Extensions.Hosting 10.0.12）保持同一版本，避免 NU1605（计划 Task 16，同 P62-D1）。 -->
+    <PackageReference Update="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+  </ItemGroup>
+
+  <!-- SDK 测试服务器（TestBroker、TestObservations）来自共享项目（计划 Task 16）。 -->
+  <ItemGroup>
+    <Using Include="Junevy.Communication.Testing.Servers" />
   </ItemGroup>
 
 </Project>

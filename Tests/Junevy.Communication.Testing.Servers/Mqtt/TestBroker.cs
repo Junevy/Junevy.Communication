@@ -7,7 +7,7 @@ using MQTTnet.Protocol;
 using MQTTnet.Server;
 using SdkProtocolVersion = MQTTnet.Formatter.MqttProtocolVersion;
 
-namespace Junevy.Communication.Mqtt.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>
 /// 进程内 MQTT Broker 的封装（计划第 7 节第 3 条、P6-C12）：起停、可选 TLS、凭据校验、持久会话、

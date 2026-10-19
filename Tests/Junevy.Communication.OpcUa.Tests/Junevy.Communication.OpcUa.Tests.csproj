@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Junevy.Communication.OpcUa\Junevy.Communication.OpcUa.csproj" />
     <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.Testing.Servers\Junevy.Communication.Testing.Servers.csproj" />
   </ItemGroup>
 
   <!-- P6-C12：测试替身用官方 Server 包的进程内服务器；只出现在测试项目，不进生产包。
@@ -21,6 +22,11 @@
     <!-- 用 appsettings 真正用的那条绑定路径验证选项（P6-C9）。 -->
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.12" />
+  </ItemGroup>
+
+  <!-- SDK 测试服务器（OpcUaTestServer、OpcUaServerFixture）来自共享项目（计划 Task 16）。 -->
+  <ItemGroup>
+    <Using Include="Junevy.Communication.Testing.Servers" />
   </ItemGroup>
 
 </Project>

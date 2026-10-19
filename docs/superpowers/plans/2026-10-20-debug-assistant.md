@@ -1196,6 +1196,20 @@ internal interface ISimulatorEngine
 - 库未改动：`Junevy.Communication.Secs` 的 diff 为空（DA-D15）。
 - 摩擦记录：本 Task 没有新的摩擦；F-4 与 F-5 按上面的方式处理。
 
+**Task 16（共享 SDK 测试服务器）**
+
+- 做了什么：
+  - 新项目 `Tests/Junevy.Communication.Testing.Servers`（net8.0，`IsPackable=false`，不 Import 测试项目或库的公共设置：前者会把它变成测试项目，后者会把缺失的 XML 文档当成错误）。引用 `Junevy.Communication.Testing`（`TestCertificates`）、`Junevy.Communication.OpcUa`（OPC UA 替身的测试辅助要创建 `OpcUaClient`，只用公开 API）、MQTTnet.Server 5.2.0.1603、OPCFoundation.NetStandard.Opc.Ua.Server 2.0.1、Microsoft.Extensions.Hosting 与 DI 10.0.12、xunit.core 2.5.3。
+  - `git mv` 迁入 16 个文件：Mqtt 3 个（`TestBroker.cs`、`TestBroker.Scenarios.cs`、`TestObservations.cs`），OpcUa 2 个（`OpcUaServerFixture.cs`、`OpcUaTestServer.cs`），Ftp 11 个（`FakeFtp*.cs`）。命名空间统一为 `Junevy.Communication.Testing.Servers`。这些类型原本已是 public，可见性没有改动；`FakeFtpSession`、`FakeFtpNode` 仍是 internal，只被本组内部使用。
+  - 三个测试项目：增加项目引用与全局 using（`<Using Include="Junevy.Communication.Testing.Servers" />`）。Mqtt 与 Ftp 的 `Microsoft.Extensions.Configuration.Json`、`Binder` 升到 10.0.12，并用 `PackageReference Update` 把 DI 升到 10.0.12，与 OpcUa 项目一致（P62-D1）。
+  - `Junevy.Communication.slnx`：新项目加入 `/Tests/`。
+- 测试（`dotnet test --no-build`，net8.0，迁移前后）：Mqtt 235 → 235，OpcUa 313 → 313，Ftp 189 → 189，失败均为 0。Architecture 测试 15（net8.0）与 12（net472）通过。
+- 偏差与需要审阅者决定的事：
+  1. 计划第 26 条写的是"测试代码只改 using 与项目引用"。实际还改了两类东西：(a) Mqtt、Ftp 的配置包与 DI 版本。共享项目带入的 Hosting 10.0.12 与它们直接引用的 8.0.x 冲突，触发 NU1605（TreatWarningsAsErrors 下是错误）；这与 OpcUa 项目的 P62-D1 做法相同，版本升级后测试行为未变（通过数一致）。(b) 共享项目多引用了 `Junevy.Communication.OpcUa`，因为 OPC UA 替身的 `OpcUaTestServer` 要创建 `OpcUaClient`。两者都只用公开 API。
+  2. 全局 using 放在三个测试项目的 csproj 里，而不是逐个文件加 `using`：涉及约 60 个文件，而且测试公共设置里已有 `Xunit` 的全局 using，做法一致。
+  3. `OpcUaServerFixture.cs` 加了 `using Xunit;`：共享项目不 Import 测试公共设置，所以没有 `Xunit` 的全局 using。
+- 库未改动：库项目的 `git diff --stat` 为空（DA-D15）。
+
 ### 33.4 基线与度量（执行者填写）
 
 基线（改动前，提交 `fe82d79`），由 `build/metrics` 的脚本统计，生产代码范围为 Core、Channels、Tcp、Udp、Serial、Plc、Melsec 的 `*.cs`（213 个文件，排除 obj、bin）：

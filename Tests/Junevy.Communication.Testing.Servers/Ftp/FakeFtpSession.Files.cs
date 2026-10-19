@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace Junevy.Communication.Ftp.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>文件与目录命令（RFC 959 的子集）：CWD、MKD、RMD、DELE、RNFR/RNTO、SIZE、MDTM。</summary>
 internal sealed partial class FakeFtpSession

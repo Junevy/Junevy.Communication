@@ -3,7 +3,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using Junevy.Communication.Testing;
 
-namespace Junevy.Communication.Ftp.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>
 /// 进程内的 FTP 模拟服务器（P6-C12，计划 Task 3）。控制连接监听回环地址的随机端口。

@@ -1,5 +1,6 @@
 using Junevy.Communication.Core;
 using Junevy.Communication.Core.Results;
+using Junevy.Communication.OpcUa;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -8,7 +9,7 @@ using Opc.Ua.Server;
 using Opc.Ua.Server.Fluent;
 using Opc.Ua.Server.Hosting;
 
-namespace Junevy.Communication.OpcUa.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>
 /// 测试服务器的配置（计划第 7 节第 1 条）。

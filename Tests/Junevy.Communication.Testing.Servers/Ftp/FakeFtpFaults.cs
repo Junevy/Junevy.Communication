@@ -1,4 +1,4 @@
-namespace Junevy.Communication.Ftp.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>
 /// 故障注入（计划 Task 3 第 1 条，Task 6 扩展）：指定命令或路径返回指定应答码；第 N 条命令之后关闭控制连接；

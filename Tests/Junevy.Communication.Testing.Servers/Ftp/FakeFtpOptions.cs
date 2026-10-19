@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace Junevy.Communication.Ftp.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>模拟服务器的 TLS 方式。</summary>
 public enum FakeFtpTls

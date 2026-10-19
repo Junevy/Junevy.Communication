@@ -1,6 +1,6 @@
 using System.Net.Sockets;
 
-namespace Junevy.Communication.Ftp.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>文件传输命令：RETR（下载）与 STOR（上传）。数据经被动连接传输，TLS 时数据连接同样加密。</summary>
 internal sealed partial class FakeFtpSession

@@ -3,6 +3,7 @@
     <Project Path="Tests/Junevy.Communication.Modbus.Tests/Junevy.Communication.Modbus.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.Architecture.Tests/Junevy.Communication.Architecture.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.Testing/Junevy.Communication.Testing.csproj" />
+    <Project Path="Tests/Junevy.Communication.Testing.Servers/Junevy.Communication.Testing.Servers.csproj" />
     <Project Path="Tests/Junevy.Communication.Core.Tests/Junevy.Communication.Core.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.Channels.Tests/Junevy.Communication.Channels.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.Tcp.Tests/Junevy.Communication.Tcp.Tests.csproj" />

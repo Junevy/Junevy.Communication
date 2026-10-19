@@ -1,4 +1,4 @@
-namespace Junevy.Communication.Mqtt.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 using MQTTnet;
 using MQTTnet.Protocol;

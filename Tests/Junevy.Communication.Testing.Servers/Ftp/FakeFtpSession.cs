@@ -2,7 +2,7 @@ using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Text;
 
-namespace Junevy.Communication.Ftp.Tests.TestSupport;
+namespace Junevy.Communication.Testing.Servers;
 
 /// <summary>
 /// 一条控制连接上的会话：逐条读取并按顺序应答，因此同一连接上的命令严格串行（Q42）。
