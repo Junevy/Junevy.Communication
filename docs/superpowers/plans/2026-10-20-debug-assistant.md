@@ -1020,6 +1020,33 @@ internal interface ISimulatorEngine
   5. Release 构建与 `test-affected` 留到门槛 2（Task 14 之后）。
   6. 测试进程中，`App` 的启动（`OnStartup`）仍会读取用户的工作区文件（`%LocalAppData%`，只读，不写入）。这是既有的测试隔离问题：修复需要在测试宿主中跳过应用启动，计划在 Task 20 处理。
 
+**Task 9（MC 页）**
+
+- 做了什么：
+  - MC 页签 `McSessionViewModel`（基于 `PlcSessionViewModel`，计划第 7.3 节）。组合由 `McCombination` 给出：TCP 与 UDP 为 3E、4E，串口为 4C（编码为 ASCII 时是格式 4，二进制时是格式 5）；编码对三种帧都可选。帧类型列表只列出当前传输允许的帧；切换传输时，不合法的帧改为该传输的第一个合法帧。客户端由 `McClient.Create(config, creator, options, loggerFactory)` 创建，分帧与关联由库决定。
+  - 和校验 `SumCheck` 只在串口时可编辑。
+  - 访问路径（`McAccessPath`）：网络号、PC 号、模块 I/O 号、模块站号以十六进制文字输入，可带 `0x`；超出位宽或不是十六进制的文字在地址校验中说明，连接时被拒绝。4C 的站号与本站号只在串口时显示，网络帧不解析它们。
+  - 监视定时器（`McTimers`）：单位 250 毫秒，取值 1 至 65535，旁边显示折算的毫秒数；不小于请求超时时给出警告，请求超时改变时警告随之更新。
+  - 软元件速查表（`McDevices`，28 项，记录类型 `McDeviceEntry`）：符号、单位、进制与两种帧的代码；十六进制软元件（X、Y、B、W、SB、SW、DX、DY、ZR）以粗体标出；"填入地址"把示例地址（符号加 0）写入地址栏。
+  - 参数 `McSettings`（登记为 `mc`）、页签工厂注册、数据模板；视图 `McPageView`：上方为传输、帧、编码、网络或串口参数与和校验，左侧为公共面板，右侧为访问路径、监视定时器与速查表，底部为操作记录与日志。
+  - 修正（测试数据）：`WorkspaceServiceTests.Restore_SelectionFollowsTheRestoredTabs_WhenAnEarlierTabWasSkipped` 把 MC 种类与占位参数配对；MC 现在有自己的参数类型，因此测试数据改为仍是占位的 MQTT（做法同 Task 8）。
+  - 自检修正：`McAccessPath` 最初用 `int` 解析，`FFFFFFFF` 会被解析为 -1 并回绕为 `0xFF`；改用 `uint`，并把该文字加入测试。
+- 测试：`DebugAssistant.Tests` 共 444 条，全部通过（本期新增 99 条）；含 COM20 ↔ COM21 虚拟串口对（`JUNEVY_SERIAL_PAIR`）连续运行 3 次，每次全部通过。
+  - 组合全排列（`McSupportTests`）：3 种传输 × 3 种帧 × 2 种编码 = 18 条，合法组合 10 种，与计划的表一致；合法组合的名称（6 条）；不合法组合的原因（4 条）。
+  - 软元件速查表与 `ParseAddress` 的一致性：28 条，每项用 `McClient.ParseAddress` 核对符号、单位与进制（不连接，不发报文）；十六进制软元件恰为计划列出的九个。
+  - 访问路径的十六进制输入：字节与字的合法向量（带或不带 `0x`、大小写、首尾空格），以及越界与非法文字（含 `FFFFFFFF`），共 16 条。
+  - 监视定时器：毫秒换算（4 → 1000，3 → 750，1 → 250，65535 → 16383750）与警告的边界（等于请求超时时警告），共 5 条。
+  - 页签（`McSessionViewModelTests`，17 条）：帧列表随传输变化；非法组合连接时被拒绝且没有创建通道；3E 与 4E 的关联；UDP 定向；串口配置；访问路径与监视定时器出现在请求帧的字节中（假 MC 设备按 3E 二进制应答读取）；访问路径非法文字在地址校验中说明并拒绝连接；网络连接不受串口站号文字影响；定时器越界被拒绝；速查表填入地址；设置经工作区 JSON 往返。
+  - 页面（`McPageViewTests`，3 条）：视图加载并绑定到页签（28 行速查表、日志面板）；帧列表随传输变化且选中的帧保持合法；站号与和校验只在串口时可用。
+  - 解决方案：`dotnet build Junevy.Communication.slnx --no-incremental`（Debug）0 错误、0 警告。库的生产代码未改动（DA-D15）。
+- 偏差与需要审阅者决定的事：
+  1. 十六进制软元件的高亮只用粗体，没有用蓝色（计划第 7.3 节要求"高亮"）。原因：在 `DataGridTextColumn.ElementStyle` 的触发器中设置动态资源颜色，会在测试宿主中使 WPF 的绑定清理抛出 `NullReferenceException`；只设置粗体的触发器没有这个问题。请审阅者确认粗体是否足够；如需颜色，需另找方案。
+  2. 库已有公开类型 `McDevice`（`McAddress.Device` 的类型），因此速查项记录命名为 `McDeviceEntry`，避免混淆。速查表仍由助手维护（库的 `McDeviceTable` 是 internal，摩擦 F-3）；本期没有新增摩擦记录。
+  3. 4C 的站号与本站号在网络帧下不参与请求：界面隐藏，代码取 0，文字不参与校验。计划只写"4C 的字段只在串口时显示"，这是按此理解的实现。请审阅者确认。
+  4. 和校验在网络帧下界面禁用，值原样保留并传给库（库只在 4C 帧中使用它，`McProtocolSettings`）。
+  5. Release 构建与 `test-affected -Repeat 3` 按计划留到门槛 2（Task 14 之后）；本 Task 只跑了 Debug 构建与 DebugAssistant 测试项目。
+  6. 库的公开 API 未变，Skills 与库的 README 无需更新；本 Task 不修改知识库。
+
 ### 33.4 基线与度量（执行者填写）
 
 基线（改动前，提交 `fe82d79`），由 `build/metrics` 的脚本统计，生产代码范围为 Core、Channels、Tcp、Udp、Serial、Plc、Melsec 的 `*.cs`（213 个文件，排除 obj、bin）：

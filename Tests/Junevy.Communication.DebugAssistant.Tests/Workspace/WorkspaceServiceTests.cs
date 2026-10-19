@@ -60,13 +60,13 @@ public sealed class WorkspaceServiceTests : IDisposable
         var (services, _) = TestShell.Create();
         var document = new WorkspaceDocument(
             WorkspaceDocument.CurrentSchemaVersion,
-            [new WorkspaceSession("Gem", "GEM 页", new PlaceholderSettings()), new WorkspaceSession("Mc", "MC 页", new PlaceholderSettings())],
+            [new WorkspaceSession("Gem", "GEM 页", new PlaceholderSettings()), new WorkspaceSession("Mqtt", "MQTT 页", new PlaceholderSettings())],
             SelectedIndex: 1);
 
         WorkspaceRestoreResult restored = WorkspaceService.Restore(document, services.GetRequiredService<ISessionFactory>());
 
         Assert.Equal(0, restored.SelectedIndex);
-        Assert.Equal("MC 页", restored.Sessions[restored.SelectedIndex!.Value].Title);
+        Assert.Equal("MQTT 页", restored.Sessions[restored.SelectedIndex!.Value].Title);
     }
 
     [Fact]
