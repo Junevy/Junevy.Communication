@@ -10,7 +10,10 @@ public static class ShellRegistration
 {
     public static IServiceCollection AddShellServices(this IServiceCollection services)
     {
+        services.AddLogging();
         services.AddSingleton<IThemeService, WpfThemeService>();
+        services.AddSingleton<IConfirmService, WpfConfirmService>();
+        services.AddSessionServices();
         services.AddTransient<MainWindowViewModel>();
         return services;
     }

@@ -802,6 +802,23 @@ internal interface ISimulatorEngine
   3. 第 3 节 U2 列出的命名空间是 `ViewModels`、`Services`、`Sessions`，但第 4.2 节没有 `ViewModels`，而且 `Shell/` 里的 `ProtocolTreeItem : TreeMenuItem` 必须引用 Junevy.Controls。准备在 Task 2 的架构测试里把"不得引用视图相关程序集"的范围定为 `Sessions`、`Services`、`Workspace`、`Logging`、`Common`、`Protocols`，`Shell` 与 `Views` 不在其中。请审阅者确认。
 - 对公开 API 的验证：未发现库的缺口（Task 0 只用了 `WebApiServer`、`OpcUaClient`）。
 
+**Task 1（外壳：宿主、树、页签、会话基础的最小形式）**
+
+- 做了什么：
+  - 19 种页签种类 `ProtocolKind`，描述 `ProtocolDescriptor`（树标题、默认名前缀、图标码点），登记表 `ProtocolCatalog`（DA-D19 的唯一登记处）。
+  - 左侧 `jv:TreeView`（`DisplayMode="Chevron"`）：节点为 `ProtocolTreeItem : TreeMenuItem`，分组节点的 `Descriptor` 为 null。双击叶节点经 `EventTrigger`（`ItemDoubleClick`，`EventArgsParameterPath="Item"`）调用 `OpenSessionCommand`；双击分组不做事。
+  - 右侧 `jv:TabControl`：`ItemsSource=Sessions`，`CanRename="True"`，`ItemContainerStyle` 派生自 `DefaultTabControlItemStyle`，`Header` 与 `Title` 双向绑定（DA-D8）；关闭由 `Views/Behaviors/CloseTabToCommandBehavior` 设置 `Cancel = true` 并交给 `CloseSessionCommand`；空状态提示由 DataTrigger 控制。
+  - `MainWindowViewModel`：开启、关闭页签（先释放，限时 5 秒；释放失败或超时写日志，仍然移除）；关闭选中页签时选中相邻页签；"关闭全部页签"经 `IConfirmService`（WPF 实现基于 `ConfirmDialogService`）确认；`ShutdownAsync` 并发释放全部会话，总时限 10 秒。
+  - 会话：`SessionViewModel`（抽象，`Descriptor`、`Kind`、`Title`、`DisposeAsync`）；`PlaceholderSessionViewModel`，19 种都注册为键控服务（占位，Task 19 删除）；`SessionFactory` 按种类解析键控服务，`SessionNamer` 分配 "&lt;ShortName&gt; #n"。
+  - 退出：`App` 的 `Closing` 处理器取消关闭，等待 `ShutdownAsync`，再调用 `Shutdown()`。这是事件处理器里的 `async void`，属于 U5 允许的位置。保存工作区留待 Task 3。
+- 测试：`DebugAssistant.Tests` 共 38 条，全部通过（Task 1 新增 35 条：目录 20 条、视图模型 10 条、STA 的主窗口与页签 5 条）。覆盖计划第 Task 1 第 5 条的每一项。
+- 偏差与需要审阅者决定的事：
+  1. 测试的模拟方式（不是库的缺陷）：`RaiseEvent(MouseDoubleClick)` 在测试里不会派发到 `OnMouseDoubleClick`，因此测试直接调用页签容器自己的重写（反射）；Enter 与 Escape 的提交依赖 `Keyboard.Focus`，需要活动窗口，因此测试触发 `LostFocus`（库在这一刻经绑定写回 `Header`）。两者都覆盖了提交的代码路径，但没有覆盖真实的按键。
+  2. 页签的 × 按钮的命令路径没有在测试中覆盖：`ButtonAutomationPeer` 调用没有触发关闭。测试改用控件公开的 `TabControl.CloseTab`，它与 × 按钮走同一个 `CloseTabInternal`。× 按钮需要在手动验收中确认。
+  3. 图标从 iconfont 的已有字形中选取（`E600`–`E9AE` 的若干个，部分种类共用）。验收时如认为不合适再调整。
+  4. U2 的范围问题与 Task 0 的第 3 条相同：`Shell/` 中的 `ProtocolTreeItem` 引用 Junevy.Controls，按计划允许；视图模型与服务层不引用。
+  5. 截图未取得（同 Task 0）。
+
 ### 33.4 基线与度量（执行者填写）
 
 基线（改动前，提交 `fe82d79`），由 `build/metrics` 的脚本统计，生产代码范围为 Core、Channels、Tcp、Udp、Serial、Plc、Melsec 的 `*.cs`（213 个文件，排除 obj、bin）：

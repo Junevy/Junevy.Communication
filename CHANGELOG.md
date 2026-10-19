@@ -8,6 +8,7 @@
 
 - 2026-10-20 [DebugAssistant] Task 0（骨架）：新增 `Tools/Junevy.Communication.DebugAssistant`（WinExe，net8.0-windows，WPF）、`Tools/Junevy.Communication.DebugAssistant.Simulators`（net8.0，暂为空）、`Tests/Junevy.Communication.DebugAssistant.Tests`；新增 `build/Junevy.Communication.Tools.props`；解决方案新增 `/Tools/` 文件夹。应用为空主窗口，工具栏可在浅色与深色主题之间切换（Junevy.Controls 3.3.0，主题令牌 `Theme.Brush.*`）。协议页签在后续 Task 中逐个加入。
 - 2026-10-20 [DebugAssistant] 验证：WPF 测试进程里 `WebApiServer` 可以启动与停止，OPC UA 客户端程序集加载无绑定错误（`RuntimeSmokeTests`）。
+- 2026-10-20 [DebugAssistant] Task 1（外壳）：左侧 `jv:TreeView` 按 19 种协议分四组（PLC、工厂系统、自定义协议、模拟设备），双击叶节点打开页签、双击分组只展开或收起；右侧 `jv:TabControl` 的页签标题可以双击或按 F2 改名（标题与视图模型双向绑定），可以关闭（先释放会话、限时 5 秒，再移除；释放失败写日志）；默认名称为"协议短名 #n"。工具栏"关闭全部页签"需确认。退出时并发释放全部会话，总时限 10 秒。每种协议暂用占位页签，随各协议的 Task 替换。
 
 ## [Unreleased] — Channels：连接丢失后当场离开 Connected（重试等待重建的连接）
 

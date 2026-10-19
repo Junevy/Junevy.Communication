@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text;
 using System.Windows;
 using Junevy.Communication.DebugAssistant.Hosting;
@@ -12,6 +13,8 @@ namespace Junevy.Communication.DebugAssistant;
 public partial class App : Application
 {
     private IHost? _host;
+    private bool _shuttingDown;
+    private bool _closeAllowed;
 
     public App()
     {
@@ -34,8 +37,36 @@ public partial class App : Application
         {
             DataContext = _host.Services.GetRequiredService<MainWindowViewModel>()
         };
+        window.Closing += OnMainWindowClosing;
         MainWindow = window;
         window.Show();
+    }
+
+    /// <summary>
+    /// 退出时先取消关闭，并发释放全部会话（最长 10 秒，DA-D9），完成后再真正退出。
+    /// 释放是异步的，而 <see cref="Window.Closing"/> 是同步事件，因此只能在事件处理器里等待。
+    /// </summary>
+    private async void OnMainWindowClosing(object? sender, CancelEventArgs e)
+    {
+        if (_closeAllowed)
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        if (_shuttingDown)
+        {
+            return;
+        }
+
+        _shuttingDown = true;
+        if (sender is Window { DataContext: MainWindowViewModel viewModel })
+        {
+            await viewModel.ShutdownAsync();
+        }
+
+        _closeAllowed = true;
+        Shutdown();
     }
 
     protected override void OnExit(ExitEventArgs e)
