@@ -35,9 +35,10 @@ public partial class App : Application
         _host = builder.Build();
 
         var viewModel = _host.Services.GetRequiredService<MainWindowViewModel>();
-        viewModel.RestoreWorkspace();
         var window = new Views.Shell.MainWindow { DataContext = viewModel };
+        // 先注册通知宿主：恢复工作区时可能要说明被跳过的页签（MessageBarService 没有宿主时会抛出异常）。
         MessageBarService.SetPresenter((MessageBarPresenter)window.FindName("NotificationPresenter"));
+        viewModel.RestoreWorkspace();
         window.Closing += OnMainWindowClosing;
         MainWindow = window;
         window.Show();

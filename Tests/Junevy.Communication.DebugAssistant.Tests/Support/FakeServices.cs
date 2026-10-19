@@ -1,3 +1,4 @@
+using Junevy.Communication.DebugAssistant.Protocols.Plc;
 using Junevy.Communication.DebugAssistant.Services;
 using Junevy.Communication.DebugAssistant.Sessions;
 
@@ -28,9 +29,13 @@ internal sealed class RecordingNotificationService : INotificationService
 /// <summary>页签依赖的测试组合：界面派发、假时钟、假对话框与记录通知。</summary>
 internal static class FakeServices
 {
-    public static SessionServices Create(ManualUiDispatcher? dispatcher = null, FakeFileDialogService? files = null) => new(
+    public static SessionServices Create(
+        ManualUiDispatcher? dispatcher = null,
+        FakeFileDialogService? files = null,
+        ITransportCreatorProvider? transports = null) => new(
         dispatcher ?? new ManualUiDispatcher(),
         new FakeClock(),
         files ?? new FakeFileDialogService(),
-        new RecordingNotificationService());
+        new RecordingNotificationService(),
+        transports ?? new TransportCreatorProvider());
 }

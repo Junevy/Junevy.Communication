@@ -1,3 +1,4 @@
+using Junevy.Communication.DebugAssistant.Protocols.Plc;
 using Junevy.Communication.DebugAssistant.Services;
 
 namespace Junevy.Communication.DebugAssistant.Sessions;
@@ -7,4 +8,5 @@ public sealed record SessionServices(
     IUiDispatcher Dispatcher,
     TimeProvider Clock,
     IFileDialogService Files,
-    INotificationService Notifications);
+    INotificationService Notifications,
+    ITransportCreatorProvider Transports);

@@ -102,6 +102,12 @@ public abstract partial class PlcSessionViewModel : SessionViewModel
     /// <summary>创建协议的客户端（未连接）。参数不合法时抛出 <see cref="ArgumentException"/>。</summary>
     protected abstract IPlcClient CreateClient();
 
+    /// <summary>当前连接的客户端；未连接时为 null。协议页签用它执行协议特有的操作（例如 Modbus 的掩码写）。</summary>
+    protected IPlcClient? CurrentClient => _client;
+
+    /// <summary>把面板上的地址换成协议实际使用的地址（例如 Modbus 的临时站号前缀）。默认不变。</summary>
+    protected virtual string ToProtocolAddress(string address) => address;
+
     /// <summary>描述解析后的地址。协议页签可以覆盖它，补充附加信息（例如 Modbus 的站号）。</summary>
     protected virtual string DescribeAddress(PlcAddress address) =>
         $"存储区 {address.Device.Symbol}，单位 {address.Unit}，编号 {address.Number}"
@@ -246,7 +252,7 @@ public abstract partial class PlcSessionViewModel : SessionViewModel
         }
 
         DateTimeOffset started = Dependencies.Clock.GetLocalNow();
-        (CommResult result, object? value) = await PlcTypedAccess.ReadAsync(client, ValueType, Address, Count, CancellationToken.None);
+        (CommResult result, object? value) = await PlcTypedAccess.ReadAsync(client, ValueType, ToProtocolAddress(Address), Count, CancellationToken.None);
         RecordOperation(OperationRecords.From(started, "读取", Address, TimeSpan.Zero, result));
         ReadText = result.IsSuccess ? PlcValueCodec.Format(value) : string.Empty;
     }
@@ -265,7 +271,7 @@ public abstract partial class PlcSessionViewModel : SessionViewModel
         }
 
         DateTimeOffset started = Dependencies.Clock.GetLocalNow();
-        CommResult result = await PlcTypedAccess.WriteAsync(client, ValueType, Address, value!, StringLength(ValueType, Count), CancellationToken.None);
+        CommResult result = await PlcTypedAccess.WriteAsync(client, ValueType, ToProtocolAddress(Address), value!, StringLength(ValueType, Count), CancellationToken.None);
         RecordOperation(OperationRecords.From(started, "写入", Address, TimeSpan.Zero, result));
         if (result.IsSuccess)
         {
@@ -292,7 +298,7 @@ public abstract partial class PlcSessionViewModel : SessionViewModel
         }
 
         DateTimeOffset started = Dependencies.Clock.GetLocalNow();
-        CommResult result = await PlcTypedAccess.WriteAsync(client, row.Type, row.Address, value!, StringLength(row.Type, row.Count), CancellationToken.None);
+        CommResult result = await PlcTypedAccess.WriteAsync(client, row.Type, ToProtocolAddress(row.Address), value!, StringLength(row.Type, row.Count), CancellationToken.None);
         RecordOperation(OperationRecords.From(started, "写入", row.Address, TimeSpan.Zero, result));
         if (result.IsSuccess)
         {
@@ -308,7 +314,7 @@ public abstract partial class PlcSessionViewModel : SessionViewModel
             return;
         }
 
-        if (!ParseAddressText(Address).IsSuccess)
+        if (!ParseAddressText(ToProtocolAddress(Address)).IsSuccess)
         {
             RecordOperation(new OperationRecord(Dependencies.Clock.GetLocalNow(), "添加监控", Address, TimeSpan.Zero, false, CommErrorKind.InvalidRequest, null, AddressCheck));
             return;
@@ -367,7 +373,7 @@ public abstract partial class PlcSessionViewModel : SessionViewModel
             object? value = null;
             try
             {
-                (result, value) = await PlcTypedAccess.ReadAsync(client, row.Type, row.Address, row.Count, cancellationToken);
+                (result, value) = await PlcTypedAccess.ReadAsync(client, row.Type, ToProtocolAddress(row.Address), row.Count, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -397,7 +403,7 @@ public abstract partial class PlcSessionViewModel : SessionViewModel
             return "请输入地址。";
         }
 
-        CommResult<PlcAddress> parsed = ParseAddressText(text);
+        CommResult<PlcAddress> parsed = ParseAddressText(ToProtocolAddress(text));
         return parsed.IsSuccess ? DescribeAddress(parsed.Data!) : parsed.ErrorMessage;
     }
 
@@ -442,7 +448,8 @@ public abstract partial class PlcSessionViewModel : SessionViewModel
         return false;
     }
 
-    private void RecordNotConnected(string operation, string address) =>
+    /// <summary>记录页签没有连接的失败（协议页签的操作也使用它）。</summary>
+    protected void RecordNotConnected(string operation, string address) =>
         RecordOperation(new OperationRecord(Dependencies.Clock.GetLocalNow(), operation, address, TimeSpan.Zero, false, CommErrorKind.NotConnected, null, "页签没有连接。"));
 
     /// <summary>字符串写入时的定长（字节）；其他类型不使用。</summary>

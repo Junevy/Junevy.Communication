@@ -163,31 +163,10 @@ public sealed partial class UdpSessionViewModel : ChannelSessionViewModel
 
     private UdpChannelConfig BuildConfig()
     {
-        ChannelSettingsEditor s = Settings;
         string[] groups = MulticastGroups
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return new UdpChannelConfig
-        {
-            LocalAddress = LocalAddress,
-            LocalPort = LocalPort,
-            RemoteHost = Directed ? RemoteHost : null,
-            RemotePort = Directed ? RemotePort : 0,
-            EnableBroadcast = EnableBroadcast,
-            MulticastGroups = groups.Length == 0 ? null : groups,
-            MulticastTimeToLive = MulticastTimeToLive,
-            MulticastLoopback = MulticastLoopback,
-            ReuseAddress = ReuseAddress,
-            HandshakeTimeout = s.Timeouts.HandshakeTimeout,
-            DisconnectTimeout = s.Timeouts.DisconnectTimeout,
-            SendTimeout = s.Timeouts.SendTimeout,
-            RequestTimeout = s.Timeouts.RequestTimeout,
-            RequestRetryCount = RequestRetryCount,
-            MaxDatagramSize = MaxDatagramSize,
-            IdleTimeout = s.Timeouts.IdleTimeout,
-            LateReplyWindow = s.Timeouts.LateReplyWindow,
-            Correlation = s.Correlation.Mode,
-            Heartbeat = s.Heartbeat.ToOptions(),
-            Reconnect = s.Reconnect.ToOptions(),
-        };
+        return ChannelConfigs.Udp(
+            Settings, LocalAddress, LocalPort, Directed ? RemoteHost : null, RemotePort, EnableBroadcast, groups,
+            MulticastTimeToLive, MulticastLoopback, ReuseAddress, RequestRetryCount, MaxDatagramSize);
     }
 }

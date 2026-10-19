@@ -114,33 +114,6 @@ public sealed partial class SerialSessionViewModel : ChannelSessionViewModel
         }
     }
 
-    private SerialChannelConfig BuildConfig()
-    {
-        ChannelSettingsEditor s = Settings;
-        return new SerialChannelConfig
-        {
-            PortName = PortName,
-            BaudRate = BaudRate,
-            DataBits = DataBits,
-            Parity = Parity,
-            StopBits = StopBits,
-            Handshake = Handshake,
-            DtrEnable = DtrEnable,
-            RtsEnable = RtsEnable,
-            ReadBufferSize = ReadBufferSize,
-            WriteBufferSize = WriteBufferSize,
-            OpenTimeout = OpenTimeout,
-            HandshakeTimeout = s.Timeouts.HandshakeTimeout,
-            DisconnectTimeout = s.Timeouts.DisconnectTimeout,
-            SendTimeout = s.Timeouts.SendTimeout,
-            RequestTimeout = s.Timeouts.RequestTimeout,
-            IdleTimeout = s.Timeouts.IdleTimeout,
-            PartialFrameTimeout = s.Timeouts.PartialFrameTimeout,
-            LateReplyWindow = s.Timeouts.LateReplyWindow,
-            Framing = s.Framing.ToOptions(),
-            Correlation = s.Correlation.Mode,
-            Heartbeat = s.Heartbeat.ToOptions(),
-            Reconnect = s.Reconnect.ToOptions(),
-        };
-    }
+    private SerialChannelConfig BuildConfig() => ChannelConfigs.Serial(
+        Settings, PortName, BaudRate, DataBits, Parity, StopBits, Handshake, DtrEnable, RtsEnable, ReadBufferSize, WriteBufferSize, OpenTimeout);
 }

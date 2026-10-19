@@ -3,7 +3,9 @@
                     xmlns:sessions="clr-namespace:Junevy.Communication.DebugAssistant.Sessions"
                     xmlns:views="clr-namespace:Junevy.Communication.DebugAssistant.Views.Sessions"
                     xmlns:channels="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Channels"
-                    xmlns:channelViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels">
+                    xmlns:channelViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
+                    xmlns:modbus="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Modbus"
+                    xmlns:modbusViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Modbus">
 
     <!-- 页签内容：按视图模型类型选择视图（计划第 5.2 节）。每种页签完成后在这里加一条。 -->
     <DataTemplate DataType="{x:Type sessions:PlaceholderSessionViewModel}">
@@ -20,6 +22,10 @@
 
     <DataTemplate DataType="{x:Type channels:SerialSessionViewModel}">
         <channelViews:SerialPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type modbus:ModbusSessionViewModel}">
+        <modbusViews:ModbusPageView />
     </DataTemplate>
 
     <DataTemplate DataType="{x:Type channels:TcpServerSessionViewModel}">

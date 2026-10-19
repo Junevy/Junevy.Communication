@@ -44,14 +44,14 @@ public sealed class WorkspaceCommandTests : IDisposable
         Directory.CreateDirectory(_directory);
         new WorkspaceStore(WorkspacePath).Save(new WorkspaceDocument(
             WorkspaceDocument.CurrentSchemaVersion,
-            [new WorkspaceSession("Modbus", "Modbus #1", new PlaceholderSettings()), new WorkspaceSession("Gem", "GEM", new PlaceholderSettings())],
+            [new WorkspaceSession("Mqtt", "Mqtt #1", new PlaceholderSettings()), new WorkspaceSession("Gem", "GEM", new PlaceholderSettings())],
             SelectedIndex: 0));
         var (services, _) = TestShell.Create(s => s.AddSingleton(new WorkspaceStore(WorkspacePath)));
         MainWindowViewModel vm = services.GetRequiredService<MainWindowViewModel>();
 
         vm.RestoreWorkspace();
 
-        Assert.Equal(new[] { "Modbus #1" }, vm.Sessions.Select(s => s.Title));
+        Assert.Equal(new[] { "Mqtt #1" }, vm.Sessions.Select(s => s.Title));
         Assert.Same(vm.Sessions[0], vm.SelectedSession);
         RecordingNotificationService notifications = (RecordingNotificationService)services.GetRequiredService<INotificationService>();
         (NotificationKind kind, string message) = Assert.Single(notifications.Shown);

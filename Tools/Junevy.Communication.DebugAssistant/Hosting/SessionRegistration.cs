@@ -1,4 +1,5 @@
 using Junevy.Communication.DebugAssistant.Protocols.Channels;
+using Junevy.Communication.DebugAssistant.Protocols.Modbus;
 using Junevy.Communication.DebugAssistant.Sessions;
 using Junevy.Communication.DebugAssistant.Shell;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +14,7 @@ internal static class SessionRegistration
     {
         [ProtocolKind.TcpClient] = (descriptor, services) => new TcpClientSessionViewModel(descriptor, services),
         [ProtocolKind.Udp] = (descriptor, services) => new UdpSessionViewModel(descriptor, services),
+        [ProtocolKind.Modbus] = (descriptor, services) => new ModbusSessionViewModel(descriptor, services),
         [ProtocolKind.TcpServer] = (descriptor, services) => new TcpServerSessionViewModel(descriptor, services),
         [ProtocolKind.Serial] = (descriptor, services) => new SerialSessionViewModel(descriptor, services),
     };

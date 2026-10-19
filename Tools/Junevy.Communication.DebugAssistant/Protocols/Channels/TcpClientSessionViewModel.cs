@@ -55,30 +55,5 @@ public sealed partial class TcpClientSessionViewModel : ChannelSessionViewModel
         Settings.Apply(saved.Channel);
     }
 
-    private TcpClientChannelConfig BuildConfig()
-    {
-        ChannelSettingsEditor s = Settings;
-        return new TcpClientChannelConfig
-        {
-            Host = Host,
-            Port = Port,
-            LocalAddress = LocalAddress.Length == 0 ? null : LocalAddress,
-            LocalPort = LocalPort,
-            ConnectTimeout = s.Timeouts.ConnectTimeout,
-            HandshakeTimeout = s.Timeouts.HandshakeTimeout,
-            SendTimeout = s.Timeouts.SendTimeout,
-            RequestTimeout = s.Timeouts.RequestTimeout,
-            IdleTimeout = s.Timeouts.IdleTimeout,
-            PartialFrameTimeout = s.Timeouts.PartialFrameTimeout,
-            DisconnectTimeout = s.Timeouts.DisconnectTimeout,
-            ResetOnRequestTimeout = s.Timeouts.ResetOnRequestTimeout,
-            LateReplyWindow = s.Timeouts.LateReplyWindow,
-            Framing = s.Framing.ToOptions(),
-            Correlation = s.Correlation.Mode,
-            Heartbeat = s.Heartbeat.ToOptions(),
-            Reconnect = s.Reconnect.ToOptions(),
-            Socket = s.Socket.ToOptions(),
-            Tls = s.Tls.ToOptions(),
-        };
-    }
+    private TcpClientChannelConfig BuildConfig() => ChannelConfigs.TcpClient(Settings, Host, Port, LocalAddress, LocalPort);
 }

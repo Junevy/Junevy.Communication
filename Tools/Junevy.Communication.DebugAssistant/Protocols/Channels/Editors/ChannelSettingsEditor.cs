@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using Junevy.Communication.Channels;
 using Junevy.Communication.DebugAssistant.Protocols.Channels.Settings;
 
@@ -19,7 +20,7 @@ public enum ChannelTransport
 /// <summary>
 /// 通道参数的全部编辑器的组合（计划第 5.5 节）。传输页（TCP 客户端、UDP、串口）共用它；PLC 页与 TCP 服务端另有组合方式。
 /// </summary>
-public sealed class ChannelSettingsEditor
+public sealed partial class ChannelSettingsEditor : ObservableObject
 {
     /// <param name="transport">通道类型。</param>
     /// <param name="protocolOwnsChannelFraming">为真时分帧、关联与握手由协议决定（PLC 页签），界面不显示这些分组。</param>
@@ -41,7 +42,8 @@ public sealed class ChannelSettingsEditor
         }
     }
 
-    public ChannelTransport Transport { get; }
+    [ObservableProperty]
+    private ChannelTransport _transport;
 
     /// <summary>分帧、关联与握手由协议决定（例如 PLC 协议）。</summary>
     public bool ProtocolOwnsChannelFraming { get; }
@@ -57,6 +59,13 @@ public sealed class ChannelSettingsEditor
 
     /// <summary>套接字与 TLS 只属于 TCP。</summary>
     public bool ShowsSocketAndTls => Transport == ChannelTransport.Tcp;
+
+    /// <summary>通道类型改变时（Modbus 页签可以切换 TCP、UDP 与串口），通知依赖它的显示属性。</summary>
+    partial void OnTransportChanged(ChannelTransport value)
+    {
+        OnPropertyChanged(nameof(ShowsFraming));
+        OnPropertyChanged(nameof(ShowsSocketAndTls));
+    }
 
     public FramingEditor Framing { get; }
 

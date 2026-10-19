@@ -781,6 +781,7 @@ internal interface ISimulatorEngine
 | F-9 | 白名单与最大会话数拒绝的连接不产生任何事件，只有库的警告日志（`Rejected the connection from …`）。界面的操作记录看不到被拒绝的连接 | 原因显示在页签的日志面板里（警告级别） | 增加 `SessionRejected` 事件（远端、原因），助手即可写入操作记录 |
 | F-10 | 字序与字符串编码只能在各协议的选项类型上设置（`DataFormat`，每个协议一个属性，可空）。基类 `PlcClientOptions` 没有这个属性，公共面板无法统一设置 | 面板只在用户覆盖时生成 `PlcDataFormat`，由协议页签把它赋给自己的选项（Task 8 起） | 把 `DataFormat` 放到 `PlcClientOptions` 基类上，公共面板即可统一设置 |
 | F-11 | `ConnectionStatistics` 只有内部构造函数，测试替身无法返回统计对象（`IConnectable.Statistics`） | 假客户端的 `Statistics` 抛出 `NotSupportedException`；面板不读取统计 | 提供公共构造函数，或把统计抽象为接口 |
+| F-12 | 掩码写（0x16）与读写多个寄存器（0x17）只在 `ModbusClient` 的具体类型上，`IPlcClient` 没有这两个方法。通用面板无法调用它们，协议页签只能转换为具体类型 | Modbus 页签通过 `PlcSessionViewModel.CurrentClient` 取得具体类型 | 把这两个操作放进 PLC 的扩展接口（例如 `IModbusClient`）或 `IPlcClient` 的扩展方法，协议无关的代码即可调用 |
 
 ### 33.3 执行汇报与偏差（执行者填写：每个 Task 的汇报、门槛汇报、偏差与需要审阅者决定的事）
 
@@ -990,6 +991,34 @@ internal interface ISimulatorEngine
   4. 轮询使用真实时间（`PeriodicTimer`）。测试用 50 毫秒间隔和有限的等待，阻塞类测试只检查"不增加"与"等待后增加"，不检查精确的次数，以避免时序脆弱。
   5. 写入后的立即刷新会等待正在进行的一轮结束（不并行读取），因此刷新可能比写入晚一个轮询周期。
   6. `PlcClientOptions` 的重试与读改写位由协议页签在创建客户端时通过 `PlcOptionsEditor.ApplyTo` 写入（Task 8 实现）。
+
+**Task 8（Modbus 页，删除旧工具）**
+
+- 做了什么：
+  - Modbus 页签 `ModbusSessionViewModel`（基于 `PlcSessionViewModel`）：传输与帧格式（`ModbusCombination`：五种组合与名称；串口选择 MBAP 时说明原因并改为 RTU；自动解析为串口 RTU、网络 MBAP）；默认站号 `UnitId`（1），临时站号拼成 `s=N;` 前缀（已有前缀的地址不再拼接）；串口参数；Modbus 选项 `UseSingleWriteFunctions`、`UseMaskWriteForBits`。客户端由 `ModbusClient.Create(config, creator, options, loggerFactory)` 创建，通道创建器来自 `ITransportCreatorProvider`（测试接缝）。
+  - 功能码提示 `ModbusFunctionHint`：读取 01 至 04；写入的报文按每包上限拆分（寄存器 123，线圈 1968），单个写入功能码只用于单点报文，并受 `UseSingleWriteFunctions` 控制。
+  - 掩码写 `ModbusMask`（置位与清零各得到两个掩码）与 `ApplyMaskCommand`（0x16，经 `ModbusClient.MaskWriteRegisterAsync`）；读写多个寄存器 `ReadWriteCommand`（0x17）；结果表格 `ReadTableCommand`（C、DI 读位，HR、IR 读寄存器，行 `ModbusTableRow`）。
+  - 参数 `ModbusSettings`（登记为 `modbus`）：公共面板的参数、传输、帧格式、主机与端口、站号、串口参数与选项。
+  - 通道配置映射 `ChannelConfigs`：TCP 客户端、UDP、串口与 Modbus 页签共用；协议决定分帧与关联时不写入它们。`ChannelSettingsEditor` 改为可观察的、可设置的传输（`Transport`），通道参数视图随传输切换（套接字与 TLS 只属于 TCP）。
+  - `PlcSessionViewModel`：新增 `CurrentClient`（协议页签执行协议特有的操作）、`ToProtocolAddress`（临时站号的钩子）；`RecordNotConnected` 改为受保护。`SessionServices` 增加 `Transports`，由 DI 提供。
+  - 视图 `ModbusPageView`：传输与站号、组合名称、串口参数、Modbus 选项、连接栏、通道参数（可折叠）、公共面板（左），以及功能码提示、掩码写、读写多个寄存器、结果表格（右），底部为操作记录与日志。
+  - 删除 `Junevy.Communication.Test`：文件夹与解决方案中的条目。覆盖检查（第 7.2 节最后一行）：旧工具的功能是"TCP 或串口连接，读写 C、DI、IR、HR，结果显示在表格中"。新页面：TCP、UDP 与串口（RTU）连接；C、DI、HR、IR 的读写经公共面板与功能码映射；结果表格由"读取表格"填充。
+  - 修正（应用启动）：`OnStartup` 原来先恢复工作区、后注册通知宿主；工作区中有被跳过的页签时，说明信息会抛出 `MessageBarService` 的异常。现在先注册宿主。
+  - 修正（工作区测试）：`WorkspaceServiceTests` 与 `WorkspaceCommandTests` 用 Modbus 种类与占位参数，验证的是"参数不符的页签被跳过"。Modbus 现在有自己的参数类型，因此测试数据改为仍是占位的 MQTT。
+- 测试：`DebugAssistant.Tests` 共 345 条，全部通过（本期新增 39 条）。
+  - 组合（`ModbusHelpersTests`）：五种合法组合的名称、帧格式与自动解析；串口 + MBAP 不合法，并说明原因。
+  - 掩码助手：置位与清零第 0、5、15 位的各三条向量（与掩码、或掩码）；用设备公式核对结果；位号越界抛出异常。
+  - 功能码：单个写入选项对单点写入的影响（开启时 05 与 06，关闭时 0F 与 10）；124 个寄存器拆为 123 个（10）与 1 个（06）；1969 个线圈拆为 1968 个（0F）与 1 个（05）；只读区域没有写入报文；提示文字与选项一致。
+  - 页签（`ModbusSessionViewModelTests`）：用 `ScriptedTransports` 替换 `ITransportCreatorProvider`（测试接缝），检查传给库的配置（TCP 的主机与端口，UDP 的远端，串口的端口名）与帧格式（MBAP 为 keyed 关联，RTU 为顺序关联）；RTU 站号越界被拒绝并给出库的消息；切换传输更新组合名称与通道参数视图；假 Modbus 从站按 MBAP 应答：结果表格显示读取的寄存器（0x1000 加地址）；掩码写发送 0x16 与正确的掩码；置位与清零按钮填写掩码；无效掩码不发送；读写多个寄存器（0x17）显示读回的值；单个写入的功能码随选项变化（06 与 10）；临时站号作为单元标识发送；只读区域的写入被拒绝，且没有报文；功能码提示；设置经工作区 JSON 往返。
+  - 稳定性：Modbus、PLC、通道、视图与工作区测试连续运行 3 次（230 条），每次全部通过。
+  - 解决方案：`dotnet build Junevy.Communication.slnx --no-incremental`（Debug）0 错误、0 警告（旧工具的 CS8618 警告随之消失）。
+- 偏差与需要审阅者决定的事：
+  1. 测试使用假通道（`ScriptedClientChannel`）与假从站，不连接真实设备。端到端测试（对模拟器、经真实 TCP 与串口）留给 Task 14。
+  2. 掩码写与读写多个寄存器只在 `ModbusClient` 上（摩擦 F-12），页签通过 `CurrentClient` 取得具体类型。
+  3. 计划要求"串口 + MBAP 不可选"。实现为：选择 MBAP 时自动改为 RTU，界面上显示组合名称与原因。请审阅者确认。
+  4. `ChannelSettingsEditor.Transport` 由只读改为可设置并可观察，以便 Modbus 页签切换传输。
+  5. Release 构建与 `test-affected` 留到门槛 2（Task 14 之后）。
+  6. 测试进程中，`App` 的启动（`OnStartup`）仍会读取用户的工作区文件（`%LocalAppData%`，只读，不写入）。这是既有的测试隔离问题：修复需要在测试宿主中跳过应用启动，计划在 Task 20 处理。
 
 ### 33.4 基线与度量（执行者填写）
 

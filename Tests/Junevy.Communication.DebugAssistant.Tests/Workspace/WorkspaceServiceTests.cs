@@ -44,12 +44,12 @@ public sealed class WorkspaceServiceTests : IDisposable
         var (services, _) = TestShell.Create();
         var document = new WorkspaceDocument(
             WorkspaceDocument.CurrentSchemaVersion,
-            [new WorkspaceSession("Gem", "GEM 页", new PlaceholderSettings()), new WorkspaceSession("Modbus", "Modbus #1", new PlaceholderSettings())],
+            [new WorkspaceSession("Gem", "GEM 页", new PlaceholderSettings()), new WorkspaceSession("Mqtt", "Mqtt #1", new PlaceholderSettings())],
             SelectedIndex: 0);
 
         WorkspaceRestoreResult restored = WorkspaceService.Restore(document, services.GetRequiredService<ISessionFactory>());
 
-        Assert.Equal(new[] { "Modbus #1" }, restored.Sessions.Select(s => s.Title));
+        Assert.Equal(new[] { "Mqtt #1" }, restored.Sessions.Select(s => s.Title));
         Assert.Contains("Gem", Assert.Single(restored.Notices), StringComparison.Ordinal);
         Assert.Null(restored.SelectedIndex);
     }
