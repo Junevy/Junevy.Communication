@@ -1107,6 +1107,20 @@ internal interface ISimulatorEngine
   7. 4C 格式 4 的应答头部照抄请求的 16 个字符；错误应答为 NAK、头部、结束码、CRLF（V10）。
   8. Release 构建与 `test-affected -Repeat 3` 仍按计划留到门槛 2（Task 14 之后）。
 
+**Task 13（西门子 S7 CPU、欧姆龙 FINS 从站）**
+
+- 做了什么：
+  - S7（`Simulators/Siemens`）：`S7CpuEngine`（公开）与 `S7CpuOptions`（PDU 240、480 或 960；PUT/GET 开关）。TPKT 用库的 `LengthField`（偏移 2、两字节、大端，修正值 −4）；COTP CR 的确认（CC）照抄参数，目的引用取请求的源引用；Setup Communication 把请求的 PDU 与设置取较小值；Read Var 与 Write Var 处理单项，区为 I（0x81）、Q（0x82）、M（0x83）与 DB（0x84，存储区 `DB{n}`）；位项按位读写。COTP 与 Setup 的进度保存在会话状态（`Items`）中，未连接时的请求被忽略。
+  - FINS（`Simulators/Omron`）：`FinsSlaveEngine`（公开）与 `FinsSlaveOptions`（服务器节点，分配给客户端的节点）。FINS/TCP 用 `LengthField`（偏移 4、四字节、大端）；节点地址请求（命令 0）返回分配的或请求的客户端节点；FINS 帧的 0101（读）与 0102（写）支持字与位，位的读写按字区代码减去 0x80 的位形式访问字区；应答的 DA 与 SA 对调；区为 CIO、W、H、A、D 与 E0_–EC_（每区 32768 字）；越界返回 0x1103，区不存在返回 0x1101；目的节点不是本模拟器的帧被忽略。
+- 测试：新增 25 条。S7 14 条：P4 计划第 17.1 节的 V-S7-1 至 V-S7-12（逐字节核对，V-S7-2 只校验 D0），PDU 协商（240 与 960），位读，数据块不存在（0x0A），越界（0x05），PUT/GET 关闭（0x81 0x04），连接前的请求被忽略，TPKT 分帧，不支持的 PDU 长度。FINS 11 条：P4 计划第 17.2 节的 V-F-1 至 V-F-8（逐字节核对，V-F-2、V-F-4、V-F-6、V-F-8 为应答），固定节点的回显，目的节点不符被忽略，未知区 0x1101，强制错误码，FINS/TCP 分帧。模拟器测试合计 109 条，全部通过（含 COM20 ↔ COM21 虚拟串口对）。
+- 偏差与需要审阅者决定的事：
+  1. V-S7-2（CC）只校验 D0 与长度，源引用取固定值 0x000C（计划只要求 D0）。
+  2. S7 的位读（项的传输尺寸为位）没有对应的向量，依 V-S7-9 的写位格式推导：应答的数据传输尺寸为位（03），长度 1 位，数据为该位的值。
+  3. FINS 的位写（V-F-7）只有请求，没有应答向量；测试核对的是字 W10 的第 3 位被置位。
+  4. 区的大小由模拟器决定：S7 的 I、Q、M 为 65536 字节，数据块由页签创建（`DB{n}`）；FINS 的字区各 32768 字。计划没有规定大小，越界以此为准。
+  5. 测试中发现并修正的两处引擎缺陷（已在提交中包含）：FINS 的命令按主字节分派，导致 0102（写）被当成 0101（读）；节点地址请求的节点号取自错误字段。
+  6. Release 构建与 `test-affected -Repeat 3` 仍按计划留到门槛 2（Task 14 之后）。
+
 ### 33.4 基线与度量（执行者填写）
 
 基线（改动前，提交 `fe82d79`），由 `build/metrics` 的脚本统计，生产代码范围为 Core、Channels、Tcp、Udp、Serial、Plc、Melsec 的 `*.cs`（213 个文件，排除 obj、bin）：
