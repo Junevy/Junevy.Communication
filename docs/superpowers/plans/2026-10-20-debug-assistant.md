@@ -1091,6 +1091,22 @@ internal interface ISimulatorEngine
   5. 公开的表面比计划的"少量 public"多：`ISimulatorEngine`、`SimulatorHost`、存储区与故障类型、请求日志参数。应用需要它们创建引擎与宿主。
   6. 库的生产代码未改动。
 
+**Task 12（Modbus 从站、MC 从站）**
+
+- 做了什么：
+  - Modbus（`Simulators/Modbus`）：`ModbusSlaveEngine`（公开，站号列表与帧格式 MBAP 或 RTU）；`ModbusPduProcessor` 处理 01、02、03、04、05、06、0F、10、16、17，异常 01（功能码不支持）、02（地址越界）、03（数量或数据不合法）；数据区 C、DI、HR、IR（各 65536 个元素）。`RtuRequestDecoder` 按第 8.2 节的长度规则切分请求，CRC 不符或功能码未知时丢弃 1 字节重新同步。`Crc16Modbus` 为模拟器自己的实现。
+  - MELSEC（`Simulators/Melsec`）：`McSlaveEngine`（公开，3E、4E 的二进制与 ASCII，4C 格式 4 与格式 5）。命令 0401、1401（子命令 0000 为字，0001 为位），0619 环回。位软元件按字访问时每字 16 个点。结束码 C051（软元件或范围不合法）与 C059（命令不支持）。强制错误码的应答带 9 字节的错误信息（访问路径、命令、子命令）。`McFormat5FrameDecoder` 按 DLE 切分 4C 格式 5 的请求。模拟器的软元件表 `McDeviceTable`（D、W、TN、M、X、Y、B）与客户端的速查表分开维护。
+- 测试：新增 56 条。Modbus 42 条：P7 计划第 21.1 节的 PDU 向量 V-P-1 至 V-P-15 经 MBAP 核对；第 21.2 节的 RTU 向量经 RTU 核对（V-R-3 是应答样例，模拟器只产生应答，未直接测试）；第 21.3 节的 MBAP 向量 V-M-1 至 V-M-5（V-M-6 是客户端的键提取，不属于模拟器）；RTU 请求长度（第 21.4 节）与重新同步；破坏校验；强制错误码；站号 2 与 0xFF；未知站号与协议号非零时被忽略。MC 14 条：P2 计划第 18 节的 V1 至 V10，逐字节核对（V7、V8 为请求的解码与 DLE 转义，V8 的应答见偏差 1）；4C 格式 4 的分帧；UDP 无分帧；C059。模拟器测试合计 84 条，全部通过（含 COM20 ↔ COM21 虚拟串口对）。
+- 偏差与需要审阅者决定的事：
+  1. V8 的应答向量（P2 计划第 18 节，标注为解码向量）与按手册规则生成的应答不一致：向量比按规则生成的应答多 4 个字节（`FF FF 00 00`），手册与计划都没有说明这段字节的含义。测试因此核对转义、长度字段与和校验，没有逐字节比较。请审阅者确认向量，或指明这 4 个字节的来源。
+  2. `ISimulatorEngine.Handle` 额外接收 `FaultPlan`（Task 11 已记录）。
+  3. 4C 格式 4 与格式 5 的请求和校验不做校验（手册中和校验可选），模拟器只在应答中生成和校验。
+  4. MBAP 没有校验字节，破坏校验对 MBAP 无效；对 RTU、4C 格式 4、4C 格式 5 有效（改写校验字节）。4C 的破坏校验未单独测试。
+  5. 串口只使用 RTU，由界面保证；`ModbusSlaveEngine` 不知道传输方式（`CreateRequestCodec` 对串口返回 RTU 分帧）。
+  6. 位软元件按字访问时每字 16 个点：计划没有明确，依 V8 的"字单位读 M16 起 2 字"推导。
+  7. 4C 格式 4 的应答头部照抄请求的 16 个字符；错误应答为 NAK、头部、结束码、CRLF（V10）。
+  8. Release 构建与 `test-affected -Repeat 3` 仍按计划留到门槛 2（Task 14 之后）。
+
 ### 33.4 基线与度量（执行者填写）
 
 基线（改动前，提交 `fe82d79`），由 `build/metrics` 的脚本统计，生产代码范围为 Core、Channels、Tcp、Udp、Serial、Plc、Melsec 的 `*.cs`（213 个文件，排除 obj、bin）：
