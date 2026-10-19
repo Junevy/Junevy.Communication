@@ -1,0 +1,11 @@
+<Project>
+  <!-- 调试助手（Tools/）项目的公共设置（DA-D2）：两个工具项目显式 Import。
+       不 Import Common.props：它带 net472 与 XML 文档要求，工具项目只面向 .NET 8。 -->
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\build\Junevy.Communication.Tools.props" />
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Junevy.Communication.DebugAssistant</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Junevy.Controls" Version="3.3.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.158" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Junevy.Communication.Modbus\Junevy.Communication.Modbus.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Melsec\Junevy.Communication.Melsec.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Siemens\Junevy.Communication.Siemens.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Omron\Junevy.Communication.Omron.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Secs\Junevy.Communication.Secs.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Mqtt\Junevy.Communication.Mqtt.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.OpcUa\Junevy.Communication.OpcUa.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.WebApi\Junevy.Communication.WebApi.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.WebApi.Server\Junevy.Communication.WebApi.Server.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Ftp\Junevy.Communication.Ftp.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Tcp\Junevy.Communication.Tcp.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Udp\Junevy.Communication.Udp.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Serial\Junevy.Communication.Serial.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.DebugAssistant.Simulators\Junevy.Communication.DebugAssistant.Simulators.csproj" />
+  </ItemGroup>
+
+</Project>

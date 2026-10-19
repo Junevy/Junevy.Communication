@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\build\Junevy.Communication.Tools.props" />
+
+  <!-- DA-D14：模拟器只用 Core、Channels、Tcp、Udp、Serial 的公开 API，不引用任何协议包，也不引用 WPF。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Junevy.Communication.DebugAssistant.Simulators</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Junevy.Communication.Core\Junevy.Communication.Core.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Channels\Junevy.Communication.Channels.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Tcp\Junevy.Communication.Tcp.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Udp\Junevy.Communication.Udp.csproj" />
+    <ProjectReference Include="..\..\Junevy.Communication.Serial\Junevy.Communication.Serial.csproj" />
+  </ItemGroup>
+
+</Project>

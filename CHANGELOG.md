@@ -2,6 +2,13 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — 调试助手（Junevy.Communication.DebugAssistant，计划 2026-10-20）
+
+### 新增（Added）
+
+- 2026-10-20 [DebugAssistant] Task 0（骨架）：新增 `Tools/Junevy.Communication.DebugAssistant`（WinExe，net8.0-windows，WPF）、`Tools/Junevy.Communication.DebugAssistant.Simulators`（net8.0，暂为空）、`Tests/Junevy.Communication.DebugAssistant.Tests`；新增 `build/Junevy.Communication.Tools.props`；解决方案新增 `/Tools/` 文件夹。应用为空主窗口，工具栏可在浅色与深色主题之间切换（Junevy.Controls 3.3.0，主题令牌 `Theme.Brush.*`）。协议页签在后续 Task 中逐个加入。
+- 2026-10-20 [DebugAssistant] 验证：WPF 测试进程里 `WebApiServer` 可以启动与停止，OPC UA 客户端程序集加载无绑定错误（`RuntimeSmokeTests`）。
+
 ## [Unreleased] — Channels：连接丢失后当场离开 Connected（重试等待重建的连接）
 
 ### 修复（Fixed）
