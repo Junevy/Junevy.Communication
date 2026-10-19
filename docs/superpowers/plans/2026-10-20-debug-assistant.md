@@ -775,6 +775,7 @@ internal interface ISimulatorEngine
 | F-3 | MC 的 `McDeviceTable`、FINS 的 `FinsDeviceTable` 是 internal，助手无法列出全部软元件或区域 | 助手维护一份显示用的表，并用 `ParseAddress` 测试其一致性 | 公开只读的设备列表（Modbus 的 `ModbusDevice` 已经是公开的静态实例） |
 | F-4 | `HsmsEquipment` 只能按 S/F 登记处理器，没有"观察所有收到的消息"的事件；没有登记的主消息只能在日志中看到头部 | 由自动应答规则登记的 S/F 可以显示正文；其余只显示头部 | 增加只读的 `MessageReceived` 事件 |
 | F-5 | Secs README 写"Body text in SML is reserved for `Trace`"，但代码中没有任何 `Trace` 级别的日志 | 不影响助手 | 修改 README 的措辞（"目前不记录正文"），或者实现 Trace 日志，需要用户决定 |
+| F-7 | 分隔符、起止标记、心跳内容等文本只能按 UTF-8 解释（`ByteSequenceParser`），无法选择 GBK 等编码 | 助手的字节输入可以选择编码；要用 GBK 的分隔符，写成 `hex:` 形式 | 为这些配置增加编码选项（或接受 `hex:` 作为唯一做法） |
 | F-6 | `TcpServerConfig.Port` 不接受 0（`TcpServerOptions` 要求 1–65535），无法让系统选择端口。测试只能先探测一个空闲端口（回环地址，有极小的竞争） | 测试用 `FreePort` 探测空闲端口 | 允许 `Port = 0` 由系统选择，`LocalEndPoint` 已经给出实际端口，因此改动很小 |
 
 ### 33.3 执行汇报与偏差（执行者填写：每个 Task 的汇报、门槛汇报、偏差与需要审阅者决定的事）
@@ -860,6 +861,23 @@ internal interface ISimulatorEngine
   2. "写入中途失败"的测试通过占用临时文件名（一个同名目录）来制造失败。在 Windows 上抛出的是 `UnauthorizedAccessException`，测试接受任何异常，界面层两种都捕获。
   3. 参数类型的检查目前只覆盖占位参数；每种协议的 Task 会补充它的往返测试（计划要求的做法）。
   4. 导出的单页签文件与工作区文件使用同一格式（`schemaVersion` 加一个页签），导入时只取第一个页签。
+
+**Task 4（通道参数编辑器与字节工具）**
+
+- 做了什么：
+  - 字节工具：`ByteInput`（`hex:` 与文本语法与库的 `ByteSequenceParser` 一致；文本编码可选 UTF-8、ASCII、GBK，UTF-8 直接交给库，其余按所选编码转换，转义规则相同）、`EncodingChoice`、`ChecksumKind` 与 `Checksums`（None、Sum8、Xor8、CRC-16/MODBUS、CRC-16/CCITT-FALSE、LRC；`Append` 把校验加在负载之后）。
+  - DA-D12 的部件（`internal`）：`ConfigurableResponseMatcher`（前缀与回显两种规则）、`ConfigurableKeyExtractor`（宽度 1、2、4，两种字节序）、`ScriptedInitializer`（连接后发送，可选等待并比较应答）、`FramePreview`（用库的 `FrameCodecFactory` 切分一段字节，不连接）。
+  - 编辑器（`Protocols/Channels/Editors`）：`FramingEditor`（六种模式，各自的参数面板；分隔符每行一个；切分预览命令）、`CorrelationEditor`（顺序、匹配规则、键字段）、`HeartbeatEditor`、`ReconnectEditor`、`TimeoutEditor`、`SocketEditor`（含 KeepAlive）、`TlsEditor`（证书只保存环境变量名）、`HandshakeEditor`，以及组合它们的 `ChannelSettingsEditor`（生成库的 `ChannelComponents`）。所有编辑器派生自 `ValidatedEditor`：每次属性变化后按 `[Range]` 重新校验（计划 U7）。
+  - 视图：`Views/Channels/ChannelSettingsView.xaml`，分帧参数随模式显示，分组可折叠。
+- 测试：`DebugAssistant.Tests` 共 177 条，全部通过（本期新增 68 条）。校验的已知向量：CRC-16/MODBUS 对 `01 03 00 00 00 01` 为 `84 0A`，CRC-16/CCITT-FALSE 对 "123456789" 为 `29B1`，Sum8、XOR8、LRC 各 3 条手算向量；匹配器与键提取器的边界（偏移越界、长度不足、非法参数）返回不匹配或失败，不抛异常；握手在真实回环连接上运行（成功、应答不符、只发送）；编辑器的映射逐字段表驱动；库拒绝的非法组合（二进制长度字段宽度 3）通过预览显示库的消息。
+- 偏差与需要审阅者决定的事：
+  1. CRC-16/CCITT-FALSE 的字节序：计划没有指定，这里采用高字节在前（XMODEM 类协议的常见写法）。请审阅者确认。
+  2. `InternalsVisibleTo` 只向本应用的测试项目开放（`AssemblyInfo.cs`），因为 DA-D12 的部件是 `internal`；模拟器项目不加（DA-D14）。
+  3. 库没有通道级的匹配器：`IResponseMatcher` 按请求传入（`RequestOptions.Matcher`）。因此 `CorrelationEditor.ToMatchRule()` 的结果由传输页在每次请求时使用，不进入 `ChannelComponents`。
+  4. 握手的测试不用 `ScriptedClientChannel`（它不支持 `SendAsync`），改用真实的回环 `TcpServer` 与 `TcpClientChannel`，更接近实际路径。
+  5. 分帧的 `IdleGap` 无法在预览中切分（需要时间），预览会说明这一点。
+  6. `ObservableValidator` 不会在属性赋值时自动校验，因此 `ValidatedEditor` 在 `OnPropertyChanged` 中补上（见代码注释）。
+  7. 对不以 `hex:` 开头的文本，编码选项只用于字节输入（预览、握手、心跳）；分隔符与标记由库按 UTF-8 解释（摩擦 F-7）。
 
 ### 33.4 基线与度量（执行者填写）
 
