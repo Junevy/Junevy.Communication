@@ -44,12 +44,12 @@ public sealed class WorkspaceServiceTests : IDisposable
         var (services, _) = TestShell.Create();
         var document = new WorkspaceDocument(
             WorkspaceDocument.CurrentSchemaVersion,
-            [new WorkspaceSession("Gem", "GEM 页", new PlaceholderSettings()), new WorkspaceSession("Mqtt", "Mqtt #1", new PlaceholderSettings())],
+            [new WorkspaceSession("Gem", "GEM 页", new PlaceholderSettings()), new WorkspaceSession("Ftp", "FTP #1", new PlaceholderSettings())],
             SelectedIndex: 0);
 
         WorkspaceRestoreResult restored = WorkspaceService.Restore(document, services.GetRequiredService<ISessionFactory>());
 
-        Assert.Equal(new[] { "Mqtt #1" }, restored.Sessions.Select(s => s.Title));
+        Assert.Equal(new[] { "FTP #1" }, restored.Sessions.Select(s => s.Title));
         Assert.Contains("Gem", Assert.Single(restored.Notices), StringComparison.Ordinal);
         Assert.Null(restored.SelectedIndex);
     }
@@ -60,13 +60,13 @@ public sealed class WorkspaceServiceTests : IDisposable
         var (services, _) = TestShell.Create();
         var document = new WorkspaceDocument(
             WorkspaceDocument.CurrentSchemaVersion,
-            [new WorkspaceSession("Gem", "GEM 页", new PlaceholderSettings()), new WorkspaceSession("Mqtt", "MQTT 页", new PlaceholderSettings())],
+            [new WorkspaceSession("Gem", "GEM 页", new PlaceholderSettings()), new WorkspaceSession("Ftp", "FTP 页", new PlaceholderSettings())],
             SelectedIndex: 1);
 
         WorkspaceRestoreResult restored = WorkspaceService.Restore(document, services.GetRequiredService<ISessionFactory>());
 
         Assert.Equal(0, restored.SelectedIndex);
-        Assert.Equal("MQTT 页", restored.Sessions[restored.SelectedIndex!.Value].Title);
+        Assert.Equal("FTP 页", restored.Sessions[restored.SelectedIndex!.Value].Title);
     }
 
     [Fact]

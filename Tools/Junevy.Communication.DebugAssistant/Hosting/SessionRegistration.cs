@@ -2,6 +2,8 @@ using Junevy.Communication.DebugAssistant.Protocols.Channels;
 using Junevy.Communication.DebugAssistant.Protocols.Fins;
 using Junevy.Communication.DebugAssistant.Protocols.Melsec;
 using Junevy.Communication.DebugAssistant.Protocols.Modbus;
+using Junevy.Communication.DebugAssistant.Protocols.Mqtt;
+using Junevy.Communication.DebugAssistant.Protocols.OpcUa;
 using Junevy.Communication.DebugAssistant.Protocols.Simulators;
 using Junevy.Communication.DebugAssistant.Protocols.Secs;
 using Junevy.Communication.DebugAssistant.Protocols.Siemens;
@@ -29,6 +31,8 @@ internal static class SessionRegistration
         [ProtocolKind.FinsSlave] = (descriptor, services) => new SimulatorSessionViewModel(descriptor, services),
         [ProtocolKind.TcpServer] = (descriptor, services) => new TcpServerSessionViewModel(descriptor, services),
         [ProtocolKind.Secs] = (descriptor, services) => new SecsSessionViewModel(descriptor, services),
+        [ProtocolKind.Mqtt] = (descriptor, services) => new MqttSessionViewModel(descriptor, services),
+        [ProtocolKind.OpcUa] = (descriptor, services) => new OpcUaSessionViewModel(descriptor, services),
         [ProtocolKind.Serial] = (descriptor, services) => new SerialSessionViewModel(descriptor, services),
     };
 

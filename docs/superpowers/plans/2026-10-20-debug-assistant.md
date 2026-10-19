@@ -787,6 +787,8 @@ internal interface ISimulatorEngine
 | F-15 | S7 的单包上限只在库内部计算（`S7Session.MaxReadBytes` 等是 internal），页面无法显示协商后实际生效的值 | 助手按 README 的公式换算（`S7PduLimits`），测试用计划的向量核对 | 在 `S7Client` 上公开读、写的单包字节数 |
 | F-16 | 默认分帧因传输而异：`SerialChannelConfig` 是空闲间隔（`IdleGap`，20 毫秒），`TcpClientChannelConfig` 是空分帧。协议组件提供分帧时，`ComponentPrecedence` 要求配置保持默认值，但库没有公开的"默认分帧"，调用方只能写 `new SerialChannelConfig().Framing`。助手的 `ChannelConfigs.Serial` 写成 `new FramingOptions()`，于是 Modbus 与 MC 的串口页签连接即失败（Task 14 端到端测试发现并修复，此前 Task 8、9 的测试没有真实串口） | `ChannelConfigs.Serial` 取 `new SerialChannelConfig().Framing`；串口的端到端测试同样不设置分帧 | 协议组件提供分帧时忽略配置的分帧（或在文档中写明必须留空），并为各传输提供默认分帧的常量 |
 | F-17 | `McClientOptions.SumCheck` 的说明只写"和校验（默认 true）"，没有写明它同时决定请求是否带和校验（关闭时请求不带，PLC 侧设置必须一致，见 P2 计划第 13 节）。模拟器只能从计划得知这一点 | 模拟器的分帧器按同一设置读取请求的校验码；4C 格式 5 不带和校验的端到端组合验证了这一点 | 在 `McClientOptions.SumCheck` 的注释与 Melsec README 中写明请求与应答都受影响 |
+| F-18 | MQTT 页要显示"重连后恢复了多少个订阅"，但库只在 `RestoreSubscriptionsAsync` 里以 Information 级别记录数量（`Restored {RestoredCount} subscription(s) after reconnecting.`），公开 API 没有这个数字：`StateChanged` 到达 `Connected` 时 `Reason` 为 null，没有恢复事件，订阅表是内部的。被拒绝的过滤器只记 Warning 后被忘掉，宿主无从知道 | 页签显示"重连中"与库给出的原因；订阅列表在重连后保持（同一个客户端对象，库恢复之后 `Connected` 才发出）。恢复的数量没有显示 | 在 `Connected` 的状态变化上携带恢复的数量（或新增 `SubscriptionsRestored` 事件）。这是库的改动，DA-D15 不允许在本计划内做，待用户决定 |
+| F-19 | 从 .NET 7 起 `sbyte[]` 也满足 `is byte[]`（数组的扩展转换）。库读出的 `SByte` 数组类型正确（`sbyte[]`），但按 `is byte[]` 判断的宿主代码会把它当作字节（ByteString）：Task 17 的 DA 显示把 `-1, -2` 显示成 `FF FE`，由单元与端到端测试发现 | 宿主按精确类型判断：`value.GetType() == typeof(byte[])`（`OpcUaSupport.FormatObject`） | OPC UA README 的"值类型"一节写明：区分字节数组要用精确类型；`sbyte[]` 与 `byte[]` 的区别在类型，不在值 |
 
 ### 33.3 执行汇报与偏差（执行者填写：每个 Task 的汇报、门槛汇报、偏差与需要审阅者决定的事）
 
@@ -1209,6 +1211,35 @@ internal interface ISimulatorEngine
   2. 全局 using 放在三个测试项目的 csproj 里，而不是逐个文件加 `using`：涉及约 60 个文件，而且测试公共设置里已有 `Xunit` 的全局 using，做法一致。
   3. `OpcUaServerFixture.cs` 加了 `using Xunit;`：共享项目不 Import 测试公共设置，所以没有 `Xunit` 的全局 using。
 - 库未改动：库项目的 `git diff --stat` 为空（DA-D15）。
+
+**Task 17（MQTT 页、OPC UA 页）**
+
+- 做了什么：
+  - `Protocols/Mqtt`：`MqttSettings`（工作区类型 `mqtt`，不含密码）、`MqttRows`（订阅行、用户属性行、接收行）、`MqttSupport`（公开静态：状态映射、负载与属性的解析与组装、接收属性的说明，见偏差 1）、`MqttSessionViewModel`（连接与重连状态、订阅与退订、发布、接收列表）。客户端的事件先经界面派发，并且只接受当前客户端的事件，因此断开后不会再出现旧连接的消息或状态。
+  - `Protocols/OpcUa`：`OpcUaSettings`（工作区类型 `opcUa`，订阅的默认参数随设置保存，读写列表与订阅不保存）、`OpcUaSupport`（公开静态：`OpcUaWriteType` 的 15 种、写入值的逐项解析、值与状态的显示、NodeId 写法提示）、`OpcUaNodeItem`（懒加载的浏览节点，对象节点在加载前有一个占位子节点）、`OpcUaRows`（读写行、订阅行、通知行）、`OpcUaSessionViewModel`（连接、从 `i=85` 浏览、读写列表、订阅与释放）。
+  - `Common/HexInput`（十六进制输入，始终按十六进制解释、不做文本转义，`hex:` 前缀可选，供 MQTT 与 OPC UA 共用）；`Sessions/ResultText`（失败的说明：种类名称加库的消息）。
+  - `Views/Mqtt/MqttPageView`、`Views/OpcUa/OpcUaPageView`：与 SECS 页相同的布局（连接栏、连接选项、主区、操作记录、日志面板）；OPC UA 页的树双击变量经代码后置转给视图模型。
+  - 注册：`SessionRegistration`（`ProtocolKind.Mqtt`、`ProtocolKind.OpcUa`）、`DataTemplates`、`SessionSettings`（JSON 类型 `mqtt`、`opcUa`）。其余页签仍为占位。
+  - 测试项目引用 `Junevy.Communication.Testing.Servers`（Task 16 的共享服务器）。
+- 测试（新增 68 条，全部通过）：
+  - 单元：`MqttSupportTests` 15 条（状态映射的 6 个组合，负载是 UTF-8 且不做转义、十六进制接受空格与 `-`，非法十六进制，过期间隔，属性组装，接收属性的说明，十六进制文字）；`MqttSessionViewModelTests` 6 条（默认值，设置往返且密码不保存，主机为空时拒绝并记录，未连接时订阅与发布不可用，用户属性增删，版本切换）；`OpcUaSupportTests` 20 条（15 种类型各解析一次，数组每行一个元素、空行忽略、空数组被拒绝，超出范围的错误消息写明类型，布尔接受 0 与 1，字节是十六进制，显示与 `.NET` 类型名，状态的类别与符号名，NodeId 提示，时间戳，状态映射，15 种写入类型）；`OpcUaSessionViewModelTests` 9 条（默认值，设置往返，端点为空时拒绝，未连接时命令不可用，读写列表增删，空 NodeId 被拒绝，双击只接受变量，懒加载节点的形状）；`MqttOpcUaSettingsStoreTests` 1 条（经工作区文件往返，类型标识 `mqtt`、`opcUa`，没有密码）。
+  - 视图：`MqttPageViewTests` 1 条、`OpcUaPageViewTests` 2 条（视图加载并绑定，浏览树显示根节点）。
+  - 端到端，`MqttEndToEndTests` 7 条，使用 `TestBroker`：订阅与发布，文本与十六进制负载（`21.5` 与 `32 31 2E 35`，`00 FF 10` 往返）；V5 属性往返（ContentType、ResponseTopic、CorrelationData、过期间隔、用户属性）；V3.1.1 上带属性的发布返回 `InvalidRequest`，Broker 的 `Published` 为空；遗嘱（主题、内容、QoS、Retain）由 Broker 在断线时发布，实时副本 Retain 为 0，晚到的订阅者收到保留副本（Retain 为 1），自动重连关闭后页签为故障；意外断线显示 `Reconnecting`，恢复为 `Connected`，订阅保持，Broker 上同一过滤器被订阅两次；连接到关闭的端口为 `ConnectionClosed`；错误的密码为 `AuthenticationFailed` 并带原因码。
+  - 端到端，`OpcUaEndToEndTests` 7 条，使用共享 OPC UA 服务器（集合内串行）：浏览 `i=85`，`Test` 文件夹懒加载展开，`Counter` 双击加入列表，NodeId 为 `ns=` 形式；批量读中混入 `nsu=` 的未知节点，逐项状态为 `BadNodeIdUnknown`，已知项的类型为 `int`；`Writable` 文件夹的 28 个可写项（15 种标量加 13 个一维数组）各写一次，批量写入全部为好，再批量读回，显示值与期望一致；类型不匹配（`Int16` 节点写入 `Int32`）只使该项为 `BadTypeMismatch`；输入无法解析时整批不发送，有问题的行显示"输入无效"；订阅收到初始值，设为 5 后收到 5，释放后把计数器设为 6，一秒内不再收到通知；拒绝匿名的服务器返回 `NotSupported`，连接后不留会话。
+  - 验证：`DebugAssistant.Tests` 全部 847 条：832 通过，0 失败，15 跳过（串口对未设置，与 Task 15 相同）；构建 0 错误、0 警告。库的生产代码 diff 为空（DA-D15）。
+- 偏差与需要审阅者决定的事：
+  1. 计划第 7.8 节的"15 种"：按表中"Written from"一列计，是 14 种标量加 `byte[]`（ByteString），正好 15 种。一维数组不是第 16 种，而是用"一维数组"复选框对前 14 种生效（ByteString 本身已是字节数组）。这样 15 种选择器与表一致，数组也可写入。
+  2. 计划第 7.7 节要求显示"恢复了多少个订阅"。库没有公开这个数字（摩擦记录 F-18），页签只显示"重连中"与原因，订阅列表在重连后保持。这需要库的改动（DA-D15 不允许在本计划内做），**需要你决定**：是否在库里补一个公开的恢复数量，还是接受页签不显示它。
+  3. MQTT 的订阅列表在连接断开时清空（客户端被丢弃，新连接是新客户端，需要重新订阅）；重连期间保持。订阅与退订要求已连接，重连期间库返回 `NotConnected`，界面同样禁用。
+  4. OPC UA 同一时间只保留一个订阅：订阅的是读写列表中的全部节点；要换一组节点，先释放。
+  5. OPC UA 的数组输入每行一个元素，空行忽略；因此字符串数组不能包含空字符串。这是本页的约定，写在界面提示中。
+  6. OPC UA 浏览只展开对象节点，变量是叶子（属性节点不在本页浏览）。双击变量加入读写列表；双击对象节点不做任何事，并在消息区说明。
+  7. 字节数组的歧义（README 已写明）：`Byte` 数组节点的读出值是 `byte[]`，与 ByteString 相同；写入时 `Byte` 选项加"一维数组"得到 `byte[]`，由服务器按节点的数据类型决定。页签不另行推断。
+  8. 主机为空、端点为空在页面上先拒绝，消息用中文；库的其它选项校验失败时的 `ArgumentException` 转为 `InvalidRequest`，与其它页签一致。
+  9. 工作区测试里的"未实现种类"样本从 `Mqtt` 改为 `Ftp`（Mqtt 已实现；Ftp 在 Task 19 之前仍是占位）。这是测试的前提变化，不是断言的放宽：未实现的种类仍被跳过并给出通知。
+  10. DA 测试项目新增对 `Junevy.Communication.Testing.Servers` 的引用，它把 MQTTnet.Server 与 OPC Foundation 的服务器包带进来；测试集的其它部分不受影响（通过数一致）。
+- 库未改动：库项目的 `git diff --stat` 为空（DA-D15）。
+- 摩擦记录：F-18（MQTT 的恢复订阅数量没有公开，需要库的改动，待决定）、F-19（`sbyte[]` 满足 `is byte[]`，宿主要按精确类型判断）。
 
 ### 33.4 基线与度量（执行者填写）
 
