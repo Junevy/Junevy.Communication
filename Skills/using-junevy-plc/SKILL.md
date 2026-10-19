@@ -272,7 +272,7 @@ public static class McErrorHandlingExample
 | `InvalidRequest` | Address cannot be parsed, a point count is out of range, or a number exceeds the frame limit | Fix the request. Not retried |
 | `NotConnected` | The channel is not connected when the operation starts, or the client is disposed | Wait or reconnect. Not retried by the library |
 | `RemoteError` | The PLC returned an error code. `ProtocolErrorCode` has the raw code; the message is `MC end code 0xXXXX.`, `S7 item return code 0xXX (…).` / `S7 error class 0xXX code 0xXX.`, or `FINS end code 0xXXXX.` / `FINS/TCP error 0xXXXXXXXX.` | Look up the code in the manual. Not retried |
-| `Timeout`, `ConnectionClosed`, `ProtocolViolation` | Transport or protocol failure. A reply that does not match the request (for example a loopback echo mismatch) is a violation | Retried when `RetryCount > 0` and the link returns within `RetryInterval`; otherwise the real failure is returned |
+| `Timeout`, `ConnectionClosed`, `ProtocolViolation` | Transport or protocol failure. A reply that does not match the request (for example a loopback echo mismatch) is a violation | Retried when `RetryCount > 0` and the link returns within `RetryInterval`; otherwise the real failure is returned. If the failure dropped the connection (TCP request timeout on a sequential protocol, closed connection), the retry waits for the rebuilt connection |
 | `NotSupported` | The operation is not allowed, for example a bit write into a word device | Enable the option only if you accept the risk |
 | `Cancelled` | The caller's token was signalled | Expected on shutdown |
 
@@ -529,4 +529,3 @@ When you add the fourth protocol, none of F3–F10 reappear: they are shared par
 - A declarative address parser cannot express a station prefix (`s=n;`) or the one-based Modicon form. The Modbus parser is protocol-specific and internal; it keeps the suite's whitespace and case rules (P7-F-A1).
 - An `IClientChannel` test double is duplicated per test project, because the shared testing library only has `IByteChannel` doubles. Candidate for the shared library (P7-F-A2).
 - The shared device simulator answers synchronously. A late TCP reply needs a stream wrapper that writes in the background, so the request loop keeps running (P7-F-A3).
-- RTU over TCP: a request timeout resets the connection, and the reconnect runs in the background. A retry that starts before the reset is visible can get `NotConnected`, because `WaitForConnectedAsync` returns at once while the state is still `Connected`. The channel layer was out of scope for P7, so this is open.

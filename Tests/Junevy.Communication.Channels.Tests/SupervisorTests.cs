@@ -169,6 +169,55 @@ public sealed class SupervisorTests
         Assert.Equal(new[] { DisconnectReason.RemoteClosed }, driver.CloseReasons);
     }
 
+    // 报告返回时状态已离开 Connected：WaitForConnectedAsync 不再立即返回 true（协议套件的重试依赖这一点）；旧连接随后在后台关闭。
+    [Fact(Timeout = 20000)]
+    public async Task Lost_LeavesConnectedBeforeReportReturns()
+    {
+        var driver = new FakeConnectionDriver();
+        await using var supervisor = NewSupervisor(driver, new FixedIntervalBackoff(5000, 0));
+        await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+
+        supervisor.ReportConnectionLost(1, DisconnectReason.RequestTimeout, null);
+
+        Assert.Equal(ConnectionState.Reconnecting, supervisor.State);
+        Assert.False(await supervisor.WaitForConnectedAsync(0, CancellationToken.None));
+        await Polling.WaitUntilAsync(() => driver.CloseCalls == 1, 3000);
+        Assert.Equal(new[] { DisconnectReason.RequestTimeout }, driver.CloseReasons);
+    }
+
+    // 丢失之后立即重新连接：先关闭丢失的连接，再打开新连接，驱动不会在旧连接之上打开。
+    [Fact(Timeout = 20000)]
+    public async Task Lost_ThenConnectAtOnce_ClosesTheLostConnectionBeforeOpening()
+    {
+        var driver = new FakeConnectionDriver();
+        await using var supervisor = NewSupervisor(driver);
+        await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+
+        supervisor.ReportConnectionLost(1, DisconnectReason.RemoteClosed, null);
+        CommResult result = await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+
+        Assert.True(result.IsSuccess, result.ToString());
+        Assert.Equal(new[] { "open", "close", "open" }, driver.Calls);
+        Assert.Equal(2, supervisor.Generation);
+    }
+
+    // 丢失之后立即断开：DisconnectAsync 返回时丢失的连接已经关闭（无论后台关闭与 DisconnectAsync 谁先取得生命周期锁），且只关闭一次。
+    [Fact(Timeout = 20000)]
+    public async Task Lost_ThenDisconnectAtOnce_TheLostConnectionIsClosedOnReturn()
+    {
+        var driver = new FakeConnectionDriver();
+        await using var supervisor = NewSupervisor(driver);
+        await Arrival.WithinAsync(supervisor.ConnectAsync(CancellationToken.None), 2000);
+
+        supervisor.ReportConnectionLost(1, DisconnectReason.RemoteClosed, null);
+        Assert.Equal(ConnectionState.Disconnected, supervisor.State);
+        await Arrival.WithinAsync(supervisor.DisconnectAsync(0, CancellationToken.None), 2000);
+
+        Assert.Equal(new[] { "open", "close" }, driver.Calls);
+        await Task.Delay(200);
+        Assert.Equal(new[] { DisconnectReason.RemoteClosed }, driver.CloseReasons);
+    }
+
     [Fact(Timeout = 20000)]
     public async Task Reconnect_Exhausted_Disconnected()
     {

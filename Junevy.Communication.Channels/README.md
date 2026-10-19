@@ -397,7 +397,7 @@ Override `SecureStreamAsync` to wrap the stream (for example in TLS). Override `
 | `DisconnectTimeout` | 1000 ms | 1000 ms |
 | `LateReplyWindow` | -1 (equal to `RequestTimeout`) | -1 |
 | `IdleTimeout`, `PartialFrameTimeout` | 0 (disabled) | 0 (disabled) |
-| `ResetOnRequestTimeout` | false: the connection is kept and the late-reply window applies | true: the connection is rebuilt |
+| `ResetOnRequestTimeout` | false: the connection is kept and the late-reply window applies | true: the connection is rebuilt; the channel has left `Connected` when the `Timeout` result returns, so `WaitForConnectedAsync` waits for the new connection |
 | `ReceiveBufferSize` | 4096 | not set by the TCP configuration (base default 4096) |
 | `ReceiveQueueCapacity` | 1024 | 1024 |
 | `Correlation` | `Sequential` | `Sequential` |

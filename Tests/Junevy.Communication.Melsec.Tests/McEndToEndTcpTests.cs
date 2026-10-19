@@ -104,6 +104,31 @@ Assert.True((await client.ConnectAsync()).IsSuccess);
         Assert.Equal(2, server.AcceptedConnectionCount);
     }
 
+    // 3E 按顺序关联，TCP 上请求超时会重建连接（ResetOnRequestTimeout）。RetryCount = 1 的重试必须等到重建的新连接，并在新连接上成功。
+    [Fact(Timeout = 60000)]
+    public async Task RequestTimeout_RebuildsTheConnection_AndTheRetrySucceedsOnTheNewOne()
+    {
+        var options = new McClientOptions { RetryCount = 1, RetryInterval = 5000 };
+        var memory = new PlcMemory();
+        memory.SetWords("D", 100, 7);
+        var adapter = new McDeviceAdapter(McFrameType.Frame3E, McEncoding.Binary, sumCheck: true, memory);
+        int requests = 0;
+        // 第一个请求不回复（超过 RequestTimeout），之后照常回复。
+        var simulator = new DeviceSimulator(McEndToEndSupport.DeviceFraming(options),
+                                            raw => Interlocked.Increment(ref requests) == 1 ? null : adapter.Handle(raw));
+        await using DeviceSimulatorTcpHost host = simulator.HostTcp();
+        TcpClientChannelConfig config = LoopbackTcp.Reconnecting(host.Port, reconnectIntervalMs: 50);
+        config.RequestTimeout = 300;
+        using McClient client = McClient.Create(config, options);
+        Assert.True((await client.ConnectAsync()).IsSuccess);
+
+        CommResult<short> result = await client.ReadInt16Async("D100");
+
+        Assert.True(result.IsSuccess, result.ErrorMessage);
+        Assert.Equal((short)7, result.Data);
+        Assert.Equal(2, host.AcceptedConnectionCount);
+    }
+
     [Fact(Timeout = 60000)]
     public async Task SilentDeviceWithHeartbeat_EntersReconnectingWithHeartbeatFailed()
     {

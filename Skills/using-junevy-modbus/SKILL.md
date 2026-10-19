@@ -80,7 +80,7 @@ IPlcClient client = factory.GetOrAdd("line-1", new ModbusClientConfig
 - Results instead of exceptions: every operation returns a result. Branch on `IsSuccess`, then on `ErrorKind`.
 - Retries are off by default and retry only the three transient kinds. An exception response (`RemoteError`) is never retried.
 - A late response is discarded by its transaction ID (MBAP). It does not rebuild the TCP connection.
-- A request timeout on RTU over TCP rebuilds the connection. Wait for it with `WaitForConnectedAsync` before the next request.
+- A request timeout on RTU over TCP rebuilds the connection. The client has already left `Connected` when the `Timeout` returns: a `RetryCount` retry waits for the new connection by itself; without retries, call `WaitForConnectedAsync` before the next request (otherwise it returns `NotConnected`).
 - `IR` and `DI` are read-only. A write to them returns `InvalidRequest` and sends nothing.
 
 ## Common Mistakes When Migrating

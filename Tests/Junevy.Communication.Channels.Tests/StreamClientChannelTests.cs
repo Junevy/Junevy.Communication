@@ -456,6 +456,58 @@ public sealed class StreamClientChannelTests
         Assert.Equal(DisconnectReason.RequestTimeout, lostEvent.Reason);
     }
 
+    // 请求超时重建连接（ResetOnRequestTimeout）：超时返回时通道已离开 Connected，WaitForConnectedAsync 等待重建的新连接，
+    // 紧接着的请求在新连接上成功（协议套件的重试依赖这一点）。重连间隔放宽到 500 ms，使"已离开 Connected"的检查不受调度抖动影响。
+    [Fact(Timeout = 30000)]
+    public async Task RequestTimeoutReset_WaitForConnectedWaitsForTheRebuiltConnection()
+    {
+        ClientChannelSettings settings = Settings(delimiter: true, reconnect: true, requestTimeout: 300);
+        settings.ResetOnRequestTimeout = true;
+        settings.Reconnect.Interval = 500;
+        await using var channel = new DuplexClientChannel(settings);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
+
+        CommResult<byte[]> timedOut = await Arrival.WithinAsync(channel.RequestAsync(Ascii("FIRST")), 5000);
+        Assert.Equal(CommErrorKind.Timeout, timedOut.ErrorKind);
+        Assert.Equal(ConnectionState.Reconnecting, channel.State);
+        Assert.False(channel.IsConnected);
+        Assert.Equal(CommErrorKind.NotConnected, (await channel.RequestAsync(Ascii("EARLY"))).ErrorKind);
+
+        Assert.True(await channel.WaitForConnectedAsync(5000));
+        Assert.Equal(2, channel.OpenCount);
+
+        var peer = new StreamPeer(channel.LatestPair!.B, Delimiter());
+        Task<CommResult<byte[]>> retry = channel.RequestAsync(Ascii("RETRY"));
+        Assert.Equal(Ascii("RETRY"), await Arrival.WithinAsync(peer.ReceiveFrameAsync(), 3000));
+        await Arrival.WithinAsync(peer.SendFrameAsync(Ascii("REPLY")), 2000);
+        CommResult<byte[]> reply = await Arrival.WithinAsync(retry, 3000);
+
+        Assert.True(reply.IsSuccess, reply.ToString());
+        Assert.Equal(Ascii("REPLY"), reply.Data);
+    }
+
+    // 对端在请求进行中关闭连接：请求以 ConnectionClosed 返回时通道已离开 Connected（先报告丢失，再失败在途请求），
+    // WaitForConnectedAsync 等待重建的新连接。
+    [Fact(Timeout = 30000)]
+    public async Task PeerClosesDuringRequest_FailureIsSeenAfterLeavingConnected()
+    {
+        ClientChannelSettings settings = Settings(delimiter: true, reconnect: true);
+        settings.Reconnect.Interval = 500;
+        await using var channel = new DuplexClientChannel(settings);
+        Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 3000)).IsSuccess);
+        var peer = new StreamPeer(channel.LatestPair!.B, Delimiter());
+
+        Task<CommResult<byte[]>> request = channel.RequestAsync(Ascii("REQ"));
+        await Arrival.WithinAsync(peer.ReceiveFrameAsync(), 3000);
+        channel.LatestPair!.B.Dispose();
+        CommResult<byte[]> failed = await Arrival.WithinAsync(request, 3000);
+
+        Assert.Equal(CommErrorKind.ConnectionClosed, failed.ErrorKind);
+        Assert.False(channel.IsConnected);
+        Assert.True(await channel.WaitForConnectedAsync(5000));
+        Assert.Equal(2, channel.OpenCount);
+    }
+
     // ————— 测试辅助 —————
 
     private static ClientChannelSettings Settings(bool delimiter = false, int handshakeTimeout = 0, bool reconnect = false, int requestTimeout = 2000)
