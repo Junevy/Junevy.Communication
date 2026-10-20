@@ -1310,6 +1310,47 @@ internal interface ISimulatorEngine
 - 库未改动（DA-D15）。
 - 摩擦记录：本 Task 没有新的摩擦。
 
+**Task 21（度量与验收）**
+
+- 做了什么：
+  - 度量与检查（第 9 节与第 31 节第 2 条，结果见第 33.4 节）：库的生产代码 `git diff fe82d79` 为空（16 个库项目的生产目录）；`dotnet build Junevy.Communication.slnx --no-incremental` 在 Debug 与 Release 下各 0 警告、0 错误（基线 2 个警告，均在已删除的旧工具）；XAML 中的色值为 0（U3）；同步等待为 0（U5：`CommFailureException.Result` 与 `FramePreview.Result` 是属性与类型名，不是 `Task.Result`）；`async void` 只有 `App.xaml.cs` 的 `OnMainWindowClosing` 一处（事件处理器）；模拟器项目只引用 Core、Channels、Tcp、Udp、Serial，未设置 `UseWPF`。
+  - 修正（度量与检查中发现）：
+    1. 生产代码超过 60 行的方法 3 处：`OpcUaSessionViewModel.SubscribeAsync`（81 行）、`WriteAsync`（63 行），`ModbusSessionViewModel.ReadTableAsync`（62 行）。拆分出 `TrySubscribeAsync`、`AdoptSubscriptionAsync`、`ParseWriteValues`、`ShowBits`；行为不变。
+    2. 测试超过 60 行的方法：工具报 4 处。`RouteProblem_RefusesAFixedResponseWithoutJson_OrWithInvalidJson`（实际 5 行）与 `RestoreWorkspace_WithACorruptFile_StartsEmpty_AndNotifies`（实际 14 行）是误报：工具的括号匹配是近似的，字符串里未配对的 `{` 使它误判。另两处真超过，已拆分：`EveryWritableType_IsWrittenOnce_AndReadBackAsTheNamedType`（66 行，案例表移到 `WritableCases()`）、`RestSoapAndServerSettings_RoundTripThroughTheWorkspaceFile`（63 行，三个设置构造移到 `RestSettings()`、`SoapSettings()`、`ServerSettings()`）。
+    3. DA 套件的偶发失败，修正两项（均属 DA 范围）：
+       - `McEndToEndTests.ReadWriteRoundTrip(combination: "udp-4e-binary")` 报 "the simulator must start"。原因（推断）：`FreePort.Get()` 探测空闲端口与宿主绑定之间，并行测试可能抢走该端口。`SimulatorRig.StartAsync` 改为启动失败时换端口重试，最多 3 次，之后仍按原样失败。
+       - `TcpServerPageTests.Stop_ClosesTheSessions_AndTheServerCanBeStartedAgain` 报 Expected Connected, Actual Connecting。原因（由代码推断）：库的 `StateChanged` 在线程池上触发，页签把事件里的快照排队到 UI 线程，较早的 `Connecting` 可能在同步设置的 `Connected` 之后才被处理。`ChannelSessionViewModel` 的处理器改为读取通道当前的状态，并忽略已被替换的通道的事件。这是 DA 应用的生产代码改动，不是库。
+  - 验证：
+    - DebugAssistant 测试：不设串口对时 900 通过、0 失败、15 跳过；设置 `JUNEVY_SERIAL_PAIR=COM20,COM21` 时 933 通过、0 失败、0 跳过（串口用例只用 COM20 与 COM21，COM3 与 COM4 未使用）。修正后连续三遍 900 通过；TCP 页与模拟器端到端相关的类另跑六遍，全部通过。修正前这两个失败各只出现一次，多次通过不能证明它们已经消除。
+- 验收结果：**未达成**。
+  - 命令：`pwsh build/test-affected.ps1 -Base fe82d79 -NoBuild -Repeat 3`（Debug 构建，未设置串口对，31 个测试宿主）。
+  - 第 1 遍：8102 通过、4 失败、23 跳过；第 2 遍：8105 通过、1 失败、23 跳过；第 3 遍：8101 通过、5 失败、23 跳过。DebugAssistant 测试每遍 900 通过、0 失败、15 跳过。
+  - 按第 8.3 节与第 34 节的标准，三遍全绿未达成。下表是全部失败，每一次都记录，没有通过重跑覆盖：
+
+| 遍 | 项目 | 测试 | 失败消息（摘要） |
+|---|---|---|---|
+| 1 | OpcUa.Tests | OpcUaDependencyInjectionTests.AddOpcUaClients_PassesTheContainerLoggerFactoryThrough | 集合中没有 `Opc.Ua.*` 的 Warning 条目（推断：SDK 的告警异步记录，断言在 ConnectAsync 返回后立即执行） |
+| 1 | OpcUa.Tests | OpcUaBrowseTests.Browse_UnknownNode_FailsWithTheServerCode | 测试服务器 20 秒内未就绪（TimeoutException） |
+| 1 | Channels.Tests | StreamChannelTests.IdleGap_ContinuousBytes_NotSplit | 连续字节被空闲间隔切成两帧 |
+| 1 | Tcp.Tests | TcpClientChannelLifecycleTests.SilentServer_HeartbeatFails_Reconnecting | 期望 HeartbeatFailed，实际 SendFailed |
+| 2 | OpcUa.Tests | OpcUaDependencyInjectionTests.AddOpcUaClients_PassesTheContainerLoggerFactoryThrough | 同第 1 遍 |
+| 3 | OpcUa.Tests | OpcUaDependencyInjectionTests.AddOpcUaClients_PassesTheContainerLoggerFactoryThrough | 同第 1 遍 |
+| 3 | Channels.Tests | HeartbeatTests.OnlyWhenIdle_SkipsWhenTraffic | 期望 0，实际 1 |
+| 3 | Serial.Tests | SerialChannelTests.IdleGap_DefaultFraming_EndToEnd | 帧集合不一致（[65, 66, 67, 68] 等） |
+| 3 | Secs.Tests | HsmsActiveHandshakeTests.SelectRequest_ReachesTheHostAndStatusZeroSelectsTheSession | Assert.True 失败（期望 True，实际 False） |
+| 3 | Mqtt.Tests | MqttDisconnectTests.Disconnect_WhileConnecting_WaitsForTheAttemptAndLeavesNoConnection | 断开后集合中仍有 `client-1` |
+
+  - 分析：上表的 7 个不同测试，单独运行（同一个 Debug 构建，每个项目的每个目标）全部通过。它们都依赖墙钟时间（空闲间隔、心跳、SDK 的异步日志、服务器启动时限），在 31 个测试宿主并行运行时出现。知识库的测试笔记已记录"部分套接字与心跳测试对机器负载敏感"。DA 测试项目（915 条，含真实套接字）与它们同时运行，可能加大了负载，但本期没有单独测量。
+- 偏差与需要审阅者决定的事：
+  1. 三遍 test-affected 未全绿。需要决定：(a) 是否允许加固库的测试：OpcUa 的断言改为等待，空闲间隔与心跳用例放宽时限。这些都是改测试代码，DA-D15 只允许 Task 16 的迁移改库的测试代码，因此我没有改；或 (b) 按知识库的约定把这些用例记为已知偶发，并以顺序运行补充验收。
+  2. 生产代码的重复窗口 90（目标 0）未达成。分布：WebApi 三个页签的 ViewModel 61（Rest↔Soap 41、三者 13、Rest↔Server 7）；Mqtt↔OpcUa 8；Serial、MC、Modbus 页签 10；OpcUaSupport↔PlcValueType 4；Channel↔TcpServer 2；Ftp 2；McSlaveEngine 1；SessionLogFlusher↔UiTicker 1；ServerTlsEditor↔SocketTlsEditors 1。消除它们需要共享基类或共用部件，是设计决策，本期未做。
+  3. `InternalsVisibleTo`：DA 应用对 `Junevy.Communication.DebugAssistant.Tests` 有一条（`AssemblyInfo.cs`），为 DA-D12 的 internal 纯逻辑部件开放测试。第 34 节字面要求"没有新增 `InternalsVisibleTo`"。模拟器没有，应用有一条。请审阅者决定是否接受。
+  4. 测试的重复窗口 39，来源：WebApi 端到端 13（同一文件内重复的设置与断言）、Secs HSMS 端到端 9（同文件）、ChannelPeriodicTests 5、TcpClientPageTests 3、PlcSessionViewModelTests 3、McSlaveTests 3、Mc 与 Modbus 视图模型测试 1、Secs 端到端与视图模型 1、视图测试骨架（5 个视图测试文件）1。未改。
+  5. 状态事件的快照模式：MQTT、OPC UA、PLC、SECS、TCP 服务端、WebApi 服务端页签仍取事件里的快照，与上面修正的竞争同类。本期没有观察到失败，未改，列为待审阅。
+  6. 手动验收与截图未做：`docs/superpowers/plans/assets/debug-assistant/` 没有截图。第 31 节第 3 条要求在桌面上运行应用并逐项操作，这一步无法代为完成。
+  7. 库未改动（DA-D15）：库的生产代码 diff 为空；`git diff fe82d79` 中的其他变化是删除的 `Junevy.Communication.Test`（允许）、Task 16 的测试迁移（允许）、DA 的代码与测试、文档。
+- 摩擦记录：本 Task 没有新的库摩擦（F-18、F-20 仍待决定）。
+
 ### 33.4 基线与度量（执行者填写）
 
 基线（改动前，提交 `fe82d79`），由 `build/metrics` 的脚本统计，生产代码范围为 Core、Channels、Tcp、Udp、Serial、Plc、Melsec 的 `*.cs`（213 个文件，排除 obj、bin）：
@@ -1322,19 +1363,30 @@ internal interface ISimulatorEngine
 | 构建警告（Debug 与 Release） | 2（均在旧工具 `Junevy.Communication.Test`） |
 | 测试（`test-affected -All -Repeat 1`） | 通过 7204、失败 2（见 Task 0 的说明）、跳过 8 |
 
-新项目的度量在 Task 21 填写。
+Task 21 复测（2026-10-20，同一口径）：库的生产代码 diff 为空，库的数字与基线逐项相同。
+
+| 指标 | 库（生产，213 个文件） | 调试助手（生产，185 个文件） | 调试助手（测试，110 个文件） |
+|---|---|---|---|
+| 重复窗口（`dupscan.py 6`，各行窗口数之和） | 24（基线 24） | 90（目标 0，未达成，见第 33.3 节 Task 21） | 39（来源见第 33.3 节） |
+| 超过 60 行的方法（`methodlen.py 61`） | 0（基线 0） | 0（修正前 3 处，已拆分） | 2（工具误报：实际 5 行与 14 行；修正前另有 2 处真超过，已拆分） |
+| 有效行（`effective_lines.py`） | 11763（基线 11763） | 应用 10545 + 模拟器 1827 = 12372 | 9959 |
+| 构建警告（`dotnet build Junevy.Communication.slnx --no-incremental`） | Debug 0 警告 0 错误；Release 0 警告 0 错误（基线 2 警告，均在已删除的旧工具） | — | — |
+
+测试（DebugAssistant.Tests）：不设 `JUNEVY_SERIAL_PAIR` 时 900 通过、0 失败、15 跳过；设置 `JUNEVY_SERIAL_PAIR=COM20,COM21` 时 933 通过、0 失败、0 跳过。全解决方案的受影响测试见第 33.3 节 Task 21。
 
 ## 34. 审阅者的验收清单（执行者据此自查）
 
-- [ ] 第 0 节每条决策都已落实，偏差都写在第 33.3 节，并已得到审阅者同意。
-- [ ] 第 7 节功能矩阵：逐行可以操作，并能在报文、日志或操作记录中观察到效果。
-- [ ] 改名与关闭（DA-D8）在 19 种页签上都有效；工作区往返覆盖 19 种；密码不落盘。
-- [ ] 模拟器：黄金向量逐字节一致；端到端矩阵全绿；串口只用了 COM20 / COM21。
-- [ ] 库项目的生产代码 diff 为空（DA-D15）；没有新增 `InternalsVisibleTo`。
-- [ ] 第 3 节 Q1–Q20 与 U1–U8；架构测试（U2、DA-D19）先做过一次负控。
-- [ ] 构建 0 警告；`test-affected -Repeat 3` 三遍全绿，所有失败都有记录。
-- [ ] 文档：Tools README、根 readme、设计文档第 3 节、CHANGELOG、Skills 检查、知识库（只写不提交，汇报中附 `git status` 与 `git diff --stat` 的输出）。
-- [ ] 手动验收的截图齐全。
+执行者自查（2026-10-20）：`[x]` 表示已满足且有证据；`[ ]` 表示未满足，原因写在条目后。
+
+- [ ] 第 0 节每条决策都已落实，偏差都写在第 33.3 节，并已得到审阅者同意。——未全部落实：DA-D19 的注册方式（工厂表加键控服务，见 Task 20 偏差 1）、DA-D12 与本节的 `InternalsVisibleTo` 冲突（第 33.3 节 Task 21 偏差 3）、生产重复窗口 90（目标 0，偏差 2）。偏差都已写入第 33.3 节，待审阅者同意。
+- [ ] 第 7 节功能矩阵：逐行可以操作，并能在报文、日志或操作记录中观察到效果。——自动化测试覆盖各页签的操作与效果；人工逐行操作未做。
+- [ ] 改名与关闭（DA-D8）在 19 种页签上都有效；工作区往返覆盖 19 种；密码不落盘。——改名与关闭的机制有测试（`MainWindowTabTests`），但没有逐种页签验证；工作区往返 19 种已覆盖（`AllKindsSettingsStoreTests`）；密码不落盘有测试（`WorkspaceStoreTests` 与各协议的设置往返）。
+- [x] 模拟器：黄金向量逐字节一致；端到端矩阵全绿；串口只用了 COM20 / COM21。——DA 套件设置 `JUNEVY_SERIAL_PAIR=COM20,COM21` 时 933 通过、0 失败、0 跳过；串口只用 COM20 与 COM21。
+- [ ] 库项目的生产代码 diff 为空（DA-D15）；没有新增 `InternalsVisibleTo`。——生产代码 diff 为空 ✓；但 DA 应用有一条 `InternalsVisibleTo`（第 33.3 节 Task 21 偏差 3），待审阅者决定。
+- [ ] 第 3 节 Q1–Q20 与 U1–U8；架构测试（U2、DA-D19）先做过一次负控。——已检查：U3（XAML 色值 0）、U5（同步等待 0，`async void` 只在事件处理器）、Q2 的生产部分（超过 60 行的方法 0）；U2 由架构测试守住，套件通过。未达成：Q15（生产重复窗口 90）。未检查：U1、U4、U6、U7、U8（文件行数）；架构测试的负控本期未执行。
+- [ ] 构建 0 警告；`test-affected -Repeat 3` 三遍全绿，所有失败都有记录。——构建 0 警告 ✓（Debug 与 Release）；三遍未全绿，10 次失败全部记录在第 33.3 节 Task 21。
+- [x] 文档：Tools README、根 readme、设计文档第 3 节、CHANGELOG、Skills 检查、知识库（只写不提交，汇报中附 `git status` 与 `git diff --stat` 的输出）。——已完成；知识库的 `git status` 与 `git diff --stat` 见最终汇报。
+- [ ] 手动验收的截图齐全。——未做（第 33.3 节 Task 21 偏差 6）。
 
 ## 35. 验收记录
 

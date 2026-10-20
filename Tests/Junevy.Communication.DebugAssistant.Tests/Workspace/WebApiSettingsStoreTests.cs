@@ -30,44 +30,9 @@ public sealed class WebApiSettingsStoreTests : IDisposable
     {
         Directory.CreateDirectory(_directory);
         string path = Path.Combine(_directory, "workspace.json");
-        var rest = new RestClientSettings(
-            "https://mes.example.com/api",
-            5000,
-            new WebApiAuthSettings(WebApiAuthScheme.Bearer, null, null, "MES_TOKEN", "X-API-Key", null),
-            new WebApiRetrySettings(2, 500, false),
-            new WebApiEnvelopeSettings(true, "code", "msg", "data", ["0"]),
-            "health",
-            30000,
-            3,
-            new WebApiLogSettings(false, ["Authorization"], ["token"]));
-        var soap = new SoapClientSettings(
-            "http://mes.example.com/service.asmx",
-            SoapVersion.Soap12,
-            "http://mes.example.com/ns",
-            null,
-            5000,
-            new WebApiAuthSettings(WebApiAuthScheme.None, null, null, null, "X-API-Key", null),
-            new WebApiRetrySettings(0, 1000, false),
-            30000,
-            3,
-            new WebApiLogSettings(false, [], []));
-        var server = new WebApiServerSettings(
-            ["http://127.0.0.1:0"],
-            new WebApiAuthSettings(WebApiAuthScheme.ApiKey, null, null, null, "X-API-Key", "MES_KEY"),
-            null,
-            null,
-            16,
-            30000,
-            1048576,
-            5000,
-            new WebApiEnvelopeSettings(false, "code", "msg", "data", ["0"]),
-            200,
-            new WebApiDeduplicationSettings(true, "Idempotency-Key", 600000, 1000),
-            new WebApiLogSettings(false, ["Authorization"], ["token"]),
-            [
-                new ServerRouteSettings("GET", "/hello", ServerRouteKind.Fixed, "{\"message\":\"hello\"}", null, null, null, 0),
-                new ServerRouteSettings("POST", "/orders", ServerRouteKind.BusinessFailure, null, "E100", "bad", null, 250),
-            ]);
+        RestClientSettings rest = RestSettings();
+        SoapClientSettings soap = SoapSettings();
+        WebApiServerSettings server = ServerSettings();
         new WorkspaceStore(path).Save(new WorkspaceDocument(
             WorkspaceDocument.CurrentSchemaVersion,
             [
@@ -89,4 +54,45 @@ public sealed class WebApiSettingsStoreTests : IDisposable
         Assert.Contains("\"type\": \"webApiServer\"", text);
         Assert.DoesNotContain("KindText", text);
     }
+
+    private static RestClientSettings RestSettings() => new(
+        "https://mes.example.com/api",
+        5000,
+        new WebApiAuthSettings(WebApiAuthScheme.Bearer, null, null, "MES_TOKEN", "X-API-Key", null),
+        new WebApiRetrySettings(2, 500, false),
+        new WebApiEnvelopeSettings(true, "code", "msg", "data", ["0"]),
+        "health",
+        30000,
+        3,
+        new WebApiLogSettings(false, ["Authorization"], ["token"]));
+
+    private static SoapClientSettings SoapSettings() => new(
+        "http://mes.example.com/service.asmx",
+        SoapVersion.Soap12,
+        "http://mes.example.com/ns",
+        null,
+        5000,
+        new WebApiAuthSettings(WebApiAuthScheme.None, null, null, null, "X-API-Key", null),
+        new WebApiRetrySettings(0, 1000, false),
+        30000,
+        3,
+        new WebApiLogSettings(false, [], []));
+
+    private static WebApiServerSettings ServerSettings() => new(
+        ["http://127.0.0.1:0"],
+        new WebApiAuthSettings(WebApiAuthScheme.ApiKey, null, null, null, "X-API-Key", "MES_KEY"),
+        null,
+        null,
+        16,
+        30000,
+        1048576,
+        5000,
+        new WebApiEnvelopeSettings(false, "code", "msg", "data", ["0"]),
+        200,
+        new WebApiDeduplicationSettings(true, "Idempotency-Key", 600000, 1000),
+        new WebApiLogSettings(false, ["Authorization"], ["token"]),
+        [
+            new ServerRouteSettings("GET", "/hello", ServerRouteKind.Fixed, "{\"message\":\"hello\"}", null, null, null, 0),
+            new ServerRouteSettings("POST", "/orders", ServerRouteKind.BusinessFailure, null, "E100", "bad", null, 250),
+        ]);
 }

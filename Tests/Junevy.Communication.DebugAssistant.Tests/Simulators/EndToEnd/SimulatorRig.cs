@@ -61,6 +61,26 @@ internal sealed class SimulatorRig : IAsyncDisposable
         var memory = new SimulatorMemory();
         var faults = new FaultInjector();
         ISimulatorEngine engine = createEngine(memory);
+        for (int attempt = 1; ; attempt++)
+        {
+            SimulatorRig? rig = await TryStartAsync(transport, engine, memory, faults);
+            if (rig is not null)
+            {
+                return rig;
+            }
+
+            // FreePort 先探测空闲端口，宿主稍后才绑定；并行的测试可能在两者之间抢走它。绑定失败时换一个端口重试。
+            if (attempt == MaxStartAttempts || transport == SimulatorTransport.Serial)
+            {
+                Assert.Fail("the simulator must start");
+            }
+        }
+    }
+
+    private const int MaxStartAttempts = 3;
+
+    private static async Task<SimulatorRig?> TryStartAsync(SimulatorTransport transport, ISimulatorEngine engine, SimulatorMemory memory, FaultInjector faults)
+    {
         int port = transport == SimulatorTransport.Serial ? 0 : FreePort.Get();
         IChannelConfig hostConfig = transport switch
         {
@@ -72,8 +92,13 @@ internal sealed class SimulatorRig : IAsyncDisposable
         var host = new SimulatorHost(hostConfig, engine, faults);
         var rig = new SimulatorRig(transport, host, port, memory, faults);
         host.RequestHandled += (_, _) => Interlocked.Increment(ref rig._requests);
-        Assert.True((await host.StartAsync()).IsSuccess, "the simulator must start");
-        return rig;
+        if ((await host.StartAsync()).IsSuccess)
+        {
+            return rig;
+        }
+
+        await host.DisposeAsync();
+        return null;
     }
 
     /// <summary>

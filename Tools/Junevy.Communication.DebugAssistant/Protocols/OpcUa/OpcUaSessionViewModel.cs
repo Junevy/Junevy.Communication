@@ -454,25 +454,8 @@ public sealed partial class OpcUaSessionViewModel : SessionViewModel
             return;
         }
 
-        var values = new OpcUaWriteValue[pending.Length];
-        bool valid = true;
-        for (int i = 0; i < pending.Length; i++)
-        {
-            try
-            {
-                values[i] = new OpcUaWriteValue(
-                    pending[i].NodeId,
-                    OpcUaSupport.ParseValue(pending[i].WriteType, pending[i].IsArray, pending[i].WriteText));
-                pending[i].WriteStatus = string.Empty;
-            }
-            catch (FormatException ex)
-            {
-                pending[i].WriteStatus = $"输入无效：{ex.Message}";
-                valid = false;
-            }
-        }
-
-        if (!valid)
+        OpcUaWriteValue[]? values = ParseWriteValues(pending);
+        if (values is null)
         {
             ListMessage = "有写入值无法按所选类型解析，未发送任何写入。";
             return;
@@ -503,6 +486,30 @@ public sealed partial class OpcUaSessionViewModel : SessionViewModel
         ListMessage = $"已写入 {pending.Length} 项，逐项结果见写入结果。";
     }
 
+    // 逐项解析写入值并更新各行的写入状态；有任何一项无效时返回 null。
+    private static OpcUaWriteValue[]? ParseWriteValues(OpcUaReadRow[] pending)
+    {
+        var values = new OpcUaWriteValue[pending.Length];
+        bool valid = true;
+        for (int i = 0; i < pending.Length; i++)
+        {
+            try
+            {
+                values[i] = new OpcUaWriteValue(
+                    pending[i].NodeId,
+                    OpcUaSupport.ParseValue(pending[i].WriteType, pending[i].IsArray, pending[i].WriteText));
+                pending[i].WriteStatus = string.Empty;
+            }
+            catch (FormatException ex)
+            {
+                pending[i].WriteStatus = $"输入无效：{ex.Message}";
+                valid = false;
+            }
+        }
+
+        return valid ? values : null;
+    }
+
     // 订阅读写列表中的全部节点。同一时间只保留一个订阅；通知通过一个令牌过滤，释放之后不会再交付。
     private async Task SubscribeAsync()
     {
@@ -525,35 +532,13 @@ public sealed partial class OpcUaSessionViewModel : SessionViewModel
         }
 
         string[] nodeIds = Items.Select(row => row.NodeId).ToArray();
-        var options = new OpcUaSubscriptionOptions
-        {
-            PublishingInterval = PublishingInterval,
-            SamplingInterval = SamplingInterval,
-            QueueSize = QueueSize,
-            DiscardOldest = DiscardOldest,
-        };
         var token = new object();
         _subscriptionToken = token;
         DateTimeOffset started = Dependencies.Clock.GetLocalNow();
         Stopwatch clock = Stopwatch.StartNew();
-        CommResult<OpcUaSubscription> result;
-        try
+        CommResult<OpcUaSubscription>? result = await TrySubscribeAsync(client, nodeIds, token).ConfigureAwait(true);
+        if (result is null)
         {
-            result = await client.SubscribeAsync(
-                nodeIds,
-                (_, e) => PostToUi(() =>
-                {
-                    if (ReferenceEquals(_subscriptionToken, token))
-                    {
-                        RecordNotification(e);
-                    }
-                }),
-                options).ConfigureAwait(true);
-        }
-        catch (ArgumentException ex)
-        {
-            _subscriptionToken = null;
-            SubscriptionMessage = ResultText.Failure(CommErrorKind.InvalidRequest, ex.Message);
             return;
         }
 
@@ -569,10 +554,44 @@ public sealed partial class OpcUaSessionViewModel : SessionViewModel
             return;
         }
 
-        OpcUaSubscription subscription = result.Data;
+        await AdoptSubscriptionAsync(client, token, result.Data, nodeIds).ConfigureAwait(true);
+    }
+
+    // 发起订阅。库拒绝选项（ArgumentException）时撤销令牌并说明原因，返回 null。
+    private async Task<CommResult<OpcUaSubscription>?> TrySubscribeAsync(OpcUaClient client, string[] nodeIds, object token)
+    {
+        try
+        {
+            return await client.SubscribeAsync(
+                nodeIds,
+                (_, e) => PostToUi(() =>
+                {
+                    if (ReferenceEquals(_subscriptionToken, token))
+                    {
+                        RecordNotification(e);
+                    }
+                }),
+                new OpcUaSubscriptionOptions
+                {
+                    PublishingInterval = PublishingInterval,
+                    SamplingInterval = SamplingInterval,
+                    QueueSize = QueueSize,
+                    DiscardOldest = DiscardOldest,
+                }).ConfigureAwait(true);
+        }
+        catch (ArgumentException ex)
+        {
+            _subscriptionToken = null;
+            SubscriptionMessage = ResultText.Failure(CommErrorKind.InvalidRequest, ex.Message);
+            return null;
+        }
+    }
+
+    // 订阅建立后：等待期间释放了订阅或断开了连接的，刚建立的订阅不再保留；否则登记到界面。
+    private async Task AdoptSubscriptionAsync(OpcUaClient client, object token, OpcUaSubscription subscription, string[] nodeIds)
+    {
         if (!ReferenceEquals(_subscriptionToken, token) || !ReferenceEquals(_client, client))
         {
-            // 等待期间释放了订阅或断开了连接：刚建立的订阅不再保留。
             await subscription.DisposeAsync().ConfigureAwait(true);
             return;
         }

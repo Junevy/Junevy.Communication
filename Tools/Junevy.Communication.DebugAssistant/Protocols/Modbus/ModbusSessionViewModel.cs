@@ -350,11 +350,7 @@ public sealed partial class ModbusSessionViewModel : PlcSessionViewModel
                 RecordOperation(OperationRecords.From(started, "读取表格", TableAddress, TimeSpan.Zero, bits));
                 if (bits.IsSuccess)
                 {
-                    Table.Clear();
-                    for (int index = 0; index < bits.Data!.Length; index++)
-                    {
-                        Table.Add(ModbusTableRow.ForBit(symbol, address.Number + index, bits.Data[index]));
-                    }
+                    ShowBits(symbol, address.Number, bits.Data!);
                 }
 
                 break;
@@ -376,6 +372,16 @@ public sealed partial class ModbusSessionViewModel : PlcSessionViewModel
                 RecordOperation(new OperationRecord(started, "读取表格", TableAddress, TimeSpan.Zero, false, CommErrorKind.InvalidRequest, null,
                     "表格读取只支持 C、DI、HR 与 IR。"));
                 break;
+        }
+    }
+
+    /// <summary>位（线圈与离散输入）显示为表格行，每个位一行。</summary>
+    private void ShowBits(string symbol, int firstNumber, bool[] bits)
+    {
+        Table.Clear();
+        for (int index = 0; index < bits.Length; index++)
+        {
+            Table.Add(ModbusTableRow.ForBit(symbol, firstNumber + index, bits[index]));
         }
     }
 

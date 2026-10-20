@@ -112,7 +112,14 @@ public abstract partial class ChannelSessionViewModel : SessionViewModel
         await CloseChannelAsync(CancellationToken.None);
         IClientChannel channel = CreateChannelOrFail();
         _channel = channel;
-        channel.StateChanged += (_, e) => PostToUi(() => OnChannelStateChanged(e.CurrentState));
+        // 事件在线程池上触发，可能在同步设置的状态之后才被处理：这里读取通道的当前状态，而不是事件里的快照，避免旧的状态覆盖新的状态。
+        channel.StateChanged += (_, _) => PostToUi(() =>
+        {
+            if (ReferenceEquals(_channel, channel))
+            {
+                OnChannelStateChanged(channel.State);
+            }
+        });
         channel.FrameReceived += (_, e) => PostToUi(() => AddReceived(e));
 
         State = SessionState.Connecting;

@@ -122,38 +122,7 @@ public sealed class OpcUaEndToEndTests
             page.AddBrowsedNodeCommand.Execute(variable);
         }
 
-        // 节点名称 → (写入类型, 是否数组, 输入文字, 读回的期望文字)：15 种标量（ByteString 即 byte[]）与 13 个一维数组。
-        var cases = new Dictionary<string, (OpcUaWriteType Type, bool IsArray, string Text, string Expected)>
-        {
-            ["Bool"] = (OpcUaWriteType.Boolean, false, "true", "True"),
-            ["SByte"] = (OpcUaWriteType.SByte, false, "-7", "-7"),
-            ["Byte"] = (OpcUaWriteType.Byte, false, "7", "7"),
-            ["Int16"] = (OpcUaWriteType.Int16, false, "-300", "-300"),
-            ["UInt16"] = (OpcUaWriteType.UInt16, false, "300", "300"),
-            ["Int32"] = (OpcUaWriteType.Int32, false, "-70000", "-70000"),
-            ["UInt32"] = (OpcUaWriteType.UInt32, false, "70000", "70000"),
-            ["Int64"] = (OpcUaWriteType.Int64, false, "-5000000000", "-5000000000"),
-            ["UInt64"] = (OpcUaWriteType.UInt64, false, "5000000000", "5000000000"),
-            ["Float"] = (OpcUaWriteType.Float, false, "1.25", "1.25"),
-            ["Double"] = (OpcUaWriteType.Double, false, "2.5", "2.5"),
-            ["String"] = (OpcUaWriteType.String, false, "hi there", "hi there"),
-            ["DateTime"] = (OpcUaWriteType.DateTime, false, "2026-01-02T03:04:05Z", "2026-01-02 03:04:05.000 UTC"),
-            ["Guid"] = (OpcUaWriteType.Guid, false, "11111111-2222-3333-4444-555555555555", "11111111-2222-3333-4444-555555555555"),
-            ["ByteString"] = (OpcUaWriteType.ByteString, false, "hex: 01 FF 10", "01 FF 10"),
-            ["BoolArray"] = (OpcUaWriteType.Boolean, true, "true\nfalse", "True, False"),
-            ["SByteArray"] = (OpcUaWriteType.SByte, true, "-1\n-2", "-1, -2"),
-            ["Int16Array"] = (OpcUaWriteType.Int16, true, "-3\n-4", "-3, -4"),
-            ["UInt16Array"] = (OpcUaWriteType.UInt16, true, "3\n4", "3, 4"),
-            ["Int32Array"] = (OpcUaWriteType.Int32, true, "-5\n-6", "-5, -6"),
-            ["UInt32Array"] = (OpcUaWriteType.UInt32, true, "5\n6", "5, 6"),
-            ["Int64Array"] = (OpcUaWriteType.Int64, true, "-7\n-8", "-7, -8"),
-            ["UInt64Array"] = (OpcUaWriteType.UInt64, true, "7\n8", "7, 8"),
-            ["FloatArray"] = (OpcUaWriteType.Float, true, "-1.5\n-2.5", "-1.5, -2.5"),
-            ["DoubleArray"] = (OpcUaWriteType.Double, true, "-3.5\n-4.5", "-3.5, -4.5"),
-            ["StringArray"] = (OpcUaWriteType.String, true, "x\ny", "x, y"),
-            ["DateTimeArray"] = (OpcUaWriteType.DateTime, true, "2026-05-06T07:08:09Z", "2026-05-06 07:08:09.000 UTC"),
-            ["GuidArray"] = (OpcUaWriteType.Guid, true, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
-        };
+        var cases = WritableCases();
         Dictionary<string, string> names = writable.Children.ToDictionary(child => child.NodeId, child => child.DisplayName);
         Assert.Equal(cases.Count, page.Items.Count);
 
@@ -176,6 +145,39 @@ public sealed class OpcUaEndToEndTests
             Assert.Equal(cases[names[row.NodeId]].Expected, row.Value);
         }
     }
+
+    // 节点名称 → (写入类型, 是否数组, 输入文字, 读回的期望文字)：15 种标量（ByteString 即 byte[]）与 13 个一维数组。
+    private static Dictionary<string, (OpcUaWriteType Type, bool IsArray, string Text, string Expected)> WritableCases() => new()
+    {
+        ["Bool"] = (OpcUaWriteType.Boolean, false, "true", "True"),
+        ["SByte"] = (OpcUaWriteType.SByte, false, "-7", "-7"),
+        ["Byte"] = (OpcUaWriteType.Byte, false, "7", "7"),
+        ["Int16"] = (OpcUaWriteType.Int16, false, "-300", "-300"),
+        ["UInt16"] = (OpcUaWriteType.UInt16, false, "300", "300"),
+        ["Int32"] = (OpcUaWriteType.Int32, false, "-70000", "-70000"),
+        ["UInt32"] = (OpcUaWriteType.UInt32, false, "70000", "70000"),
+        ["Int64"] = (OpcUaWriteType.Int64, false, "-5000000000", "-5000000000"),
+        ["UInt64"] = (OpcUaWriteType.UInt64, false, "5000000000", "5000000000"),
+        ["Float"] = (OpcUaWriteType.Float, false, "1.25", "1.25"),
+        ["Double"] = (OpcUaWriteType.Double, false, "2.5", "2.5"),
+        ["String"] = (OpcUaWriteType.String, false, "hi there", "hi there"),
+        ["DateTime"] = (OpcUaWriteType.DateTime, false, "2026-01-02T03:04:05Z", "2026-01-02 03:04:05.000 UTC"),
+        ["Guid"] = (OpcUaWriteType.Guid, false, "11111111-2222-3333-4444-555555555555", "11111111-2222-3333-4444-555555555555"),
+        ["ByteString"] = (OpcUaWriteType.ByteString, false, "hex: 01 FF 10", "01 FF 10"),
+        ["BoolArray"] = (OpcUaWriteType.Boolean, true, "true\nfalse", "True, False"),
+        ["SByteArray"] = (OpcUaWriteType.SByte, true, "-1\n-2", "-1, -2"),
+        ["Int16Array"] = (OpcUaWriteType.Int16, true, "-3\n-4", "-3, -4"),
+        ["UInt16Array"] = (OpcUaWriteType.UInt16, true, "3\n4", "3, 4"),
+        ["Int32Array"] = (OpcUaWriteType.Int32, true, "-5\n-6", "-5, -6"),
+        ["UInt32Array"] = (OpcUaWriteType.UInt32, true, "5\n6", "5, 6"),
+        ["Int64Array"] = (OpcUaWriteType.Int64, true, "-7\n-8", "-7, -8"),
+        ["UInt64Array"] = (OpcUaWriteType.UInt64, true, "7\n8", "7, 8"),
+        ["FloatArray"] = (OpcUaWriteType.Float, true, "-1.5\n-2.5", "-1.5, -2.5"),
+        ["DoubleArray"] = (OpcUaWriteType.Double, true, "-3.5\n-4.5", "-3.5, -4.5"),
+        ["StringArray"] = (OpcUaWriteType.String, true, "x\ny", "x, y"),
+        ["DateTimeArray"] = (OpcUaWriteType.DateTime, true, "2026-05-06T07:08:09Z", "2026-05-06 07:08:09.000 UTC"),
+        ["GuidArray"] = (OpcUaWriteType.Guid, true, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+    };
 
     [Fact]
     public async Task AWrongType_IsAnsweredByTheServer_WithBadTypeMismatch_OnlyForThatItem()
