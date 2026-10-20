@@ -1,9 +1,11 @@
 using System.IO;
+using Junevy.Communication.DebugAssistant.Protocols.Ftp;
 using Junevy.Communication.DebugAssistant.Services;
 using Junevy.Communication.DebugAssistant.Sessions;
 using Junevy.Communication.DebugAssistant.Shell;
 using Junevy.Communication.DebugAssistant.Tests.Support;
 using Junevy.Communication.DebugAssistant.Workspace;
+using Junevy.Communication.Ftp;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Junevy.Communication.DebugAssistant.Tests.Workspace;
@@ -44,7 +46,7 @@ public sealed class WorkspaceCommandTests : IDisposable
         Directory.CreateDirectory(_directory);
         new WorkspaceStore(WorkspacePath).Save(new WorkspaceDocument(
             WorkspaceDocument.CurrentSchemaVersion,
-            [new WorkspaceSession("Ftp", "FTP #1", new PlaceholderSettings()), new WorkspaceSession("Gem", "GEM", new PlaceholderSettings())],
+            [new WorkspaceSession("Ftp", "FTP #1", new FtpSettings("127.0.0.1", 21, null, FtpEncryption.None, false, null, 10000, 15000, 15000)), new WorkspaceSession("Gem", "GEM", new PlaceholderSettings())],
             SelectedIndex: 0));
         var (services, _) = TestShell.Create(s => s.AddSingleton(new WorkspaceStore(WorkspacePath)));
         MainWindowViewModel vm = services.GetRequiredService<MainWindowViewModel>();

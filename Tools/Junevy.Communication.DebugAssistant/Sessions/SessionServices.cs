@@ -9,4 +9,5 @@ public sealed record SessionServices(
     TimeProvider Clock,
     IFileDialogService Files,
     INotificationService Notifications,
-    ITransportCreatorProvider Transports);
+    ITransportCreatorProvider Transports,
+    IConfirmService Confirm);

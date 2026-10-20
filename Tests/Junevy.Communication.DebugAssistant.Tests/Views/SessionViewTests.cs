@@ -1,6 +1,8 @@
 using System.Windows.Controls;
 using Junevy.Communication.DebugAssistant.Sessions;
+using Junevy.Communication.DebugAssistant.Shell;
 using Junevy.Communication.DebugAssistant.Tests.Support;
+using Junevy.Communication.DebugAssistant.Views.Channels;
 using Junevy.Communication.DebugAssistant.Views.Sessions;
 
 namespace Junevy.Communication.DebugAssistant.Tests.Views;
@@ -9,13 +11,13 @@ namespace Junevy.Communication.DebugAssistant.Tests.Views;
 public sealed class SessionViewTests
 {
     [Fact]
-    public async Task PlaceholderView_ShowsTheLogPanelOfItsSession()
+    public async Task PageView_ShowsTheLogPanelOfItsSession()
     {
-        await using SessionViewModel session = TestShell.CreateSession();
+        await using SessionViewModel session = TestShell.CreateSession(ProtocolKind.TcpClient);
 
         UiThread.Invoke(() =>
         {
-            var view = new PlaceholderSessionView { DataContext = session };
+            var view = new TcpClientPageView { DataContext = session };
             VisualTree.Layout(view);
 
             var panel = VisualTree.FindChild<LogPanel>(view);

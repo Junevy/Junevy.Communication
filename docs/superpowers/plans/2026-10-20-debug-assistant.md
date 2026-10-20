@@ -789,6 +789,7 @@ internal interface ISimulatorEngine
 | F-17 | `McClientOptions.SumCheck` 的说明只写"和校验（默认 true）"，没有写明它同时决定请求是否带和校验（关闭时请求不带，PLC 侧设置必须一致，见 P2 计划第 13 节）。模拟器只能从计划得知这一点 | 模拟器的分帧器按同一设置读取请求的校验码；4C 格式 5 不带和校验的端到端组合验证了这一点 | 在 `McClientOptions.SumCheck` 的注释与 Melsec README 中写明请求与应答都受影响 |
 | F-18 | MQTT 页要显示"重连后恢复了多少个订阅"，但库只在 `RestoreSubscriptionsAsync` 里以 Information 级别记录数量（`Restored {RestoredCount} subscription(s) after reconnecting.`），公开 API 没有这个数字：`StateChanged` 到达 `Connected` 时 `Reason` 为 null，没有恢复事件，订阅表是内部的。被拒绝的过滤器只记 Warning 后被忘掉，宿主无从知道 | 页签显示"重连中"与库给出的原因；订阅列表在重连后保持（同一个客户端对象，库恢复之后 `Connected` 才发出）。恢复的数量没有显示 | 在 `Connected` 的状态变化上携带恢复的数量（或新增 `SubscriptionsRestored` 事件）。这是库的改动，DA-D15 不允许在本计划内做，待用户决定 |
 | F-19 | 从 .NET 7 起 `sbyte[]` 也满足 `is byte[]`（数组的扩展转换）。库读出的 `SByte` 数组类型正确（`sbyte[]`），但按 `is byte[]` 判断的宿主代码会把它当作字节（ByteString）：Task 17 的 DA 显示把 `-1, -2` 显示成 `FF FE`，由单元与端到端测试发现 | 宿主按精确类型判断：`value.GetType() == typeof(byte[])`（`OpcUaSupport.FormatObject`） | OPC UA README 的"值类型"一节写明：区分字节数组要用精确类型；`sbyte[]` 与 `byte[]` 的区别在类型，不在值 |
+| F-20 | `FtpClient.ListAsync` 把列目录的 550 应答当作"目录不存在"：库的 `FtpSdkSession.ListAsync` 注释写明 SDK 对不存在的目录静默返回空列表。DA 因此无法区分"目录为空"、"目录不存在"与"无权限列出"，无权限的目录会显示为 0 项而不报错（由库的注释推断，未在真实的无权限服务器上验证） | 没有变通：`DirectoryExistsAsync` 也把 550 当作不存在，不能用来区分；页面如实显示库给出的结果 | 库应区分"目录不存在"（空列表）与"存在但无权限"（失败，带应答码）；需要改库，待用户决定（与 F-18 一样，按规则不擅自改库） |
 
 ### 33.3 执行汇报与偏差（执行者填写：每个 Task 的汇报、门槛汇报、偏差与需要审阅者决定的事）
 
@@ -1268,6 +1269,29 @@ internal interface ISimulatorEngine
   8. 没有 HTTPS 的端到端测试（需要证书；库的 HTTPS 行为由库的测试覆盖）。页签只把证书路径与口令变量名传给库。
 - 库未改动：库项目的 `git diff --stat` 为空（DA-D15）。
 - 摩擦记录：本 Task 没有新的摩擦（F-18 仍待决定）。
+
+**Task 19（FTP 页，删除占位页签）**
+
+- 做了什么：
+  - `Protocols/Ftp/FtpSettings`（`ftp`，不保存密码）、`FtpSupport`（路径合并与上级、列表行、传输与进度的文字）、`FtpEntryRow`、`FtpSessionViewModel`（页签；命令：刷新、上级、进入、上传、下载、新建目录、删除文件、递归删除目录（先确认）、重命名、检查存在与大小）。
+  - `Views/Ftp/FtpPageView`：连接选项、目录列表（双击进入）、操作区、进度条与日志面板。
+  - 注册 `ProtocolKind.Ftp` 与数据模板；删除 `PlaceholderSessionViewModel`、`PlaceholderSessionView`（`git rm`）；`SessionRegistration` 取消占位回退，`Pages[descriptor.Kind]` 直接取。
+  - `SessionServices.Confirm`（`IConfirmService`，由 `ShellRegistration` 解析）。
+  - 测试替身：`FakeConfirmService`；`FakeServices.Create` 增加 `confirm` 参数。
+- 测试（新增 23 条，全部通过）：
+  - `FtpSupportTests` 5 条；`FtpSessionViewModelTests` 7 条（默认值、隐式加密的提示、设置往返且密码不保存、主机为空与编码未知时拒绝并记录、未连接时操作不可用、未连接时进入目录的提示）。
+  - `FtpEndToEndTests` 9 条（`FakeFtpServer`）：列目录（目录在前，显示大小）；上传与下载逐字节一致，进度到 100；Skip 不覆盖已存在的目标；新建目录逐级创建；递归删除先确认，取消时目录保持不变，确认后删除；重命名只在同一目录内；GBK 文件名；上传被服务器拒绝（552）时保留失败原因；列目录失败时留在原目录。
+  - `FtpPageViewTests` 1 条；`AllKindsSettingsStoreTests` 1 条（19 种全部保存、读回、应用后参数不变，且 `ProtocolCatalog.All` 与枚举数量一致）。
+  - 验证：DebugAssistant 测试项目 900 条通过，0 失败，15 跳过（串口对未设置）；修正后全套件重跑通过。
+- 偏差与需要审阅者决定的事：
+  1. 行为修正（测试发现，计划没有写到）：目录列表成功后覆盖了操作的说明，上传失败的原因因此被隐藏。改为：列目录只返回成败；连接、刷新、上级、进入说明目录概况，写操作的结果保持自己的说明。跳过的上传或下载不再附带原子性的说明。请审阅措辞。
+  2. 列目录失败时回到原来的目录（测试发现的另一处不一致：原来路径已改变，列表仍是旧目录）。
+  3. 测试替身的修正（只改测试）：`FakeFtpFileSystem.WriteFile` 不创建父目录，递归删除用例先创建 `/old`。
+  4. 工作区测试：Ftp 样本由占位参数改为真实的 `FtpSettings`；未知种类的样本仍为 `Gem`，断言没有放宽。
+  5. 库的行为（F-20）：列目录的 550 被库当作空列表，无权限的目录会显示为空。区分它需要改库，按规则停下，待用户决定。
+  6. F-18 仍待决定（MQTT 恢复的订阅数，需要库的改动）。
+- 库未改动：库项目没有任何改动（DA-D15）。
+- 摩擦记录：F-20 新增（列目录的 550 静默返回空列表，待决定）；F-18 仍待决定。
 
 ### 33.4 基线与度量（执行者填写）
 

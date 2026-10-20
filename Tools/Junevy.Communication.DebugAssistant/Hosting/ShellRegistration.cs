@@ -25,7 +25,8 @@ public static class ShellRegistration
             provider.GetRequiredService<TimeProvider>(),
             provider.GetRequiredService<IFileDialogService>(),
             provider.GetRequiredService<INotificationService>(),
-            provider.GetRequiredService<ITransportCreatorProvider>()));
+            provider.GetRequiredService<ITransportCreatorProvider>(),
+            provider.GetRequiredService<IConfirmService>()));
         services.AddSingleton<ITransportCreatorProvider, TransportCreatorProvider>();
         services.AddSessionServices();
         services.AddSingleton(new WorkspaceStore(WorkspaceStore.DefaultPath));

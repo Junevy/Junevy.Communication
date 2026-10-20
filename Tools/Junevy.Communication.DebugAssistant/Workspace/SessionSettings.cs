@@ -8,6 +8,7 @@ using Junevy.Communication.DebugAssistant.Protocols.Melsec;
 using Junevy.Communication.DebugAssistant.Protocols.Modbus;
 using Junevy.Communication.DebugAssistant.Protocols.Secs;
 using Junevy.Communication.DebugAssistant.Protocols.Siemens;
+using Junevy.Communication.DebugAssistant.Protocols.Ftp;
 using Junevy.Communication.DebugAssistant.Protocols.WebApi;
 
 namespace Junevy.Communication.DebugAssistant.Workspace;
@@ -32,5 +33,6 @@ namespace Junevy.Communication.DebugAssistant.Workspace;
 [JsonDerivedType(typeof(RestClientSettings), "restClient")]
 [JsonDerivedType(typeof(SoapClientSettings), "soapClient")]
 [JsonDerivedType(typeof(WebApiServerSettings), "webApiServer")]
+[JsonDerivedType(typeof(FtpSettings), "ftp")]
 [JsonDerivedType(typeof(TcpServerSettings), "tcpServer")]
 public abstract record SessionSettings;

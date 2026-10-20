@@ -1,5 +1,6 @@
 using Junevy.Communication.DebugAssistant.Protocols.Channels;
 using Junevy.Communication.DebugAssistant.Protocols.Fins;
+using Junevy.Communication.DebugAssistant.Protocols.Ftp;
 using Junevy.Communication.DebugAssistant.Protocols.Melsec;
 using Junevy.Communication.DebugAssistant.Protocols.Modbus;
 using Junevy.Communication.DebugAssistant.Protocols.Mqtt;
@@ -17,7 +18,7 @@ namespace Junevy.Communication.DebugAssistant.Hosting;
 /// <summary>页签模块的 DI 注册：工厂、命名器、共享依赖，以及每种页签的键控服务（DA-D19）。</summary>
 internal static class SessionRegistration
 {
-    /// <summary>已经实现的页签。其余种类使用占位页签，每个种类完成后在这里加一行。</summary>
+    /// <summary>每种协议的页签工厂（DA-D19）：新增一种协议时在这里加一行。</summary>
     private static readonly Dictionary<ProtocolKind, Func<ProtocolDescriptor, SessionServices, SessionViewModel>> Pages = new()
     {
         [ProtocolKind.TcpClient] = (descriptor, services) => new TcpClientSessionViewModel(descriptor, services),
@@ -38,6 +39,7 @@ internal static class SessionRegistration
         [ProtocolKind.Mqtt] = (descriptor, services) => new MqttSessionViewModel(descriptor, services),
         [ProtocolKind.OpcUa] = (descriptor, services) => new OpcUaSessionViewModel(descriptor, services),
         [ProtocolKind.Serial] = (descriptor, services) => new SerialSessionViewModel(descriptor, services),
+        [ProtocolKind.Ftp] = (descriptor, services) => new FtpSessionViewModel(descriptor, services),
     };
 
     internal static IServiceCollection AddSessionServices(this IServiceCollection services)
@@ -47,9 +49,8 @@ internal static class SessionRegistration
 
         foreach (ProtocolDescriptor descriptor in ProtocolCatalog.All)
         {
-            Func<ProtocolDescriptor, SessionServices, SessionViewModel> create = Pages.TryGetValue(descriptor.Kind, out var page)
-                ? page
-                : (placeholder, dependencies) => new PlaceholderSessionViewModel(placeholder, dependencies);
+            // 每个协议目录都必须有页签工厂：缺少时在这里直接失败，而不是静默退回占位页签。
+            Func<ProtocolDescriptor, SessionServices, SessionViewModel> create = Pages[descriptor.Kind];
             services.AddKeyedTransient<SessionViewModel>(
                 descriptor.Kind,
                 (provider, _) => create(descriptor, provider.GetRequiredService<SessionServices>()));

@@ -1,8 +1,10 @@
 using System.IO;
 using Junevy.Communication.DebugAssistant.Sessions;
+using Junevy.Communication.DebugAssistant.Protocols.Ftp;
 using Junevy.Communication.DebugAssistant.Shell;
 using Junevy.Communication.DebugAssistant.Tests.Support;
 using Junevy.Communication.DebugAssistant.Workspace;
+using Junevy.Communication.Ftp;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Junevy.Communication.DebugAssistant.Tests.Workspace;
@@ -44,7 +46,7 @@ public sealed class WorkspaceServiceTests : IDisposable
         var (services, _) = TestShell.Create();
         var document = new WorkspaceDocument(
             WorkspaceDocument.CurrentSchemaVersion,
-            [new WorkspaceSession("Gem", "GEM 页", new PlaceholderSettings()), new WorkspaceSession("Ftp", "FTP #1", new PlaceholderSettings())],
+            [new WorkspaceSession("Gem", "GEM 页", new PlaceholderSettings()), new WorkspaceSession("Ftp", "FTP #1", new FtpSettings("127.0.0.1", 21, null, FtpEncryption.None, false, null, 10000, 15000, 15000))],
             SelectedIndex: 0);
 
         WorkspaceRestoreResult restored = WorkspaceService.Restore(document, services.GetRequiredService<ISessionFactory>());
@@ -60,7 +62,7 @@ public sealed class WorkspaceServiceTests : IDisposable
         var (services, _) = TestShell.Create();
         var document = new WorkspaceDocument(
             WorkspaceDocument.CurrentSchemaVersion,
-            [new WorkspaceSession("Gem", "GEM 页", new PlaceholderSettings()), new WorkspaceSession("Ftp", "FTP 页", new PlaceholderSettings())],
+            [new WorkspaceSession("Gem", "GEM 页", new PlaceholderSettings()), new WorkspaceSession("Ftp", "FTP 页", new FtpSettings("127.0.0.1", 21, null, FtpEncryption.None, false, null, 10000, 15000, 15000))],
             SelectedIndex: 1);
 
         WorkspaceRestoreResult restored = WorkspaceService.Restore(document, services.GetRequiredService<ISessionFactory>());
