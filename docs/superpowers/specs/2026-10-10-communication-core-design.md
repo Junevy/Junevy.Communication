@@ -107,6 +107,9 @@ graph TB
 | `Junevy.Communication.Mqtt` / `.OpcUa` / `.Ftp` | SDK 适配：只做客户端，**只面向 net8.0**（Q9–Q12）                                                 | Core + 对应第三方 SDK（MQTTnet 5、OPC Foundation .NET Standard 2.0、FluentFTP）                                           | P6       |
 | `Junevy.Communication.Modbus`                   | Plc + Tcp + Udp + Serial，3.0.0-preview.1（P7 已迁移，见 20.12） | MBAP 与 RTU 帧；2.x 只保留在 tag `modbus-v2.0.0` | P7 已完成 |
 | `Junevy.Communication.Testing`                  | 测试套件（内部共享测试工程，暂不发布）                                                                 | Channels                                                                                                    | P1 起持续扩充 |
+| `Tools/Junevy.Communication.DebugAssistant` | 调试助手（WPF，WinExe，不打包）：19 种页签、报文与日志面板、工作区、模拟设备页 | 全部协议包的公开 API、Junevy.Controls、CommunityToolkit.Mvvm、Microsoft.Extensions.Hosting | 调试助手（本期） |
+| `Tools/Junevy.Communication.DebugAssistant.Simulators` | 模拟设备：Modbus、MC、S7、FINS 从站的引擎、存储区、故障注入与宿主（不引用协议包与 WPF） | Core、Channels、Tcp、Udp、Serial 的公开 API | 调试助手（本期） |
+| `Junevy.Communication.Testing.Servers` | 进程内服务器替身：MQTT Broker、OPC UA 服务器、FTP 模拟服务器（测试用，不打包） | MQTTnet.Server、OPC Foundation 服务器包、测试用 FTP 替身 | 测试辅助（本期） |
 
 **依赖规则**：
 - 只允许向下依赖；同层协议包之间互不引用。
@@ -144,6 +147,11 @@ Tests/                          （测试项目统一放在物理目录 Tests/ �
   Junevy.Communication.Testing/   （测试套件，见第 13 节）
   Junevy.Communication.Core.Tests/  .Channels.Tests/  .Tcp.Tests/  .Udp.Tests/  .Serial.Tests/
   Junevy.Communication.Modbus.Tests/
+  Junevy.Communication.Testing.Servers/       进程内服务器替身：MQTT、OPC UA、FTP（Task 16）
+  Junevy.Communication.DebugAssistant.Tests/  调试助手的测试
+Tools/                                        调试助手（本期新增，不打包）
+  Junevy.Communication.DebugAssistant/            WinExe，WPF
+  Junevy.Communication.DebugAssistant.Simulators/ 模拟设备，不引用协议包与 WPF
 ```
 
 ---

@@ -1293,6 +1293,23 @@ internal interface ISimulatorEngine
 - 库未改动：库项目没有任何改动（DA-D15）。
 - 摩擦记录：F-20 新增（列目录的 550 静默返回空列表，待决定）；F-18 仍待决定。
 
+**Task 20（文档）**
+
+- 做了什么：
+  - 新增 `Tools/README.md`：用途、运行要求（.NET 8 SDK 与桌面运行时、ASP.NET Core 运行时 8、Junevy.Controls 3.3.0）、启动命令、界面、19 种页签（按分组列出）、报文截断的限制、模拟设备与故障注入、工作区文件位置、测试命令与串口环境变量、新增一种页签的四步（DA-D19）、已知限制（F-18、F-20，S7 与 FINS 未经真机，不包含的角色）。
+  - 根目录 `readme.md`：新增 "Tools" 一节，指向 `Tools/README.md`。
+  - 设计文档第 3 节：3.1 程序集表加三行（调试助手、模拟器、测试服务器）；3.2 目录树加入 `Tools/` 与两个测试项目。目录树中没有 `Junevy.Communication.Test` 这一行，无需删除。
+  - CHANGELOG：Task 20 条目；新增"删除（Removed）"小节（旧工具 Task 8，占位页签 Task 19）。
+  - Skills 检查：`Skills/` 下只有协议 Skill（`using-junevy-*`：channels、ftp、modbus、mqtt、opcua、plc、secs、webapi），没有对旧工具或调试助手的引用；库未改动，协议 Skill 无需更新。仓库中（排除计划、CHANGELOG 与知识库）对 `Junevy.Communication.Test` 的引用只剩 `.zcodeignore` 中同步自 `.gitignore` 的一行旧目录忽略规则，无害，未改动。
+  - 知识库（只写不提交）：`项目概述/技术栈与仓库结构`（链接、解决方案项目数 18 → 38、目录树、旧工具一节改为调试助手一节）；`测试/测试工程与验收方式`（两个测试项目替换旧工具行；构建警告一节待 Task 21 复测后更新）；`Agent协作/开发约定与验收基线`（警告排除列表去掉旧工具，新增"工具项目（Tools/）约定"一节）；`项目概述/待办与路线图`（第 2 行的状态与缺口，指向第 32 节）；新增 `工具/调试助手.md`；`知识库首页.md` 加入版本说明、"从这里开始"与"工具"分类，篇数由 39 改为 43。
+- 测试：文档任务，没有代码改动；DebugAssistant 测试结果见 Task 21。
+- 偏差与需要审阅者决定的事：
+  1. 计划 DA-D19 写的是 `AddKeyedTransient<SessionViewModel, T>(kind)`，实现中是 `SessionRegistration.Pages` 工厂表加目录循环注册键控服务（`AddKeyedTransient<SessionViewModel>(kind, factory)`）。效果相同：缺工厂时启动即失败。README 与 `工具/调试助手.md` 按实际实现描述。
+  2. 知识库的路线图文件在本期开始前就有用户未提交的修改。只改了第 2 行的状态与缺口两格，没有新增行，未暂存；该表第 2 行前原有的空行未改动。
+  3. `知识库首页.md` 原写"共 39 篇"，与目录实际的 42 篇（含 10 篇 Modbus v2 归档）不符；现改为 43 篇（含新增的调试助手）。
+- 库未改动（DA-D15）。
+- 摩擦记录：本 Task 没有新的摩擦。
+
 ### 33.4 基线与度量（执行者填写）
 
 基线（改动前，提交 `fe82d79`），由 `build/metrics` 的脚本统计，生产代码范围为 Core、Channels、Tcp、Udp、Serial、Plc、Melsec 的 `*.cs`（213 个文件，排除 obj、bin）：
