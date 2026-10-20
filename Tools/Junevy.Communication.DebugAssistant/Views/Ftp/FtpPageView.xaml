@@ -113,7 +113,7 @@
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel>
                             <WrapPanel>
-                                <jv:TextBox Width="170" atc:TitleAssist.Title="新建目录（可写 a/b，逐级创建）"
+                                <jv:TextBox Width="200" atc:TitleAssist.Title="新建目录（可写 a/b，逐级创建）"
                                             Text="{Binding NewDirectoryName, UpdateSourceTrigger=PropertyChanged}" />
                                 <jv:Button Content="新建目录" Command="{Binding CreateDirectoryCommand}" Margin="0,22,0,12" />
                             </WrapPanel>
