@@ -367,7 +367,7 @@ public sealed partial class TcpServerSessionViewModel : SessionViewModel
 
         StatisticsText = State == SessionState.Running
             ? $"会话 {Sessions.Count} 个（最大 {(Settings.MaxSessions == 0 ? "不限" : Settings.MaxSessions.ToString())}）"
-            : StateText;
+            : string.Empty;
     }
 
     /// <summary>准备要发送的字节：先按编码解析，再追加校验（DA-D12）。格式错误时记入操作记录。</summary>

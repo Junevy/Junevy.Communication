@@ -25,7 +25,7 @@ public sealed class SimulatorPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new SimulatorPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             LogPanel? panel = VisualTree.FindChild<LogPanel>(view);
@@ -42,7 +42,7 @@ public sealed class SimulatorPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new SimulatorPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
             var words = (DataGrid)view.FindName("WordGrid")!;
             var bits = (DataGrid)view.FindName("BitGrid")!;
             var bytes = (DataGrid)view.FindName("ByteGrid")!;
@@ -64,11 +64,11 @@ public sealed class SimulatorPageViewTests
         UiThread.Invoke(() =>
         {
             var modbusView = new SimulatorPageView { DataContext = modbus };
-            VisualTree.Layout(modbusView);
+            VisualTree.LayoutExpanded(modbusView);
             Assert.Equal(Visibility.Collapsed, ((WrapPanel)modbusView.FindName("DataBlockPanel")!).Visibility);
 
             var s7View = new SimulatorPageView { DataContext = s7 };
-            VisualTree.Layout(s7View);
+            VisualTree.LayoutExpanded(s7View);
             Assert.Equal(Visibility.Visible, ((WrapPanel)s7View.FindName("DataBlockPanel")!).Visibility);
         });
     }

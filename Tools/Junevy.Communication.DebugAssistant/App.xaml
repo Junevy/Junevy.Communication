@@ -5,6 +5,7 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="/Junevy.Controls;component/Themes/Generic.xaml" />
+                <ResourceDictionary Source="/Junevy.Communication.DebugAssistant;component/Views/Shared/FormResources.xaml" />
                 <ResourceDictionary Source="/Junevy.Communication.DebugAssistant;component/Views/DataTemplates.xaml" />
                 <ResourceDictionary Source="/Junevy.Communication.DebugAssistant;component/Views/Channels/ChannelSettingsResources.xaml" />
             </ResourceDictionary.MergedDictionaries>

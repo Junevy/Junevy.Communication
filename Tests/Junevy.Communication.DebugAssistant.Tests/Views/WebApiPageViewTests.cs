@@ -22,7 +22,7 @@ public sealed class WebApiPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new RestClientPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             LogPanel? panel = VisualTree.FindChild<LogPanel>(view);
@@ -39,7 +39,7 @@ public sealed class WebApiPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new SoapClientPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             LogPanel? panel = VisualTree.FindChild<LogPanel>(view);
@@ -56,7 +56,7 @@ public sealed class WebApiPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new WebApiServerPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             var routes = (DataGrid)view.FindName("RouteGrid")!;
             Assert.Equal(2, routes.Items.Count);

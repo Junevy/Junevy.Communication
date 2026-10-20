@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Media;
+using Junevy.Controls.Controls.Box;
+using Junevy.Controls.Controls.Expander;
 
 namespace Junevy.Communication.DebugAssistant.Tests.Support;
 
@@ -34,5 +36,37 @@ internal static class VisualTree
         element.Measure(new Size(1000, 800));
         element.Arrange(new Rect(0, 0, 1000, 800));
         element.UpdateLayout();
+    }
+
+    /// <summary>
+    /// 先展开视图中所有折叠的 <see cref="ExpanderPanel"/> 与 <see cref="GroupBox"/>，再排列。
+    /// 折叠区域的内容不在视觉树中（日志面板、监控表等默认折叠），需要检查其中内容的测试使用本方法。
+    /// </summary>
+    public static void LayoutExpanded(FrameworkElement element)
+    {
+        ExpandCollapsed(element);
+        Layout(element);
+    }
+
+    /// <summary>沿逻辑树展开全部折叠的分组：逻辑树不受折叠影响，因此能找到尚未进入视觉树的内容。</summary>
+    private static void ExpandCollapsed(DependencyObject node)
+    {
+        switch (node)
+        {
+            case ExpanderPanel expander:
+                expander.IsExpanded = true;
+                break;
+            case GroupBox group:
+                group.IsCollapsed = false;
+                break;
+        }
+
+        foreach (object child in LogicalTreeHelper.GetChildren(node))
+        {
+            if (child is DependencyObject nested)
+            {
+                ExpandCollapsed(nested);
+            }
+        }
     }
 }

@@ -18,7 +18,7 @@ public sealed class SessionViewTests
         UiThread.Invoke(() =>
         {
             var view = new TcpClientPageView { DataContext = session };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             var panel = VisualTree.FindChild<LogPanel>(view);
             Assert.NotNull(panel);

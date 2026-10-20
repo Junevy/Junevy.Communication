@@ -17,7 +17,7 @@ public sealed class FtpPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new FtpPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             LogPanel? panel = VisualTree.FindChild<LogPanel>(view);

@@ -20,7 +20,7 @@ public sealed class SiemensAndFinsPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new S7PageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             LogPanel? panel = VisualTree.FindChild<LogPanel>(view);
@@ -37,7 +37,7 @@ public sealed class SiemensAndFinsPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new FinsPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Equal(18, ((DataGrid)view.FindName("AreaGrid")!).Items.Count);
         });

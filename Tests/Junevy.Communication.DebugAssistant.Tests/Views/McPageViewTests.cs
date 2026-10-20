@@ -27,7 +27,7 @@ public sealed class McPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new McPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             LogPanel? panel = VisualTree.FindChild<LogPanel>(view);
@@ -45,7 +45,7 @@ public sealed class McPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new McPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
             var frames = (ComboBox)view.FindName("FrameBox")!;
             Assert.Equal(2, frames.Items.Count);
 
@@ -69,7 +69,7 @@ public sealed class McPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new McPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
             var sumCheck = (CheckBox)view.FindName("SumCheckBox")!;
             var serialStations = (StackPanel)view.FindName("SerialStationPanel")!;
             Assert.Equal((false, Visibility.Collapsed), (sumCheck.IsEnabled, serialStations.Visibility));

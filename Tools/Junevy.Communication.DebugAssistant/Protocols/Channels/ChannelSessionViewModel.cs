@@ -362,7 +362,7 @@ public abstract partial class ChannelSessionViewModel : SessionViewModel
     {
         ConnectionStatistics? stats = _channel?.Statistics;
         StatisticsText = stats is null
-            ? "未连接"
+            ? string.Empty
             : $"发送 {stats.FramesSent} 帧 / {stats.BytesSent} 字节（最后 {FormatTime(stats.LastSentAt)}），" +
               $"接收 {stats.FramesReceived} 帧 / {stats.BytesReceived} 字节（最后 {FormatTime(stats.LastReceivedAt)}），" +
               $"丢弃 {stats.FramesDropped}，协议错误 {stats.ProtocolErrors}，重连 {stats.ReconnectCount}，" +

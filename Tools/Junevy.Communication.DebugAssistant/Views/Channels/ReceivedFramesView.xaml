@@ -1,0 +1,17 @@
+<UserControl x:Class="Junevy.Communication.DebugAssistant.Views.Channels.ReceivedFramesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:jv="github.com.junevy">
+    <!-- 收到的帧（页签的 ReceivedFrames）。 -->
+    <DockPanel>
+        <jv:TextBlock DockPanel.Dock="Top" Style="{StaticResource Text.Section}" Text="收到的帧" />
+        <DataGrid ItemsSource="{Binding ReceivedFrames}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="时间" Binding="{Binding Time, StringFormat=HH:mm:ss.fff}" Width="100" />
+                <DataGridTextColumn Header="来源" Binding="{Binding Source}" Width="140" />
+                <DataGridTextColumn Header="HEX" Binding="{Binding Hex}" Width="*" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

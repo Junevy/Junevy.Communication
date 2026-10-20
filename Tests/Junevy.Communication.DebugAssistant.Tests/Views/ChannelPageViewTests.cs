@@ -18,7 +18,7 @@ public sealed class ChannelPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new TcpClientPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             AssertLogPanelBound(view, page);
@@ -34,7 +34,7 @@ public sealed class ChannelPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new UdpPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             AssertLogPanelBound(view, page);
@@ -50,7 +50,7 @@ public sealed class ChannelPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new SerialPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             AssertLogPanelBound(view, page);
@@ -66,7 +66,7 @@ public sealed class ChannelPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new TcpServerPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             AssertLogPanelBound(view, page);

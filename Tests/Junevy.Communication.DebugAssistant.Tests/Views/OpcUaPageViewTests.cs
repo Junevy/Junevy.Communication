@@ -22,7 +22,7 @@ public sealed class OpcUaPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new OpcUaPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             LogPanel? panel = VisualTree.FindChild<LogPanel>(view);
@@ -40,7 +40,7 @@ public sealed class OpcUaPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new OpcUaPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             TreeView? tree = VisualTree.FindChild<TreeView>(view);
             Assert.NotNull(tree);

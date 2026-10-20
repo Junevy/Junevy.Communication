@@ -19,7 +19,7 @@ public sealed class MqttPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new MqttPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             LogPanel? panel = VisualTree.FindChild<LogPanel>(view);

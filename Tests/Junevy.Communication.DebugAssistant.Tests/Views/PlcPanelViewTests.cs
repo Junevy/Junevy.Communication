@@ -16,7 +16,7 @@ public sealed class PlcPanelViewTests
         UiThread.Invoke(() =>
         {
             var view = new PlcPanelView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             Assert.NotNull(VisualTree.FindChild<DataGrid>(view));

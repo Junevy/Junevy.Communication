@@ -35,6 +35,15 @@
 
 - 2026-10-20 [DebugAssistant] 旧工具 `Junevy.Communication.Test` 已删除（Task 8；其功能由 Modbus 页覆盖，历史版本留在 git 中）；占位页签 `PlaceholderSessionViewModel` 与 `PlaceholderSessionView` 已删除（Task 19）。
 
+### 变更（Changed）
+
+- 2026-10-20 [DebugAssistant] 界面调整（按使用反馈，计划外）：所有页签的控件改用 Junevy.Controls 的 `jv:` 控件（`jv:Button`、`jv:TextBox`、`jv:ComboBox`、`jv:CheckBox`、`jv:TextBlock`、`jv:ToggleButton`、`jv:TabControl`、`jv:GroupBox`、`jv:ExpanderPanel`、`jv:CodeEditor`）；字段名统一放在输入框上方（`atc:TitleAssist.Title`），`jv:Label` 只用于状态标签。只剩 OPC UA 浏览树使用官方 `TreeView`：`jv:TreeView` 只接受 `TreeMenuItem`，而浏览树绑定的是 OPC UA 节点模型。
+- 2026-10-20 [DebugAssistant] 布局：每页为左侧设置（次要设置放在可折叠的 `jv:GroupBox` 中，默认折叠）、中间的主要操作与列表、右侧的结果与日志；底部"报文与日志"放在 `jv:ExpanderPanel` 中并默认折叠（展开后显示，三栏因此多出约 260 DIP）；操作记录固定 130 DIP。共用样式 `Views/Shared/FormResources.xaml`（在 `App.xaml` 中合并）：输入项间距 16 / 12 DIP；分组标题、小节标题（`Text.Section`）、字段标题与提示（`Text.Hint`）四级层次；卡片 `Panel.Card`。模拟设备页签改用 `jv:TabControl`，页签不可关闭（`CanClose="False"`）。收到的帧列表抽成共用的 `ReceivedFramesView`，TCP 客户端、UDP、串口与 TCP 服务端共用。
+- 2026-10-20 [DebugAssistant] 修正（界面调整时发现）：嵌套在分组视图中的分帧、心跳、套接字与握手视图，其文本框绑定未生效（`BindingStatus.Unattached`，字段显示为空且不写回编辑器）。原因是 `UserControl` 元素上的 `DataContext` 绑定；现改由带 `DataContext` 绑定的 `StackPanel` 承载，与关联、重连、超时与 TLS 分组的写法一致（`ChannelSettingsView.xaml`、`TcpServerSettingsView.xaml`）。
+- 2026-10-20 [DebugAssistant] 字段宽度与标题修正：FTP 的文件名编码、MQTT 的 QoS 与遗嘱 QoS、MC 的帧类型、SOAP 的版本与地址、REST 的基地址与脱敏项、OPC UA 的端点、应用名与订阅参数不再被截断；MC、Modbus、S7 与 FINS 的通道参数标题缩短为"通道参数（超时、心跳、重连、TLS）"；FTP 的文件与目录操作区可滚动。
+- 2026-10-20 [DebugAssistant] 统计文字：通道页签未连接时、TCP 服务端未运行时，连接栏的统计文字留空，不再重复显示状态文字（`ChannelSessionViewModel`、`TcpServerSessionViewModel`）。
+- 2026-10-20 [Tests] 界面快照 `UiSnapshotTests`（设置 `JUNEVY_UI_SNAPSHOT_DIR` 后把 19 个页签渲染为 PNG，未设置时跳过）；`VisualTree.LayoutExpanded` 先展开折叠的 `ExpanderPanel` 与 `GroupBox` 再排列（折叠区域的内容不在视觉树中，视图测试查找日志面板与监控表时使用）；新增 `ChannelSettingsViewTests.View_BindsEveryNestedTextBoxToItsEditor`。DA 测试：934 通过，0 失败，1 跳过（快照测试，未设置环境变量）；设置 `JUNEVY_SERIAL_PAIR=COM20,COM21` 时串口测试一并运行。
+
 ## [Unreleased] — Channels：连接丢失后当场离开 Connected（重试等待重建的连接）
 
 ### 修复（Fixed）

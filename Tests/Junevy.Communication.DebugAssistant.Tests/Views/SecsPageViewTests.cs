@@ -23,7 +23,7 @@ public sealed class SecsPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new SecsPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
             LogPanel? panel = VisualTree.FindChild<LogPanel>(view);
@@ -40,7 +40,7 @@ public sealed class SecsPageViewTests
         UiThread.Invoke(() =>
         {
             var view = new SecsPageView { DataContext = page };
-            VisualTree.Layout(view);
+            VisualTree.LayoutExpanded(view);
             var grid = (DataGrid)view.FindName("RuleGrid")!;
             Assert.Empty(grid.Items);
 

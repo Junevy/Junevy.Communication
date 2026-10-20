@@ -6,20 +6,19 @@
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
     </UserControl.Resources>
     <DockPanel>
-        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
-            <jv:ToggleButton Content="暂停" IsChecked="{Binding IsPaused}" Margin="0,0,8,0" />
-            <jv:Button Content="清空" Command="{Binding ClearCommand}" Margin="0,0,8,0" />
-            <jv:Button Content="导出" Command="{Binding ExportCommand}" Margin="0,0,16,0" />
-            <CheckBox Content="报文" IsChecked="{Binding ShowFrames}" VerticalAlignment="Center" Margin="0,0,12,0" />
-            <CheckBox Content="日志" IsChecked="{Binding ShowLogs}" VerticalAlignment="Center" Margin="0,0,12,0" />
-            <ComboBox ItemsSource="{Binding Levels}" SelectedItem="{Binding MinimumLevel}" Width="120" Margin="0,0,16,0" />
-            <CheckBox Content="HEX" IsChecked="{Binding ShowHex}" VerticalAlignment="Center" Margin="0,0,12,0" />
-            <CheckBox Content="ASCII" IsChecked="{Binding ShowAscii}" VerticalAlignment="Center" Margin="0,0,12,0" />
-            <CheckBox Content="时间戳" IsChecked="{Binding ShowTimestamps}" VerticalAlignment="Center" />
+        <WrapPanel DockPanel.Dock="Top" VerticalAlignment="Center">
+            <jv:ToggleButton Content="暂停" IsChecked="{Binding IsPaused}" Margin="0,0,8,12" />
+            <jv:Button Content="清空" Command="{Binding ClearCommand}" Margin="0,0,8,12" />
+            <jv:Button Content="导出" Command="{Binding ExportCommand}" Margin="0,0,24,12" />
+            <jv:CheckBox Content="报文" IsChecked="{Binding ShowFrames}" />
+            <jv:CheckBox Content="日志" IsChecked="{Binding ShowLogs}" />
+            <jv:ComboBox ItemsSource="{Binding Levels}" SelectedItem="{Binding MinimumLevel}" Width="120" Margin="0,0,24,12" />
+            <jv:CheckBox Content="HEX" IsChecked="{Binding ShowHex}" />
+            <jv:CheckBox Content="ASCII" IsChecked="{Binding ShowAscii}" />
+            <jv:CheckBox Content="时间戳" IsChecked="{Binding ShowTimestamps}" />
         </WrapPanel>
 
-        <jv:TextBlock DockPanel.Dock="Top" Text="{Binding StatisticsText}" Margin="0,0,0,6"
-                      Foreground="{DynamicResource Theme.Brush.Text.Secondary}" />
+        <jv:TextBlock DockPanel.Dock="Top" Text="{Binding StatisticsText}" Style="{StaticResource Text.Hint}" />
 
         <DataGrid ItemsSource="{Binding Entries}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
                   VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
