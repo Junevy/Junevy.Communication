@@ -98,7 +98,9 @@ public sealed class WorkspaceStoreTests : IDisposable
 
         foreach (Type settingsType in settingsTypes)
         {
-            foreach (PropertyInfo property in settingsType.GetProperties().Where(p => p.Name.Contains("Password", StringComparison.OrdinalIgnoreCase)))
+            // 以 Variable 结尾的属性保存的是环境变量的名称（口令本身只在创建时从环境变量读取），名称不是口令，可以写入文件。
+            foreach (PropertyInfo property in settingsType.GetProperties().Where(p =>
+                p.Name.Contains("Password", StringComparison.OrdinalIgnoreCase) && !p.Name.EndsWith("Variable", StringComparison.OrdinalIgnoreCase)))
             {
                 Assert.NotNull(property.GetCustomAttribute<JsonIgnoreAttribute>());
             }

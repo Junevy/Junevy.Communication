@@ -1241,6 +1241,34 @@ internal interface ISimulatorEngine
 - 库未改动：库项目的 `git diff --stat` 为空（DA-D15）。
 - 摩擦记录：F-18（MQTT 的恢复订阅数量没有公开，需要库的改动，待决定）、F-19（`sbyte[]` 满足 `is byte[]`，宿主要按精确类型判断）。
 
+**Task 18（WebApi 三个页）**
+
+- 做了什么：
+  - `Protocols/WebApi/WebApiSettings`：共用的子记录 `WebApiAuthSettings`、`WebApiEnvelopeSettings`、`WebApiRetrySettings`、`WebApiLogSettings`（认证只保存环境变量名）；`RestClientSettings`（`restClient`）、`SoapClientSettings`（`soapClient`）、`WebApiServerSettings`（`webApiServer`，含路由表）、`ServerRouteSettings`（`KindText` 不写入文件）、`ServerRouteKind`、`WebApiDeduplicationSettings`。
+  - `Protocols/WebApi/WebApiSupport`（公开静态：参数到库选项的映射、路由与 JSON 的校验、状态与时间线的文字，见偏差 1）、`WebApiRows`（查询参数与请求头的行、时间线的行、服务端请求日志的行）。
+  - `RestClientSessionViewModel`、`SoapClientSessionViewModel`、`WebApiServerSessionViewModel`：三个页签。库的事件先经界面派发；REST 与 SOAP 在创建客户端后先订阅事件，再读取可用性（README "Availability"）。
+  - `Views/WebApi/*`：三个视图；JSON 与 XML 正文用 `jv:CodeEditor`（`SyntaxLanguage="Json"`、`"Xml"`）。注册（`RestClient`、`SoapClient`、`HttpServer`）、工作区的 JSON 类型与数据模板。
+  - `Tests/Support/ScriptedHttpHandler`：脚本化的 HTTP 处理器，经 `WebApiComponents.HttpHandler` 注入 SOAP 页的测试；不开启套接字。
+- 测试（新增 45 条，全部通过）：
+  - 纯逻辑 `WebApiSupportTests` 16 条：路由校验（方法、模板、固定 JSON、状态码范围、业务失败的业务码与消息、延迟）、JSON 显示、列表与行的解析、状态与时间线的文字、认证参数的映射、服务端参数的校验。
+  - `RestClientSessionViewModelTests` 5 条：默认值、设置往返（数组字段按 JSON 比较）、基地址为空被拒绝并记录、未连接时不能发送、查询参数与请求头的增删。
+  - `SoapClientSessionViewModelTests` 4 条：SOAPAction 与信封、SOAP 1.2 的 Content-Type 与信封、Fault 为 `RemoteError` 且远端码为 fault code、Fault 不重试、空 SOAPAction 与非法 XML 都不发送。
+  - `WebApiServerSessionViewModelTests` 7 条：默认状态与两条默认路由、登记与删除及不合法路由的原因、同一方法与模板替换、运行中不能修改路由、端口 0 显示实际地址、模板冲突与没有路由时启动被拒绝。
+  - `WebApiEndToEndTests` 9 条（REST 页与服务端页在回环地址上通信）：固定响应与回显（服务端请求日志为"成功"）；业务失败加信封（HTTP 200，远端码 E100，日志为"业务失败"）；指定状态码 201；超过 `RequestTimeout` 的 504（日志为"超时"）；Bearer 无令牌得 401、有令牌得 200；健康检查使可用性变为在线；带幂等键的 POST 在 503 时重试并成功，不带幂等键的 POST 只发送一次；去重：同键同体返回第一次的响应（日志为"去重重放"），同键异体得 422。
+  - 视图 `WebApiPageViewTests` 3 条：三个视图加载并绑定到页签，服务端路由表显示两条默认路由；工作区往返 `WebApiSettingsStoreTests` 1 条。
+  - 验证：DebugAssistant 测试项目 877 条通过，0 失败，15 跳过（串口对未设置，与 Task 17 相同）；构建 0 错误、0 警告。
+- 偏差与需要审阅者决定的事：
+  1. 计划第 7.11 节列了四种响应方式（固定 JSON、回显、业务失败、指定状态码）与"延迟毫秒数"。实现中延迟是每条路由都可设的字段（正交），而不是第五种方式。回显对 GET 与 DELETE 返回方法、路径与查询参数（这两种请求没有正文）。
+  2. 服务端处理器的返回类型统一为 `object`（JSON 用 `JsonElement`）：固定 JSON、回显与空数据（204）都经库的序列化器写出，不必为每种响应生成强类型。
+  3. 路由表随工作区保存（它是配置，运行中不能修改）；请求日志不保存。登记同一方法与模板的路由时替换原有的一条（与 SECS 规则表一致）。库认为相同的模板（例如 `/orders` 与 `/orders/`）在启动时被拒绝，原因写在操作记录里。
+  4. 计划第 7.9 节没有要求"以文本显示响应"，实现中增加了复选框 `ResponseAsText`：以 `string` 接收响应，不解析 JSON，也不取业务信封的数据，与 README 的响应数据表一致。请确认是否保留。
+  5. SOAP 页的测试钩子是构造函数的可选参数 `HttpMessageHandler`，注册时为空；正式运行时库使用自己的处理器。
+  6. 凭据与口令只保存环境变量的名称。`WorkspaceStoreTests.PasswordFields_OfEverySettingsType_AreNotWritten` 原本要求所有名称含 `Password` 的参数属性都标记 `[JsonIgnore]`。新增的 `PasswordVariable` 与 `CertificatePasswordVariable` 保存的是环境变量名，不是口令，因此把该测试收窄为"不以 `Variable` 结尾的属性"。这是对既有测试的改动，请审阅。
+  7. 两个依赖时序的端到端用例（带幂等键的 POST 重试；不带幂等键的 POST 不重试）：慢请求占住唯一的并发位置 1.5 秒，POST 在 300 毫秒后发出。三次运行中都通过，但有时序风险；若在其它机器上不稳定，应改为脚本化的替身，而不是调整等待时间。
+  8. 没有 HTTPS 的端到端测试（需要证书；库的 HTTPS 行为由库的测试覆盖）。页签只把证书路径与口令变量名传给库。
+- 库未改动：库项目的 `git diff --stat` 为空（DA-D15）。
+- 摩擦记录：本 Task 没有新的摩擦（F-18 仍待决定）。
+
 ### 33.4 基线与度量（执行者填写）
 
 基线（改动前，提交 `fe82d79`），由 `build/metrics` 的脚本统计，生产代码范围为 Core、Channels、Tcp、Udp、Serial、Plc、Melsec 的 `*.cs`（213 个文件，排除 obj、bin）：

@@ -19,7 +19,9 @@
                     xmlns:mqtt="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Mqtt"
                     xmlns:mqttViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Mqtt"
                     xmlns:opcua="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.OpcUa"
-                    xmlns:opcuaViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.OpcUa">
+                    xmlns:opcuaViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.OpcUa"
+                    xmlns:webApi="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.WebApi"
+                    xmlns:webApiViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.WebApi">
 
     <!-- 页签内容：按视图模型类型选择视图（计划第 5.2 节）。每种页签完成后在这里加一条。 -->
     <DataTemplate DataType="{x:Type sessions:PlaceholderSessionViewModel}">
@@ -68,6 +70,18 @@
 
     <DataTemplate DataType="{x:Type opcua:OpcUaSessionViewModel}">
         <opcuaViews:OpcUaPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type webApi:RestClientSessionViewModel}">
+        <webApiViews:RestClientPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type webApi:SoapClientSessionViewModel}">
+        <webApiViews:SoapClientPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type webApi:WebApiServerSessionViewModel}">
+        <webApiViews:WebApiServerPageView />
     </DataTemplate>
 
     <DataTemplate DataType="{x:Type channels:TcpServerSessionViewModel}">

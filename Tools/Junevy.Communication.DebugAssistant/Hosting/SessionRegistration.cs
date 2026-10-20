@@ -7,6 +7,7 @@ using Junevy.Communication.DebugAssistant.Protocols.OpcUa;
 using Junevy.Communication.DebugAssistant.Protocols.Simulators;
 using Junevy.Communication.DebugAssistant.Protocols.Secs;
 using Junevy.Communication.DebugAssistant.Protocols.Siemens;
+using Junevy.Communication.DebugAssistant.Protocols.WebApi;
 using Junevy.Communication.DebugAssistant.Sessions;
 using Junevy.Communication.DebugAssistant.Shell;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,6 +32,9 @@ internal static class SessionRegistration
         [ProtocolKind.FinsSlave] = (descriptor, services) => new SimulatorSessionViewModel(descriptor, services),
         [ProtocolKind.TcpServer] = (descriptor, services) => new TcpServerSessionViewModel(descriptor, services),
         [ProtocolKind.Secs] = (descriptor, services) => new SecsSessionViewModel(descriptor, services),
+        [ProtocolKind.RestClient] = (descriptor, services) => new RestClientSessionViewModel(descriptor, services),
+        [ProtocolKind.SoapClient] = (descriptor, services) => new SoapClientSessionViewModel(descriptor, services),
+        [ProtocolKind.HttpServer] = (descriptor, services) => new WebApiServerSessionViewModel(descriptor, services),
         [ProtocolKind.Mqtt] = (descriptor, services) => new MqttSessionViewModel(descriptor, services),
         [ProtocolKind.OpcUa] = (descriptor, services) => new OpcUaSessionViewModel(descriptor, services),
         [ProtocolKind.Serial] = (descriptor, services) => new SerialSessionViewModel(descriptor, services),
