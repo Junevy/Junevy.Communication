@@ -7,17 +7,24 @@ tags: [协议细节, Junevy.Communication, OpcUa, OPC UA]
 `Junevy.Communication.OpcUa` 是本库第二个 **SDK 适配包**（P6.2）：只做客户端，**只面向 net8.0**。协议本身由 [OPC Foundation .NET Standard Stack 2.0.x](https://github.com/OPCFoundation/UA-.NETStandard)（MIT）实现，本包是一层薄适配——公开 API 里没有 SDK 类型，所有失败都翻译成 Core 的 `CommResult`。
 
 > 版本 `1.0.0-preview.1`。**只与进程内托管的官方服务器联调过，没有对 KEPServerEX / Prosys / 西门子 / 倍福等真实服务器验证过。**
-> **只支持 `None` 安全策略与匿名登录**；很多现场服务器默认关掉了 `None`，这种连接直接返回 `NotSupported`，连请求都不会发。
+> **只支持 `None` 安全策略**，登录方式为匿名或用户名密码（2026-10-26 起）；很多现场服务器默认关掉了 `None`，或只在加密连接上接受用户名，这种连接直接返回 `NotSupported`，连请求都不会发。
 
 ## 连接流程（P62-D3）
 
-① 用 `EndpointUrl` 发现端点 → ② 自己挑出 `SecurityMode = None` 且 `SecurityPolicyUri = None` 的端点 → ③ 检查它是否提供匿名用户令牌策略 → ④ 建会话。
+① 用 `EndpointUrl` 发现端点 → ② 自己挑出 `SecurityMode = None` 且 `SecurityPolicyUri = None` 的端点 → ③ 检查它是否提供选项要的用户令牌策略（`UserName` 为 null 时匿名，否则用户名）→ ④ 建会话。
 
 **②③ 必须由本包判定**：实测"只开放加密端点""不允许匿名"这两种服务器配置下，SDK 的 `ConnectAsync` 都是**一直阻塞**到调用方令牌触发，拿不到任何状态码（计划 F2）。照"等 SDK 报错再分类"写，三条否定用例一条都测不了。
 
 `UseEndpoint(url, mode, policy)` 之后 **服务器报告的主机名与配置不同时，SDK 自己就把端点地址钉回发现地址**（计划 F19），因此第 ④ 步不需要本库改写。
 
-身份选择集中在 `Sdk/` 内的一个地方，以后加用户名登录只新增选项、不改已有公开 API。
+## 登录身份（2026-10-26 加用户名登录）
+
+- 公开 API 只多了 `OpcUaClientOptions.UserName` / `Password`：`UserName` 为 null（默认）即匿名；给了就不能是空白；只给 `Password` 不给 `UserName` 由校验器拒绝（多半是配置写漏，不悄悄按匿名处理）；`Password` 为 null 按空密码发送。范围由用户选定：**只在 `None` 安全策略上**，不连带安全连接。
+- **身份只在 `Sdk/OpcUaSdkIdentity` 一处决定**：端点筛选（第 ③ 步）问它要哪种令牌、会话用它造 `UserIdentity`、`NotSupported` 的消息用它说明缺的是 "anonymous login" 还是 "user name login"。别处不再判断身份。
+- 密码按 UTF-8 交给 SDK。令牌策略带安全策略时 SDK 用服务器证书加密密码（不需要客户端证书）；不带时在 `None` 通道上明文。官方服务器在 `None` 端点上给用户名令牌自动挂 `Basic256Sha256`（F35），所以测试走的是**加密**那条路，明文那条没有验证过。
+- **首次连接被拒不能等 SDK 自己停**（F34）：`ManagedSession` 把首次连接失败也交给重连策略，用户名或密码错时无限重试，`ConnectAsync` 挂到 `ConnectTimeout` 才以 `Timeout` 返回。`Sdk/OpcUaSdkReconnectPolicy` 包住 SDK 的 `ReconnectPolicy`：会话建立之前，状态码经 `OpcUaSdkErrorMap.KindOf` 归为 `AuthenticationFailed` 的就停止重试，`ConnectAsync` 随即以服务器的状态码（通常 `BadUserAccessDenied`）返回 `AuthenticationFailed`，约 1 个 `ReconnectInterval`（SDK 第一次问策略时拿到的还是 Good）。会话建立之后（`MarkEstablished`）不再拦截，P62-D2 的无限重连不变。这条也修正了"匿名被拒"原先同样表现为 `Timeout` 的问题。
+- 密码不进日志，也不进错误消息（测试断言）。
+- 测试服务器：`OpcUaTestServerOptions.UserName` / `Password` 设置后公布用户名策略并注册 `UserNamePasswordAuthenticator`；匿名验证器不受影响（F35 负控）。只公布用户名策略却不注册验证器时，SDK 的 `ConnectAsync` 会阻塞（F2）。
 
 ## NodeId 写法（P62-D5）
 
@@ -61,7 +68,7 @@ tags: [协议细节, Junevy.Communication, OpcUa, OPC UA]
 
 **`Reconnecting` 期间四个操作必须返回 `NotConnected`，而且拦截条件是"状态"而不是"有会话对象"**（计划 Task 7 的变异记录）：放开这一层之后，读请求会交给 SDK，而 SDK 的重连重试次数不限，那次读就一直挂下去（实测超过 5 分钟不返回）。
 
-`ConnectAsync` 在 `Connecting` / `Reconnecting` 期间返回 `InvalidRequest`（不排队），已 `Connected` 时直接成功。首次连接失败不启动重连（P6-C11）。
+`ConnectAsync` 在 `Connecting` / `Reconnecting` 期间返回 `InvalidRequest`（不排队），已 `Connected` 时直接成功。首次连接失败不启动重连（P6-C11）；首次连接进行中 SDK 自己会重试到 `ConnectTimeout`，但身份或证书类拒绝立即停止（见"登录身份"，F34）。
 
 **会话只在调用方还在等的时候挂上**（P6.2 验收 R1）：调用方因超时、取消或释放被摘出去之后，SDK 那条后台连接照样可能连上（端点发现不理令牌，F23）。最初的实现在后台任务里直接挂会话，结果是"调用方拿到 `Cancelled`，客户端却挂着一个会话、服务器上多一个会话"，再连一次还会把它覆盖成泄漏。现在后台任务只返回会话，由 `OpenAsync` 挂上；摘出去之后才连上的会话由续体当场关掉。
 
@@ -115,6 +122,8 @@ Junevy.Communication.OpcUa/
     OpcUaSdkConnection.cs        建配置 → 选端点 → 建会话 → 收状态
     OpcUaSdkSession.cs           ManagedSession 外面的薄壳
     OpcUaSdkConfiguration.cs     应用配置、遥测上下文、端点选择
+    OpcUaSdkIdentity.cs          登录身份的唯一选择点（匿名 / 用户名）
+    OpcUaSdkReconnectPolicy.cs   SDK 重连策略外面一层：首次连接被拒时停止重试
     OpcUaSdkOperations.cs        读写浏览的请求组装与逐项映射
     OpcUaSdkSubscribeRequest.cs  订阅请求的装配
     OpcUaSdkSubscription.cs      监控项、等待创建、交付通知、删除
@@ -149,4 +158,4 @@ Junevy.Communication.OpcUa/
 
 - 作者视角的坑与做法：[[Agent协作/新增协议指南]] 的"SDK 协议适配"一节
 - 复用件：Core 的 `CommResult`、`EventSubscribers`、`TimeoutScope`、`NamedFactory`
-- 设计：设计文档 `docs/superpowers/specs/2026-10-10-communication-core-design.md` 第 14.2 节与第 20.9 节"实施修订（P6.2）"；SDK 摩擦 F1–F29 见 `docs/superpowers/plans/2026-10-12-p62-opcua.md` 第 19.2.13 节；协议族的总体位置见 [[架构设计/通讯库总体架构（协议族）]]
+- 设计：设计文档 `docs/superpowers/specs/2026-10-10-communication-core-design.md` 第 14.2 节与第 20.9 节"实施修订（P6.2）"；SDK 摩擦 F1–F35 见 `docs/superpowers/plans/2026-10-12-p62-opcua.md` 第 19.2.13 节；协议族的总体位置见 [[架构设计/通讯库总体架构（协议族）]]
