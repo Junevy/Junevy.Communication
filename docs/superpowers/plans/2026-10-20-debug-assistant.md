@@ -1378,6 +1378,8 @@ Task 21 复测（2026-10-20，同一口径）：库的生产代码 diff 为空�
 
 执行者自查（2026-10-20）：`[x]` 表示已满足且有证据；`[ ]` 表示未满足，原因写在条目后。
 
+> 2026-10-25 收尾：下列未满足项已按用户授权逐条处理或决定接受，结论与证据见第 35.1 节（三遍全绿、验收走查 9 项与截图 22 张、架构测试负控、偏差的决定）。下面的原文保留 2026-10-20 的状态。
+
 - [ ] 第 0 节每条决策都已落实，偏差都写在第 33.3 节，并已得到审阅者同意。——未全部落实：DA-D19 的注册方式（工厂表加键控服务，见 Task 20 偏差 1）、DA-D12 与本节的 `InternalsVisibleTo` 冲突（第 33.3 节 Task 21 偏差 3）、生产重复窗口 90（目标 0，偏差 2）。偏差都已写入第 33.3 节，待审阅者同意。
 - [ ] 第 7 节功能矩阵：逐行可以操作，并能在报文、日志或操作记录中观察到效果。——自动化测试覆盖各页签的操作与效果；人工逐行操作未做。
 - [ ] 改名与关闭（DA-D8）在 19 种页签上都有效；工作区往返覆盖 19 种；密码不落盘。——改名与关闭的机制有测试（`MainWindowTabTests`），但没有逐种页签验证；工作区往返 19 种已覆盖（`AllKindsSettingsStoreTests`）；密码不落盘有测试（`WorkspaceStoreTests` 与各协议的设置往返）。
@@ -1392,4 +1394,44 @@ Task 21 复测（2026-10-20，同一口径）：库的生产代码 diff 为空�
 
 ### 35.1 各 Task 验收（审阅者填写）
 
-（空）
+**2026-10-25 收尾验收（用户授权：待决定事项由执行者代为决定并写入知识库）**
+
+决定（第 33.3 节 Task 21 的偏差与第 34 节未满足项）：
+
+1. **三遍未全绿 → 选 (a)，加固测试。** 加固的用例共 11 条（失败都来自全量并行时的墙钟与线程池饥饿，单独运行均通过），每条先找原因再改。原则：只放宽时限或改为"等到为止"，不放弃断言的含义；每处注释写明原失败的轮次。
+   - 库的测试：`OpcUaClientFactoryTests.AddOpcUaClients_PassesTheContainerLoggerFactoryThrough`（等 SDK 的异步告警出现）；`OpcUaTestServer` 就绪等待改为 60 秒时限（原为固定 60 次探测，约 20 秒放弃）；`StreamChannelTests.IdleGap_ContinuousBytes_NotSplit`（静默阈值 100 → 300 ms）；`HeartbeatTests.OnlyWhenIdle_SkipsWhenTraffic`（探测间隔 200 → 500 ms）；`TcpClientChannelLifecycleTests.SilentServer_HeartbeatFails_Reconnecting`（探测超时 200 → 1000 ms：超时取消探测时若帧仍在写出，按 D10 报告 `SendFailed`）；`SerialChannelTests.IdleGap_DefaultFraming_EndToEnd`（一次写入 "ABCD"，"连续字节不被切开"由 Channels 用例覆盖）；`HsmsActiveHandshakeTests.SelectRequest_…`（正常握手的 T6 400 → 3000 ms）；`MqttDisconnectTests.Disconnect_WhileConnecting_…`（等 Broker 清理会话）；`MqttReceiveTests.Receive_AFailingSubscriberDoesNotStopTheOthers`（等错误日志）；`LimitsAndTimeoutTests.StopPastItsDeadline_…`（等被摘出的处理器计数归零，时限 5 秒，处理器不被取消时仍失败）。
+   - DA 的测试：`MainWindowViewModelTests.CloseSession_WhenReleaseNeverFinishes_…`（上限 7 → 15 秒，下限 4 秒不变）。
+   - **未查明的一条**：`HsmsEquipmentActiveTests.CancellingTheStart_ReportsCancelledAndLeavesTheEquipmentStartable`（取消主动端的启动后再启动，等不到第二条连接）。全量并行时两次超时，放宽到 15 秒仍失败，说明不是慢；单独运行 25 次都通过。查过 `HsmsEquipment` 的启动、取消与停止路径和测试服务器 `SilentTcpServer`：曾怀疑"对端在 accept 之前重置连接会让接受循环退出"，但实测 Windows 上这种连接照常被接受，推断不成立，相关改动已撤回。等待恢复原值 5 秒，超时时报告第二次启动的结果、设备端状态与告警日志，留待下次复现时定位。
+   - **库的生产代码改了一处（本期唯一一处，按"代为决定"做出）**：`Junevy.Communication.OpcUa/Sdk/StatusNames` 不再用 `new StatusCode(code).SymbolicId`。原因：OPC UA SDK 2.0.1 的 `StatusCode` 与 `StatusCodes` 两个类型的静态构造函数互相引用，两个线程同时首次触及时，`StatusCode` 的静态构造函数可能把已登记的完整名称表重置为 31 项，此后本进程内其余的码都查不到名字（DA 全量并行时复现两次：`坏：0x80340000 (0x80340000)`，见 `OpcUaSupportTests.Status_IsDescribedWithItsCategoryAndSymbolicName`）。现在从 `StatusCodes` 的 274 个公开字段建表（字段自带符号名），查不到时再问 SDK，最后回退十六进制。新增 `StatusNamesTests`（每个字段的名字、标志位不影响名字、64 路并发查询）。公开 API 不变。
+2. **生产重复窗口 90 → 接受为已知技术债**，不在本期消除。主要来自 WebApi 三个页签的视图模型（61），消除需要共享基类，属于设计改动，列入路线图低优先级。测试的重复窗口 39 同样接受。
+3. **应用的一条 `InternalsVisibleTo` → 接受。** 约定禁止的是"生产程序集之间"的友元（P25-D2）；这一条是应用对自己的测试项目开放 DA-D12 的 internal 纯逻辑部件，与各库对 `<库>.Tests` 的友元同类。
+4. **其余页签的状态事件快照 → 本期修正。** MQTT、OPC UA、SECS 页签只应用与库当前状态一致的事件（它们要用事件里的原因文字），过期的旧事件丢弃；PLC、TCP 服务端、WebApi 服务端页签直接读取当前状态。回归测试 `PlcSessionViewModelTests.ALateStateEvent_DoesNotOverwriteTheCurrentState`（旧代码会把状态覆盖为"重连中"）。
+5. **Task 6 偏差 7（停止服务端时会话关闭不写操作记录）→ 接受**，日志面板有库的记录。
+6. **U1 的两处例外 → 接受并登记**：`OpcUaPageView` 把 TreeViewItem 的双击转给命令（样式里无法挂行为），`SimulatorPageView` 的内存表刷新计时器只在页面可见时运行（纯视图关注点）。
+7. **U8：C# 文件超过 300 行的有 15 个**（14 个页签视图模型，最大 `SimulatorSessionViewModel` 699 行；模拟器 `McWire` 395 行）。Task 21 未检查这一项。拆分是行为不变的重构，风险与收益不成比例，接受为已知技术债，与第 2 条一并列入路线图。
+
+验收走查（第 31 节第 3 条）：
+
+- 桌面上的人工操作无法代为完成：本会话的命令行拿不到交互桌面（屏幕截图报"句柄无效"，模拟的鼠标输入不到达窗口；computer-use 不认开发版程序）。改为**进程内验收走查** `Acceptance/AcceptanceWalkthroughTests`（设置 `JUNEVY_ACCEPTANCE_DIR` 时运行，否则跳过）：真实的页签视图模型在界面线程上运行，经回环套接字与模拟设备页签、服务端页签互连，逐项断言，并用应用的数据模板把界面渲染成 PNG。9 项全部通过，截图 22 张在 `docs/superpowers/plans/assets/debug-assistant/`：
+  - A01 19 种页签打开、全部改名、关闭一个、保存后重新启动恢复（`01`–`03`）；A02 浅色与深色主题（`04`、`05`）；
+  - A03 MC 3E 二进制、3E ASCII、4E 二进制连接 MC 从站，读写 D100 与 M0；4C 经 COM20 / COM21（设置 `JUNEVY_SERIAL_PAIR` 时）（`06-*`）；
+  - A04 Modbus TCP 与 RTU over TCP：写读、掩码写 0x16、读写合一 0x17，结果表格（`07-*`）；
+  - A05 S7：String（ASCII）与 WString（中文）读写；关闭 PUT/GET 后读取得到 `RemoteError`（`08`、`09`）；
+  - A06 FINS：客户端节点 0，显示从站分配的节点 33（`10`）；
+  - A07 故障注入：不应答 → `Timeout`；收到下一个请求后断开 → 重连中 → 已连接（`11`、`12`）；
+  - A08 TCP 客户端页与服务端页互连：Delimiter 分帧、Keyed 关联、服务端回显（`13`、`14`）；
+  - A09 HTTP 服务端页与 REST 客户端页：业务信封（E100 → 对端返回错误）、幂等去重的重放（`15`、`16`）；重试由 `WebApiEndToEndTests.APost_IsRetriedOnlyWithAnIdempotencyKey_WhenTheServerIsBusy` 覆盖，未重复。
+- 走查发现并修正的缺陷（真实程序同样存在，单元与视图测试此前没有覆盖）：
+  1. **TCP 服务端页一有客户端连上就抛异常**：会话表的 TLS 列（`IsTls`）与自动应答表的回显列（`Echo`）绑定只读属性，`DataGridCheckBoxColumn` 默认双向绑定，生成第一行时抛出 `InvalidOperationException`。改为 `Mode=OneWay`。回归测试 `PageLayoutTests.TcpServerPage_ShowsAConnectedSession`（负控：撤掉修正时失败）。
+  2. **页签被释放两次时抛 `ObjectDisposedException`**：关闭页签释放一次，宿主退出时 DI 容器还会对它创建过的页签再释放一次。`SessionViewModel.DisposeAsync` 改为只执行一次，派生类改写 `DisposeCoreAsync`。回归测试 `PageLayoutTests.EveryPage_CanBeDisposedTwice`（19 种）。
+  3. 操作记录的"耗时"有 15 处固定写 0：改为按页签时钟计算（`SessionViewModel.Since`）。
+  4. 操作记录与收到的帧的"时间""结果""来源"列宽不足，文字被截断，已放宽。
+- 仍需人工确认的只有桌面手感：拖动分隔条、窗口缩放、真实鼠标与键盘操作。
+
+度量与测试：
+
+- 架构测试负控：在 `Sessions` 命名空间临时引用 `System.Windows.Media.Brush`，`LayeringRulesTests.PresentationFreeNamespaces_DoNotReferenceTheViewAssemblies` 失败；删除后通过。
+- `dotnet build Junevy.Communication.slnx --no-incremental`：0 警告，0 错误。
+- `pwsh build/test-affected.ps1 -Base master -NoBuild -Repeat 3`（31 个测试宿主，未设置串口对）：最终一轮三遍各 8429 通过、0 失败、34 跳过。过程中的各轮如实记录（每轮三遍的失败次数）：第 1 轮 2 / 0 / 0（2 条新的计时用例，随后加固）；第 2 轮 1 / 1 / 0（WebApi 停止计数与 OPC UA 状态名，随后修正）；第 3 轮 0 / 0 / 1（DA 关闭页签的上限，随后放宽）；第 4 轮 0 / 0 / 0；之后又改了生产代码（释放守卫、耗时、列宽）与走查，第 5 轮（`--no-incremental` 重建之后）4 / 0 / 0，4 条都是 DA 的等待在同一遍里超时 10–17 秒，DA 套件单独连跑三遍全绿，判断为那一遍整机卡顿，未改；第 6 轮 0 / 1 / 0（上面未查明的 SECS 用例）；第 7 轮 0 / 0 / 0。
+
+结论：第 34 节的未满足项均已处理或经决定接受（见上）；人工桌面手感留给用户在使用中确认。

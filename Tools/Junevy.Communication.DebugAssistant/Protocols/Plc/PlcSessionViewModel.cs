@@ -182,11 +182,8 @@ public abstract partial class PlcSessionViewModel : SessionViewModel
             throw;
         }
 
-        client.StateChanged += (_, e) =>
-        {
-            ConnectionState state = e.CurrentState;
-            PostToUi(() => OnConnectionStateChanged(client, state));
-        };
+        // 事件在线程池上触发，可能在后来的事件之后才被处理：读取客户端的当前状态，而不是事件里的快照（与通道页签同一处理，Task 21）。
+        client.StateChanged += (_, _) => PostToUi(() => OnConnectionStateChanged(client, client.State));
         _client = client;
         State = SessionState.Connected;
     }
@@ -211,11 +208,11 @@ public abstract partial class PlcSessionViewModel : SessionViewModel
         }
     }
 
-    public override async ValueTask DisposeAsync()
+    protected override async ValueTask DisposeCoreAsync()
     {
         try
         {
-            await base.DisposeAsync();
+            await base.DisposeCoreAsync();
         }
         finally
         {
@@ -253,7 +250,7 @@ public abstract partial class PlcSessionViewModel : SessionViewModel
 
         DateTimeOffset started = Dependencies.Clock.GetLocalNow();
         (CommResult result, object? value) = await PlcTypedAccess.ReadAsync(client, ValueType, ToProtocolAddress(Address), Count, CancellationToken.None);
-        RecordOperation(OperationRecords.From(started, "读取", Address, TimeSpan.Zero, result));
+        RecordOperation(OperationRecords.From(started, "读取", Address, Since(started), result));
         ReadText = result.IsSuccess ? PlcValueCodec.Format(value) : string.Empty;
     }
 
@@ -272,7 +269,7 @@ public abstract partial class PlcSessionViewModel : SessionViewModel
 
         DateTimeOffset started = Dependencies.Clock.GetLocalNow();
         CommResult result = await PlcTypedAccess.WriteAsync(client, ValueType, ToProtocolAddress(Address), value!, StringLength(ValueType, Count), CancellationToken.None);
-        RecordOperation(OperationRecords.From(started, "写入", Address, TimeSpan.Zero, result));
+        RecordOperation(OperationRecords.From(started, "写入", Address, Since(started), result));
         if (result.IsSuccess)
         {
             await _poller.RefreshAsync(client);
@@ -299,7 +296,7 @@ public abstract partial class PlcSessionViewModel : SessionViewModel
 
         DateTimeOffset started = Dependencies.Clock.GetLocalNow();
         CommResult result = await PlcTypedAccess.WriteAsync(client, row.Type, ToProtocolAddress(row.Address), value!, StringLength(row.Type, row.Count), CancellationToken.None);
-        RecordOperation(OperationRecords.From(started, "写入", row.Address, TimeSpan.Zero, result));
+        RecordOperation(OperationRecords.From(started, "写入", row.Address, Since(started), result));
         if (result.IsSuccess)
         {
             row.NewValue = string.Empty;

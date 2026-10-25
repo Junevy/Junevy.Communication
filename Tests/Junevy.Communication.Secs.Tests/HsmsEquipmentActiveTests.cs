@@ -248,7 +248,19 @@ public sealed class HsmsEquipmentActiveTests
         Assert.Empty(logger.GetEntries(LogLevel.Error));
 
         Task<CommResult> again = equipment.StartAsync();
-        await Polling.WaitUntilAsync(() => silent.AcceptedConnectionCount >= 2, 5000);
+        // 2026-10-25 全量并行（31 个测试宿主）时这里两次超时，放宽到 15 秒仍失败，说明不是慢；单独运行 25 次都通过，原因未查明。
+        // 等待保持原值，超时时报告第二次启动的结果、设备端状态与告警，供下次复现时定位。
+        try
+        {
+            await Polling.WaitUntilAsync(() => silent.AcceptedConnectionCount >= 2, 5000);
+        }
+        catch (TimeoutException)
+        {
+            string second = again.IsCompleted ? (await again).ToString() : "still running";
+            string warnings = string.Join(" | ", logger.GetEntries(LogLevel.Warning).Select(entry => entry.Message));
+            Assert.Fail($"The second start was not accepted: accepted={silent.AcceptedConnectionCount}, state={equipment.State}, "
+                + $"second start={second}, warnings={warnings}");
+        }
         await equipment.StopAsync();
         Assert.False((await Arrival.WithinAsync(again, 3000)).IsSuccess);
     }

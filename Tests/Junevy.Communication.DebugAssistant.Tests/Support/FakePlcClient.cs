@@ -51,6 +51,10 @@ internal sealed class FakePlcClient : IPlcClient
         StateChanged?.Invoke(this, new ConnectionStateChangedEventArgs(previous, current, DisconnectReason.None, null, 0));
     }
 
+    /// <summary>引发一个迟到的事件：事件里的状态已经过期，客户端的当前状态不变（库在线程池上触发事件时可能出现）。</summary>
+    public void RaiseLateEvent(ConnectionState previous, ConnectionState stale) =>
+        StateChanged?.Invoke(this, new ConnectionStateChangedEventArgs(previous, stale, DisconnectReason.None, null, 0));
+
     public Task<CommResult> ConnectAsync(CancellationToken cancellationToken = default)
     {
         if (FailConnect)

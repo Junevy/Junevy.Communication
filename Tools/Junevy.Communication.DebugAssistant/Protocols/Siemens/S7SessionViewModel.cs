@@ -166,7 +166,7 @@ public sealed partial class S7SessionViewModel : PlcSessionViewModel
         CommResult<string> text = StringKind == S7StringKind.String
             ? await client.ReadS7StringAsync(StringAddress, StringMaxLength, CancellationToken.None)
             : await client.ReadS7WStringAsync(StringAddress, StringMaxLength, CancellationToken.None);
-        RecordOperation(OperationRecords.From(started, "读取字符串", StringAddress, TimeSpan.Zero, text));
+        RecordOperation(OperationRecords.From(started, "读取字符串", StringAddress, Since(started), text));
         if (!text.IsSuccess)
         {
             return;
@@ -177,7 +177,7 @@ public sealed partial class S7SessionViewModel : PlcSessionViewModel
         // 库的字符串读取不返回头部，因此再读一次头部，显示声明长度与实际长度。
         DateTimeOffset headerStarted = Dependencies.Clock.GetLocalNow();
         CommResult<byte[]> header = await client.ReadBytesAsync(StringAddress, S7StringLimits.HeaderBytes(StringKind), CancellationToken.None);
-        RecordOperation(OperationRecords.From(headerStarted, "读取字符串头部", StringAddress, TimeSpan.Zero, header));
+        RecordOperation(OperationRecords.From(headerStarted, "读取字符串头部", StringAddress, Since(headerStarted), header));
         if (header.IsSuccess)
         {
             (int declared, int actual) = S7StringLimits.ReadHeader(StringKind, header.Data!);
@@ -203,7 +203,7 @@ public sealed partial class S7SessionViewModel : PlcSessionViewModel
         CommResult result = StringKind == S7StringKind.String
             ? await client.WriteS7StringAsync(StringAddress, StringValue, StringMaxLength, CancellationToken.None)
             : await client.WriteS7WStringAsync(StringAddress, StringValue, StringMaxLength, CancellationToken.None);
-        RecordOperation(OperationRecords.From(started, "写入字符串", StringAddress, TimeSpan.Zero, result));
+        RecordOperation(OperationRecords.From(started, "写入字符串", StringAddress, Since(started), result));
     }
 
     private void RecordInvalidString(string operation, string message) =>

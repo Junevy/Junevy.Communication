@@ -235,11 +235,12 @@ public sealed partial class WebApiServerSessionViewModel : SessionViewModel
         }
 
         WebApiServer server = CreateServer(settings);
-        server.StateChanged += (_, e) => PostToUi(() =>
+        // 事件在线程池上触发，可能在后来的事件之后才被处理：显示服务端的当前状态，而不是事件里的快照（与通道页签同一处理，Task 21）。
+        server.StateChanged += (_, _) => PostToUi(() =>
         {
             if (ReferenceEquals(_server, server))
             {
-                ServerStateText = WebApiSupport.ServerStateText(e.Current);
+                ServerStateText = WebApiSupport.ServerStateText(server.State);
             }
         });
         server.RequestCompleted += (_, e) => PostToUi(() =>

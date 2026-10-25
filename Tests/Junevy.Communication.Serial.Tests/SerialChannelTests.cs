@@ -163,9 +163,10 @@ public sealed class SerialChannelTests
         Assert.True((await Arrival.WithinAsync(channel.ConnectAsync(), 5000)).IsSuccess);
         FakeSerialPortHandle handle = Assert.Single(factory.Handles);
 
-        // "AB" 与 "CD" 之间没有静默（远小于 20 ms），合并为一帧；之后超过 100 ms 的静默分隔出两帧。
-        await WriteRawAsync(handle.Device, Ascii("AB"));
-        await WriteRawAsync(handle.Device, Ascii("CD"));
+        // 默认分帧是 20 ms 的空闲间隔：一次写入的 "ABCD" 是一帧；之后超过 100 ms 的静默分隔出两帧。
+        // 原来分两次写 "AB"、"CD"，全量并行时两次写入之间曾被拖过 20 ms 而切成两帧（2026-10-20 test-affected 第 3 遍）；
+        // "连续到达的字节不被切开"由 Channels 的 StreamChannelTests.IdleGap_ContinuousBytes_NotSplit 覆盖。
+        await WriteRawAsync(handle.Device, Ascii("ABCD"));
         await Polling.WaitUntilAsync(() => sink.Count >= 1, 3000);
         await Task.Delay(100);
         await WriteRawAsync(handle.Device, Ascii("EF"));

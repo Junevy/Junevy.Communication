@@ -323,11 +323,11 @@ public sealed partial class SimulatorSessionViewModel : SessionViewModel
         await host.DisposeAsync();
     }
 
-    public override async ValueTask DisposeAsync()
+    protected override async ValueTask DisposeCoreAsync()
     {
         try
         {
-            await base.DisposeAsync();
+            await base.DisposeCoreAsync();
         }
         finally
         {

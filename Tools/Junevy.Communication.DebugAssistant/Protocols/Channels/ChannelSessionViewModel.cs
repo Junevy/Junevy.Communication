@@ -141,12 +141,12 @@ public abstract partial class ChannelSessionViewModel : SessionViewModel
         State = SessionState.NotConnected;
     }
 
-    public override async ValueTask DisposeAsync()
+    protected override async ValueTask DisposeCoreAsync()
     {
         StopPeriodic();
         try
         {
-            await base.DisposeAsync();
+            await base.DisposeCoreAsync();
         }
         finally
         {
@@ -213,7 +213,7 @@ public abstract partial class ChannelSessionViewModel : SessionViewModel
 
         DateTimeOffset started = Dependencies.Clock.GetLocalNow();
         CommResult result = await SendCoreAsync(payload, CancellationToken.None);
-        RecordOperation(OperationRecords.From(started, "发送", Target, TimeSpan.Zero, result));
+        RecordOperation(OperationRecords.From(started, "发送", Target, Since(started), result));
         if (result.IsSuccess)
         {
             AddSendHistory(PayloadText);
@@ -229,7 +229,7 @@ public abstract partial class ChannelSessionViewModel : SessionViewModel
 
         DateTimeOffset started = Dependencies.Clock.GetLocalNow();
         CommResult<byte[]> result = await RequestCoreAsync(payload, ToRequestOptions(), CancellationToken.None);
-        RecordOperation(OperationRecords.From(started, "请求", Target, TimeSpan.Zero, result));
+        RecordOperation(OperationRecords.From(started, "请求", Target, Since(started), result));
         if (result.IsSuccess)
         {
             ShowReceived(started, result.Data!, Target);
@@ -241,7 +241,7 @@ public abstract partial class ChannelSessionViewModel : SessionViewModel
     {
         DateTimeOffset started = Dependencies.Clock.GetLocalNow();
         CommResult<byte[]> result = await ReceiveCoreAsync(ToRequestOptions(), CancellationToken.None);
-        RecordOperation(OperationRecords.From(started, "接收", Target, TimeSpan.Zero, result));
+        RecordOperation(OperationRecords.From(started, "接收", Target, Since(started), result));
         if (result.IsSuccess)
         {
             ShowReceived(started, result.Data!, Target);

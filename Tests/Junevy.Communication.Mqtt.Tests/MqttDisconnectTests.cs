@@ -25,7 +25,22 @@ public sealed class MqttDisconnectTests
         // 生命周期锁：断开必须等这次连接尝试结束，因此不会留下半开的连接。
         Assert.True(timer.ElapsedMilliseconds >= 400, $"Disconnect returned after {timer.ElapsedMilliseconds} ms.");
         Assert.Equal(MqttConnectionState.Disconnected, client.State);
-        Assert.Empty(await broker.ActiveClientIdsAsync());
+        // Broker 收到断开后异步清理会话：等它清空，而不是立即断言（全量并行时曾看到尚未清理的 client-1，
+        // 2026-10-20 test-affected 第 3 遍）。真留下半开连接时，Broker 在这段时间内不会清理，用例仍然失败。
+        await WaitUntilNoClientsAsync(broker);
+    }
+
+    private static async Task WaitUntilNoClientsAsync(TestBroker broker)
+    {
+        Stopwatch waited = Stopwatch.StartNew();
+        IReadOnlyList<string> remaining = await broker.ActiveClientIdsAsync();
+        while (remaining.Count > 0 && waited.ElapsedMilliseconds < 5000)
+        {
+            await Task.Delay(50);
+            remaining = await broker.ActiveClientIdsAsync();
+        }
+
+        Assert.Empty(remaining);
     }
 
     [Fact]

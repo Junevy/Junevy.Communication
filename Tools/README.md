@@ -83,6 +83,11 @@ dotnet test Tests/Junevy.Communication.DebugAssistant.Tests
 
 串口测试只在设置了环境变量 `JUNEVY_SERIAL_PAIR` 时运行，值为虚拟串口对 `COM20,COM21`。开发机上只允许使用这一对端口，不能打开 COM3 或 COM4。没有设置该变量时，串口用例跳过（DA-D16）。
 
+两组截图测试默认跳过：
+
+- `JUNEVY_UI_SNAPSHOT_DIR=<目录>`：把 19 个页签与 3 张整窗图渲染成 PNG，用于审阅布局。
+- `JUNEVY_ACCEPTANCE_DIR=<目录>`：验收走查。页签经回环套接字与模拟设备、服务端页签互连，逐项断言（MC、Modbus、S7、FINS、故障注入、TCP 页互连、HTTP 与 REST 页互连、改名关闭与工作区恢复、两种主题）并渲染截图；验收截图放在 `docs/superpowers/plans/assets/debug-assistant/`。
+
 ## 新增一种页签（DA-D19）
 
 新增一种页签需要改四处，其他地方不得出现针对 `ProtocolKind` 的 `switch`：

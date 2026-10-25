@@ -36,6 +36,22 @@ public sealed class PlcSessionViewModelTests
     }
 
     [Fact]
+    public async Task ALateStateEvent_DoesNotOverwriteTheCurrentState()
+    {
+        var dispatcher = new ManualUiDispatcher();
+        var client = new FakePlcClient();
+        await using var page = new FakePlcSession(FakeServices.Create(dispatcher), client);
+        await page.ConnectCommand.ExecuteAsync(null);
+
+        // 掉线的事件排在前面，而一个更早的 Reconnecting 事件迟到：页签以客户端的当前状态为准。
+        client.RaiseConnectionState(ConnectionState.Connected, ConnectionState.Disconnected);
+        client.RaiseLateEvent(ConnectionState.Connected, ConnectionState.Reconnecting);
+        dispatcher.RunPending();
+
+        Assert.Equal(SessionState.NotConnected, page.State);
+    }
+
+    [Fact]
     public async Task ReadWhenNotConnected_IsRecordedAsNotConnected()
     {
         await using var page = new FakePlcSession(FakeServices.Create(new ManualUiDispatcher()), new FakePlcClient());

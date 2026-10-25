@@ -174,9 +174,10 @@ public sealed partial class OpcUaSessionViewModel : SessionViewModel
         await ReleaseClientAsync().ConfigureAwait(true);
         OpcUaClient client = CreateClient(Capture());
         _client = client;
+        // 事件在线程池上触发，可能在后来的事件之后才被处理：只应用与库当前状态一致的事件，过期的旧事件丢弃（最新状态的事件随后必然到达），与通道页签同一处理（Task 21）。
         client.StateChanged += (_, e) => PostToUi(() =>
         {
-            if (ReferenceEquals(_client, client))
+            if (ReferenceEquals(_client, client) && client.State == e.Current)
             {
                 ApplyState(e);
             }

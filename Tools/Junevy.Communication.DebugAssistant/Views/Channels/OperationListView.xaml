@@ -5,11 +5,11 @@
     <DataGrid ItemsSource="{Binding Operations}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
               VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
         <DataGrid.Columns>
-            <DataGridTextColumn Header="时间" Binding="{Binding Time, StringFormat=HH:mm:ss.fff}" Width="100" />
+            <DataGridTextColumn Header="时间" Binding="{Binding Time, StringFormat=HH:mm:ss.fff}" Width="112" />
             <DataGridTextColumn Header="操作" Binding="{Binding Operation}" Width="90" />
             <DataGridTextColumn Header="目标" Binding="{Binding Target}" Width="140" />
             <DataGridTextColumn Header="耗时" Binding="{Binding ElapsedText}" Width="70" />
-            <DataGridTextColumn Header="结果" Binding="{Binding ResultText}" Width="50" />
+            <DataGridTextColumn Header="结果" Binding="{Binding ResultText}" Width="64" />
             <DataGridTextColumn Header="错误种类" Binding="{Binding ErrorKindText}" Width="100" />
             <DataGridTextColumn Header="协议码" Binding="{Binding ProtocolCode}" Width="80" />
             <DataGridTextColumn Header="消息" Binding="{Binding Message}" Width="*" MinWidth="200" />

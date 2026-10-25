@@ -295,7 +295,7 @@ public sealed partial class ModbusSessionViewModel : PlcSessionViewModel
 
         DateTimeOffset started = Dependencies.Clock.GetLocalNow();
         CommResult result = await client.MaskWriteRegisterAsync(ToProtocolAddress(Address), andMask, orMask, CancellationToken.None);
-        RecordOperation(OperationRecords.From(started, "掩码写", Address, TimeSpan.Zero, result));
+        RecordOperation(OperationRecords.From(started, "掩码写", Address, Since(started), result));
     }
 
     private async Task ReadWriteAsync()
@@ -320,7 +320,7 @@ public sealed partial class ModbusSessionViewModel : PlcSessionViewModel
         DateTimeOffset started = Dependencies.Clock.GetLocalNow();
         CommResult<byte[]> result = await client.ReadWriteMultipleRegistersAsync(
             ToProtocolAddress(ReadWriteReadAddress), ReadWriteReadCount, ToProtocolAddress(ReadWriteWriteAddress), writeData, CancellationToken.None);
-        RecordOperation(OperationRecords.From(started, "读写多个", ReadWriteReadAddress, TimeSpan.Zero, result));
+        RecordOperation(OperationRecords.From(started, "读写多个", ReadWriteReadAddress, Since(started), result));
         if (result.IsSuccess && ParseAddressText(ToProtocolAddress(ReadWriteReadAddress)) is { IsSuccess: true, Data: { } address })
         {
             ShowWords(address.Device.Symbol, address.Number, result.Data!);
@@ -358,7 +358,7 @@ public sealed partial class ModbusSessionViewModel : PlcSessionViewModel
             case "C" or "DI":
             {
                 CommResult<bool[]> bits = await client.ReadBitsAsync(protocolAddress, TableCount, CancellationToken.None);
-                RecordOperation(OperationRecords.From(started, "读取表格", TableAddress, TimeSpan.Zero, bits));
+                RecordOperation(OperationRecords.From(started, "读取表格", TableAddress, Since(started), bits));
                 if (bits.IsSuccess)
                 {
                     ShowBits(symbol, address.Number, bits.Data!);
@@ -370,7 +370,7 @@ public sealed partial class ModbusSessionViewModel : PlcSessionViewModel
             case "HR" or "IR":
             {
                 CommResult<byte[]> bytes = await client.ReadAsync(protocolAddress, TableCount, CancellationToken.None);
-                RecordOperation(OperationRecords.From(started, "读取表格", TableAddress, TimeSpan.Zero, bytes));
+                RecordOperation(OperationRecords.From(started, "读取表格", TableAddress, Since(started), bytes));
                 if (bytes.IsSuccess)
                 {
                     ShowWords(symbol, address.Number, bytes.Data!);

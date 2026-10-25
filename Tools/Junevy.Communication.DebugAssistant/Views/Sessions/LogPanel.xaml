@@ -27,7 +27,7 @@
                   VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                   EnableRowVirtualization="True">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="时间" Binding="{Binding Time, StringFormat=HH:mm:ss.fff}" Width="100"
+                <DataGridTextColumn Header="时间" Binding="{Binding Time, StringFormat=HH:mm:ss.fff}" Width="112"
                                     Visibility="{Binding Data.ShowTimestamps, Source={StaticResource Proxy}, Converter={StaticResource BoolToVisibility}}" />
                 <DataGridTextColumn Header="类型" Binding="{Binding Kind}" Width="60" />
                 <DataGridTextColumn Header="摘要" Binding="{Binding Summary}" Width="*" MinWidth="160" />

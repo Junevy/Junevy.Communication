@@ -148,11 +148,8 @@ public sealed partial class TcpServerSessionViewModel : SessionViewModel
             PostToUi(() => RemoveSession(server, session, reason));
         };
         server.FrameReceived += (_, e) => OnFrameReceived(server, e);
-        server.StateChanged += (_, e) =>
-        {
-            ServerState state = e.CurrentState;
-            PostToUi(() => OnServerStateChanged(server, state));
-        };
+        // 事件在线程池上触发，可能在后来的事件之后才被处理：读取服务端的当前状态，而不是事件里的快照（与通道页签同一处理，Task 21）。
+        server.StateChanged += (_, _) => PostToUi(() => OnServerStateChanged(server, server.State));
 
         State = SessionState.Connecting;
         try
@@ -191,11 +188,11 @@ public sealed partial class TcpServerSessionViewModel : SessionViewModel
         SelectedSession = null;
     }
 
-    public override async ValueTask DisposeAsync()
+    protected override async ValueTask DisposeCoreAsync()
     {
         try
         {
-            await base.DisposeAsync();
+            await base.DisposeCoreAsync();
         }
         finally
         {
@@ -274,7 +271,7 @@ public sealed partial class TcpServerSessionViewModel : SessionViewModel
             CommResult result = await session.SendAsync(reply);
             if (!result.IsSuccess)
             {
-                PostToUi(() => RecordOperation(OperationRecords.From(started, "自动应答", source, TimeSpan.Zero, result)));
+                PostToUi(() => RecordOperation(OperationRecords.From(started, "自动应答", source, Since(started), result)));
             }
         }
         catch (Exception ex)
@@ -292,7 +289,7 @@ public sealed partial class TcpServerSessionViewModel : SessionViewModel
 
         DateTimeOffset started = Dependencies.Clock.GetLocalNow();
         CommResult result = await target.Session.SendAsync(payload, CancellationToken.None);
-        RecordOperation(OperationRecords.From(started, "发送", target.Source, TimeSpan.Zero, result));
+        RecordOperation(OperationRecords.From(started, "发送", target.Source, Since(started), result));
         if (result.IsSuccess)
         {
             SendHistory.InsertNewest(PayloadText, MaxSendHistory);

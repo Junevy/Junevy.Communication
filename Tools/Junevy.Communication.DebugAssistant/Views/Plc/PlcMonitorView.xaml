@@ -28,7 +28,7 @@
                 <DataGridTextColumn Header="当前值" Binding="{Binding Value}" Width="*" MinWidth="120" IsReadOnly="True" />
                 <DataGridTextColumn Header="新值（双击编辑）" Binding="{Binding NewValue, UpdateSourceTrigger=PropertyChanged}" Width="120" />
                 <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="*" MinWidth="120" IsReadOnly="True" />
-                <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedAt, StringFormat=HH:mm:ss.fff}" Width="100" IsReadOnly="True" />
+                <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedAt, StringFormat=HH:mm:ss.fff}" Width="112" IsReadOnly="True" />
                 <DataGridTemplateColumn Header="操作" Width="150">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>

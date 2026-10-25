@@ -51,6 +51,8 @@ public sealed class OpcUaTestServer : IAsyncDisposable
     /// <summary>测试用命名空间 URI。</summary>
     public const string NamespaceUri = "urn:junevy:opcua:test";
 
+    private static readonly TimeSpan ReadyTimeout = TimeSpan.FromSeconds(60);
+
     private readonly OpcUaTestServerOptions options;
     private readonly ITelemetryContext telemetry;
     private readonly ILoggerFactory? probeLoggerFactory;
@@ -183,9 +185,11 @@ public sealed class OpcUaTestServer : IAsyncDisposable
 
     // 通用宿主返回时服务器只是"开始"启动：TCP 监听已经就绪，地址空间还在建。
     // 这时连上去会拿到 BadServerHalted（F20），因此起好之后先用一次真实会话探一下。
+    // 按时限而不是次数等待：全量并行时机器负载高，地址空间建得慢，固定次数曾在约 20 秒后放弃。
     private async Task WaitUntilReadyAsync()
     {
-        for (int attempt = 0; attempt < 60; attempt++)
+        DateTime deadline = DateTime.UtcNow + ReadyTimeout;
+        while (DateTime.UtcNow < deadline)
         {
             await using var probe = OpcUaClient.Create(
                 new OpcUaClientOptions

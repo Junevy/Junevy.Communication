@@ -17,6 +17,9 @@ internal static class UiThread
 
     internal static void Invoke(Action action) => Instance.Value.Invoke(action);
 
+    /// <summary>在界面线程上运行异步流程：其中的 await 回到界面线程（与应用相同），视图与视图模型的集合只被一个线程访问。</summary>
+    internal static Task RunAsync(Func<Task> body) => Instance.Value.InvokeAsync(body).Task.Unwrap();
+
     private static Dispatcher StartApplicationThread()
     {
         Dispatcher? dispatcher = null;

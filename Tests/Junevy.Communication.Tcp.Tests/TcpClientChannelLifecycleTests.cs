@@ -92,11 +92,13 @@ public sealed class TcpClientChannelLifecycleTests
     {
         using var server = SilentTcpServer.Start();
         var config = CreateConfig(server.Port);
+        // 探测超时取 1000 ms：超时会取消探测请求，若这时帧还在写出，按 D10 中止传输并报告 SendFailed 而不是
+        // HeartbeatFailed。200 ms 在全量并行时曾赶上写出阶段（2026-10-20 test-affected 第 1 遍）。
         config.Heartbeat = new HeartbeatOptions
         {
             Enabled = true,
             Interval = 200,
-            Timeout = 200,
+            Timeout = 1000,
             MaxFailures = 2,
             Payload = "PING",
             ExpectedReply = "PONG",

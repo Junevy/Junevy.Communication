@@ -32,7 +32,7 @@ internal sealed class TrackingSession : SessionViewModel
     {
     }
 
-    public override async ValueTask DisposeAsync()
+    protected override async ValueTask DisposeCoreAsync()
     {
         DisposeCount++;
         ListedWhenDisposed = IsListed?.Invoke();

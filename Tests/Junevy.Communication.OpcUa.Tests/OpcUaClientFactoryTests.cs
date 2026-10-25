@@ -222,7 +222,24 @@ public sealed class OpcUaDependencyInjectionTests
         Assert.False((await client.ConnectAsync()).IsSuccess);
 
         // 容器里的日志工厂被交给了客户端**和 SDK**（P62-D13），因此 SDK 自己的日志也能到记录器。
-        Assert.Contains(logger.Entries, entry =>
-            entry.CategoryName.StartsWith("Opc.Ua.", StringComparison.Ordinal) && entry.Level >= LogLevel.Warning);
+        // SDK 的告警是异步记录的，ConnectAsync 返回时可能还没写到：等它出现，而不是立即断言（并行负载下曾偶发失败）。
+        await WaitUntilAsync(() => logger.Entries.Any(entry =>
+            entry.CategoryName.StartsWith("Opc.Ua.", StringComparison.Ordinal) && entry.Level >= LogLevel.Warning));
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, int timeoutMilliseconds = 10000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMilliseconds);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(20);
+        }
+
+        Assert.Fail("No Opc.Ua.* warning reached the container's logger factory in time.");
     }
 }

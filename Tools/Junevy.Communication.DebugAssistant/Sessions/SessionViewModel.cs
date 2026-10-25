@@ -21,6 +21,7 @@ public abstract partial class SessionViewModel : ObservableObject, IAsyncDisposa
 
     private readonly ILoggerFactory _loggerFactory;
     private readonly SessionLogFlusher _flusher;
+    private int _disposed;
     private readonly ILogger _logger;
     private SessionState _state = SessionState.NotConnected;
 
@@ -113,8 +114,22 @@ public abstract partial class SessionViewModel : ObservableObject, IAsyncDisposa
     /// <summary>断开：断开客户端、停止服务端或模拟器。关闭页签时也会调用。</summary>
     protected virtual Task DisconnectCoreAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    /// <summary>释放会话：先断开，再停止日志刷新并释放日志工厂。</summary>
-    public virtual async ValueTask DisposeAsync()
+    /// <summary>
+    /// 释放会话，只执行一次：关闭页签时释放一次，宿主退出时 DI 容器还会对它创建过的页签再释放一次，
+    /// 第二次直接返回（2026-10-25 验收走查发现：第二次释放会对已释放的 CancellationTokenSource 抛出异常）。
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        await DisposeCoreAsync();
+    }
+
+    /// <summary>释放会话：先断开，再停止日志刷新并释放日志工厂。派生类在这里追加自己的释放。</summary>
+    protected virtual async ValueTask DisposeCoreAsync()
     {
         try
         {
@@ -132,6 +147,9 @@ public abstract partial class SessionViewModel : ObservableObject, IAsyncDisposa
 
     /// <summary>把保存的参数应用到页签。只在未连接时调用；参数类型与协议不符时抛出 <see cref="ArgumentException"/>。</summary>
     public abstract void ApplySettings(SessionSettings settings);
+
+    /// <summary>从 <paramref name="started"/>（页签时钟的本地时间）到现在的耗时，写入操作记录。</summary>
+    protected TimeSpan Since(DateTimeOffset started) => Dependencies.Clock.GetLocalNow() - started;
 
     /// <summary>记录一次操作（界面线程）。</summary>
     protected void RecordOperation(OperationRecord record)

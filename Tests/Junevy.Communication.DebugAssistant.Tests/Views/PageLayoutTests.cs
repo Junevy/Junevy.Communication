@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using Junevy.Communication.DebugAssistant.Protocols.Channels;
 using Junevy.Communication.DebugAssistant.Protocols.Modbus;
 using Junevy.Communication.DebugAssistant.Protocols.Plc;
 using Junevy.Communication.DebugAssistant.Sessions;
@@ -77,6 +78,52 @@ public sealed class PageLayoutTests
 
             Assert.Equal((Visibility.Collapsed, Visibility.Visible), (network.Visibility, serial.Visibility));
         });
+    }
+
+    [Theory]
+    [MemberData(nameof(Kinds))]
+    public async Task EveryPage_CanBeDisposedTwice(ProtocolKind kind)
+    {
+        // 关闭页签释放一次，宿主退出时 DI 容器还会再释放一次（2026-10-25 验收走查发现第二次释放抛出异常）。
+        SessionViewModel page = TestShell.CreateSession(kind);
+
+        await page.DisposeAsync();
+        await page.DisposeAsync();
+    }
+
+    [Fact]
+    public Task TcpServerPage_ShowsAConnectedSession() => UiThread.RunAsync(TcpServerPageShowsAConnectedSessionAsync);
+
+    // 在界面线程上运行：视图绑定的集合只能由创建视图的线程修改（与应用相同）。
+    private static async Task TcpServerPageShowsAConnectedSessionAsync()
+    {
+        // 会话表的 TLS 列与自动应答表的回显列绑定只读属性：复选框列默认双向绑定，出现第一行时抛出异常（2026-10-25 验收走查发现）。
+        var dispatcher = new ManualUiDispatcher();
+        await using var server = ChannelTestKit.TcpServerPage(dispatcher, FreePort.Get());
+        server.AddAutoReplyCommand.Execute(null);
+        await server.ConnectCommand.ExecuteAsync(null);
+        await using var client = ChannelTestKit.TcpPage(dispatcher, server.Settings.Port);
+        await client.ConnectCommand.ExecuteAsync(null);
+        await Waiting.UntilAsync(() => server.Sessions.Count == 1, TimeSpan.FromSeconds(5), dispatcher.RunPending);
+
+        var view = new TcpServerPageView { DataContext = server };
+        VisualTree.LayoutExpanded(view);
+
+        // 会话表与自动应答表各有一行（复选框列都已生成）。
+        Assert.Equal(1, CountRows<ServerSession>(view));
+        Assert.Equal(1, CountRows<AutoReplyRule>(view));
+    }
+
+    private static int CountRows<TItem>(DependencyObject root)
+    {
+        int rows = 0;
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            DependencyObject child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            rows += child is DataGridRow { Item: TItem } ? 1 : CountRows<TItem>(child);
+        }
+
+        return rows;
     }
 
     private static FrameworkElement LoadPage(SessionViewModel page)

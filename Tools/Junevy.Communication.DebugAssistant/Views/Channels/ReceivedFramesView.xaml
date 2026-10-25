@@ -8,8 +8,8 @@
         <DataGrid ItemsSource="{Binding ReceivedFrames}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
                   VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="时间" Binding="{Binding Time, StringFormat=HH:mm:ss.fff}" Width="100" />
-                <DataGridTextColumn Header="来源" Binding="{Binding Source}" Width="140" />
+                <DataGridTextColumn Header="时间" Binding="{Binding Time, StringFormat=HH:mm:ss.fff}" Width="112" />
+                <DataGridTextColumn Header="来源" Binding="{Binding Source}" Width="170" />
                 <DataGridTextColumn Header="长度" Binding="{Binding Data.Length}" Width="60" />
                 <DataGridTextColumn Header="HEX" Binding="{Binding Hex}" Width="*" MinWidth="200" />
             </DataGrid.Columns>

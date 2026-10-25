@@ -179,7 +179,14 @@ public sealed partial class SecsSessionViewModel : SessionViewModel
 
         IReadOnlyList<(SecsRule Rule, SecsItem? Body)> rules = CompileRules(settings.Rules);
         HsmsEquipment equipment = CreateEquipment(settings);
-        equipment.StateChanged += (_, e) => PostToUi(() => OnHsmsStateChanged(e));
+        // 事件在线程池上触发，可能在后来的事件之后才被处理：只应用与库当前状态一致的事件，过期的旧事件丢弃（最新状态的事件随后必然到达），与通道页签同一处理（Task 21）。
+        equipment.StateChanged += (_, e) => PostToUi(() =>
+        {
+            if (equipment.State == e.Current)
+            {
+                OnHsmsStateChanged(e);
+            }
+        });
         foreach ((SecsRule rule, SecsItem? body) in rules)
         {
             equipment.SetHandler(rule.Stream, rule.Function, CreateHandler(rule.Kind, body));

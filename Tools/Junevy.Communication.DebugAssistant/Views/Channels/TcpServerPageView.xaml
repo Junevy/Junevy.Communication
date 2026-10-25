@@ -55,7 +55,7 @@
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="匹配" Binding="{Binding Match}" Width="*" />
                                     <DataGridTextColumn Header="回复" Binding="{Binding Reply}" Width="*" />
-                                    <DataGridCheckBoxColumn Header="回显" Binding="{Binding Echo}" Width="50" />
+                                    <DataGridCheckBoxColumn Header="回显" Binding="{Binding Echo, Mode=OneWay}" Width="50" />
                                     <DataGridTemplateColumn Width="64">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
@@ -117,7 +117,7 @@
                             <DataGridTextColumn Header="编号" Binding="{Binding Id}" Width="50" />
                             <DataGridTextColumn Header="远端" Binding="{Binding Remote}" Width="150" />
                             <DataGridTextColumn Header="连接时间" Binding="{Binding ConnectedAt, StringFormat=HH:mm:ss}" Width="80" />
-                            <DataGridCheckBoxColumn Header="TLS" Binding="{Binding IsTls}" Width="50" />
+                            <DataGridCheckBoxColumn Header="TLS" Binding="{Binding IsTls, Mode=OneWay}" Width="50" />
                             <DataGridTextColumn Header="统计" Binding="{Binding Statistics}" Width="*" MinWidth="200" />
                         </DataGrid.Columns>
                     </DataGrid>

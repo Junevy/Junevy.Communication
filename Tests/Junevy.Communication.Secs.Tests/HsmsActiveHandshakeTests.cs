@@ -17,7 +17,9 @@ public sealed class HsmsActiveHandshakeTests
     public async Task SelectRequest_ReachesTheHostAndStatusZeroSelectsTheSession()
     {
         using HsmsHostListener host = HsmsHostListener.Listen(HsmsHostScripts.SelectAndLinktest);
-        await using HsmsActiveRig rig = HsmsActiveRig.Start(host.Port, HsmsTimers.Fast(t5: 150, t6: 400));
+        // 正常握手的用例 T6 取 3000 ms：400 ms 在全量并行时曾等不到 Select.rsp，握手失败转入 T5 重连，
+        // 选中与连接的断言随之失败（2026-10-20 test-affected 第 3 遍）。T6 超时的行为由下面的专门用例覆盖。
+        await using HsmsActiveRig rig = HsmsActiveRig.Start(host.Port, HsmsTimers.Fast(t5: 150, t6: 3000));
 
         Assert.True((await Arrival.WithinAsync(rig.Channel.ConnectAsync(), 10000)).IsSuccess);
 

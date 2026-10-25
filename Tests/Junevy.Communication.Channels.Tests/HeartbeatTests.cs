@@ -53,10 +53,12 @@ public sealed class HeartbeatTests
         var statistics = new ConnectionStatistics();
         var probe = new ScriptedProbe(_ => Task.FromResult(CommResult.Success()));
         var deaths = new DeathRecorder();
-        await using var monitor = NewMonitor(probe, interval: 200, maxFailures: 3, statistics, deaths.OnDead, onlyWhenIdle: true);
+        // 探测间隔 500 ms：流量循环每 5 ms 记一帧，全量并行时 Task.Delay 曾被拖过 200 ms，
+        // 让监视器看到一段"空闲"而探测（2026-10-20 test-affected 第 3 遍），因此留出百倍余量。
+        await using var monitor = NewMonitor(probe, interval: 500, maxFailures: 3, statistics, deaths.OnDead, onlyWhenIdle: true);
         monitor.Start();
 
-        // 持续收发（每 5 ms 一帧，持续 1 秒）：探测间隔 200 ms 内始终有流量，探测不应被调用。
+        // 持续收发（每 5 ms 一帧，持续 1 秒）：探测间隔内始终有流量，探测不应被调用。
         var traffic = Stopwatch.StartNew();
         while (traffic.ElapsedMilliseconds < 1000)
         {
