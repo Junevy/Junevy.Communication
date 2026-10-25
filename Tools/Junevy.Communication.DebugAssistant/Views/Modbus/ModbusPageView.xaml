@@ -10,8 +10,9 @@
              xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
              xmlns:plcViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Plc"
              xmlns:sessions="clr-namespace:Junevy.Communication.DebugAssistant.Views.Sessions">
-    <!-- Modbus 页签（计划第 7.2 节）：左侧为传输、站号、通道参数与专用操作（掩码写、读写多个、结果表格）；右侧为公共面板与操作记录。 -->
+    <!-- Modbus 页签（计划第 7.2 节）：左侧为传输、站号、通道参数与专用操作（掩码写、读写多个）；右侧上方为功能码提示与公共面板，下方为监控表、结果表格、操作记录与报文日志。 -->
     <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
         <ObjectDataProvider x:Key="Transports" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="plc:PlcTransport" />
@@ -35,21 +36,17 @@
     </UserControl.Resources>
 
     <DockPanel Margin="12">
-        <jv:ExpanderPanel DockPanel.Dock="Bottom" DisplayMode="Card" Header="报文与日志" IsExpanded="False" Margin="0,12,0,0">
-            <sessions:LogPanel DataContext="{Binding LogPanel}" Height="200" />
-        </jv:ExpanderPanel>
-
         <local:ConnectionBarView DockPanel.Dock="Top" />
 
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="340" MinWidth="260" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="360" />
             </Grid.ColumnDefinitions>
 
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,0,12,0">
+            <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                <StackPanel>
                     <jv:GroupBox Header="传输与站号" IsEnabled="{Binding IsEditable}">
                         <StackPanel>
                             <WrapPanel>
@@ -59,7 +56,17 @@
                                              ItemsSource="{Binding Source={StaticResource FrameChoices}}" SelectedItem="{Binding Frame}" />
                             </WrapPanel>
                             <jv:TextBlock Style="{StaticResource Text.Section}" Text="{Binding CombinationName}" />
-                            <WrapPanel>
+                            <!-- TCP 与 UDP 只显示主机与端口，串口只显示串口参数 -->
+                            <WrapPanel x:Name="NetworkPanel">
+                                <WrapPanel.Style>
+                                    <Style TargetType="{x:Type WrapPanel}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSerial}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </WrapPanel.Style>
                                 <jv:TextBox Width="200" atc:TitleAssist.Title="主机"
                                             Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" />
                                 <jv:TextBox Width="110" atc:TitleAssist.Title="端口"
@@ -71,7 +78,7 @@
                                 <jv:TextBox Width="150" atc:TitleAssist.Title="临时站号（留空不拼）"
                                             Text="{Binding TemporaryStation, UpdateSourceTrigger=PropertyChanged}" />
                             </WrapPanel>
-                            <WrapPanel>
+                            <WrapPanel x:Name="SerialPanel" Visibility="{Binding IsSerial, Converter={StaticResource BoolToVisibility}}">
                                 <jv:TextBox Width="110" atc:TitleAssist.Title="串口"
                                             Text="{Binding PortName, UpdateSourceTrigger=PropertyChanged}" />
                                 <jv:TextBox Width="100" atc:TitleAssist.Title="波特率"
@@ -83,7 +90,10 @@
                                 <jv:ComboBox Width="100" atc:TitleAssist.Title="停止位"
                                              ItemsSource="{Binding Source={StaticResource StopBitChoices}}" SelectedItem="{Binding StopBits}" />
                             </WrapPanel>
-                            <jv:CheckBox Content="写单个线圈或寄存器时用单个写入功能码（05、06）" IsChecked="{Binding UseSingleWriteFunctions}" />
+                            <!-- 选项文字较长，换行显示，不被左侧列宽截断 -->
+                            <jv:CheckBox IsChecked="{Binding UseSingleWriteFunctions}">
+                                <TextBlock Text="写单个线圈或寄存器时用单个写入功能码（05、06）" TextWrapping="Wrap" />
+                            </jv:CheckBox>
                             <jv:CheckBox Content="位写入用掩码写（0x16，原子）" IsChecked="{Binding UseMaskWriteForBits}" />
                             <jv:TextBlock Style="{StaticResource Text.Hint}"
                                           Text="串口只使用 RTU 帧；选择 MBAP 时会改为 RTU。UDP 为定向（主机与端口即对端）。" />
@@ -95,8 +105,9 @@
                         <local:ChannelSettingsView DataContext="{Binding Channel}" />
                     </jv:GroupBox>
 
-                    <jv:GroupBox Header="掩码写（0x16）：结果 = (当前 AND 与掩码) OR (或掩码 AND NOT 与掩码)" IsCollapsible="True" IsCollapsed="True">
+                    <jv:GroupBox Header="掩码写（0x16）" IsCollapsible="True" IsCollapsed="True">
                         <StackPanel>
+                            <jv:TextBlock Style="{StaticResource Text.Hint}" Text="结果 = (当前 AND 与掩码) OR (或掩码 AND NOT 与掩码)" />
                             <WrapPanel>
                                 <jv:TextBox Width="110" atc:TitleAssist.Title="与掩码"
                                             Text="{Binding MaskAndText, UpdateSourceTrigger=PropertyChanged}" />
@@ -131,10 +142,34 @@
                             <jv:Button Content="执行读写多个" Command="{Binding ReadWriteCommand}" HorizontalAlignment="Left" />
                         </StackPanel>
                     </jv:GroupBox>
+                </StackPanel>
+            </ScrollViewer>
 
-                    <jv:GroupBox Header="结果表格" IsCollapsible="True" IsCollapsed="True">
-                        <StackPanel>
-                            <WrapPanel>
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="140" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="260" MinHeight="120" />
+                </Grid.RowDefinitions>
+
+                <ScrollViewer Grid.Row="0" Style="{StaticResource Panel.SettingsScroll}">
+                    <StackPanel>
+                        <jv:TextBlock Style="{StaticResource Text.Hint}" Text="{Binding FunctionHint}" />
+                        <plcViews:PlcPanelView />
+                    </StackPanel>
+                </ScrollViewer>
+
+                <GridSplitter Grid.Row="1" Style="{StaticResource Splitter.Rows}" />
+
+                <TabControl Grid.Row="2">
+                    <TabItem Header="监控表">
+                        <plcViews:PlcMonitorView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="结果表格">
+                        <DockPanel Margin="8">
+                            <WrapPanel DockPanel.Dock="Top">
                                 <jv:TextBox Width="110" atc:TitleAssist.Title="地址"
                                             Text="{Binding TableAddress, UpdateSourceTrigger=PropertyChanged}" />
                                 <jv:TextBox Width="90" atc:TitleAssist.Title="数量"
@@ -142,7 +177,7 @@
                                 <jv:Button Content="读取表格" Command="{Binding ReadTableCommand}" Margin="0,22,0,12" />
                             </WrapPanel>
                             <DataGrid ItemsSource="{Binding Table}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                                      MaxHeight="260" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="地址" Binding="{Binding Address}" Width="80" />
                                     <DataGridTextColumn Header="位" Binding="{Binding Bit}" Width="40" />
@@ -152,20 +187,16 @@
                                     <DataGridTextColumn Header="二进制" Binding="{Binding Binary}" Width="*" />
                                 </DataGrid.Columns>
                             </DataGrid>
-                        </StackPanel>
-                    </jv:GroupBox>
-                </StackPanel>
-            </ScrollViewer>
-
-            <DockPanel Grid.Column="2">
-                <local:OperationListView DockPanel.Dock="Bottom" Height="130" Margin="0,12,0,0" />
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="0,0,12,0">
-                        <jv:TextBlock Style="{StaticResource Text.Hint}" Text="{Binding FunctionHint}" />
-                        <plcViews:PlcPanelView />
-                    </StackPanel>
-                </ScrollViewer>
-            </DockPanel>
+                        </DockPanel>
+                    </TabItem>
+                    <TabItem Header="操作记录">
+                        <local:OperationListView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="报文与日志">
+                        <sessions:LogPanel DataContext="{Binding LogPanel}" Margin="8" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
         </Grid>
     </DockPanel>
 </UserControl>

@@ -9,7 +9,7 @@
              xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
              xmlns:plcViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Plc"
              xmlns:sessions="clr-namespace:Junevy.Communication.DebugAssistant.Views.Sessions">
-    <!-- S7 页签（计划第 7.4 节）：左侧为连接与 TSAP、通道参数、字符串面板与帮助；右侧为公共面板与操作记录。 -->
+    <!-- S7 页签（计划第 7.4 节）：左侧为连接与 TSAP、通道参数、字符串面板与帮助；右侧上方为公共面板，下方为监控表、操作记录与报文日志。 -->
     <UserControl.Resources>
         <ObjectDataProvider x:Key="ConnectionTypes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
             <ObjectDataProvider.MethodParameters>
@@ -24,21 +24,17 @@
     </UserControl.Resources>
 
     <DockPanel Margin="12">
-        <jv:ExpanderPanel DockPanel.Dock="Bottom" DisplayMode="Card" Header="报文与日志" IsExpanded="False" Margin="0,12,0,0">
-            <sessions:LogPanel DataContext="{Binding LogPanel}" Height="200" />
-        </jv:ExpanderPanel>
-
         <local:ConnectionBarView DockPanel.Dock="Top" />
 
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="340" MinWidth="260" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="360" />
             </Grid.ColumnDefinitions>
 
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,0,12,0">
+            <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                <StackPanel>
                     <jv:GroupBox Header="连接参数（ISO-on-TCP）" IsEnabled="{Binding IsEditable}">
                         <StackPanel>
                             <WrapPanel>
@@ -106,14 +102,35 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <DockPanel Grid.Column="2">
-                <local:OperationListView DockPanel.Dock="Bottom" Height="130" Margin="0,12,0,0" />
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="0,0,12,0">
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="140" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="260" MinHeight="120" />
+                </Grid.RowDefinitions>
+
+                <ScrollViewer Grid.Row="0" Style="{StaticResource Panel.SettingsScroll}">
+                    <StackPanel>
                         <plcViews:PlcPanelView />
                     </StackPanel>
                 </ScrollViewer>
-            </DockPanel>
+
+                <GridSplitter Grid.Row="1" Style="{StaticResource Splitter.Rows}" />
+
+                <TabControl Grid.Row="2">
+                    <TabItem Header="监控表">
+                        <plcViews:PlcMonitorView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="操作记录">
+                        <local:OperationListView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="报文与日志">
+                        <sessions:LogPanel DataContext="{Binding LogPanel}" Margin="8" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
         </Grid>
     </DockPanel>
 </UserControl>

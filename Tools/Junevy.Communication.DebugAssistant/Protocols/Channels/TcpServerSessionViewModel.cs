@@ -83,7 +83,7 @@ public sealed partial class TcpServerSessionViewModel : SessionViewModel
 
     /// <summary>连接栏的统计文字（每秒刷新）。</summary>
     [ObservableProperty]
-    private string _statisticsText = "未运行";
+    private string _statisticsText = string.Empty;
 
     public IAsyncRelayCommand SendToSelectedCommand { get; }
 

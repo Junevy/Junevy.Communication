@@ -18,4 +18,10 @@ public sealed record OperationRecord(
 {
     /// <summary>错误种类的中文名称。</summary>
     public string ErrorKindText => CommErrorKindNames.Of(ErrorKind);
+
+    /// <summary>成败的显示文本。</summary>
+    public string ResultText => Succeeded ? "成功" : "失败";
+
+    /// <summary>耗时的显示文本（毫秒）。</summary>
+    public string ElapsedText => $"{Elapsed.TotalMilliseconds:0} ms";
 }

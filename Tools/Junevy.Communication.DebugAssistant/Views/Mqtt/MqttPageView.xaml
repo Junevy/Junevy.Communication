@@ -5,30 +5,24 @@
              xmlns:atc="clr-namespace:Junevy.Controls.AttachedProperties;assembly=Junevy.Controls"
              xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
              xmlns:sessions="clr-namespace:Junevy.Communication.DebugAssistant.Views.Sessions">
-    <!-- MQTT 客户端页（计划第 7.7 节）：左侧为连接、TLS、重连与遗嘱（运行中不可修改）；中间为订阅与接收；右侧为发布（含 MQTT 5 属性）与操作记录。 -->
+    <!-- MQTT 客户端页（计划第 7.7 节）：左侧为连接、TLS、重连与遗嘱（运行中不可修改）；右侧上方为订阅与发布（含 MQTT 5 属性），下方为接收的消息、操作记录与报文日志。 -->
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
     </UserControl.Resources>
 
     <DockPanel Margin="12">
-        <jv:ExpanderPanel DockPanel.Dock="Bottom" DisplayMode="Card" Header="报文与日志" IsExpanded="False" Margin="0,12,0,0">
-            <sessions:LogPanel DataContext="{Binding LogPanel}" Height="200" />
-        </jv:ExpanderPanel>
-
         <local:ConnectionBarView DockPanel.Dock="Top" />
 
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="340" MinWidth="260" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="360" />
             </Grid.ColumnDefinitions>
 
             <!-- 左：连接选项。运行中不可修改（库在创建时取快照）；密码只在内存中，不写入工作区。 -->
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,0,12,0">
+            <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                <StackPanel>
                     <jv:GroupBox Header="连接选项" IsEnabled="{Binding IsEditable}">
                         <StackPanel>
                             <WrapPanel>
@@ -104,113 +98,135 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <!-- 中：订阅与接收 -->
+            <!-- 右上：订阅与发布并排（各自可滚动）；右下：接收的消息、操作记录与报文日志 -->
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
+
             <Grid Grid.Column="2">
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="160" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
+                    <RowDefinition Height="280" MinHeight="120" />
                 </Grid.RowDefinitions>
 
-                <jv:GroupBox Grid.Row="0" Header="订阅">
-                    <StackPanel>
-                        <jv:TextBlock Text="{Binding MqttStateText, StringFormat=连接状态：{0}}" Style="{StaticResource Text.Section}" />
-                        <jv:TextBlock Text="{Binding StateReason}" Style="{StaticResource Text.Hint}" />
-                        <WrapPanel>
-                            <jv:TextBox Width="200" atc:TitleAssist.Title="主题过滤器"
-                                        Text="{Binding NewTopicFilter, UpdateSourceTrigger=PropertyChanged}" />
-                            <jv:ComboBox Width="150" atc:TitleAssist.Title="QoS"
-                                         ItemsSource="{Binding QosChoices}" SelectedItem="{Binding NewSubscribeQos}" />
-                            <jv:Button Content="订阅" Command="{Binding SubscribeCommand}" Margin="0,22,8,12" />
-                            <jv:Button Content="退订选中项" Command="{Binding UnsubscribeCommand}" Margin="0,22,0,12" />
-                        </WrapPanel>
-                        <jv:TextBlock Text="支持通配符 + 与 #。Broker 授予的 QoS 可能低于请求的 QoS。" Style="{StaticResource Text.Hint}" />
-                        <jv:TextBlock Text="{Binding SubscriptionMessage}" Style="{StaticResource Text.Hint}" />
-                        <DataGrid ItemsSource="{Binding Subscriptions}" SelectedItem="{Binding SelectedSubscription, Mode=TwoWay}"
-                                  IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" MaxHeight="180">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="主题过滤器" Binding="{Binding TopicFilter}" Width="*" />
-                                <DataGridTextColumn Header="请求 QoS" Binding="{Binding RequestedText}" Width="90" />
-                                <DataGridTextColumn Header="授予 QoS" Binding="{Binding GrantedText}" Width="90" />
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </StackPanel>
-                </jv:GroupBox>
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="240" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="240" />
+                    </Grid.ColumnDefinitions>
 
-                <jv:GroupBox Grid.Row="1" Header="接收">
-                    <DockPanel>
-                        <jv:Button DockPanel.Dock="Top" Content="清空接收列表" Command="{Binding ClearReceivedCommand}"
-                                   HorizontalAlignment="Left" Margin="0,0,0,12" />
-                        <DataGrid ItemsSource="{Binding ReceivedMessages}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="时间" Binding="{Binding Time}" Width="90" />
-                                <DataGridTextColumn Header="主题" Binding="{Binding Topic}" Width="120" />
-                                <DataGridTextColumn Header="QoS" Binding="{Binding Qos}" Width="60" />
-                                <DataGridTextColumn Header="Retain" Binding="{Binding Retain}" Width="60" />
-                                <DataGridTextColumn Header="负载（文本）" Binding="{Binding PayloadText}" Width="*" />
-                                <DataGridTextColumn Header="负载（十六进制）" Binding="{Binding PayloadHex}" Width="*" />
-                                <DataGridTextColumn Header="MQTT 5 属性" Binding="{Binding Properties}" Width="*" />
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </DockPanel>
-                </jv:GroupBox>
-            </Grid>
+                    <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                        <jv:GroupBox Header="订阅">
+                            <StackPanel>
+                                <jv:TextBlock Text="{Binding MqttStateText, StringFormat=连接状态：{0}}" Style="{StaticResource Text.Section}" />
+                                <jv:TextBlock Text="{Binding StateReason}" Style="{StaticResource Text.Hint}" />
+                                <WrapPanel>
+                                    <jv:TextBox Width="200" atc:TitleAssist.Title="主题过滤器"
+                                                Text="{Binding NewTopicFilter, UpdateSourceTrigger=PropertyChanged}" />
+                                    <jv:ComboBox Width="150" atc:TitleAssist.Title="QoS"
+                                                 ItemsSource="{Binding QosChoices}" SelectedItem="{Binding NewSubscribeQos}" />
+                                    <jv:Button Content="订阅" Command="{Binding SubscribeCommand}" Margin="0,22,8,12" />
+                                    <jv:Button Content="退订选中项" Command="{Binding UnsubscribeCommand}" Margin="0,22,0,12" />
+                                </WrapPanel>
+                                <jv:TextBlock Text="支持通配符 + 与 #。Broker 授予的 QoS 可能低于请求的 QoS。" Style="{StaticResource Text.Hint}" />
+                                <jv:TextBlock Text="{Binding SubscriptionMessage}" Style="{StaticResource Text.Hint}" />
+                                <DataGrid ItemsSource="{Binding Subscriptions}" SelectedItem="{Binding SelectedSubscription, Mode=TwoWay}"
+                                          IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" MaxHeight="180">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="主题过滤器" Binding="{Binding TopicFilter}" Width="*" />
+                                        <DataGridTextColumn Header="请求 QoS" Binding="{Binding RequestedText}" Width="90" />
+                                        <DataGridTextColumn Header="授予 QoS" Binding="{Binding GrantedText}" Width="90" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </StackPanel>
+                        </jv:GroupBox>
+                    </ScrollViewer>
 
-            <!-- 右：发布（含 MQTT 5 属性），以及操作记录（连接、订阅、发布的结果与错误种类） -->
-            <DockPanel Grid.Column="4">
-                <local:OperationListView DockPanel.Dock="Bottom" Height="130" Margin="0,12,0,0" />
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <jv:GroupBox Header="发布" Margin="0,0,12,0">
-                        <StackPanel>
-                            <WrapPanel>
-                                <jv:TextBox Width="200" atc:TitleAssist.Title="主题"
-                                            Text="{Binding PublishTopic, UpdateSourceTrigger=PropertyChanged}" />
-                                <jv:ComboBox Width="150" atc:TitleAssist.Title="QoS"
-                                             ItemsSource="{Binding QosChoices}" SelectedItem="{Binding PublishQos}" />
-                            </WrapPanel>
-                            <WrapPanel>
-                                <jv:CheckBox Content="Retain" IsChecked="{Binding PublishRetain}" />
-                                <jv:CheckBox Content="负载按十六进制输入（如 0A FF）" IsChecked="{Binding PublishPayloadAsHex}" />
-                            </WrapPanel>
-                            <jv:TextBox Text="{Binding PublishPayload, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="56"
-                                        TextWrapping="Wrap" atc:TitleAssist.Title="负载" Margin="0,0,0,12" />
-                            <WrapPanel>
-                                <jv:TextBox Width="130" atc:TitleAssist.Title="ContentType"
-                                            Text="{Binding ContentType, UpdateSourceTrigger=PropertyChanged}" />
-                                <jv:TextBox Width="130" atc:TitleAssist.Title="ResponseTopic"
-                                            Text="{Binding ResponseTopic, UpdateSourceTrigger=PropertyChanged}" />
-                                <jv:TextBox Width="150" atc:TitleAssist.Title="CorrelationData（十六进制）"
-                                            Text="{Binding CorrelationDataHex, UpdateSourceTrigger=PropertyChanged}" />
-                                <jv:TextBox Width="110" atc:TitleAssist.Title="过期间隔（秒）"
-                                            Text="{Binding MessageExpiryText, UpdateSourceTrigger=PropertyChanged}" />
-                            </WrapPanel>
-                            <jv:TextBlock Text="V3.1.1 连接上发布带 MQTT 5 属性的消息会返回 InvalidRequest，并且不会发送；这里可以看到这个结果。"
-                                          Style="{StaticResource Text.Hint}"
-                                          Visibility="{Binding IsVersion311, Converter={StaticResource BoolToVisibility}}" />
-                            <WrapPanel>
-                                <jv:TextBox Width="130" atc:TitleAssist.Title="用户属性名称"
-                                            Text="{Binding NewUserPropertyName, UpdateSourceTrigger=PropertyChanged}" />
-                                <jv:TextBox Width="130" atc:TitleAssist.Title="值"
-                                            Text="{Binding NewUserPropertyValue, UpdateSourceTrigger=PropertyChanged}" />
-                                <jv:Button Content="添加属性" Command="{Binding AddUserPropertyCommand}" Margin="0,22,8,12" />
-                                <jv:Button Content="删除选中属性" Command="{Binding RemoveUserPropertyCommand}"
-                                           CommandParameter="{Binding SelectedUserProperty}" Margin="0,22,0,12" />
-                            </WrapPanel>
-                            <DataGrid ItemsSource="{Binding PublishUserProperties}" SelectedItem="{Binding SelectedUserProperty, Mode=TwoWay}"
-                                      IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" MaxHeight="90">
+                    <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
+
+                    <!-- 发布（含 MQTT 5 属性） -->
+                    <ScrollViewer Grid.Column="2" Style="{StaticResource Panel.SettingsScroll}">
+                        <jv:GroupBox Header="发布">
+                            <StackPanel>
+                                <WrapPanel>
+                                    <jv:TextBox Width="200" atc:TitleAssist.Title="主题"
+                                                Text="{Binding PublishTopic, UpdateSourceTrigger=PropertyChanged}" />
+                                    <jv:ComboBox Width="150" atc:TitleAssist.Title="QoS"
+                                                 ItemsSource="{Binding QosChoices}" SelectedItem="{Binding PublishQos}" />
+                                </WrapPanel>
+                                <WrapPanel>
+                                    <jv:CheckBox Content="Retain" IsChecked="{Binding PublishRetain}" />
+                                    <jv:CheckBox Content="负载按十六进制输入（如 0A FF）" IsChecked="{Binding PublishPayloadAsHex}" />
+                                </WrapPanel>
+                                <jv:TextBox Text="{Binding PublishPayload, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="56"
+                                            TextWrapping="Wrap" atc:TitleAssist.Title="负载" Margin="0,0,0,12" />
+                                <WrapPanel>
+                                    <jv:TextBox Width="130" atc:TitleAssist.Title="ContentType"
+                                                Text="{Binding ContentType, UpdateSourceTrigger=PropertyChanged}" />
+                                    <jv:TextBox Width="130" atc:TitleAssist.Title="ResponseTopic"
+                                                Text="{Binding ResponseTopic, UpdateSourceTrigger=PropertyChanged}" />
+                                    <jv:TextBox Width="150" atc:TitleAssist.Title="CorrelationData（十六进制）"
+                                                Text="{Binding CorrelationDataHex, UpdateSourceTrigger=PropertyChanged}" />
+                                    <jv:TextBox Width="110" atc:TitleAssist.Title="过期间隔（秒）"
+                                                Text="{Binding MessageExpiryText, UpdateSourceTrigger=PropertyChanged}" />
+                                </WrapPanel>
+                                <jv:TextBlock Text="V3.1.1 连接上发布带 MQTT 5 属性的消息会返回 InvalidRequest，并且不会发送；这里可以看到这个结果。"
+                                              Style="{StaticResource Text.Hint}"
+                                              Visibility="{Binding IsVersion311, Converter={StaticResource BoolToVisibility}}" />
+                                <WrapPanel>
+                                    <jv:TextBox Width="130" atc:TitleAssist.Title="用户属性名称"
+                                                Text="{Binding NewUserPropertyName, UpdateSourceTrigger=PropertyChanged}" />
+                                    <jv:TextBox Width="130" atc:TitleAssist.Title="值"
+                                                Text="{Binding NewUserPropertyValue, UpdateSourceTrigger=PropertyChanged}" />
+                                    <jv:Button Content="添加属性" Command="{Binding AddUserPropertyCommand}" Margin="0,22,8,12" />
+                                    <jv:Button Content="删除选中属性" Command="{Binding RemoveUserPropertyCommand}"
+                                               CommandParameter="{Binding SelectedUserProperty}" Margin="0,22,0,12" />
+                                </WrapPanel>
+                                <DataGrid ItemsSource="{Binding PublishUserProperties}" SelectedItem="{Binding SelectedUserProperty, Mode=TwoWay}"
+                                          IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" MaxHeight="90">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="*" />
+                                        <DataGridTextColumn Header="值" Binding="{Binding Value}" Width="*" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <WrapPanel Margin="0,12,0,0">
+                                    <jv:Button Content="发布" Command="{Binding PublishCommand}" Margin="0,0,12,0" />
+                                    <jv:TextBlock Text="{Binding PublishMessage}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </jv:GroupBox>
+                    </ScrollViewer>
+                </Grid>
+
+                <GridSplitter Grid.Row="1" Style="{StaticResource Splitter.Rows}" />
+
+                <TabControl Grid.Row="2">
+                    <TabItem Header="接收的消息">
+                        <DockPanel Margin="8">
+                            <jv:Button DockPanel.Dock="Top" Content="清空接收列表" Command="{Binding ClearReceivedCommand}"
+                                       HorizontalAlignment="Left" Margin="0,0,0,12" />
+                            <DataGrid ItemsSource="{Binding ReceivedMessages}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="*" />
-                                    <DataGridTextColumn Header="值" Binding="{Binding Value}" Width="*" />
+                                    <DataGridTextColumn Header="时间" Binding="{Binding Time}" Width="90" />
+                                    <DataGridTextColumn Header="主题" Binding="{Binding Topic}" Width="160" />
+                                    <DataGridTextColumn Header="QoS" Binding="{Binding Qos}" Width="60" />
+                                    <DataGridTextColumn Header="Retain" Binding="{Binding Retain}" Width="60" />
+                                    <DataGridTextColumn Header="负载（文本）" Binding="{Binding PayloadText}" Width="*" MinWidth="160" />
+                                    <DataGridTextColumn Header="负载（十六进制）" Binding="{Binding PayloadHex}" Width="*" MinWidth="160" />
+                                    <DataGridTextColumn Header="MQTT 5 属性" Binding="{Binding Properties}" Width="*" MinWidth="120" />
                                 </DataGrid.Columns>
                             </DataGrid>
-                            <WrapPanel Margin="0,12,0,0">
-                                <jv:Button Content="发布" Command="{Binding PublishCommand}" Margin="0,0,12,0" />
-                                <jv:TextBlock Text="{Binding PublishMessage}" VerticalAlignment="Center" TextWrapping="Wrap" />
-                            </WrapPanel>
-                        </StackPanel>
-                    </jv:GroupBox>
-                </ScrollViewer>
-            </DockPanel>
+                        </DockPanel>
+                    </TabItem>
+                    <TabItem Header="操作记录">
+                        <local:OperationListView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="报文与日志">
+                        <sessions:LogPanel DataContext="{Binding LogPanel}" Margin="8" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
         </Grid>
     </DockPanel>
 </UserControl>

@@ -8,7 +8,7 @@
              xmlns:secs="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Secs"
              xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
              xmlns:sessions="clr-namespace:Junevy.Communication.DebugAssistant.Views.Sessions">
-    <!-- SECS/HSMS 设备端页（计划第 7.6 节）：左侧为连接、计时器与发送主消息；中间为自动应答规则；右侧为收到的主消息与操作记录。 -->
+    <!-- SECS/HSMS 设备端页（计划第 7.6 节）：左侧为连接、计时器与发送主消息；右侧上方为自动应答规则，下方为收到的主消息、操作记录与报文日志。 -->
     <UserControl.Resources>
         <ObjectDataProvider x:Key="ModeChoices" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
             <ObjectDataProvider.MethodParameters>
@@ -23,24 +23,18 @@
     </UserControl.Resources>
 
     <DockPanel Margin="12">
-        <jv:ExpanderPanel DockPanel.Dock="Bottom" DisplayMode="Card" Header="报文与日志" IsExpanded="False" Margin="0,12,0,0">
-            <sessions:LogPanel DataContext="{Binding LogPanel}" Height="200" />
-        </jv:ExpanderPanel>
-
         <local:ConnectionBarView DockPanel.Dock="Top" />
 
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="340" MinWidth="260" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="360" />
             </Grid.ColumnDefinitions>
 
             <!-- 左：连接与计时器（运行中不可修改，库在启动时取快照），以及发送主消息。 -->
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,0,12,0">
+            <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                <StackPanel>
                     <jv:GroupBox Header="连接" IsEnabled="{Binding IsEditable}">
                         <StackPanel>
                             <WrapPanel>
@@ -109,53 +103,76 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <!-- 中：自动应答规则（会话状态与原因也在这里显示）。没有规则的 S/F 只在日志里显示头部（F-4）。 -->
-            <jv:GroupBox Grid.Column="2" Header="自动应答规则">
-                <DockPanel>
-                    <jv:TextBlock DockPanel.Dock="Top" Text="{Binding HsmsStateText, StringFormat=会话状态：{0}}" Style="{StaticResource Text.Section}" />
-                    <jv:TextBlock DockPanel.Dock="Top" Text="{Binding StateReason}" Style="{StaticResource Text.Hint}" />
-                    <WrapPanel DockPanel.Dock="Top">
-                        <jv:TextBox Width="70" atc:TitleAssist.Title="S"
-                                    Text="{Binding NewRuleStream, UpdateSourceTrigger=PropertyChanged}" />
-                        <jv:TextBox Width="90" atc:TitleAssist.Title="F（奇数）"
-                                    Text="{Binding NewRuleFunction, UpdateSourceTrigger=PropertyChanged}" />
-                        <jv:ComboBox Width="130" atc:TitleAssist.Title="应答方式"
-                                     ItemsSource="{Binding Source={StaticResource RuleKindChoices}}" SelectedItem="{Binding NewRuleKind}" />
-                        <jv:Button Content="登记（同一 S/F 替换）" Command="{Binding AddRuleCommand}" Margin="0,22,0,12" />
-                    </WrapPanel>
-                    <jv:TextBox DockPanel.Dock="Top" Text="{Binding NewRuleSml, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="70"
-                                FontFamily="Consolas" TextWrapping="Wrap" atc:TitleAssist.Title="应答的 SML（留空表示没有正文）" Margin="0,0,0,8" />
-                    <jv:TextBlock DockPanel.Dock="Top" Text="{Binding RuleMessage}" Style="{StaticResource Text.Hint}" />
-                    <jv:Button DockPanel.Dock="Bottom" Content="删除选中的规则" Command="{Binding RemoveRuleCommand}"
-                               CommandParameter="{Binding SelectedItem, ElementName=RuleGrid}" HorizontalAlignment="Left" Margin="0,8,0,0" />
-                    <DataGrid x:Name="RuleGrid" ItemsSource="{Binding Rules}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="S" Binding="{Binding Stream}" Width="50" />
-                            <DataGridTextColumn Header="F" Binding="{Binding Function}" Width="50" />
-                            <DataGridTextColumn Header="应答方式" Binding="{Binding KindText}" Width="110" />
-                            <DataGridTextColumn Header="应答 SML" Binding="{Binding Sml}" Width="*" />
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </DockPanel>
-            </jv:GroupBox>
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
 
-            <!-- 右：收到的主消息与操作记录。 -->
-            <DockPanel Grid.Column="4">
-                <local:OperationListView DockPanel.Dock="Bottom" Height="130" Margin="0,12,0,0" />
-                <jv:GroupBox Header="收到的主消息">
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="200" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="260" MinHeight="120" />
+                </Grid.RowDefinitions>
+
+                <!-- 自动应答规则：左侧登记表单，右侧规则列表（会话状态与原因也在这里显示）。没有规则的 S/F 只在日志里显示头部（F-4）。 -->
+                <jv:GroupBox Grid.Row="0" Header="自动应答规则" Margin="0">
                     <DockPanel>
-                        <jv:TextBlock DockPanel.Dock="Top" Text="只显示有规则的 S/F 的正文，其它的只在日志中看到头部。" Style="{StaticResource Text.Hint}" />
-                        <DataGrid ItemsSource="{Binding ReceivedMessages}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                        <ScrollViewer DockPanel.Dock="Left" Width="330" Style="{StaticResource Panel.SettingsScroll}" Margin="0,0,12,0">
+                            <StackPanel>
+                                <jv:TextBlock Text="{Binding HsmsStateText, StringFormat=会话状态：{0}}" Style="{StaticResource Text.Section}" />
+                                <jv:TextBlock Text="{Binding StateReason}" Style="{StaticResource Text.Hint}" />
+                                <WrapPanel>
+                                    <jv:TextBox Width="70" atc:TitleAssist.Title="S"
+                                                Text="{Binding NewRuleStream, UpdateSourceTrigger=PropertyChanged}" />
+                                    <jv:TextBox Width="90" atc:TitleAssist.Title="F（奇数）"
+                                                Text="{Binding NewRuleFunction, UpdateSourceTrigger=PropertyChanged}" />
+                                    <jv:ComboBox Width="130" atc:TitleAssist.Title="应答方式"
+                                                 ItemsSource="{Binding Source={StaticResource RuleKindChoices}}" SelectedItem="{Binding NewRuleKind}" />
+                                </WrapPanel>
+                                <jv:TextBox Text="{Binding NewRuleSml, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" Height="90"
+                                            FontFamily="Consolas" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                            atc:TitleAssist.Title="应答的 SML（留空表示没有正文）" Margin="0,0,0,12" />
+                                <WrapPanel>
+                                    <jv:Button Content="登记（同一 S/F 替换）" Command="{Binding AddRuleCommand}" Margin="0,0,8,12" />
+                                    <jv:Button Content="删除选中的规则" Command="{Binding RemoveRuleCommand}"
+                                               CommandParameter="{Binding SelectedItem, ElementName=RuleGrid}" Margin="0,0,0,12" />
+                                </WrapPanel>
+                                <jv:TextBlock Text="{Binding RuleMessage}" Style="{StaticResource Text.Hint}" />
+                            </StackPanel>
+                        </ScrollViewer>
+                        <DataGrid x:Name="RuleGrid" ItemsSource="{Binding Rules}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="时间" Binding="{Binding Time}" Width="90" />
-                                <DataGridTextColumn Header="S/F" Binding="{Binding Header}" Width="90" />
-                                <DataGridTextColumn Header="SML" Binding="{Binding Sml}" Width="*" />
+                                <DataGridTextColumn Header="S" Binding="{Binding Stream}" Width="50" />
+                                <DataGridTextColumn Header="F" Binding="{Binding Function}" Width="50" />
+                                <DataGridTextColumn Header="应答方式" Binding="{Binding KindText}" Width="110" />
+                                <DataGridTextColumn Header="应答 SML" Binding="{Binding Sml}" Width="*" MinWidth="160" />
                             </DataGrid.Columns>
                         </DataGrid>
                     </DockPanel>
                 </jv:GroupBox>
-            </DockPanel>
+
+                <GridSplitter Grid.Row="1" Style="{StaticResource Splitter.Rows}" />
+
+                <TabControl Grid.Row="2">
+                    <TabItem Header="收到的主消息">
+                        <DockPanel Margin="8">
+                            <jv:TextBlock DockPanel.Dock="Top" Text="只显示有规则的 S/F 的正文，其它的只在日志中看到头部。" Style="{StaticResource Text.Hint}" />
+                            <DataGrid ItemsSource="{Binding ReceivedMessages}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="时间" Binding="{Binding Time}" Width="90" />
+                                    <DataGridTextColumn Header="S/F" Binding="{Binding Header}" Width="90" />
+                                    <DataGridTextColumn Header="SML" Binding="{Binding Sml}" Width="*" MinWidth="200" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </TabItem>
+                    <TabItem Header="操作记录">
+                        <local:OperationListView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="报文与日志">
+                        <sessions:LogPanel DataContext="{Binding LogPanel}" Margin="8" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
         </Grid>
     </DockPanel>
 </UserControl>

@@ -47,7 +47,11 @@ public sealed partial class ModbusSessionViewModel : PlcSessionViewModel
     }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSerial))]
     private PlcTransport _transport = PlcTransport.Tcp;
+
+    /// <summary>是否为串口传输：界面据此只显示主机与端口，或只显示串口参数。</summary>
+    public bool IsSerial => Transport == PlcTransport.Serial;
 
     [ObservableProperty]
     private ModbusFrameChoice _frame = ModbusFrameChoice.Auto;
@@ -247,6 +251,13 @@ public sealed partial class ModbusSessionViewModel : PlcSessionViewModel
 
     private void RefreshFunctionHint()
     {
+        // 地址为空时公共面板已提示"请输入地址"，这里不再重复库的解析错误。
+        if (string.IsNullOrWhiteSpace(Address))
+        {
+            FunctionHint = string.Empty;
+            return;
+        }
+
         CommResult<PlcAddress> parsed = ParseAddressText(ToProtocolAddress(Address));
         FunctionHint = parsed.IsSuccess
             ? ModbusFunctionHint.Describe(parsed.Data!.Device.Symbol, Count, UseSingleWriteFunctions)

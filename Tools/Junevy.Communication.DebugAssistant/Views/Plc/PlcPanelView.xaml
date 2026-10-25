@@ -7,9 +7,8 @@
              xmlns:plc="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Plc"
              xmlns:core="clr-namespace:Junevy.Communication.Core.Buffers;assembly=Junevy.Communication.Core"
              xmlns:common="clr-namespace:Junevy.Communication.DebugAssistant.Common;assembly=Junevy.Communication.DebugAssistant">
-    <!-- PLC 公共面板（计划第 7.1 节）：地址与类型化读写、套件选项、监控表。协议页签的 DataContext 是页签的视图模型。 -->
+    <!-- PLC 公共面板（计划第 7.1 节）：地址与类型化读写、套件选项。监控表在 PlcMonitorView（页签底部活动区）。协议页签的 DataContext 是页签的视图模型。 -->
     <UserControl.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
         <ObjectDataProvider x:Key="ValueTypes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="plc:PlcValueType" />
@@ -45,12 +44,12 @@
                     <jv:Button Content="读取" Command="{Binding ReadCommand}" Margin="0,0,8,12" />
                     <jv:Button Content="写入" Command="{Binding WriteCommand}" Margin="0,0,8,12" />
                 </WrapPanel>
-                <WrapPanel>
-                    <jv:TextBox Width="240" atc:TitleAssist.Title="写入的值（逗号分隔）"
-                                Text="{Binding WriteText, UpdateSourceTrigger=PropertyChanged}" />
-                    <jv:TextBox Width="240" atc:TitleAssist.Title="读取结果"
-                                Text="{Binding ReadText, Mode=OneWay}" IsReadOnly="True" />
-                </WrapPanel>
+                <!-- 两个框随面板拉宽；读取结果可能很长（多个值、长字符串），多行换行显示，不截断。 -->
+                <jv:TextBox atc:TitleAssist.Title="写入的值（逗号分隔）" Margin="0,0,0,12"
+                            Text="{Binding WriteText, UpdateSourceTrigger=PropertyChanged}" />
+                <jv:TextBox atc:TitleAssist.Title="读取结果" Margin="0,0,0,12" MinHeight="56" MaxHeight="160"
+                            TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                            Text="{Binding ReadText, Mode=OneWay}" IsReadOnly="True" />
             </StackPanel>
         </Border>
 
@@ -78,47 +77,6 @@
                     <jv:TextBlock Style="{StaticResource Text.Hint}" Margin="0,22,0,12"
                                   Text="{Binding ProtocolEncoding, StringFormat=协议默认 {0}}" />
                 </WrapPanel>
-            </StackPanel>
-        </jv:GroupBox>
-
-        <!-- 监控表：默认折叠，展开后逐行轮询 -->
-        <jv:GroupBox Header="监控表" IsCollapsible="True" IsCollapsed="True">
-            <StackPanel>
-                <WrapPanel>
-                    <jv:Button Content="添加到监控表" Command="{Binding AddMonitorCommand}" Margin="0,22,8,12" />
-                    <jv:TextBox Width="130" atc:TitleAssist.Title="轮询间隔（毫秒）"
-                                Text="{Binding MonitorIntervalMs, UpdateSourceTrigger=PropertyChanged}" />
-                    <jv:Button Content="开始监控" Command="{Binding StartMonitorCommand}" Margin="0,22,8,12" />
-                    <jv:Button Content="停止监控" Command="{Binding StopMonitorCommand}" Margin="0,22,8,12" />
-                    <jv:TextBlock Text="监控中" Foreground="{DynamicResource Theme.Brush.Text.Secondary}" VerticalAlignment="Center" Margin="0,22,0,12"
-                                  Visibility="{Binding IsMonitoring, Converter={StaticResource BoolToVisibility}}" />
-                </WrapPanel>
-                <DataGrid ItemsSource="{Binding Monitor}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="False"
-                          MaxHeight="260" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="地址" Binding="{Binding Address}" Width="120" IsReadOnly="True" />
-                        <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="80" IsReadOnly="True" />
-                        <DataGridTextColumn Header="数量或长度" Binding="{Binding Count}" Width="90" IsReadOnly="True" />
-                        <DataGridTextColumn Header="当前值" Binding="{Binding Value}" Width="*" IsReadOnly="True" />
-                        <DataGridTextColumn Header="新值" Binding="{Binding NewValue, UpdateSourceTrigger=PropertyChanged}" Width="120" />
-                        <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="180" IsReadOnly="True" />
-                        <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedAt, StringFormat=HH:mm:ss.fff}" Width="100" IsReadOnly="True" />
-                        <DataGridTemplateColumn Header="操作" Width="150">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <StackPanel Orientation="Horizontal">
-                                        <jv:Button Content="写入新值"
-                                                   Command="{Binding DataContext.WriteMonitorCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                                   CommandParameter="{Binding}" Margin="0,0,6,0" />
-                                        <jv:Button Content="删除"
-                                                   Command="{Binding DataContext.RemoveMonitorCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                                   CommandParameter="{Binding}" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
-                    </DataGrid.Columns>
-                </DataGrid>
             </StackPanel>
         </jv:GroupBox>
     </StackPanel>

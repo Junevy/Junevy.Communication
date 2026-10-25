@@ -74,9 +74,9 @@ public sealed class ChannelPageViewTests
         });
     }
 
-    private static void AssertLogPanelBound(System.Windows.DependencyObject view, SessionViewModel session)
+    private static void AssertLogPanelBound(System.Windows.FrameworkElement view, SessionViewModel session)
     {
-        LogPanel? panel = VisualTree.FindChild<LogPanel>(view);
+        LogPanel? panel = VisualTree.Reveal<LogPanel>(view);
         Assert.NotNull(panel);
         Assert.Same(session.LogPanel, panel.DataContext);
     }

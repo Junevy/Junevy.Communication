@@ -5,25 +5,19 @@
              xmlns:atc="clr-namespace:Junevy.Controls.AttachedProperties;assembly=Junevy.Controls"
              xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
              xmlns:sessions="clr-namespace:Junevy.Communication.DebugAssistant.Views.Sessions">
-    <!-- SOAP 客户端页（计划第 7.10 节）：左侧为连接、认证、重试与健康检查（运行中不可修改）；中间为原始调用；右侧为响应、Fault、可用性与时间线；底部为报文与日志。 -->
+    <!-- SOAP 客户端页（计划第 7.10 节）：左侧为连接、认证、重试与健康检查（运行中不可修改）；右侧上方为调用与响应（含 Fault）并排，下方为时间线、操作记录与报文日志。 -->
     <DockPanel Margin="12">
-        <jv:ExpanderPanel DockPanel.Dock="Bottom" DisplayMode="Card" Header="报文与日志" IsExpanded="False" Margin="0,12,0,0">
-            <sessions:LogPanel DataContext="{Binding LogPanel}" Height="200" />
-        </jv:ExpanderPanel>
-
         <local:ConnectionBarView DockPanel.Dock="Top" />
 
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="340" MinWidth="260" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="360" />
             </Grid.ColumnDefinitions>
 
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,0,12,0">
+            <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                <StackPanel>
                     <jv:GroupBox Header="连接" IsEnabled="{Binding IsEditable}">
                         <StackPanel>
                             <jv:TextBox atc:TitleAssist.Title="地址"
@@ -88,47 +82,79 @@
             </ScrollViewer>
 
             <!-- 中：原始调用。SOAPAction 与正文都是 XML 文本，正文的根元素即 Body 的第一个子元素。 -->
-            <jv:GroupBox Grid.Column="2" Header="调用">
-                <DockPanel>
-                    <WrapPanel DockPanel.Dock="Top">
-                        <jv:TextBox Width="260" atc:TitleAssist.Title="SOAPAction"
-                                    Text="{Binding SoapAction, UpdateSourceTrigger=PropertyChanged}" />
-                        <jv:Button Content="发送" Command="{Binding SendCommand}" Margin="0,22,0,12" />
-                    </WrapPanel>
-                    <jv:TextBlock DockPanel.Dock="Top" Text="{Binding RequestMessage}" Style="{StaticResource Text.Hint}" />
-                    <jv:TextBlock DockPanel.Dock="Top" Text="正文（XML，Body 的第一个子元素）" Style="{StaticResource Text.Hint}" />
-                    <jv:CodeEditor Text="{Binding BodyXml, Mode=TwoWay}" SyntaxLanguage="Xml" />
-                </DockPanel>
-            </jv:GroupBox>
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
 
-            <!-- 右：响应、Fault、可用性与时间线；底部为操作记录。 -->
-            <DockPanel Grid.Column="4">
-                <local:OperationListView DockPanel.Dock="Bottom" Height="130" Margin="0,12,0,0" />
-                <jv:GroupBox Header="响应与时间线">
-                    <DockPanel>
-                        <WrapPanel DockPanel.Dock="Top">
-                            <jv:TextBlock Text="{Binding AvailabilityText, StringFormat=可用性：{0}}" Style="{StaticResource Text.Section}" Margin="0,0,16,8" />
-                            <jv:TextBlock Text="{Binding ResponseStatus, StringFormat=HTTP 状态：{0}}" Margin="0,4,16,8" />
-                            <jv:TextBlock Text="{Binding ResponseRemoteCode, StringFormat=远端码（Fault 码）：{0}}" Margin="0,4,16,8" />
-                            <jv:TextBlock Text="{Binding ResponseErrorKind, StringFormat=结果：{0}}" Margin="0,4,0,8" />
-                        </WrapPanel>
-                        <jv:TextBlock DockPanel.Dock="Top" Text="{Binding ResponseMessage}" Style="{StaticResource Text.Hint}" />
-                        <jv:TextBlock DockPanel.Dock="Top" Text="响应 XML" Style="{StaticResource Text.Hint}" />
-                        <jv:CodeEditor DockPanel.Dock="Top" Text="{Binding ResponseXml, Mode=OneWay}" SyntaxLanguage="Xml" IsReadOnly="True" Height="150" />
-                        <jv:Button DockPanel.Dock="Top" Content="清空时间线" Command="{Binding ClearTimelineCommand}" HorizontalAlignment="Left" Margin="0,8,0,8" />
-                        <DataGrid ItemsSource="{Binding Timeline}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="时间" Binding="{Binding Time}" Width="90" />
-                                <DataGridTextColumn Header="事件" Binding="{Binding Event}" Width="70" />
-                                <DataGridTextColumn Header="尝试" Binding="{Binding Attempt}" Width="50" />
-                                <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="60" />
-                                <DataGridTextColumn Header="说明" Binding="{Binding Detail}" Width="*" />
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </DockPanel>
-                </jv:GroupBox>
-            </DockPanel>
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="200" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="240" MinHeight="120" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="260" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="260" />
+                    </Grid.ColumnDefinitions>
+
+                    <jv:GroupBox Grid.Column="0" Margin="0" Header="调用">
+                        <DockPanel>
+                            <WrapPanel DockPanel.Dock="Top">
+                                <jv:TextBox Width="260" atc:TitleAssist.Title="SOAPAction"
+                                            Text="{Binding SoapAction, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:Button Content="发送" Command="{Binding SendCommand}" Margin="0,22,0,12" />
+                            </WrapPanel>
+                            <jv:TextBlock DockPanel.Dock="Top" Text="{Binding RequestMessage}" Style="{StaticResource Text.Hint}" />
+                            <jv:TextBlock DockPanel.Dock="Top" Text="正文（XML，Body 的第一个子元素）" Style="{StaticResource Text.Hint}" />
+                            <jv:CodeEditor Text="{Binding BodyXml, Mode=TwoWay}" SyntaxLanguage="Xml" />
+                        </DockPanel>
+                    </jv:GroupBox>
+
+                    <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
+
+                    <!-- 响应：状态在上，正文占满剩余高度 -->
+                    <jv:GroupBox Grid.Column="2" Header="响应" Margin="0">
+                        <DockPanel>
+                            <WrapPanel DockPanel.Dock="Top">
+                                <jv:TextBlock Text="{Binding AvailabilityText, StringFormat=可用性：{0}}" Style="{StaticResource Text.Section}" Margin="0,0,16,8" />
+                                <jv:TextBlock Text="{Binding ResponseStatus, StringFormat=HTTP 状态：{0}}" Margin="0,4,16,8" />
+                                <jv:TextBlock Text="{Binding ResponseRemoteCode, StringFormat=远端码（Fault 码）：{0}}" Margin="0,4,16,8" />
+                                <jv:TextBlock Text="{Binding ResponseErrorKind, StringFormat=结果：{0}}" Margin="0,4,0,8" />
+                            </WrapPanel>
+                            <jv:TextBlock DockPanel.Dock="Top" Text="{Binding ResponseMessage}" Style="{StaticResource Text.Hint}" TextWrapping="Wrap" />
+                            <jv:TextBlock DockPanel.Dock="Top" Text="响应 XML" Style="{StaticResource Text.Hint}" />
+                            <jv:CodeEditor Text="{Binding ResponseXml, Mode=OneWay}" SyntaxLanguage="Xml" IsReadOnly="True" MinHeight="80" />
+                        </DockPanel>
+                    </jv:GroupBox>
+                </Grid>
+
+                <GridSplitter Grid.Row="1" Style="{StaticResource Splitter.Rows}" />
+
+                <TabControl Grid.Row="2">
+                    <TabItem Header="时间线">
+                        <DockPanel Margin="8">
+                            <jv:Button DockPanel.Dock="Top" Content="清空时间线" Command="{Binding ClearTimelineCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                            <DataGrid ItemsSource="{Binding Timeline}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="时间" Binding="{Binding Time}" Width="90" />
+                                    <DataGridTextColumn Header="事件" Binding="{Binding Event}" Width="80" />
+                                    <DataGridTextColumn Header="尝试" Binding="{Binding Attempt}" Width="50" />
+                                    <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="60" />
+                                    <DataGridTextColumn Header="说明" Binding="{Binding Detail}" Width="*" MinWidth="200" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </TabItem>
+                    <TabItem Header="操作记录">
+                        <local:OperationListView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="报文与日志">
+                        <sessions:LogPanel DataContext="{Binding LogPanel}" Margin="8" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
         </Grid>
     </DockPanel>
 </UserControl>

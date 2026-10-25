@@ -26,7 +26,7 @@ public sealed class SecsPageViewTests
             VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
-            LogPanel? panel = VisualTree.FindChild<LogPanel>(view);
+            LogPanel? panel = VisualTree.Reveal<LogPanel>(view);
             Assert.NotNull(panel);
             Assert.Same(page.LogPanel, panel.DataContext);
         });

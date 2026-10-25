@@ -6,23 +6,19 @@
              xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
              xmlns:plcViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Plc"
              xmlns:sessions="clr-namespace:Junevy.Communication.DebugAssistant.Views.Sessions">
-    <!-- FINS 页签（计划第 7.5 节）：左侧为节点与路由、握手结果、通道参数、区域速查表与说明；右侧为公共面板与操作记录。 -->
+    <!-- FINS 页签（计划第 7.5 节）：左侧为节点与路由、握手结果、通道参数与说明；右侧上方为公共面板，下方为监控表、区域速查、操作记录与报文日志。 -->
     <DockPanel Margin="12">
-        <jv:ExpanderPanel DockPanel.Dock="Bottom" DisplayMode="Card" Header="报文与日志" IsExpanded="False" Margin="0,12,0,0">
-            <sessions:LogPanel DataContext="{Binding LogPanel}" Height="200" />
-        </jv:ExpanderPanel>
-
         <local:ConnectionBarView DockPanel.Dock="Top" />
 
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="340" MinWidth="260" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="360" />
             </Grid.ColumnDefinitions>
 
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,0,12,0">
+            <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                <StackPanel>
                     <jv:GroupBox Header="节点与路由（FINS/TCP，端口 9600）" IsEnabled="{Binding IsEditable}">
                         <StackPanel>
                             <WrapPanel>
@@ -50,16 +46,6 @@
                         <local:ChannelSettingsView DataContext="{Binding Channel}" />
                     </jv:GroupBox>
 
-                    <jv:GroupBox Header="区域速查表（地址与位号为十进制，区域代码为十六进制）" IsCollapsible="True" IsCollapsed="True">
-                        <DataGrid x:Name="AreaGrid" ItemsSource="{Binding Areas}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                                  MaxHeight="300" VirtualizingPanel.IsVirtualizing="False">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="区域" Binding="{Binding Symbol}" Width="70" />
-                                <DataGridTextColumn Header="字区代码" Binding="{Binding WordAreaCodeText}" Width="90" />
-                                <DataGridTextColumn Header="位区代码" Binding="{Binding BitAreaCodeText}" Width="90" />
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </jv:GroupBox>
 
                     <jv:GroupBox Header="说明" IsCollapsible="True" IsCollapsed="True">
                         <StackPanel>
@@ -76,14 +62,45 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <DockPanel Grid.Column="2">
-                <local:OperationListView DockPanel.Dock="Bottom" Height="130" Margin="0,12,0,0" />
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="0,0,12,0">
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="140" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="260" MinHeight="120" />
+                </Grid.RowDefinitions>
+
+                <ScrollViewer Grid.Row="0" Style="{StaticResource Panel.SettingsScroll}">
+                    <StackPanel>
                         <plcViews:PlcPanelView />
                     </StackPanel>
                 </ScrollViewer>
-            </DockPanel>
+
+                <GridSplitter Grid.Row="1" Style="{StaticResource Splitter.Rows}" />
+
+                <TabControl Grid.Row="2">
+                    <TabItem Header="监控表">
+                        <plcViews:PlcMonitorView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="区域速查" ToolTip="地址与位号为十进制，区域代码为十六进制">
+                        <DataGrid x:Name="AreaGrid" ItemsSource="{Binding Areas}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                                  Margin="8" VirtualizingPanel.IsVirtualizing="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="区域" Binding="{Binding Symbol}" Width="70" />
+                                <DataGridTextColumn Header="字区代码" Binding="{Binding WordAreaCodeText}" Width="90" />
+                                <DataGridTextColumn Header="位区代码" Binding="{Binding BitAreaCodeText}" Width="90" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </TabItem>
+                    <TabItem Header="操作记录">
+                        <local:OperationListView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="报文与日志">
+                        <sessions:LogPanel DataContext="{Binding LogPanel}" Margin="8" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
         </Grid>
     </DockPanel>
 </UserControl>

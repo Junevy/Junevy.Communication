@@ -69,7 +69,7 @@ public abstract partial class ChannelSessionViewModel : SessionViewModel
 
     /// <summary>统计的一行文字（每秒刷新）。</summary>
     [ObservableProperty]
-    private string _statisticsText = "未连接";
+    private string _statisticsText = string.Empty;
 
     public IAsyncRelayCommand SendCommand { get; }
 

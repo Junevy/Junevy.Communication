@@ -20,7 +20,7 @@ public sealed class SessionViewTests
             var view = new TcpClientPageView { DataContext = session };
             VisualTree.LayoutExpanded(view);
 
-            var panel = VisualTree.FindChild<LogPanel>(view);
+            var panel = VisualTree.Reveal<LogPanel>(view);
             Assert.NotNull(panel);
             Assert.Same(session.LogPanel, panel.DataContext);
             Assert.NotNull(VisualTree.FindChild<DataGrid>(panel));

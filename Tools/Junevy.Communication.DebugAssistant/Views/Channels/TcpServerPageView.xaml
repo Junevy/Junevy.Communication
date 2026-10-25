@@ -5,25 +5,19 @@
              xmlns:atc="clr-namespace:Junevy.Controls.AttachedProperties;assembly=Junevy.Controls"
              xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
              xmlns:sessions="clr-namespace:Junevy.Communication.DebugAssistant.Views.Sessions">
-    <!-- 布局：顶部连接栏；左侧监听、自动应答、发送与会话参数（可滚动）；中间会话与收到的帧；右侧操作记录；底部报文与日志（可折叠）。 -->
+    <!-- 布局：顶部连接栏；左侧监听、自动应答、发送与会话参数（可滚动，可拖宽）；右侧上方会话与收到的帧，下方为操作记录与报文日志（可拖高）。 -->
     <DockPanel Margin="12">
-        <jv:ExpanderPanel DockPanel.Dock="Bottom" DisplayMode="Card" Header="报文与日志" IsExpanded="False" Margin="0,12,0,0">
-            <sessions:LogPanel DataContext="{Binding LogPanel}" Height="200" />
-        </jv:ExpanderPanel>
-
         <local:ConnectionBarView DockPanel.Dock="Top" />
 
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="340" MinWidth="260" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="360" />
             </Grid.ColumnDefinitions>
 
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,0,12,0">
+            <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                <StackPanel>
                     <jv:GroupBox Header="监听" IsEnabled="{Binding IsEditable}">
                         <StackPanel>
                             <WrapPanel>
@@ -103,31 +97,47 @@
                 </StackPanel>
             </ScrollViewer>
 
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
+
             <Grid Grid.Column="2">
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="160" MinHeight="100" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
+                    <RowDefinition Height="*" MinHeight="120" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="220" MinHeight="120" />
                 </Grid.RowDefinitions>
 
-                <DockPanel Grid.Row="0" Margin="0,0,0,12">
-                    <jv:TextBlock DockPanel.Dock="Top" Style="{StaticResource Text.Section}" Text="会话" />
+                <DockPanel Grid.Row="0">
+                    <jv:TextBlock DockPanel.Dock="Top" Style="{StaticResource Text.Section}" Text="会话（选中后可单独发送或关闭）" />
                     <DataGrid ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession}" IsReadOnly="True"
-                              AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Single" MaxHeight="160"
+                              AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Single"
                               VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="编号" Binding="{Binding Id}" Width="50" />
                             <DataGridTextColumn Header="远端" Binding="{Binding Remote}" Width="150" />
                             <DataGridTextColumn Header="连接时间" Binding="{Binding ConnectedAt, StringFormat=HH:mm:ss}" Width="80" />
                             <DataGridCheckBoxColumn Header="TLS" Binding="{Binding IsTls}" Width="50" />
-                            <DataGridTextColumn Header="统计" Binding="{Binding Statistics}" Width="*" />
+                            <DataGridTextColumn Header="统计" Binding="{Binding Statistics}" Width="*" MinWidth="200" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
 
-                <local:ReceivedFramesView Grid.Row="1" />
-            </Grid>
+                <GridSplitter Grid.Row="1" Style="{StaticResource Splitter.Rows}" />
 
-            <local:OperationListView Grid.Column="4" />
+                <local:ReceivedFramesView Grid.Row="2" />
+
+                <GridSplitter Grid.Row="3" Style="{StaticResource Splitter.Rows}" />
+
+                <TabControl Grid.Row="4">
+                    <TabItem Header="操作记录">
+                        <local:OperationListView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="报文与日志">
+                        <sessions:LogPanel DataContext="{Binding LogPanel}" Margin="8" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
         </Grid>
     </DockPanel>
 </UserControl>

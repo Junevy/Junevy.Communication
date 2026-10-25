@@ -77,4 +77,14 @@ public sealed class OperationRecordsTests
             Assert.NotEqual(kind.ToString(), CommErrorKindNames.Of(kind));
         }
     }
+
+    [Fact]
+    public void DisplayTexts_ShowTheResultInChinese_AndTheElapsedTimeInMilliseconds()
+    {
+        var succeeded = new OperationRecord(Now, "读取", "HR0", TimeSpan.FromMilliseconds(12.4), true, CommErrorKind.None, null, string.Empty);
+        var failed = succeeded with { Succeeded = false, Elapsed = TimeSpan.FromSeconds(1.5) };
+
+        Assert.Equal(("成功", "12 ms"), (succeeded.ResultText, succeeded.ElapsedText));
+        Assert.Equal(("失败", "1500 ms"), (failed.ResultText, failed.ElapsedText));
+    }
 }

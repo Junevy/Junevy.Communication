@@ -136,6 +136,31 @@ public sealed class ModbusSessionViewModelTests
     }
 
     [Fact]
+    public async Task FunctionHint_IsEmptyForAnEmptyAddress_AndDescribesAValidOne()
+    {
+        await using var page = CreatePage(new ManualUiDispatcher(), new ScriptedTransports());
+
+        page.Address = string.Empty;
+        Assert.Equal(string.Empty, page.FunctionHint);
+
+        page.Address = "HR0";
+        Assert.Contains("03", page.FunctionHint);
+    }
+
+    [Fact]
+    public async Task IsSerial_FollowsTheTransport()
+    {
+        await using var page = CreatePage(new ManualUiDispatcher(), new ScriptedTransports());
+        var changed = new List<string?>();
+        page.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        page.Transport = PlcTransport.Serial;
+
+        Assert.True(page.IsSerial);
+        Assert.Contains(nameof(ModbusSessionViewModel.IsSerial), changed);
+    }
+
+    [Fact]
     public async Task SetAndClearHelpers_FillTheMaskTexts()
     {
         await using var page = CreatePage(new ManualUiDispatcher(), new ScriptedTransports());

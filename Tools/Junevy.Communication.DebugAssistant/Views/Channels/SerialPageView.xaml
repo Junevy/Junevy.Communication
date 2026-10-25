@@ -25,25 +25,19 @@
         </ObjectDataProvider>
     </UserControl.Resources>
 
-    <!-- 布局：顶部连接栏；左侧参数与发送（可滚动）；中间收到的帧；右侧操作记录；底部报文与日志（可折叠）。 -->
+    <!-- 布局：顶部连接栏；左侧参数与发送（可滚动，可拖宽）；右侧上方收到的帧，下方为操作记录与报文日志（可拖高）。 -->
     <DockPanel Margin="12">
-        <jv:ExpanderPanel DockPanel.Dock="Bottom" DisplayMode="Card" Header="报文与日志" IsExpanded="False" Margin="0,12,0,0">
-            <sessions:LogPanel DataContext="{Binding LogPanel}" Height="200" />
-        </jv:ExpanderPanel>
-
         <local:ConnectionBarView DockPanel.Dock="Top" />
 
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="340" MinWidth="260" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="360" />
             </Grid.ColumnDefinitions>
 
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,0,12,0">
+            <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                <StackPanel>
                     <jv:TextBlock Style="{StaticResource Text.Hint}"
                                   Text="默认分帧为空闲间隔（20 毫秒）。USB 转串口的延迟会让间隔判断不准，必要时加大间隔。启用心跳时必须填写期待的应答（连接时会被拒绝）。" />
 
@@ -97,8 +91,28 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <local:ReceivedFramesView Grid.Column="2" />
-            <local:OperationListView Grid.Column="4" />
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="140" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="240" MinHeight="120" />
+                </Grid.RowDefinitions>
+
+                <local:ReceivedFramesView Grid.Row="0" />
+
+                <GridSplitter Grid.Row="1" Style="{StaticResource Splitter.Rows}" />
+
+                <TabControl Grid.Row="2">
+                    <TabItem Header="操作记录">
+                        <local:OperationListView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="报文与日志">
+                        <sessions:LogPanel DataContext="{Binding LogPanel}" Margin="8" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
         </Grid>
     </DockPanel>
 </UserControl>

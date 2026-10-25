@@ -10,7 +10,7 @@
              xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
              xmlns:plcViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Plc"
              xmlns:sessions="clr-namespace:Junevy.Communication.DebugAssistant.Views.Sessions">
-    <!-- MC 页签（计划第 7.3 节）：左侧为帧、编码与传输，访问路径，监视定时器，软元件速查表；右侧为公共面板与操作记录。 -->
+    <!-- MC 页签（计划第 7.3 节）：左侧为帧、编码与传输，访问路径，监视定时器；右侧上方为公共面板，下方为监控表、软元件速查、操作记录与报文日志。 -->
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
         <ObjectDataProvider x:Key="Transports" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
@@ -36,21 +36,17 @@
     </UserControl.Resources>
 
     <DockPanel Margin="12">
-        <jv:ExpanderPanel DockPanel.Dock="Bottom" DisplayMode="Card" Header="报文与日志" IsExpanded="False" Margin="0,12,0,0">
-            <sessions:LogPanel DataContext="{Binding LogPanel}" Height="200" />
-        </jv:ExpanderPanel>
-
         <local:ConnectionBarView DockPanel.Dock="Top" />
 
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="340" MinWidth="260" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="360" />
             </Grid.ColumnDefinitions>
 
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,0,12,0">
+            <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                <StackPanel>
                     <jv:GroupBox Header="传输、帧与编码" IsEnabled="{Binding IsEditable}">
                         <StackPanel>
                             <WrapPanel>
@@ -138,10 +134,34 @@
                         </StackPanel>
                     </jv:GroupBox>
 
-                    <jv:GroupBox Header="软元件速查（十六进制软元件以粗体标出，点击“填入地址”）" IsCollapsible="True" IsCollapsed="True">
+                </StackPanel>
+            </ScrollViewer>
+
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="140" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="260" MinHeight="120" />
+                </Grid.RowDefinitions>
+
+                <ScrollViewer Grid.Row="0" Style="{StaticResource Panel.SettingsScroll}">
+                    <StackPanel>
+                        <plcViews:PlcPanelView />
+                    </StackPanel>
+                </ScrollViewer>
+
+                <GridSplitter Grid.Row="1" Style="{StaticResource Splitter.Rows}" />
+
+                <TabControl Grid.Row="2">
+                    <TabItem Header="监控表">
+                        <plcViews:PlcMonitorView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="软元件速查" ToolTip="十六进制软元件以粗体标出，点击“填入地址”">
                         <!-- 28 行，不需要虚拟化。高亮只用粗体：触发器里的颜色取自动态资源，在测试宿主中会让 WPF 的绑定清理抛出 NullReferenceException。 -->
                         <DataGrid x:Name="DeviceGrid" ItemsSource="{Binding Devices}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
-                                  MaxHeight="300" VirtualizingPanel.IsVirtualizing="False">
+                                  Margin="8" VirtualizingPanel.IsVirtualizing="False">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="软元件" Binding="{Binding Symbol}" Width="70">
                                     <DataGridTextColumn.ElementStyle>
@@ -169,18 +189,15 @@
                                 </DataGridTemplateColumn>
                             </DataGrid.Columns>
                         </DataGrid>
-                    </jv:GroupBox>
-                </StackPanel>
-            </ScrollViewer>
-
-            <DockPanel Grid.Column="2">
-                <local:OperationListView DockPanel.Dock="Bottom" Height="130" Margin="0,12,0,0" />
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="0,0,12,0">
-                        <plcViews:PlcPanelView />
-                    </StackPanel>
-                </ScrollViewer>
-            </DockPanel>
+                    </TabItem>
+                    <TabItem Header="操作记录">
+                        <local:OperationListView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="报文与日志">
+                        <sessions:LogPanel DataContext="{Binding LogPanel}" Margin="8" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
         </Grid>
     </DockPanel>
 </UserControl>

@@ -50,4 +50,71 @@
         <Setter Property="Padding" Value="16" />
         <Setter Property="Margin" Value="0,0,0,12" />
     </Style>
+
+    <!--
+      页签的分区（所有页签共用）：左侧参数列 | Splitter.Columns | 右侧工作区；工作区内 主区 | Splitter.Rows | 底部活动区。
+      分隔条 12 DIP 宽，可拖动调整两侧大小；中间一条细线提示位置，悬停或拖动时变为主色。
+    -->
+    <Style x:Key="Splitter.Base" TargetType="{x:Type GridSplitter}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="ResizeBehavior" Value="PreviousAndNext" />
+    </Style>
+
+    <Style x:Key="Splitter.Columns" TargetType="{x:Type GridSplitter}" BasedOn="{StaticResource Splitter.Base}">
+        <Setter Property="Width" Value="12" />
+        <Setter Property="ResizeDirection" Value="Columns" />
+        <Setter Property="Cursor" Value="SizeWE" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type GridSplitter}">
+                    <Border Background="{TemplateBinding Background}">
+                        <Border x:Name="Line" Width="2" CornerRadius="1" HorizontalAlignment="Center"
+                                Background="{DynamicResource Theme.Brush.Border.Divider}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Line" Property="Background" Value="{DynamicResource Theme.Brush.Accent.Primary}" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Line" Property="Background" Value="{DynamicResource Theme.Brush.Accent.Primary}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="Splitter.Rows" TargetType="{x:Type GridSplitter}" BasedOn="{StaticResource Splitter.Base}">
+        <Setter Property="Height" Value="12" />
+        <Setter Property="ResizeDirection" Value="Rows" />
+        <Setter Property="Cursor" Value="SizeNS" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type GridSplitter}">
+                    <Border Background="{TemplateBinding Background}">
+                        <Border x:Name="Line" Height="2" CornerRadius="1" VerticalAlignment="Center"
+                                Background="{DynamicResource Theme.Brush.Border.Divider}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Line" Property="Background" Value="{DynamicResource Theme.Brush.Accent.Primary}" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Line" Property="Background" Value="{DynamicResource Theme.Brush.Accent.Primary}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 左侧参数列：竖向滚动，右边留出滚动条的位置。 -->
+    <Style x:Key="Panel.SettingsScroll" TargetType="{x:Type ScrollViewer}">
+        <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+        <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="Padding" Value="0,0,8,0" />
+    </Style>
 </ResourceDictionary>

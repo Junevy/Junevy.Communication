@@ -30,7 +30,7 @@ public sealed class McPageViewTests
             VisualTree.LayoutExpanded(view);
 
             Assert.Same(page, view.DataContext);
-            LogPanel? panel = VisualTree.FindChild<LogPanel>(view);
+            LogPanel? panel = VisualTree.Reveal<LogPanel>(view);
             Assert.NotNull(panel);
             Assert.Same(page.LogPanel, panel.DataContext);
             Assert.Equal(28, ((DataGrid)view.FindName("DeviceGrid")!).Items.Count);

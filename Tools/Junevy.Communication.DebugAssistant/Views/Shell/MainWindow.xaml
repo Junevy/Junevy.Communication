@@ -5,7 +5,7 @@
         xmlns:jv="github.com.junevy"
         xmlns:behaviors="clr-namespace:Junevy.Communication.DebugAssistant.Views.Behaviors"
         Title="Junevy 通讯调试助手"
-        Width="1280" Height="800" MinWidth="960" MinHeight="600"
+        Width="1280" Height="800" MinWidth="960" MinHeight="600" WindowStartupLocation="CenterScreen"
         Background="{DynamicResource Theme.Brush.Background.App}"
         TextElement.Foreground="{DynamicResource Theme.Brush.Text.Primary}">
     <DockPanel>
@@ -24,9 +24,9 @@
 
         <Grid Margin="8">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="240" MinWidth="180" />
-                <ColumnDefinition Width="6" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="220" MinWidth="140" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="600" />
             </Grid.ColumnDefinitions>
 
             <jv:TreeView x:Name="ProtocolTree" Grid.Column="0" ItemsSource="{Binding Tree}" DisplayMode="Chevron">
@@ -37,8 +37,7 @@
                 </i:Interaction.Triggers>
             </jv:TreeView>
 
-            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" VerticalAlignment="Stretch"
-                          Background="{DynamicResource Theme.Brush.TransparentBackground.Base}" />
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
 
             <Grid Grid.Column="2">
                 <jv:TabControl x:Name="SessionTabs"

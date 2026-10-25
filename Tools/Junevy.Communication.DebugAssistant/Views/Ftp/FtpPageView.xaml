@@ -6,30 +6,24 @@
              xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
              xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
              xmlns:sessions="clr-namespace:Junevy.Communication.DebugAssistant.Views.Sessions">
-    <!-- FTP/FTPS 页（计划第 7.12 节）：左侧为连接选项；中间为远程目录与传输；右侧为文件与目录操作与操作记录。 -->
+    <!-- FTP/FTPS 页（计划第 7.12 节）：左侧为连接选项；右侧上方为远程目录与传输，下方为文件与目录操作、操作记录与报文日志。 -->
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
     </UserControl.Resources>
 
     <DockPanel Margin="12">
-        <jv:ExpanderPanel DockPanel.Dock="Bottom" DisplayMode="Card" Header="报文与日志" IsExpanded="False" Margin="0,12,0,0">
-            <sessions:LogPanel DataContext="{Binding LogPanel}" Height="200" />
-        </jv:ExpanderPanel>
-
         <local:ConnectionBarView DockPanel.Dock="Top" />
 
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="340" MinWidth="260" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="360" />
             </Grid.ColumnDefinitions>
 
             <!-- 左：连接选项与超时。运行中不可修改；密码只在内存中，不写入工作区。 -->
-            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,0,12,0">
+            <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                <StackPanel>
                     <jv:GroupBox Header="连接选项" IsEnabled="{Binding IsEditable}">
                         <StackPanel>
                             <WrapPanel>
@@ -70,47 +64,56 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <!-- 中：远程目录与传输。双击目录进入；上传与下载在当前目录进行。 -->
-            <jv:GroupBox Grid.Column="2" Header="远程目录">
-                <DockPanel>
-                    <WrapPanel DockPanel.Dock="Top">
-                        <jv:TextBlock Text="{Binding LinkStateText, StringFormat=连接：{0}}" Style="{StaticResource Text.Section}" Margin="0,0,16,8" />
-                        <jv:TextBlock Text="{Binding CurrentDirectory, StringFormat=当前目录：{0}}" Style="{StaticResource Text.Section}" Margin="0,0,0,8" />
-                    </WrapPanel>
-                    <WrapPanel DockPanel.Dock="Top">
-                        <jv:Button Content="刷新" Command="{Binding RefreshCommand}" Margin="0,0,8,12" />
-                        <jv:Button Content="上级目录" Command="{Binding GoUpCommand}" Margin="0,0,8,12" />
-                        <jv:Button Content="上传" Command="{Binding UploadCommand}" Margin="0,0,8,12" />
-                        <jv:Button Content="下载选中文件" Command="{Binding DownloadCommand}" Margin="0,0,8,12" />
-                        <jv:ComboBox Width="150" atc:TitleAssist.Title="目标已存在时"
-                                     ItemsSource="{Binding ExistsModeChoices}" SelectedItem="{Binding ExistsMode}" />
-                    </WrapPanel>
-                    <jv:ProgressBar DockPanel.Dock="Top" Height="14" Margin="0,0,0,4"
-                                    Minimum="0" Maximum="100" Value="{Binding ProgressValue}" IsIndeterminate="{Binding ProgressIndeterminate}" />
-                    <jv:TextBlock DockPanel.Dock="Top" Text="{Binding ProgressText}" Style="{StaticResource Text.Hint}" />
-                    <jv:TextBlock DockPanel.Dock="Top" Text="修改时间是服务器报告的时间，未做时区转换。" Style="{StaticResource Text.Hint}" />
-                    <DataGrid ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
-                              IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False">
-                        <i:Interaction.Triggers>
-                            <i:EventTrigger EventName="MouseDoubleClick">
-                                <i:InvokeCommandAction Command="{Binding EnterDirectoryCommand}" CommandParameter="{Binding SelectedEntry}" />
-                            </i:EventTrigger>
-                        </i:Interaction.Triggers>
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="*" />
-                            <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="60" />
-                            <DataGridTextColumn Header="大小（字节）" Binding="{Binding Size}" Width="90" />
-                            <DataGridTextColumn Header="修改时间" Binding="{Binding Modified}" Width="140" />
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </DockPanel>
-            </jv:GroupBox>
+            <!-- 右上：远程目录与传输。双击目录进入；上传与下载在当前目录进行。重命名、删除等对选中项的操作在底部"文件与目录操作"页。 -->
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
 
-            <!-- 右：文件与目录操作（递归删除需要确认）；底部为操作记录。 -->
-            <DockPanel Grid.Column="4">
-                <local:OperationListView DockPanel.Dock="Bottom" Height="130" Margin="0,12,0,0" />
-                <jv:GroupBox Header="文件与目录操作">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="200" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="240" MinHeight="120" />
+                </Grid.RowDefinitions>
+
+                <jv:GroupBox Grid.Row="0" Header="远程目录" Margin="0">
+                    <DockPanel>
+                        <WrapPanel DockPanel.Dock="Top">
+                            <jv:TextBlock Text="{Binding LinkStateText, StringFormat=连接：{0}}" Style="{StaticResource Text.Section}" Margin="0,0,16,8" />
+                            <jv:TextBlock Text="{Binding CurrentDirectory, StringFormat=当前目录：{0}}" Style="{StaticResource Text.Section}" Margin="0,0,0,8" />
+                        </WrapPanel>
+                        <WrapPanel DockPanel.Dock="Top">
+                            <jv:Button Content="刷新" Command="{Binding RefreshCommand}" Margin="0,0,8,12" />
+                            <jv:Button Content="上级目录" Command="{Binding GoUpCommand}" Margin="0,0,8,12" />
+                            <jv:Button Content="上传" Command="{Binding UploadCommand}" Margin="0,0,8,12" />
+                            <jv:Button Content="下载选中文件" Command="{Binding DownloadCommand}" Margin="0,0,8,12" />
+                            <jv:ComboBox Width="150" atc:TitleAssist.Title="目标已存在时"
+                                         ItemsSource="{Binding ExistsModeChoices}" SelectedItem="{Binding ExistsMode}" />
+                        </WrapPanel>
+                        <jv:ProgressBar DockPanel.Dock="Top" Height="14" Margin="0,0,0,4"
+                                        Minimum="0" Maximum="100" Value="{Binding ProgressValue}" IsIndeterminate="{Binding ProgressIndeterminate}" />
+                        <jv:TextBlock DockPanel.Dock="Top" Text="{Binding ProgressText}" Style="{StaticResource Text.Hint}" />
+                        <jv:TextBlock DockPanel.Dock="Top" Text="修改时间是服务器报告的时间，未做时区转换。" Style="{StaticResource Text.Hint}" />
+                        <DataGrid ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
+                                  IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="MouseDoubleClick">
+                                    <i:InvokeCommandAction Command="{Binding EnterDirectoryCommand}" CommandParameter="{Binding SelectedEntry}" />
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="*" MinWidth="200" />
+                                <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="60" />
+                                <DataGridTextColumn Header="大小（字节）" Binding="{Binding Size}" Width="90" />
+                                <DataGridTextColumn Header="修改时间" Binding="{Binding Modified}" Width="140" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                </jv:GroupBox>
+
+                <GridSplitter Grid.Row="1" Style="{StaticResource Splitter.Rows}" />
+
+                <TabControl Grid.Row="2">
+                    <TabItem Header="文件与目录操作">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
                         <StackPanel>
                             <WrapPanel>
                                 <jv:TextBox Width="200" atc:TitleAssist.Title="新建目录（可写 a/b，逐级创建）"
@@ -131,8 +134,15 @@
                             <jv:TextBlock Text="同一个客户端的操作按顺序排队执行；连接中断后下次操作会按需重连。" Style="{StaticResource Text.Hint}" />
                         </StackPanel>
                     </ScrollViewer>
-                </jv:GroupBox>
-            </DockPanel>
+                    </TabItem>
+                    <TabItem Header="操作记录">
+                        <local:OperationListView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="报文与日志">
+                        <sessions:LogPanel DataContext="{Binding LogPanel}" Margin="8" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
         </Grid>
     </DockPanel>
 </UserControl>
