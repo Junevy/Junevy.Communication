@@ -42,6 +42,12 @@ Preview packages are versioned `1.0.0-preview.1`, and their public API may still
 dotnet add package Junevy.Communication.Melsec --prerelease
 ```
 
+## Tools
+
+| Tool | Status | What it covers | Documentation |
+|---|---|---|---|
+| Debug Assistant (`Tools/Junevy.Communication.DebugAssistant`) | not packaged | WPF application for field debugging of the protocols above: one tab per protocol (19 kinds), a frame and operation log, a saved workspace, and four simulated devices (Modbus, MC, S7, FINS) for loop-back tests without hardware | [Tools README](Tools/README.md) |
+
 ## License
 
 MIT

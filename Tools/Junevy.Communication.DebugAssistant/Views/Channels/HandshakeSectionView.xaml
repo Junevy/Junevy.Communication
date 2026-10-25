@@ -1,0 +1,23 @@
+<UserControl x:Class="Junevy.Communication.DebugAssistant.Views.Channels.HandshakeSectionView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:jv="github.com.junevy"
+             xmlns:atc="clr-namespace:Junevy.Controls.AttachedProperties;assembly=Junevy.Controls">
+    <!-- 握手：客户端在每次连接后执行，服务端在每个会话建立后执行。DataContext 是 HandshakeEditor。 -->
+    <jv:GroupBox Header="握手（连接或会话建立后执行）" IsCollapsible="True" IsCollapsed="True">
+        <StackPanel>
+            <jv:CheckBox Content="启用握手" IsChecked="{Binding Enabled}" />
+            <WrapPanel>
+                <jv:TextBox Width="280" atc:TitleAssist.Title="发送"
+                            Text="{Binding Send, UpdateSourceTrigger=PropertyChanged}" />
+            </WrapPanel>
+            <jv:CheckBox Content="等待应答并比较" IsChecked="{Binding ExpectReply}" />
+            <WrapPanel>
+                <jv:TextBox Width="280" atc:TitleAssist.Title="期待的应答"
+                            Text="{Binding ExpectedReply, UpdateSourceTrigger=PropertyChanged}" />
+                <jv:TextBox Width="120" atc:TitleAssist.Title="超时（毫秒）"
+                            Text="{Binding ReplyTimeout, UpdateSourceTrigger=PropertyChanged}" />
+            </WrapPanel>
+        </StackPanel>
+    </jv:GroupBox>
+</UserControl>

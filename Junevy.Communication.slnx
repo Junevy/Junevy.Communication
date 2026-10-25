@@ -3,6 +3,7 @@
     <Project Path="Tests/Junevy.Communication.Modbus.Tests/Junevy.Communication.Modbus.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.Architecture.Tests/Junevy.Communication.Architecture.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.Testing/Junevy.Communication.Testing.csproj" />
+    <Project Path="Tests/Junevy.Communication.Testing.Servers/Junevy.Communication.Testing.Servers.csproj" />
     <Project Path="Tests/Junevy.Communication.Core.Tests/Junevy.Communication.Core.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.Channels.Tests/Junevy.Communication.Channels.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.Tcp.Tests/Junevy.Communication.Tcp.Tests.csproj" />
@@ -18,9 +19,13 @@
     <Project Path="Tests/Junevy.Communication.Mqtt.Tests/Junevy.Communication.Mqtt.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.OpcUa.Tests/Junevy.Communication.OpcUa.Tests.csproj" />
     <Project Path="Tests/Junevy.Communication.Ftp.Tests/Junevy.Communication.Ftp.Tests.csproj" />
+    <Project Path="Tests/Junevy.Communication.DebugAssistant.Tests/Junevy.Communication.DebugAssistant.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Tools/">
+    <Project Path="Tools/Junevy.Communication.DebugAssistant/Junevy.Communication.DebugAssistant.csproj" />
+    <Project Path="Tools/Junevy.Communication.DebugAssistant.Simulators/Junevy.Communication.DebugAssistant.Simulators.csproj" />
   </Folder>
   <Project Path="Junevy.Communication.Modbus/Junevy.Communication.Modbus.csproj" DisplayName="Junevy.Communication.Modbus" />
-  <Project Path="Junevy.Communication.Test/Junevy.Communication.Test.csproj" Id="e4b6be97-5abb-48ea-a11e-9081dd885fa5" />
   <Project Path="Junevy.Communication.Core/Junevy.Communication.Core.csproj" />
   <Project Path="Junevy.Communication.Channels/Junevy.Communication.Channels.csproj" />
   <Project Path="Junevy.Communication.Tcp/Junevy.Communication.Tcp.csproj" />

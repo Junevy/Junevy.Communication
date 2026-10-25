@@ -1,0 +1,29 @@
+<UserControl x:Class="Junevy.Communication.DebugAssistant.Views.Channels.SocketSectionView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:jv="github.com.junevy"
+             xmlns:atc="clr-namespace:Junevy.Controls.AttachedProperties;assembly=Junevy.Controls">
+    <!-- 套接字选项（TCP 客户端与 TCP 服务端共用）。DataContext 是 SocketEditor。 -->
+    <jv:GroupBox Header="套接字（TCP）" IsCollapsible="True" IsCollapsed="True">
+        <StackPanel>
+            <jv:CheckBox Content="禁用 Nagle（NoDelay）" IsChecked="{Binding NoDelay}" />
+            <WrapPanel>
+                <jv:TextBox Width="120" atc:TitleAssist.Title="接收缓冲区"
+                            Text="{Binding ReceiveBufferSize, UpdateSourceTrigger=PropertyChanged}" />
+                <jv:TextBox Width="120" atc:TitleAssist.Title="发送缓冲区"
+                            Text="{Binding SendBufferSize, UpdateSourceTrigger=PropertyChanged}" />
+                <jv:TextBox Width="160" atc:TitleAssist.Title="Linger（秒，-1 为默认）"
+                            Text="{Binding LingerTime, UpdateSourceTrigger=PropertyChanged}" />
+            </WrapPanel>
+            <jv:CheckBox Content="启用 KeepAlive" IsChecked="{Binding KeepAliveEnabled}" />
+            <WrapPanel>
+                <jv:TextBox Width="120" atc:TitleAssist.Title="首次探测（毫秒）"
+                            Text="{Binding KeepAliveTime, UpdateSourceTrigger=PropertyChanged}" />
+                <jv:TextBox Width="120" atc:TitleAssist.Title="间隔（毫秒）"
+                            Text="{Binding KeepAliveInterval, UpdateSourceTrigger=PropertyChanged}" />
+                <jv:TextBox Width="100" atc:TitleAssist.Title="次数"
+                            Text="{Binding KeepAliveRetryCount, UpdateSourceTrigger=PropertyChanged}" />
+            </WrapPanel>
+        </StackPanel>
+    </jv:GroupBox>
+</UserControl>

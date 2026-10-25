@@ -1,0 +1,203 @@
+<UserControl x:Class="Junevy.Communication.DebugAssistant.Views.Melsec.McPageView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:jv="github.com.junevy"
+             xmlns:atc="clr-namespace:Junevy.Controls.AttachedProperties;assembly=Junevy.Controls"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
+             xmlns:ports="clr-namespace:System.IO.Ports;assembly=System.IO.Ports"
+             xmlns:plc="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Plc"
+             xmlns:mc="clr-namespace:Junevy.Communication.Melsec;assembly=Junevy.Communication.Melsec"
+             xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
+             xmlns:plcViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Plc"
+             xmlns:sessions="clr-namespace:Junevy.Communication.DebugAssistant.Views.Sessions">
+    <!-- MC 页签（计划第 7.3 节）：左侧为帧、编码与传输，访问路径，监视定时器；右侧上方为公共面板，下方为监控表、软元件速查、操作记录与报文日志。 -->
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <ObjectDataProvider x:Key="Transports" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="plc:PlcTransport" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+        <ObjectDataProvider x:Key="EncodingChoices" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="mc:McEncoding" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+        <ObjectDataProvider x:Key="ParityChoices" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="ports:Parity" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+        <ObjectDataProvider x:Key="StopBitChoices" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="ports:StopBits" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+    </UserControl.Resources>
+
+    <DockPanel Margin="12">
+        <local:ConnectionBarView DockPanel.Dock="Top" />
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="340" MinWidth="260" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="360" />
+            </Grid.ColumnDefinitions>
+
+            <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                <StackPanel>
+                    <jv:GroupBox Header="传输、帧与编码" IsEnabled="{Binding IsEditable}">
+                        <StackPanel>
+                            <WrapPanel>
+                                <jv:ComboBox Width="110" atc:TitleAssist.Title="传输"
+                                             ItemsSource="{Binding Source={StaticResource Transports}}" SelectedItem="{Binding Transport}" />
+                                <jv:ComboBox x:Name="FrameBox" Width="130" atc:TitleAssist.Title="帧类型"
+                                             ItemsSource="{Binding AvailableFrames}" SelectedItem="{Binding Frame}" />
+                                <jv:ComboBox Width="110" atc:TitleAssist.Title="编码"
+                                             ItemsSource="{Binding Source={StaticResource EncodingChoices}}" SelectedItem="{Binding Encoding}" />
+                            </WrapPanel>
+                            <jv:TextBlock Style="{StaticResource Text.Section}" Text="{Binding CombinationName}" />
+                            <WrapPanel>
+                                <jv:TextBox Width="200" atc:TitleAssist.Title="主机"
+                                            Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBox Width="110" atc:TitleAssist.Title="端口"
+                                            Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}" />
+                            </WrapPanel>
+                            <WrapPanel Visibility="{Binding IsSerial, Converter={StaticResource BoolToVisibility}}">
+                                <jv:TextBox Width="110" atc:TitleAssist.Title="串口"
+                                            Text="{Binding PortName, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBox Width="100" atc:TitleAssist.Title="波特率"
+                                            Text="{Binding BaudRate, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBox Width="90" atc:TitleAssist.Title="数据位"
+                                            Text="{Binding DataBits, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:ComboBox Width="100" atc:TitleAssist.Title="校验"
+                                             ItemsSource="{Binding Source={StaticResource ParityChoices}}" SelectedItem="{Binding Parity}" />
+                                <jv:ComboBox Width="100" atc:TitleAssist.Title="停止位"
+                                             ItemsSource="{Binding Source={StaticResource StopBitChoices}}" SelectedItem="{Binding StopBits}" />
+                            </WrapPanel>
+                            <jv:CheckBox x:Name="SumCheckBox" Content="和校验（只在串口时可编辑）" IsChecked="{Binding SumCheck}" IsEnabled="{Binding IsSerial}" />
+                            <jv:TextBlock Style="{StaticResource Text.Hint}"
+                                          Text="TCP 与 UDP 只能选 3E 或 4E；串口只能选 4C（编码为 ASCII 时是格式 4，二进制时是格式 5）。切换传输时，帧类型改为该传输允许的第一个帧。" />
+                        </StackPanel>
+                    </jv:GroupBox>
+
+                    <jv:GroupBox Header="通道参数（超时、心跳、重连、TLS）" IsCollapsible="True" IsCollapsed="True"
+                                 IsEnabled="{Binding IsEditable}">
+                        <local:ChannelSettingsView DataContext="{Binding Channel}" />
+                    </jv:GroupBox>
+
+                    <jv:GroupBox Header="访问路径（十六进制，可带 0x）" IsEnabled="{Binding IsEditable}">
+                        <StackPanel>
+                            <WrapPanel>
+                                <jv:TextBox Width="110" atc:TitleAssist.Title="网络号"
+                                            Text="{Binding NetworkNumberHex, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBox Width="110" atc:TitleAssist.Title="PC 号"
+                                            Text="{Binding PcNumberHex, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBox Width="130" atc:TitleAssist.Title="模块 I/O 号"
+                                            Text="{Binding ModuleIoNumberHex, UpdateSourceTrigger=PropertyChanged}" />
+                            </WrapPanel>
+                            <WrapPanel>
+                                <jv:TextBox Width="120" atc:TitleAssist.Title="模块站号"
+                                            Text="{Binding ModuleStationNumberHex, UpdateSourceTrigger=PropertyChanged}" />
+                                <StackPanel x:Name="SerialStationPanel" Orientation="Horizontal"
+                                            Visibility="{Binding IsSerial, Converter={StaticResource BoolToVisibility}}">
+                                    <jv:TextBox Width="110" atc:TitleAssist.Title="站号（4C）" Margin="0,0,16,12"
+                                                Text="{Binding StationNumberHex, UpdateSourceTrigger=PropertyChanged}" />
+                                    <jv:TextBox Width="110" atc:TitleAssist.Title="本站号（4C）"
+                                                Text="{Binding SelfStationNumberHex, UpdateSourceTrigger=PropertyChanged}" />
+                                </StackPanel>
+                            </WrapPanel>
+                            <jv:TextBlock Style="{StaticResource Text.Hint}" Text="站号与本站号只属于 4C 帧，TCP 与 UDP 不发送它们。" />
+                        </StackPanel>
+                    </jv:GroupBox>
+
+                    <jv:GroupBox Header="监视定时器（单位 250 毫秒，取值 1 到 65535）">
+                        <StackPanel>
+                            <WrapPanel>
+                                <jv:TextBox Width="110" atc:TitleAssist.Title="单位（×250 毫秒）"
+                                            Text="{Binding MonitoringTimerUnits, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBlock Text="{Binding MonitoringTimerText}" FontWeight="SemiBold" VerticalAlignment="Bottom" Margin="0,0,0,12" />
+                            </WrapPanel>
+                            <!-- 有警告时才显示：借用 jv:Label 的无边框警告样式，文字颜色由主题决定 -->
+                            <jv:Label DisplayMode="BorderlessWarning" Content="{Binding MonitoringTimerWarning}" Margin="0,0,0,12">
+                                <jv:Label.Style>
+                                    <Style TargetType="{x:Type jv:Label}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding MonitoringTimerWarning}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </jv:Label.Style>
+                            </jv:Label>
+                        </StackPanel>
+                    </jv:GroupBox>
+
+                </StackPanel>
+            </ScrollViewer>
+
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="140" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="260" MinHeight="120" />
+                </Grid.RowDefinitions>
+
+                <ScrollViewer Grid.Row="0" Style="{StaticResource Panel.SettingsScroll}">
+                    <StackPanel>
+                        <plcViews:PlcPanelView />
+                    </StackPanel>
+                </ScrollViewer>
+
+                <GridSplitter Grid.Row="1" Style="{StaticResource Splitter.Rows}" />
+
+                <TabControl Grid.Row="2">
+                    <TabItem Header="监控表">
+                        <plcViews:PlcMonitorView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="软元件速查" ToolTip="十六进制软元件以粗体标出，点击“填入地址”">
+                        <!-- 28 行，不需要虚拟化。高亮只用粗体：触发器里的颜色取自动态资源，在测试宿主中会让 WPF 的绑定清理抛出 NullReferenceException。 -->
+                        <DataGrid x:Name="DeviceGrid" ItemsSource="{Binding Devices}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                                  Margin="8" VirtualizingPanel.IsVirtualizing="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="软元件" Binding="{Binding Symbol}" Width="70">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Radix}" Value="16">
+                                                    <Setter Property="FontWeight" Value="Bold" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="单位" Binding="{Binding Unit}" Width="60" />
+                                <DataGridTextColumn Header="进制" Binding="{Binding Radix}" Width="50" />
+                                <DataGridTextColumn Header="ASCII 代码" Binding="{Binding AsciiCode}" Width="80" />
+                                <DataGridTextColumn Header="二进制代码" Binding="{Binding BinaryCode}" Width="80" />
+                                <DataGridTemplateColumn Header="" Width="Auto">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <jv:Button Content="填入地址"
+                                                       Command="{Binding DataContext.UseDeviceCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                       CommandParameter="{Binding}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </TabItem>
+                    <TabItem Header="操作记录">
+                        <local:OperationListView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="报文与日志">
+                        <sessions:LogPanel DataContext="{Binding LogPanel}" Margin="8" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</UserControl>

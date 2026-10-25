@@ -1,0 +1,110 @@
+<UserControl x:Class="Junevy.Communication.DebugAssistant.Views.Channels.UdpPageView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:jv="github.com.junevy"
+             xmlns:atc="clr-namespace:Junevy.Controls.AttachedProperties;assembly=Junevy.Controls"
+             xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
+             xmlns:sessions="clr-namespace:Junevy.Communication.DebugAssistant.Views.Sessions">
+    <!-- 布局：顶部连接栏；左侧参数与发送（可滚动，可拖宽）；右侧上方收到的帧，下方为操作记录与报文日志（可拖高）。 -->
+    <DockPanel Margin="12">
+        <local:ConnectionBarView DockPanel.Dock="Top" />
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="340" MinWidth="260" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="360" />
+            </Grid.ColumnDefinitions>
+
+            <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                <StackPanel>
+                    <jv:TextBlock Style="{StaticResource Text.Hint}"
+                                  Text="数据报没有分帧：一个数据报就是一帧。非定向模式下，发送与请求的目标使用“目标”地址；非定向没有固定的对端，因此不能使用内置心跳（连接时会被拒绝）。" />
+
+                    <jv:GroupBox Header="本地与模式" IsEnabled="{Binding IsEditable}">
+                        <StackPanel>
+                            <WrapPanel>
+                                <jv:TextBox Width="200" atc:TitleAssist.Title="本地地址"
+                                            Text="{Binding LocalAddress, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBox Width="110" atc:TitleAssist.Title="本地端口"
+                                            Text="{Binding LocalPort, UpdateSourceTrigger=PropertyChanged}" />
+                            </WrapPanel>
+                            <WrapPanel>
+                                <jv:CheckBox Content="定向（固定远端）" IsChecked="{Binding Directed}" />
+                                <jv:CheckBox Content="允许广播" IsChecked="{Binding EnableBroadcast}" />
+                                <jv:CheckBox Content="地址复用" IsChecked="{Binding ReuseAddress}" />
+                            </WrapPanel>
+                            <jv:TextBlock Style="{StaticResource Text.Hint}" Text="本地地址留空、本地端口为 0 时由系统选择。" />
+                        </StackPanel>
+                    </jv:GroupBox>
+
+                    <jv:GroupBox Header="远端与目标" IsEnabled="{Binding IsEditable}">
+                        <StackPanel>
+                            <WrapPanel>
+                                <jv:TextBox Width="200" atc:TitleAssist.Title="远端（定向）"
+                                            Text="{Binding RemoteHost, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBox Width="110" atc:TitleAssist.Title="远端端口"
+                                            Text="{Binding RemotePort, UpdateSourceTrigger=PropertyChanged}" />
+                            </WrapPanel>
+                            <WrapPanel>
+                                <jv:TextBox Width="200" atc:TitleAssist.Title="目标（非定向）"
+                                            Text="{Binding TargetHost, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBox Width="110" atc:TitleAssist.Title="目标端口"
+                                            Text="{Binding TargetPort, UpdateSourceTrigger=PropertyChanged}" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </jv:GroupBox>
+
+                    <jv:GroupBox Header="组播与重试" IsCollapsible="True" IsCollapsed="True" IsEnabled="{Binding IsEditable}">
+                        <StackPanel>
+                            <WrapPanel>
+                                <jv:TextBox Width="260" atc:TitleAssist.Title="组播组（逗号分隔）"
+                                            Text="{Binding MulticastGroups, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBox Width="100" atc:TitleAssist.Title="TTL"
+                                            Text="{Binding MulticastTimeToLive, UpdateSourceTrigger=PropertyChanged}" />
+                            </WrapPanel>
+                            <WrapPanel>
+                                <jv:CheckBox Content="组播回环" IsChecked="{Binding MulticastLoopback}" />
+                            </WrapPanel>
+                            <WrapPanel>
+                                <jv:TextBox Width="140" atc:TitleAssist.Title="请求重试次数"
+                                            Text="{Binding RequestRetryCount, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBox Width="160" atc:TitleAssist.Title="数据报上限（字节）"
+                                            Text="{Binding MaxDatagramSize, UpdateSourceTrigger=PropertyChanged}" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </jv:GroupBox>
+
+                    <local:SendPanelView />
+
+                    <jv:GroupBox Header="通道参数" IsCollapsible="True" IsCollapsed="True" IsEnabled="{Binding IsEditable}">
+                        <local:ChannelSettingsView DataContext="{Binding Settings}" />
+                    </jv:GroupBox>
+                </StackPanel>
+            </ScrollViewer>
+
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="140" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="240" MinHeight="120" />
+                </Grid.RowDefinitions>
+
+                <local:ReceivedFramesView Grid.Row="0" />
+
+                <GridSplitter Grid.Row="1" Style="{StaticResource Splitter.Rows}" />
+
+                <TabControl Grid.Row="2">
+                    <TabItem Header="操作记录">
+                        <local:OperationListView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="报文与日志">
+                        <sessions:LogPanel DataContext="{Binding LogPanel}" Margin="8" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</UserControl>

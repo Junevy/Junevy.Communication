@@ -1,0 +1,92 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:channels="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Channels"
+                    xmlns:channelViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
+                    xmlns:modbus="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Modbus"
+                    xmlns:modbusViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Modbus"
+                    xmlns:melsec="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Melsec"
+                    xmlns:melsecViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Melsec"
+                    xmlns:siemens="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Siemens"
+                    xmlns:siemensViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Siemens"
+                    xmlns:fins="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Fins"
+                    xmlns:finsViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Fins"
+                    xmlns:simulators="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Simulators"
+                    xmlns:simulatorViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Simulators"
+                    xmlns:secs="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Secs"
+                    xmlns:secsViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Secs"
+                    xmlns:mqtt="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Mqtt"
+                    xmlns:mqttViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Mqtt"
+                    xmlns:opcua="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.OpcUa"
+                    xmlns:opcuaViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.OpcUa"
+                    xmlns:webApi="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.WebApi"
+                    xmlns:webApiViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.WebApi"
+                    xmlns:ftp="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Ftp"
+                    xmlns:ftpViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Ftp">
+
+    <!-- 页签内容：按视图模型类型选择视图（计划第 5.2 节）。每种页签完成后在这里加一条。 -->
+
+    <DataTemplate DataType="{x:Type channels:TcpClientSessionViewModel}">
+        <channelViews:TcpClientPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type channels:UdpSessionViewModel}">
+        <channelViews:UdpPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type channels:SerialSessionViewModel}">
+        <channelViews:SerialPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type modbus:ModbusSessionViewModel}">
+        <modbusViews:ModbusPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type melsec:McSessionViewModel}">
+        <melsecViews:McPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type siemens:S7SessionViewModel}">
+        <siemensViews:S7PageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type fins:FinsSessionViewModel}">
+        <finsViews:FinsPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type simulators:SimulatorSessionViewModel}">
+        <simulatorViews:SimulatorPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type secs:SecsSessionViewModel}">
+        <secsViews:SecsPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type mqtt:MqttSessionViewModel}">
+        <mqttViews:MqttPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type opcua:OpcUaSessionViewModel}">
+        <opcuaViews:OpcUaPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type webApi:RestClientSessionViewModel}">
+        <webApiViews:RestClientPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type webApi:SoapClientSessionViewModel}">
+        <webApiViews:SoapClientPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type webApi:WebApiServerSessionViewModel}">
+        <webApiViews:WebApiServerPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type ftp:FtpSessionViewModel}">
+        <ftpViews:FtpPageView />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type channels:TcpServerSessionViewModel}">
+        <channelViews:TcpServerPageView />
+    </DataTemplate>
+
+</ResourceDictionary>

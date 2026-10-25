@@ -1,0 +1,142 @@
+<UserControl x:Class="Junevy.Communication.DebugAssistant.Views.Channels.ChannelSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:jv="github.com.junevy"
+             xmlns:atc="clr-namespace:Junevy.Controls.AttachedProperties;assembly=Junevy.Controls"
+             xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+    </UserControl.Resources>
+
+    <!-- 通道参数：由所在页签的滚动区域承载，因此这里不再设置滚动与高度。 -->
+    <StackPanel>
+        <!-- 分帧：只对 TCP 与串口显示；每种模式只显示自己的参数 -->
+        <Border Visibility="{Binding ShowsFraming, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel DataContext="{Binding Framing}">
+                <local:FramingSectionView />
+            </StackPanel>
+        </Border>
+
+        <!-- 关联：协议决定分帧时不显示 -->
+        <Border Visibility="{Binding ShowsCorrelation, Converter={StaticResource BoolToVisibility}}">
+            <jv:GroupBox Header="请求与应答的关联" IsCollapsible="True" IsCollapsed="True">
+                <StackPanel DataContext="{Binding Correlation}">
+                    <WrapPanel>
+                        <jv:ComboBox Width="180" atc:TitleAssist.Title="方式"
+                                     ItemsSource="{Binding Source={StaticResource CorrelationModes}}" SelectedItem="{Binding Mode}" />
+                    </WrapPanel>
+                    <jv:CheckBox Content="应答以某段字节开头" IsChecked="{Binding MatchByPrefix}" />
+                    <jv:TextBox Width="240" atc:TitleAssist.Title="应答前缀"
+                                Text="{Binding ResponsePrefix, UpdateSourceTrigger=PropertyChanged}" />
+                    <WrapPanel>
+                        <jv:TextBox Width="120" atc:TitleAssist.Title="回显偏移"
+                                    Text="{Binding EchoOffset, UpdateSourceTrigger=PropertyChanged}" />
+                        <jv:TextBox Width="120" atc:TitleAssist.Title="回显长度"
+                                    Text="{Binding EchoLength, UpdateSourceTrigger=PropertyChanged}" />
+                    </WrapPanel>
+                    <jv:TextBlock Style="{StaticResource Text.Section}" Text="键字段（请求）" />
+                    <WrapPanel>
+                        <jv:TextBox Width="100" atc:TitleAssist.Title="偏移"
+                                    Text="{Binding RequestKeyOffset, UpdateSourceTrigger=PropertyChanged}" />
+                        <jv:TextBox Width="130" atc:TitleAssist.Title="宽度（1、2、4）"
+                                    Text="{Binding RequestKeyWidth, UpdateSourceTrigger=PropertyChanged}" />
+                        <jv:ComboBox Width="160" atc:TitleAssist.Title="字节序"
+                                     ItemsSource="{Binding Source={StaticResource KeyOrders}}" SelectedItem="{Binding RequestKeyOrder}" />
+                    </WrapPanel>
+                    <jv:TextBlock Style="{StaticResource Text.Section}" Text="键字段（应答）" />
+                    <WrapPanel>
+                        <jv:TextBox Width="100" atc:TitleAssist.Title="偏移"
+                                    Text="{Binding ResponseKeyOffset, UpdateSourceTrigger=PropertyChanged}" />
+                        <jv:TextBox Width="130" atc:TitleAssist.Title="宽度（1、2、4）"
+                                    Text="{Binding ResponseKeyWidth, UpdateSourceTrigger=PropertyChanged}" />
+                        <jv:ComboBox Width="160" atc:TitleAssist.Title="字节序"
+                                     ItemsSource="{Binding Source={StaticResource KeyOrders}}" SelectedItem="{Binding ResponseKeyOrder}" />
+                    </WrapPanel>
+                </StackPanel>
+            </jv:GroupBox>
+        </Border>
+
+        <!-- 心跳 -->
+        <StackPanel DataContext="{Binding Heartbeat}"><local:HeartbeatSectionView /></StackPanel>
+
+        <!-- 重连 -->
+        <jv:GroupBox Header="重连" IsCollapsible="True" IsCollapsed="True">
+            <StackPanel DataContext="{Binding Reconnect}">
+                <jv:CheckBox Content="断开后自动重连" IsChecked="{Binding Enabled}" />
+                <WrapPanel>
+                    <jv:ComboBox Width="180" atc:TitleAssist.Title="方式"
+                                 ItemsSource="{Binding Source={StaticResource ReconnectModes}}" SelectedItem="{Binding Mode}" />
+                    <jv:TextBox Width="120" atc:TitleAssist.Title="间隔（毫秒）"
+                                Text="{Binding Interval, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="120" atc:TitleAssist.Title="最大间隔（毫秒）"
+                                Text="{Binding MaxInterval, UpdateSourceTrigger=PropertyChanged}" />
+                </WrapPanel>
+                <WrapPanel>
+                    <jv:TextBox Width="160" atc:TitleAssist.Title="最多次数（0 为不限）"
+                                Text="{Binding MaxAttempts, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:CheckBox Content="首次连接失败也重连" IsChecked="{Binding OnInitialFailure}" VerticalAlignment="Bottom" />
+                </WrapPanel>
+            </StackPanel>
+        </jv:GroupBox>
+
+        <!-- 超时 -->
+        <jv:GroupBox Header="超时（毫秒）" IsCollapsible="True" IsCollapsed="True">
+            <StackPanel DataContext="{Binding Timeouts}">
+                <WrapPanel>
+                    <jv:TextBox Width="110" atc:TitleAssist.Title="连接"
+                                Text="{Binding ConnectTimeout, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="110" atc:TitleAssist.Title="握手"
+                                Text="{Binding HandshakeTimeout, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="110" atc:TitleAssist.Title="发送"
+                                Text="{Binding SendTimeout, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="110" atc:TitleAssist.Title="请求"
+                                Text="{Binding RequestTimeout, UpdateSourceTrigger=PropertyChanged}" />
+                </WrapPanel>
+                <WrapPanel>
+                    <jv:TextBox Width="140" atc:TitleAssist.Title="空闲（0 为关闭）"
+                                Text="{Binding IdleTimeout, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="140" atc:TitleAssist.Title="半帧（0 为关闭）"
+                                Text="{Binding PartialFrameTimeout, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="110" atc:TitleAssist.Title="断开"
+                                Text="{Binding DisconnectTimeout, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="190" atc:TitleAssist.Title="迟到应答窗口（-1 为默认）"
+                                Text="{Binding LateReplyWindow, UpdateSourceTrigger=PropertyChanged}" />
+                </WrapPanel>
+                <jv:CheckBox Content="请求超时后重建连接" IsChecked="{Binding ResetOnRequestTimeout}" />
+            </StackPanel>
+        </jv:GroupBox>
+
+        <!-- 套接字与 TLS：只对 TCP 显示 -->
+        <Border Visibility="{Binding ShowsSocketAndTls, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel DataContext="{Binding Socket}"><local:SocketSectionView /></StackPanel>
+        </Border>
+
+        <jv:GroupBox Header="TLS（TCP）" IsCollapsible="True" IsCollapsed="True"
+                     Visibility="{Binding ShowsSocketAndTls, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel DataContext="{Binding Tls}">
+                <jv:CheckBox Content="启用 TLS" IsChecked="{Binding Enabled}" />
+                <jv:CheckBox Content="检查证书吊销" IsChecked="{Binding CheckCertificateRevocation}" />
+                <jv:CheckBox Content="允许不受信任的服务器证书（有风险）" IsChecked="{Binding AllowUntrustedServerCertificate}" />
+                <WrapPanel>
+                    <jv:TextBox Width="220" atc:TitleAssist.Title="目标主机名（证书校验）"
+                                Text="{Binding TargetHost, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:ComboBox Width="140" atc:TitleAssist.Title="客户端证书"
+                                 ItemsSource="{Binding Source={StaticResource ClientCertificateKinds}}" SelectedItem="{Binding ClientCertificate}" />
+                    <jv:TextBox Width="220" atc:TitleAssist.Title="指纹（Store）"
+                                Text="{Binding Thumbprint, UpdateSourceTrigger=PropertyChanged}" />
+                </WrapPanel>
+                <WrapPanel>
+                    <jv:TextBox Width="260" atc:TitleAssist.Title="PFX 路径（Pfx）"
+                                Text="{Binding PfxPath, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="200" atc:TitleAssist.Title="口令环境变量名"
+                                Text="{Binding PfxPasswordVariable, UpdateSourceTrigger=PropertyChanged}" />
+                </WrapPanel>
+            </StackPanel>
+        </jv:GroupBox>
+
+        <!-- 握手 -->
+        <Border Visibility="{Binding ShowsHandshake, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel DataContext="{Binding Handshake}"><local:HandshakeSectionView /></StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

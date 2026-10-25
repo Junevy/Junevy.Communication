@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\..\build\Junevy.Communication.Tests.props" />
+
+  <!-- 调试助手的测试面向 .NET 8 Windows：页签与视图需要 WPF 的 STA 线程（DA-D2、计划第 4.1 节）。 -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0-windows</TargetFrameworks>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 与 OpcUa.Tests 相同：SDK 把 Microsoft.Extensions.* 带到 10.0.12，这里把直接用到的版本提到同一版本，避免 NU1605。 -->
+    <PackageReference Update="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Tools\Junevy.Communication.DebugAssistant\Junevy.Communication.DebugAssistant.csproj" />
+    <ProjectReference Include="..\..\Tools\Junevy.Communication.DebugAssistant.Simulators\Junevy.Communication.DebugAssistant.Simulators.csproj" />
+    <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
+    <!-- MQTT Broker 与 OPC UA 服务器替身（Task 16 迁入共享项目），MQTT 与 OPC UA 页的端到端测试使用。 -->
+    <ProjectReference Include="..\Junevy.Communication.Testing.Servers\Junevy.Communication.Testing.Servers.csproj" />
+  </ItemGroup>
+
+</Project>

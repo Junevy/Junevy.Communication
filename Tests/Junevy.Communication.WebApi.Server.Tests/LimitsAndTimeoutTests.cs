@@ -174,7 +174,9 @@ public sealed class LimitsAndTimeoutTests
         await Polling.WaitUntilAsync(() => server.Host.InFlightCount == 0);
         await Polling.WaitUntilAsync(() => server.Completed.Count == 1);
         Assert.Equal(WebApiServerOutcome.ClientDisconnected, server.Completed[0].Outcome);
-        Assert.Equal(0, server.Host.AbandonedCount);
+        // 被摘出的处理器收到取消后异步收尾，计数随后回到 0（全量并行时曾在收尾前读到 1，2026-10-25 test-affected）。
+        // 处理器若没有被取消，要等 10 秒才结束，这里仍会超时失败。
+        await Polling.WaitUntilAsync(() => server.Host.AbandonedCount == 0, 5000);
         await Record.ExceptionAsync(() => request);
     }
 

@@ -79,7 +79,9 @@ public sealed class MqttReceiveTests
         await collector.WaitForCountAsync(1);
 
         Assert.Equal("x", collector.Messages[0].GetPayloadAsString());
-        Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Error);
+        // 收集器先于抛异常的订阅者被调用，错误日志在它之后才写：等它出现，而不是立即断言
+        // （全量并行时曾在日志写入之前断言，2026-10-25 test-affected 第 1 遍）。
+        await Polling.WaitUntilAsync(() => logger.Entries.Any(entry => entry.Level == LogLevel.Error), 5000);
     }
 
     [Fact]

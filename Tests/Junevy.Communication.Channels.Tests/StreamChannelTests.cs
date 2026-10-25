@@ -210,11 +210,12 @@ public sealed class StreamChannelTests
     {
         using DuplexStreamPair pair = DuplexStreamPair.Create();
 
-        // 静默阈值取 100 ms（计划为 50 ms）：字节间隔 10 ms，留出余量以免在负载较高的机器上误判为静默。
-        await using var rig = new StreamRig(pair, Settings(), IdleGap(gapMs: 100));
+        // 静默阈值取 300 ms（计划为 50 ms）：字节间隔 10 ms。全量并行时线程池可能被饿上百毫秒，
+        // 100 ms 的阈值曾把连续字节误判为静默（2026-10-20 test-affected 第 1 遍），因此再放宽。
+        await using var rig = new StreamRig(pair, Settings(), IdleGap(gapMs: 300));
         rig.Start();
 
-        var peer = new StreamPeer(pair.B, IdleGap(gapMs: 100));
+        var peer = new StreamPeer(pair.B, IdleGap(gapMs: 300));
         for (int i = 0; i < 10; i++)
         {
             await Arrival.WithinAsync(peer.SendRawAsync(new[] { (byte)('A' + i) }), 2000);
@@ -222,7 +223,7 @@ public sealed class StreamChannelTests
         }
 
         await WaitForCountAsync(rig.Sink, 1);
-        await Task.Delay(300);
+        await Task.Delay(600);
 
         Assert.Single(rig.Sink.Frames);
         Assert.Equal(Ascii("ABCDEFGHIJ"), rig.Sink.Frames[0]);

@@ -1,0 +1,70 @@
+<UserControl x:Class="Junevy.Communication.DebugAssistant.Views.Channels.FramingSectionView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:jv="github.com.junevy"
+             xmlns:atc="clr-namespace:Junevy.Controls.AttachedProperties;assembly=Junevy.Controls">
+    <!-- 分帧参数（通道参数与服务端参数共用）。DataContext 是 FramingEditor；共用的枚举与样式在 App.xaml 中。 -->
+    <jv:GroupBox Header="分帧">
+        <StackPanel>
+            <WrapPanel>
+                <jv:ComboBox Width="200" atc:TitleAssist.Title="模式"
+                             ItemsSource="{Binding Source={StaticResource FramingModes}}" SelectedItem="{Binding Mode}" />
+                <jv:TextBox Width="160" atc:TitleAssist.Title="最大帧长（字节）"
+                            Text="{Binding MaxFrameLength, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}" />
+            </WrapPanel>
+
+            <StackPanel Style="{StaticResource ShowForDelimiter}">
+                <jv:TextBox Height="64" AcceptsReturn="True" atc:TitleAssist.Title="分隔符（每行一个，hex: 或文本）"
+                            Text="{Binding Delimiters, UpdateSourceTrigger=PropertyChanged}" />
+                <WrapPanel>
+                    <jv:CheckBox Content="保留分隔符" IsChecked="{Binding KeepDelimiter}" />
+                    <jv:CheckBox Content="发送时追加分隔符" IsChecked="{Binding AppendDelimiterOnSend}" />
+                </WrapPanel>
+            </StackPanel>
+
+            <StackPanel Style="{StaticResource ShowForFixedLength}">
+                <jv:TextBox Width="160" atc:TitleAssist.Title="定长（字节）"
+                            Text="{Binding FixedLength, UpdateSourceTrigger=PropertyChanged}" />
+            </StackPanel>
+
+            <StackPanel Style="{StaticResource ShowForLengthField}">
+                <WrapPanel>
+                    <jv:TextBox Width="130" atc:TitleAssist.Title="长度字段偏移"
+                                Text="{Binding LengthFieldOffset, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="100" atc:TitleAssist.Title="宽度"
+                                Text="{Binding LengthFieldSize, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="120" atc:TitleAssist.Title="修正值"
+                                Text="{Binding LengthAdjustment, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="120" atc:TitleAssist.Title="剥离字节"
+                                Text="{Binding InitialBytesToStrip, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:ComboBox Width="180" atc:TitleAssist.Title="编码"
+                                 ItemsSource="{Binding Source={StaticResource LengthEncodings}}" SelectedItem="{Binding LengthFieldEncoding}" />
+                </WrapPanel>
+            </StackPanel>
+
+            <StackPanel Style="{StaticResource ShowForStartEnd}">
+                <WrapPanel>
+                    <jv:TextBox Width="180" atc:TitleAssist.Title="起始标记"
+                                Text="{Binding StartMarker, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="180" atc:TitleAssist.Title="结束标记"
+                                Text="{Binding EndMarker, UpdateSourceTrigger=PropertyChanged}" />
+                </WrapPanel>
+                <jv:CheckBox Content="保留标记" IsChecked="{Binding KeepMarkers}" />
+            </StackPanel>
+
+            <StackPanel Style="{StaticResource ShowForIdleGap}">
+                <jv:TextBox Width="160" atc:TitleAssist.Title="空闲间隔（毫秒）"
+                            Text="{Binding GapTimeout, UpdateSourceTrigger=PropertyChanged}" />
+            </StackPanel>
+
+            <jv:TextBlock Style="{StaticResource Text.Section}" Text="分帧预览" Margin="0,8,0,8" />
+            <WrapPanel>
+                <jv:TextBox Width="220" atc:TitleAssist.Title="输入（hex: 或文本）"
+                            Text="{Binding PreviewInput, UpdateSourceTrigger=PropertyChanged}" />
+                <jv:Button Content="切分预览" Command="{Binding PreviewCommand}" Margin="0,22,0,12" />
+            </WrapPanel>
+            <jv:TextBox Text="{Binding PreviewText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" Height="80"
+                        atc:TitleAssist.Title="切分结果" Margin="0,0,0,12" />
+        </StackPanel>
+    </jv:GroupBox>
+</UserControl>

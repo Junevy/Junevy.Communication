@@ -1,0 +1,97 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib"
+                    xmlns:channels="clr-namespace:Junevy.Communication.Channels;assembly=Junevy.Communication.Channels"
+                    xmlns:common="clr-namespace:Junevy.Communication.DebugAssistant.Common;assembly=Junevy.Communication.DebugAssistant"
+                    xmlns:dachannels="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Channels;assembly=Junevy.Communication.DebugAssistant"
+                    xmlns:daeditors="clr-namespace:Junevy.Communication.DebugAssistant.Protocols.Channels.Editors;assembly=Junevy.Communication.DebugAssistant">
+
+    <!-- 通道参数与服务端参数共用的枚举列表（计划第 7.13 节）。 -->
+    <ObjectDataProvider x:Key="FramingModes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+        <ObjectDataProvider.MethodParameters>
+            <x:Type TypeName="channels:FramingMode" />
+        </ObjectDataProvider.MethodParameters>
+    </ObjectDataProvider>
+    <ObjectDataProvider x:Key="CorrelationModes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+        <ObjectDataProvider.MethodParameters>
+            <x:Type TypeName="channels:CorrelationMode" />
+        </ObjectDataProvider.MethodParameters>
+    </ObjectDataProvider>
+    <ObjectDataProvider x:Key="LengthEncodings" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+        <ObjectDataProvider.MethodParameters>
+            <x:Type TypeName="channels:LengthFieldEncoding" />
+        </ObjectDataProvider.MethodParameters>
+    </ObjectDataProvider>
+    <ObjectDataProvider x:Key="ReconnectModes" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+        <ObjectDataProvider.MethodParameters>
+            <x:Type TypeName="channels:ReconnectMode" />
+        </ObjectDataProvider.MethodParameters>
+    </ObjectDataProvider>
+    <ObjectDataProvider x:Key="KeyOrders" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+        <ObjectDataProvider.MethodParameters>
+            <x:Type TypeName="dachannels:KeyByteOrder" />
+        </ObjectDataProvider.MethodParameters>
+    </ObjectDataProvider>
+    <ObjectDataProvider x:Key="ClientCertificateKinds" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+        <ObjectDataProvider.MethodParameters>
+            <x:Type TypeName="daeditors:ClientCertificateKind" />
+        </ObjectDataProvider.MethodParameters>
+    </ObjectDataProvider>
+    <ObjectDataProvider x:Key="ServerCertificateKinds" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+        <ObjectDataProvider.MethodParameters>
+            <x:Type TypeName="daeditors:ServerCertificateKind" />
+        </ObjectDataProvider.MethodParameters>
+    </ObjectDataProvider>
+    <ObjectDataProvider x:Key="EncodingChoices" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+        <ObjectDataProvider.MethodParameters>
+            <x:Type TypeName="common:EncodingChoice" />
+        </ObjectDataProvider.MethodParameters>
+    </ObjectDataProvider>
+    <ObjectDataProvider x:Key="ChecksumKinds" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+        <ObjectDataProvider.MethodParameters>
+            <x:Type TypeName="common:ChecksumKind" />
+        </ObjectDataProvider.MethodParameters>
+    </ObjectDataProvider>
+
+    <!-- 分帧：每种模式只显示自己的参数（StackPanel 的 DataContext 是分帧编辑器）。 -->
+    <Style x:Key="ShowForDelimiter" TargetType="StackPanel">
+        <Setter Property="Visibility" Value="Collapsed" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Mode}" Value="Delimiter">
+                <Setter Property="Visibility" Value="Visible" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <Style x:Key="ShowForFixedLength" TargetType="StackPanel">
+        <Setter Property="Visibility" Value="Collapsed" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Mode}" Value="FixedLength">
+                <Setter Property="Visibility" Value="Visible" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <Style x:Key="ShowForLengthField" TargetType="StackPanel">
+        <Setter Property="Visibility" Value="Collapsed" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Mode}" Value="LengthField">
+                <Setter Property="Visibility" Value="Visible" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <Style x:Key="ShowForStartEnd" TargetType="StackPanel">
+        <Setter Property="Visibility" Value="Collapsed" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Mode}" Value="StartEnd">
+                <Setter Property="Visibility" Value="Visible" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <Style x:Key="ShowForIdleGap" TargetType="StackPanel">
+        <Setter Property="Visibility" Value="Collapsed" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Mode}" Value="IdleGap">
+                <Setter Property="Visibility" Value="Visible" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+</ResourceDictionary>

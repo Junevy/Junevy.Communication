@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- SDK 测试服务器（计划 Task 16）：MQTT Broker、OPC UA 服务器与 FTP 模拟服务器，供三个适配包的测试项目共用。
+       只供测试项目引用，不生成 NuGet 包。不 Import 测试项目的公共设置（那会把它变成测试项目），也不 Import 库的公共设置（那会把缺失的 XML 文档当成错误）。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
+    <!-- OPC UA 服务器替身的测试辅助要用适配包的公开客户端（OpcUaClient），只用公开 API。 -->
+    <ProjectReference Include="..\..\Junevy.Communication.OpcUa\Junevy.Communication.OpcUa.csproj" />
+    <PackageReference Include="MQTTnet.Server" Version="5.2.0.1603" />
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Server" Version="2.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+    <PackageReference Include="xunit.core" Version="2.5.3" />
+  </ItemGroup>
+
+</Project>

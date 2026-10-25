@@ -1,0 +1,57 @@
+<UserControl x:Class="Junevy.Communication.DebugAssistant.Views.Channels.TcpServerSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:jv="github.com.junevy"
+             xmlns:atc="clr-namespace:Junevy.Controls.AttachedProperties;assembly=Junevy.Controls"
+             xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels">
+    <!-- TCP 服务端的每个会话使用的参数。DataContext 是 TcpServerEditor；监听地址、端口与白名单在页签的“监听”一组中。 -->
+    <StackPanel>
+        <StackPanel DataContext="{Binding Framing}"><local:FramingSectionView /></StackPanel>
+        <StackPanel DataContext="{Binding Heartbeat}"><local:HeartbeatSectionView /></StackPanel>
+
+        <jv:GroupBox Header="超时（毫秒）" IsCollapsible="True" IsCollapsed="True">
+            <StackPanel DataContext="{Binding Timeouts}">
+                <WrapPanel>
+                    <jv:TextBox Width="110" atc:TitleAssist.Title="会话握手"
+                                Text="{Binding HandshakeTimeout, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="110" atc:TitleAssist.Title="会话空闲（0 为关闭）"
+                                Text="{Binding IdleTimeout, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="110" atc:TitleAssist.Title="发送"
+                                Text="{Binding SendTimeout, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="110" atc:TitleAssist.Title="请求"
+                                Text="{Binding RequestTimeout, UpdateSourceTrigger=PropertyChanged}" />
+                </WrapPanel>
+                <WrapPanel>
+                    <jv:TextBox Width="110" atc:TitleAssist.Title="半帧（0 为关闭）"
+                                Text="{Binding PartialFrameTimeout, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="130" atc:TitleAssist.Title="迟到应答窗口（-1 为默认）"
+                                Text="{Binding LateReplyWindow, UpdateSourceTrigger=PropertyChanged}" />
+                </WrapPanel>
+                <jv:CheckBox Content="请求超时后重建会话" IsChecked="{Binding ResetOnRequestTimeout}" />
+            </StackPanel>
+        </jv:GroupBox>
+
+        <StackPanel DataContext="{Binding Socket}"><local:SocketSectionView /></StackPanel>
+        <StackPanel DataContext="{Binding Handshake}"><local:HandshakeSectionView /></StackPanel>
+
+        <jv:GroupBox Header="TLS（服务端）" IsCollapsible="True" IsCollapsed="True">
+            <StackPanel DataContext="{Binding Tls}">
+                <jv:CheckBox Content="启用 TLS" IsChecked="{Binding Enabled}" />
+                <jv:CheckBox Content="要求客户端证书" IsChecked="{Binding ClientCertificateRequired}" />
+                <jv:CheckBox Content="检查证书吊销" IsChecked="{Binding CheckCertificateRevocation}" />
+                <WrapPanel>
+                    <jv:ComboBox Width="140" atc:TitleAssist.Title="服务器证书"
+                                 ItemsSource="{Binding Source={StaticResource ServerCertificateKinds}}" SelectedItem="{Binding Certificate}" />
+                    <jv:TextBox Width="220" atc:TitleAssist.Title="指纹（Store）"
+                                Text="{Binding Thumbprint, UpdateSourceTrigger=PropertyChanged}" />
+                </WrapPanel>
+                <WrapPanel>
+                    <jv:TextBox Width="260" atc:TitleAssist.Title="PFX 路径（Pfx）"
+                                Text="{Binding PfxPath, UpdateSourceTrigger=PropertyChanged}" />
+                    <jv:TextBox Width="200" atc:TitleAssist.Title="口令环境变量名"
+                                Text="{Binding PfxPasswordVariable, UpdateSourceTrigger=PropertyChanged}" />
+                </WrapPanel>
+            </StackPanel>
+        </jv:GroupBox>
+    </StackPanel>
+</UserControl>

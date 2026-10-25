@@ -1,0 +1,106 @@
+<UserControl x:Class="Junevy.Communication.DebugAssistant.Views.Fins.FinsPageView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:jv="github.com.junevy"
+             xmlns:atc="clr-namespace:Junevy.Controls.AttachedProperties;assembly=Junevy.Controls"
+             xmlns:local="clr-namespace:Junevy.Communication.DebugAssistant.Views.Channels"
+             xmlns:plcViews="clr-namespace:Junevy.Communication.DebugAssistant.Views.Plc"
+             xmlns:sessions="clr-namespace:Junevy.Communication.DebugAssistant.Views.Sessions">
+    <!-- FINS 页签（计划第 7.5 节）：左侧为节点与路由、握手结果、通道参数与说明；右侧上方为公共面板，下方为监控表、区域速查、操作记录与报文日志。 -->
+    <DockPanel Margin="12">
+        <local:ConnectionBarView DockPanel.Dock="Top" />
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="340" MinWidth="260" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="360" />
+            </Grid.ColumnDefinitions>
+
+            <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
+                <StackPanel>
+                    <jv:GroupBox Header="节点与路由（FINS/TCP，端口 9600）" IsEnabled="{Binding IsEditable}">
+                        <StackPanel>
+                            <WrapPanel>
+                                <jv:TextBox Width="200" atc:TitleAssist.Title="主机"
+                                            Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBox Width="110" atc:TitleAssist.Title="端口"
+                                            Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}" />
+                            </WrapPanel>
+                            <WrapPanel>
+                                <jv:TextBox Width="130" atc:TitleAssist.Title="客户端节点"
+                                            Text="{Binding ClientNode, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBox Width="120" atc:TitleAssist.Title="目的网络"
+                                            Text="{Binding DestinationNetwork, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:TextBox Width="120" atc:TitleAssist.Title="目的单元"
+                                            Text="{Binding DestinationUnit, UpdateSourceTrigger=PropertyChanged}" />
+                            </WrapPanel>
+                            <jv:TextBlock Style="{StaticResource Text.Hint}"
+                                          Text="客户端节点：0 由 CPU 分配，1 到 254 为固定节点，255 是广播地址被拒绝。" />
+                            <jv:TextBlock Text="{Binding HandshakeText}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,0,0,12" />
+                        </StackPanel>
+                    </jv:GroupBox>
+
+                    <jv:GroupBox Header="通道参数（超时、心跳、重连、TLS）" IsCollapsible="True" IsCollapsed="True"
+                                 IsEnabled="{Binding IsEditable}">
+                        <local:ChannelSettingsView DataContext="{Binding Channel}" />
+                    </jv:GroupBox>
+
+
+                    <jv:GroupBox Header="说明" IsCollapsible="True" IsCollapsed="True">
+                        <StackPanel>
+                            <jv:TextBlock Style="{StaticResource Text.Hint}"
+                                          Text="地址格式为“区域 + 编号 + .位号”，编号与位号都是十进制，例如 D100、W10.03、E3_200.15。位号 0 到 15，写 16 或更大会被拒绝。" />
+                            <jv:TextBlock Style="{StaticResource Text.Hint}"
+                                          Text="位写入是原生的：WriteBitsAsync(“W10.15”, …) 写多个位时，第二个位落在下一字 W11.0，报文使用位区代码。" />
+                            <jv:TextBlock Style="{StaticResource Text.Hint}"
+                                          Text="字节语义与 MC 相反：ReadByteAsync 返回字的高字节，而不是低字节。" />
+                            <jv:TextBlock Style="{StaticResource Text.Hint}"
+                                          Text="结束码：状态位先被屏蔽（主字节取低 7 位，次字节取低 6 位），屏蔽后为 0 视为成功；协议码显示的是屏蔽后的结束码。结束码的含义取决于 CPU 型号，请查阅欧姆龙 FINS 手册。" />
+                        </StackPanel>
+                    </jv:GroupBox>
+                </StackPanel>
+            </ScrollViewer>
+
+            <GridSplitter Grid.Column="1" Style="{StaticResource Splitter.Columns}" />
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="140" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="260" MinHeight="120" />
+                </Grid.RowDefinitions>
+
+                <ScrollViewer Grid.Row="0" Style="{StaticResource Panel.SettingsScroll}">
+                    <StackPanel>
+                        <plcViews:PlcPanelView />
+                    </StackPanel>
+                </ScrollViewer>
+
+                <GridSplitter Grid.Row="1" Style="{StaticResource Splitter.Rows}" />
+
+                <TabControl Grid.Row="2">
+                    <TabItem Header="监控表">
+                        <plcViews:PlcMonitorView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="区域速查" ToolTip="地址与位号为十进制，区域代码为十六进制">
+                        <DataGrid x:Name="AreaGrid" ItemsSource="{Binding Areas}" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"
+                                  Margin="8" VirtualizingPanel.IsVirtualizing="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="区域" Binding="{Binding Symbol}" Width="70" />
+                                <DataGridTextColumn Header="字区代码" Binding="{Binding WordAreaCodeText}" Width="90" />
+                                <DataGridTextColumn Header="位区代码" Binding="{Binding BitAreaCodeText}" Width="90" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </TabItem>
+                    <TabItem Header="操作记录">
+                        <local:OperationListView Margin="8" />
+                    </TabItem>
+                    <TabItem Header="报文与日志">
+                        <sessions:LogPanel DataContext="{Binding LogPanel}" Margin="8" />
+                    </TabItem>
+                </TabControl>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</UserControl>
