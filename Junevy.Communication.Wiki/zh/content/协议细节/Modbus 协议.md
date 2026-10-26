@@ -4,7 +4,7 @@ tags: [协议细节, Junevy.Communication, Modbus, Plc]
 
 # Modbus 协议
 
-> 代码基线：`Junevy.Communication.Modbus`（net472;net8.0，`3.0.0-preview.1`，P7）。依据：Modbus Application Protocol V1.1b3、Modbus over Serial Line V1.02，以及计划第 21 节的黄金向量（V-P、V-R、V-M 系列，CRC 用独立脚本计算）。**未经真机验证**（P7-D17）：只与测试里的设备替身联调过，没有用 Modbus Poll、Modbus Slave 或任何真实设备核对。与代码冲突时以代码为准；设计差异见设计文档第 20.12 节。2.x 的笔记已移到 [[变更与决策/Modbus v2 归档/API参考/ModbusRtuClient]] 等处，仅供历史参考。
+> 代码基线：`Junevy.Communication.Modbus`（net472;net8.0，`3.0.0-preview.1`，P7）。依据：Modbus Application Protocol V1.1b3、Modbus over Serial Line V1.02，以及计划第 21 节的黄金向量（V-P、V-R、V-M 系列，CRC 用独立脚本计算）。**未经真机验证**（P7-D17）：没有用 Modbus Poll、Modbus Slave 或任何真实设备核对；2026-10-26 已与独立实现的从站 pymodbus 互通验证（见下文"验证状态"）。与代码冲突时以代码为准；设计差异见设计文档第 20.12 节。2.x 的笔记已移到 [[变更与决策/Modbus v2 归档/API参考/ModbusRtuClient]] 等处，仅供历史参考。
 
 ## 支持范围（P7-D1）
 
@@ -136,14 +136,20 @@ tags: [协议细节, Junevy.Communication, Modbus, Plc]
 - ~~字面的 256 字节上限~~：**已修正**（P7 第一轮验收 R1）。读应答的字节数大于 250（规范上限）时视为噪声，丢 1 个字节重新同步，不再抛 `FrameDecodeException`。
 - **噪声中的等待**（P7-D17 ②）：候选帧的字节数未到达时分帧器等待；噪声中的字节数字段很大时，分帧器可能等待最多 260 字节才裁决，之后的好帧会被推迟。没有超时兜底。
 
-## 未验证清单（P7-D17）
+## 验证状态（P7-D17）
 
-1. 只与测试里的设备替身联调过，没有对真实设备或 Modbus Poll / Modbus Slave 这类工具验证。
-2. RTU 按字节重新同步在强噪声线路上的表现未测量。
-3. 0x16 的支持因设备而异，不支持的设备返回异常码 01。
-4. 少数设备只接受 10 而不接受 06，需要把 `UseSingleWriteFunctions` 设为 false。
-5. 站号 0 和 255 在 TCP 网关上的含义因厂商而异。
-6. RTU over UDP 很少见，只按规范实现。
+2026-10-26 与 pymodbus 3.16.1（独立实现的从站，脚本不引用本仓库代码）互通，net8.0 与 net472 各 11 个用例通过，库代码未改动。记录见 P7 计划第 25.4 节，测试在 `Tests/Junevy.Communication.Modbus.Tests/Interop/`（网络 `PymodbusInteropTests`、串口 `PymodbusSerialInteropTests`，需要 `JUNEVY_PYMODBUS_PYTHON`，见 [[测试/测试工程与验收方式]]）。
+
+| # | 项 | 状态 |
+|---|---|---|
+| ① | 与第三方实现互通 | **通过**（pymodbus；TCP、RTU over TCP、UDP、RTU over UDP、串口 RTU 虚拟对）。真实设备与 Modbus Poll / Modbus Slave **未核对** |
+| ② | RTU 按字节重新同步在强噪声线路上的表现 | 未测量，用户现场验证 |
+| ③ | 不支持 0x16 的设备 | **通过**：返回 `RemoteError`、异常码 01；绕过方法是关掉 `UseMaskWriteForBits`、打开 `AllowReadModifyWriteBits`（位写改为 03 + 06） |
+| ④ | 只接受 0F / 10 的设备 | **通过**：`UseSingleWriteFunctions = false` 后只发 0F / 10，拆包写的最后一包也是 10 |
+| ⑤ | 站号 0 和 255 在 TCP 网关上的含义 | 因厂商而异，用户现场验证 |
+| ⑥ | RTU over UDP | **通过**（同 ①） |
+
+互通中看到的第三方行为：pymodbus 3.16 对未定义的站号回异常码 04（其 `SimCore` 内部 `KeyError`），规范上网关应回 0B。客户端两种都按异常应答处理。
 
 ## 黄金向量
 

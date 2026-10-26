@@ -87,6 +87,7 @@ tags: [协议细节, Junevy.Communication, OpcUa, OPC UA]
 
 - **状态码的 Good / Uncertain / Bad 由本包自己从最高两位算**，不复用 SDK 的判定函数——SDK 的 `IsUncertain(0xC0000000)` 与 `IsBad(0xC0000000)` **会同时为真**（F7）；
 - `StatusCode.LookupSymbolicId` 对未知码返回**空串**（不是 `0x…` 形式）且**忽略子码**（`0x00000001` → `"Good"`），空串时本包回退成 `0x{code:X8}`（F6）；
+- **符号名不用 `new StatusCode(code).SymbolicId`**（2026-10-25）：SDK 2.0.1 的 `StatusCode` 与 `StatusCodes` 的静态构造函数互相引用，两个线程同时首次触及时，`StatusCode` 的静态构造函数可能把已登记的完整名称表重置为 31 项，此后整个进程查不到其余码的名字（调试助手全量并行测试中复现两次，显示 `0x80340000`）。`Sdk/StatusNames` 改为从 `StatusCodes` 的 274 个公开字段建表（字段自带名字），查不到再问 SDK，最后回退十六进制；`StatusNamesTests` 逐字段核对并做并发查询；
 - **超时与取消归本包判定**：`ManagedSessionBuilder.ConnectAsync` 没有超时参数，端点发现阶段**完全不理会取消令牌**（F23）。因此本包开 `TimeoutScope`，再用 `Task.WaitAsync` 把调用方摘出去；SDK 那条后台任务继续跑完并挂 `ContinueWith` 观察掉，摘出去之后才连上的会话当场关掉。
 - **读、写、浏览、订阅也各包一个 `OperationTimeout` 作用域**，取消与超时以作用域为准：SDK 会把调用方的取消包成带 Bad 码的服务异常（F31，订阅时实测归成了 `RemoteError`）。
 - 服务器停机后的读抛 `ServiceResultException(BadConnectionClosed)`，**不是逐项状态码**（F16），状态码要沿异常链取。
