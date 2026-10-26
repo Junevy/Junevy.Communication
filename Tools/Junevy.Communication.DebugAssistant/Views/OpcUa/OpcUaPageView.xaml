@@ -21,12 +21,12 @@
                 <ColumnDefinition Width="*" MinWidth="360" />
             </Grid.ColumnDefinitions>
 
-            <!-- 左：连接选项（只支持 None 与匿名）与懒加载浏览。展开对象节点才浏览子节点；双击变量加入读写列表。 -->
+            <!-- 左：连接选项（只支持 None 安全策略，匿名或用户名密码登录）与懒加载浏览。展开对象节点才浏览子节点；双击变量加入读写列表。 -->
             <ScrollViewer Grid.Column="0" Style="{StaticResource Panel.SettingsScroll}">
                 <StackPanel>
                     <jv:GroupBox Header="连接选项" IsEnabled="{Binding IsEditable}">
                         <StackPanel>
-                            <jv:TextBlock Text="安全提示：本页只支持 None 安全策略与匿名登录。服务器必须允许这种方式，否则连接会返回 NotSupported。"
+                            <jv:TextBlock Text="安全提示：本页只支持 None 安全策略；用户名留空为匿名登录，填写则用用户名密码登录。服务器必须在 None 端点上提供对应的登录方式，否则连接会返回 NotSupported。服务器不要求加密令牌时密码以明文传输；密码会明文保存到工作区。"
                                           FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,12" />
                             <jv:TextBox atc:TitleAssist.Title="端点地址"
                                         Text="{Binding EndpointUrl, UpdateSourceTrigger=PropertyChanged}" />
@@ -34,6 +34,12 @@
                                         Text="{Binding ApplicationName, UpdateSourceTrigger=PropertyChanged}" />
                             <jv:TextBox atc:TitleAssist.Title="应用 URI" atc:PlaceholderAssist.Placeholder="留空自动生成"
                                         Text="{Binding ApplicationUri, UpdateSourceTrigger=PropertyChanged}" />
+                            <WrapPanel>
+                                <jv:TextBox Width="140" atc:TitleAssist.Title="用户名（留空为匿名）"
+                                            Text="{Binding UserName, UpdateSourceTrigger=PropertyChanged}" />
+                                <jv:PasswordBox Width="140" atc:TitleAssist.Title="密码（保存到工作区）"
+                                                Password="{Binding Password, Mode=TwoWay}" />
+                            </WrapPanel>
                         </StackPanel>
                     </jv:GroupBox>
 

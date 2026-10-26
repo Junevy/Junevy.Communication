@@ -14,7 +14,7 @@ using Junevy.Communication.OpcUa;
 namespace Junevy.Communication.DebugAssistant.Protocols.OpcUa;
 
 /// <summary>
-/// OPC UA 客户端页（计划第 7.8 节）：连接选项（只支持 None 与匿名，界面醒目提示）；从 <c>i=85</c> 懒加载浏览；读写列表
+/// OPC UA 客户端页（计划第 7.8 节）：连接选项（只支持 None 安全策略，匿名或用户名密码登录，界面醒目提示）；从 <c>i=85</c> 懒加载浏览；读写列表
 /// （批量读的逐项结果、按所选 .NET 类型写入且不做转换、BadTypeMismatch 等逐项状态）；订阅（每项的创建状态、实时通知、释放）。
 /// 库的状态与通知先经 <see cref="SessionViewModel.PostToUi"/> 回到界面线程；已断开、已替换或已释放的订阅的通知被忽略。
 /// </summary>
@@ -70,6 +70,14 @@ public sealed partial class OpcUaSessionViewModel : SessionViewModel
 
     [ObservableProperty]
     private string _pkiRoot = OpcUaClientOptions.DefaultPkiRoot;
+
+    /// <summary>登录用户名；留空即匿名登录。</summary>
+    [ObservableProperty]
+    private string _userName = string.Empty;
+
+    /// <summary>登录密码；与用户名一起保存到工作区（用户的选择，见 <see cref="OpcUaSettings"/>）。</summary>
+    [ObservableProperty]
+    private string _password = string.Empty;
 
     [ObservableProperty]
     private int _connectTimeout = 10000;
@@ -156,6 +164,8 @@ public sealed partial class OpcUaSessionViewModel : SessionViewModel
         ApplicationName = saved.ApplicationName;
         ApplicationUri = saved.ApplicationUri ?? string.Empty;
         PkiRoot = saved.PkiRoot;
+        UserName = saved.UserName ?? string.Empty;
+        Password = saved.Password ?? string.Empty;
         ConnectTimeout = saved.ConnectTimeout;
         OperationTimeout = saved.OperationTimeout;
         SessionTimeout = saved.SessionTimeout;
@@ -243,7 +253,9 @@ public sealed partial class OpcUaSessionViewModel : SessionViewModel
         PublishingInterval,
         SamplingInterval,
         QueueSize,
-        DiscardOldest);
+        DiscardOldest,
+        Optional(UserName),
+        Password.Length == 0 ? null : Password);
 
     private static string? Optional(string text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
 
@@ -261,6 +273,8 @@ public sealed partial class OpcUaSessionViewModel : SessionViewModel
             ApplicationName = settings.ApplicationName,
             ApplicationUri = settings.ApplicationUri,
             PkiRoot = settings.PkiRoot,
+            UserName = settings.UserName,
+            Password = settings.Password,
             ConnectTimeout = settings.ConnectTimeout,
             OperationTimeout = settings.OperationTimeout,
             SessionTimeout = settings.SessionTimeout,

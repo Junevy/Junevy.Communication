@@ -99,6 +99,39 @@ public sealed class OpcUaClientOptionsTests
     }
 
     [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Create_BlankUserName_Throws(string userName)
+    {
+        OpcUaClientOptions options = Valid();
+        options.UserName = userName;
+
+        Assert.Equal("options.UserName", Assert.Throws<ArgumentException>(() => OpcUaOptionsValidator.Validate(options)).ParamName);
+    }
+
+    [Fact]
+    public void Create_PasswordWithoutUserName_Throws()
+    {
+        OpcUaClientOptions options = Valid();
+        options.Password = "secret";
+
+        Assert.Equal("options.Password", Assert.Throws<ArgumentException>(() => OpcUaOptionsValidator.Validate(options)).ParamName);
+    }
+
+    [Theory]
+    [InlineData("secret")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void Create_UserNameWithOrWithoutPassword_Passes(string? password)
+    {
+        OpcUaClientOptions options = Valid();
+        options.UserName = "operator";
+        options.Password = password;
+
+        OpcUaOptionsValidator.Validate(options);
+    }
+
+    [Theory]
     [InlineData(nameof(OpcUaClientOptions.ConnectTimeout))]
     [InlineData(nameof(OpcUaClientOptions.OperationTimeout))]
     [InlineData(nameof(OpcUaClientOptions.SessionTimeout))]
@@ -142,6 +175,8 @@ public sealed class OpcUaClientOptionsTests
 
         Assert.Equal("Junevy.Communication.OpcUa", options.ApplicationName);
         Assert.Null(options.ApplicationUri);
+        Assert.Null(options.UserName);
+        Assert.Null(options.Password);
         Assert.Equal(10000, options.ConnectTimeout);
         Assert.Equal(10000, options.OperationTimeout);
         Assert.Equal(60000, options.SessionTimeout);

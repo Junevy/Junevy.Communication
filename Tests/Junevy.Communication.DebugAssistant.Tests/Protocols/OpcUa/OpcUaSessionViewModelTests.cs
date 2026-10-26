@@ -34,6 +34,8 @@ public sealed class OpcUaSessionViewModelTests
         page.EndpointUrl = "opc.tcp://plc.example:4840/UA";
         page.ApplicationUri = "urn:junevy:debug";
         page.PkiRoot = @"C:\pki";
+        page.UserName = "operator";
+        page.Password = "secret";
         page.ConnectTimeout = 3000;
         page.OperationTimeout = 4000;
         page.SessionTimeout = 90000;
@@ -50,6 +52,31 @@ public sealed class OpcUaSessionViewModelTests
         other.ApplySettings(saved);
 
         Assert.Equal(saved, other.CaptureSettings());
+        Assert.Equal(("operator", "secret"), (saved.UserName, saved.Password));
+    }
+
+    [Fact]
+    public async Task BlankCredentials_AreSavedAsAnonymous()
+    {
+        await using var page = CreatePage();
+        page.UserName = "  ";
+
+        var saved = (OpcUaSettings)page.CaptureSettings();
+
+        Assert.Equal((null, null), (saved.UserName, saved.Password));
+    }
+
+    [Fact]
+    public async Task APasswordWithoutAUserName_IsRefusedWithInvalidRequest()
+    {
+        await using var page = CreatePage();
+        page.Password = "secret";
+
+        await page.ConnectCommand.ExecuteAsync(null);
+
+        Assert.Equal(SessionState.NotConnected, page.State);
+        OperationRecord record = Assert.Single(page.Operations);
+        Assert.Equal((false, CommErrorKind.InvalidRequest), (record.Succeeded, record.ErrorKind));
     }
 
     [Fact]

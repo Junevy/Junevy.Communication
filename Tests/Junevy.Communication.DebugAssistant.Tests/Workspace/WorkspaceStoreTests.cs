@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using System.Text.Json.Serialization;
+using Junevy.Communication.DebugAssistant.Protocols.OpcUa;
 using Junevy.Communication.DebugAssistant.Workspace;
 
 namespace Junevy.Communication.DebugAssistant.Tests.Workspace;
@@ -92,7 +93,9 @@ public sealed class WorkspaceStoreTests : IDisposable
     [Fact]
     public void PasswordFields_OfEverySettingsType_AreNotWritten()
     {
-        // 当前没有带密码的参数类型；每种协议加入密码字段时，这里会强制它标记 [JsonIgnore]（计划 DA-D11）。
+        // 每种协议加入密码字段时，这里会强制它标记 [JsonIgnore]（计划 DA-D11）。
+        // 唯一的例外是 OPC UA 页的登录密码：用户 2026-10-26 选择把它保存到工作区，例外必须登记在这里。
+        var savedOnPurpose = new HashSet<(Type, string)> { (typeof(OpcUaSettings), nameof(OpcUaSettings.Password)) };
         IEnumerable<Type> settingsTypes = typeof(SessionSettings).Assembly.GetTypes()
             .Where(type => type.IsSubclassOf(typeof(SessionSettings)));
 
@@ -102,7 +105,10 @@ public sealed class WorkspaceStoreTests : IDisposable
             foreach (PropertyInfo property in settingsType.GetProperties().Where(p =>
                 p.Name.Contains("Password", StringComparison.OrdinalIgnoreCase) && !p.Name.EndsWith("Variable", StringComparison.OrdinalIgnoreCase)))
             {
-                Assert.NotNull(property.GetCustomAttribute<JsonIgnoreAttribute>());
+                bool ignored = property.GetCustomAttribute<JsonIgnoreAttribute>() is not null;
+                Assert.True(
+                    ignored != savedOnPurpose.Contains((settingsType, property.Name)),
+                    $"{settingsType.Name}.{property.Name}: only the registered exceptions may be written to the workspace.");
             }
         }
     }

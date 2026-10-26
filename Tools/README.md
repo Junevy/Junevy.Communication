@@ -36,7 +36,7 @@ dotnet run --project Tools/Junevy.Communication.DebugAssistant
 | PLC | 欧姆龙 FINS | FINS/TCP，客户端节点、目的网络与单元；区域速查表 |
 | 工厂系统 | SECS/HSMS 设备端 | 被动或主动连接；按 S、F 登记自动应答规则；SML 编辑与常用模板 |
 | 工厂系统 | MQTT 客户端 | MQTT 3.1.1 与 5.0，TLS，自动重连，遗嘱，订阅与发布 |
-| 工厂系统 | OPC UA 客户端 | 浏览、读写、订阅（只支持 None 安全策略与匿名登录） |
+| 工厂系统 | OPC UA 客户端 | 浏览、读写、订阅（只支持 None 安全策略，匿名或用户名密码登录） |
 | 工厂系统 | WebApi REST 客户端 | 请求构造，认证，重试，业务信封，健康检查，事件时间线 |
 | 工厂系统 | WebApi SOAP 客户端 | SOAP 1.1 与 1.2，原始 XML 调用；Fault 显示为远端错误 |
 | 工厂系统 | WebApi 服务端（HTTP 服务端） | 路由表（固定 JSON、回显、业务失败、指定状态码，可设延迟），去重，请求日志 |

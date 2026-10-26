@@ -59,24 +59,21 @@ internal sealed class OpcUaSdkSession : IAsyncDisposable
         // SDK 的 ConnectAsync 没有超时参数，不开作用域它会一直阻塞（F2）。
         using var scope = TimeoutScope.Start(options.ConnectTimeout, cancellationToken);
 
+        var reconnectPolicy = new OpcUaSdkReconnectPolicy(options);
+
         try
         {
             SdkSession session = await new Opc.Ua.Client.ManagedSessionBuilder(configuration, telemetry)
                 .UseEndpoint(endpoint)
-                .WithUserIdentity(new UserIdentity())
+                .WithUserIdentity(OpcUaSdkIdentity.Create(options))
                 .WithSessionName(options.ApplicationName)
                 .WithSessionTimeout(TimeSpan.FromMilliseconds(options.SessionTimeout))
-                .WithReconnectPolicy(policy => new ReconnectPolicyOptions
-                {
-                    InitialDelay = TimeSpan.FromMilliseconds(options.ReconnectInterval),
-                    MaxDelay = TimeSpan.FromMilliseconds(options.MaxReconnectInterval),
-                    JitterFactor = 0.2,
-                    MaxRetries = -1,
-                    Strategy = BackoffStrategy.Exponential,
-                })
+                .WithReconnectPolicy(reconnectPolicy)
                 .WithTransferSubscriptionsOnRecreate(true)
                 .ConnectAsync(scope.Token)
                 .ConfigureAwait(false);
+
+            reconnectPolicy.MarkEstablished();
 
             session.OperationTimeout = options.OperationTimeout;
             session.KeepAliveInterval = options.KeepAliveInterval;

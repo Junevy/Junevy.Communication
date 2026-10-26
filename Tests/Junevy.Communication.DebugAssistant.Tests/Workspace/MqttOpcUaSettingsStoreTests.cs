@@ -60,7 +60,9 @@ public sealed class MqttOpcUaSettingsStoreTests : IDisposable
             250,
             100,
             5,
-            false);
+            false,
+            "operator",
+            "secret");
         new WorkspaceStore(path).Save(new WorkspaceDocument(
             WorkspaceDocument.CurrentSchemaVersion,
             [new WorkspaceSession("Mqtt", "MQTT #1", mqtt), new WorkspaceSession("OpcUa", "OPC UA #1", opcUa)],
@@ -73,5 +75,29 @@ public sealed class MqttOpcUaSettingsStoreTests : IDisposable
         Assert.Equal(opcUa, loaded.Document.Sessions[1].Settings);
         Assert.Contains("\"type\": \"mqtt\"", File.ReadAllText(path));
         Assert.Contains("\"type\": \"opcUa\"", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void AnOpcUaWorkspaceSavedBeforeTheCredentialsExisted_LoadsAsAnonymous()
+    {
+        Directory.CreateDirectory(_directory);
+        string path = Path.Combine(_directory, "workspace.json");
+        var current = new OpcUaSettings("opc.tcp://plc.example:4840/UA", "Junevy.DebugAssistant", null, @"C:\pki", 3000, 4000, 90000, 2000, 500, 8000, 250, null, 5, false);
+        new WorkspaceStore(path).Save(new WorkspaceDocument(
+            WorkspaceDocument.CurrentSchemaVersion,
+            [new WorkspaceSession("OpcUa", "OPC UA #1", current)],
+            SelectedIndex: 0));
+
+        // 去掉两个新字段，得到这次改动之前写出的文件。
+        string json = File.ReadAllText(path);
+        File.WriteAllText(path, System.Text.RegularExpressions.Regex.Replace(json, @",\s*""(userName|password)"": null", string.Empty));
+        Assert.DoesNotContain("userName", File.ReadAllText(path), StringComparison.Ordinal);
+
+        WorkspaceLoadResult loaded = new WorkspaceStore(path).Load();
+
+        Assert.Null(loaded.Notice);
+        var settings = Assert.IsType<OpcUaSettings>(loaded.Document.Sessions[0].Settings);
+        Assert.Equal((null, null), (settings.UserName, settings.Password));
+        Assert.Equal(current, settings);
     }
 }

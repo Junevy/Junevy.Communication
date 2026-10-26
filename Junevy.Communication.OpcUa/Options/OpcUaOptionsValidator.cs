@@ -43,6 +43,17 @@ internal static class OpcUaOptionsValidator
             throw new ArgumentException("The pki root must not be empty.", "options.PkiRoot");
         }
 
+        // null 表示匿名；给了用户名就不能是空白。只给密码不给用户名多半是配置写漏了，不悄悄按匿名处理。
+        if (options.UserName is not null && string.IsNullOrWhiteSpace(options.UserName))
+        {
+            throw new ArgumentException("The user name must be null for anonymous login or a non-empty name.", "options.UserName");
+        }
+
+        if (options.UserName is null && options.Password is not null)
+        {
+            throw new ArgumentException("A password needs a user name; leave both null for anonymous login.", "options.Password");
+        }
+
         Require(options.ConnectTimeout, "options.ConnectTimeout");
         Require(options.OperationTimeout, "options.OperationTimeout");
         Require(options.SessionTimeout, "options.SessionTimeout");

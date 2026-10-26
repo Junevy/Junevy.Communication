@@ -118,7 +118,7 @@ internal static class OpcUaSdkErrorMap
     /// <returns><see cref="CommErrorKind.NotConnected"/> 的结果。</returns>
     public static CommResult NotConnected(string message) => Fail(CommErrorKind.NotConnected, null, message, null);
 
-    /// <summary>服务器没有 None 端点，或没有匿名令牌策略（P62-D3）。</summary>
+    /// <summary>服务器没有 None 端点，或没有选项要求的身份令牌策略（P62-D3）。</summary>
     /// <param name="message">失败说明。</param>
     /// <returns><see cref="CommErrorKind.NotSupported"/> 的结果。</returns>
     public static CommResult NotSupported(string message) => Fail(CommErrorKind.NotSupported, null, message, null);

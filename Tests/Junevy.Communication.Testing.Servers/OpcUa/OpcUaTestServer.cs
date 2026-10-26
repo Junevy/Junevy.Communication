@@ -28,6 +28,16 @@ public sealed class OpcUaTestServerOptions
     /// <summary>是否允许匿名登录。</summary>
     public bool AllowAnonymous { get; set; } = true;
 
+    /// <summary>
+    /// 用户名登录接受的用户名；设置后服务器提供用户名令牌策略并注册对应的身份验证器，
+    /// 只接受这一组用户名与 <see cref="Password"/>。为 null 且不允许匿名时，服务器只公布用户名策略、
+    /// 不注册验证器（"没有匿名"的否定用例）。
+    /// </summary>
+    public string? UserName { get; set; }
+
+    /// <summary>用户名登录接受的密码，与 <see cref="UserName"/> 配对。</summary>
+    public string Password { get; set; } = string.Empty;
+
     /// <summary>端点里报告的主机名；null 表示与 <see cref="EndpointUrl"/> 相同。</summary>
     public string? ReportedHostName { get; set; }
 
@@ -150,7 +160,7 @@ public sealed class OpcUaTestServer : IAsyncDisposable
         var builder = new HostApplicationBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
         builder.Services.AddSingleton(telemetry);
-        builder.Services.AddOpcUa()
+        IOpcUaServerBuilder opcUa = builder.Services.AddOpcUa()
             .AddOpcTcpTransport()
             .AddServer(server =>
             {
@@ -171,8 +181,20 @@ public sealed class OpcUaTestServer : IAsyncDisposable
                 {
                     TokenType = options.AllowAnonymous ? UserTokenType.Anonymous : UserTokenType.UserName,
                 });
+                if (options.AllowAnonymous && options.UserName is not null)
+                {
+                    server.UserTokenPolicies.Add(new OpcUaUserTokenPolicy { TokenType = UserTokenType.UserName });
+                }
             })
             .AddNodeManager(NamespaceUri, Build);
+
+        // 公布了用户名策略却没有匹配的验证器时，客户端的 ConnectAsync 会一直阻塞（F2），因此有用户名就注册验证器。
+        // 匿名验证器不受影响，不必一并注册（F35）。
+        if (options.UserName is not null)
+        {
+            opcUa.AddIdentityAuthenticator(new UserNamePasswordAuthenticator(VerifyUserNameAsync));
+        }
+
         CaptureServer(builder.Services);
 
         host = builder.Build();
@@ -181,6 +203,19 @@ public sealed class OpcUaTestServer : IAsyncDisposable
 
         Volatile.Write(ref activatedSessions, 0);
         Running.SessionManager.SessionActivated += (_, _) => Interlocked.Increment(ref activatedSessions);
+    }
+
+    // 用户名与密码都对才放行；否则按 OPC UA 的约定回 BadUserAccessDenied。
+    private ValueTask<IUserIdentity> VerifyUserNameAsync(UserNameIdentityTokenHandler token, CancellationToken cancellationToken)
+    {
+        string password = System.Text.Encoding.UTF8.GetString(token.DecryptedPassword ?? Array.Empty<byte>());
+        if (string.Equals(token.UserName, options.UserName, StringComparison.Ordinal)
+            && string.Equals(password, options.Password, StringComparison.Ordinal))
+        {
+            return new ValueTask<IUserIdentity>(new UserIdentity(token));
+        }
+
+        throw new ServiceResultException(StatusCodes.BadUserAccessDenied, "The user name or password is wrong.");
     }
 
     // 通用宿主返回时服务器只是"开始"启动：TCP 监听已经就绪，地址空间还在建。

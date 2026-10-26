@@ -2,6 +2,18 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — OpcUa：用户名密码登录（P6.2 第 20 节的遗留项）
+
+### 新增（Added）
+
+- 2026-10-26 [OpcUa] 用户名密码登录（只在 `None` 安全策略上，用户 2026-10-26 选定范围）：`OpcUaClientOptions` 新增 `UserName`、`Password`（默认 null，即匿名，不是破坏性变更；`Create` 的快照一并复制）。校验：`UserName` 给了就不能为空白（`options.UserName`），只给 `Password` 不给 `UserName` 抛 `ArgumentException`（`options.Password`）；`Password` 为 null 时按空密码发送。身份的选择集中在新增的 `Sdk/OpcUaSdkIdentity`（P62-D3 第 ③ 步留的位置）：端点筛选按选项要的令牌类型（匿名或用户名）找 `None` 端点，会话用对应的 `UserIdentity`（密码 UTF-8 编码；令牌策略指定安全策略时由 SDK 用服务器证书加密，否则明文）。原 `OpcUaSdkConfiguration.AllowsAnonymous` 删除。服务器没有所需令牌策略时仍是 `NotSupported`，消息改为写明缺的是 "anonymous login" 还是 "user name login"；密码不进日志，也不进错误消息。
+- 2026-10-26 [Tests] `OpcUaTestServerOptions` 新增 `UserName`、`Password`：设置后服务器公布用户名令牌策略并注册 `UserNamePasswordAuthenticator`（只接受这一组凭据，否则 `BadUserAccessDenied`）；`AllowAnonymous` 为 true 时两种策略都公布。新增 `OpcUaUserNameLoginTests`（9 条：对的凭据连上并能读；错的密码、错的用户名都很快得到 `AuthenticationFailed`，耗时在 `ConnectTimeout` 的 80% 以内，消息不含密码，服务器上不留会话；null 密码按空密码；无用户名策略的服务器 `NotSupported`；两种策略都有时匿名与用户名客户端都能连上；只有用户名策略时匿名 `NotSupported`；服务器重启后用同一凭据重连；凭据也取快照）、`OpcUaReconnectPolicyTests`（8 条：四种认证类拒绝码在会话建立前停止重试，三种其他状态照常退避，会话建立后认证类拒绝也照常退避）与 `OpcUaClientOptionsTests` 的 6 条校验用例。OpcUa 测试 612 通过。
+- 2026-10-26 [DebugAssistant] OPC UA 页加"用户名（留空为匿名）"与"密码（保存到工作区）"两栏，安全提示改写（None 策略、匿名或用户名、密码可能明文传输、密码明文保存到工作区）。`OpcUaSettings` 末尾新增 `UserName`、`Password`（带默认值 null，旧工作区文件照常加载为匿名）。**密码保存到工作区**是用户的选择（2026-10-26），与 MQTT、FTP 页"密码不保存"不同。测试：设置往返含凭据、空白凭据存为匿名、只有密码时连接被拒为 `InvalidRequest`、旧工作区文件（无这两个字段）加载为匿名、端到端对的密码连上 / 错的密码 `AuthenticationFailed`。守卫 `WorkspaceStoreTests.PasswordFields_OfEverySettingsType_AreNotWritten` 改为登记例外：只有 `OpcUaSettings.Password` 可以写入工作区，其余密码字段仍必须 `[JsonIgnore]`，登记的例外反过来也不许被忽略。验收：解决方案 Debug 构建 0 警告 0 错误；`test-affected`（Architecture 15 + 12、DebugAssistant 952 通过 26 跳过、Ftp 189、Mqtt 235、OpcUa 612）全部通过。
+
+### 修正（Fixed）
+
+- 2026-10-26 [OpcUa] 首次连接时身份被拒（用户名或密码错、匿名被拒、证书类拒绝）不再一直挂到 `ConnectTimeout` 并报 `Timeout`：SDK 的 `ManagedSession` 把首次连接失败也交给重连策略无限重试（计划 F34）。新增 `Sdk/OpcUaSdkReconnectPolicy` 包住 SDK 的 `ReconnectPolicy`（退避参数与原来相同）：会话建立之前，状态码被错误映射归为 `AuthenticationFailed` 时停止重试，`ConnectAsync` 以服务器的状态码返回 `AuthenticationFailed`（实测约 1.4 秒，SDK 第一次询问策略时还拿不到拒绝码，所以会多试一次）；会话建立之后照旧无限重试，P62-D2 不变。
+
 ## [Unreleased] — 调试助手（Junevy.Communication.DebugAssistant，计划 2026-10-20）
 
 ### 新增（Added）

@@ -26,6 +26,18 @@ public sealed class OpcUaClientOptions
     /// <summary>证书与信任列表的根目录，见 <see cref="DefaultPkiRoot"/>。</summary>
     public string PkiRoot { get; set; } = DefaultPkiRoot;
 
+    /// <summary>
+    /// 登录用户名；为 null（默认）时匿名登录。设置后只选提供用户名令牌策略的 <c>None</c> 端点，
+    /// 服务器拒绝时返回 <c>AuthenticationFailed</c>。
+    /// </summary>
+    public string? UserName { get; set; }
+
+    /// <summary>
+    /// 登录密码，只在设置了 <see cref="UserName"/> 时使用；为 null 时按空密码发送。
+    /// 令牌策略要求加密时由 SDK 用服务器证书加密，否则在 <c>None</c> 通道上以明文发送。不写进任何日志。
+    /// </summary>
+    public string? Password { get; set; }
+
     /// <summary>发现端点与创建会话的超时，毫秒。</summary>
     public int ConnectTimeout { get; set; } = 10000;
 

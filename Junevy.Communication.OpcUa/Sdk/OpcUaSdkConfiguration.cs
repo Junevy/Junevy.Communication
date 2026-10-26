@@ -68,7 +68,8 @@ internal static class OpcUaSdkConfiguration
     }
 
     /// <summary>
-    /// 发现端点并按 P62-D3 选一个：只要安全模式 <c>None</c>、安全策略 <c>None</c> 且提供匿名身份令牌的端点。
+    /// 发现端点并按 P62-D3 选一个：只要安全模式 <c>None</c>、安全策略 <c>None</c>，且提供选项要求的身份令牌
+    /// （匿名或用户名，见 <see cref="OpcUaSdkIdentity"/>）的端点。
     /// </summary>
     /// <param name="options">已校验的选项。</param>
     /// <param name="configuration">客户端的应用配置。</param>
@@ -94,7 +95,7 @@ internal static class OpcUaSdkConfiguration
         var collection = new ConfiguredEndpointCollection(configuration);
         foreach (EndpointDescription description in endpoints)
         {
-            if (IsNonePolicy(description) && AllowsAnonymous(description))
+            if (IsNonePolicy(description) && OpcUaSdkIdentity.IsOffered(options, description))
             {
                 collection.Add(description);
                 // P62-D3 ④（服务器报告的主机名与配置不同）：SDK 2.0.1 自己就会把端点地址钉回发现地址，
@@ -107,22 +108,9 @@ internal static class OpcUaSdkConfiguration
             ? CommResult<ConfiguredEndpoint>.Fail(
                 $"The server at {options.EndpointUrl} reported no endpoint.", CommErrorKind.ConnectionClosed)
             : CommResult<ConfiguredEndpoint>.Fail(
-                $"The server at {options.EndpointUrl} offers no endpoint with the None security policy and anonymous login; "
-                + "this version of Junevy.Communication.OpcUa supports only that combination.",
+                $"The server at {options.EndpointUrl} offers no endpoint with the None security policy and {OpcUaSdkIdentity.Describe(options)}; "
+                + "this version of Junevy.Communication.OpcUa supports only the None security policy.",
                 CommErrorKind.NotSupported);
-    }
-
-    private static bool AllowsAnonymous(EndpointDescription description)
-    {
-        foreach (UserTokenPolicy token in description.UserIdentityTokens)
-        {
-            if (token.TokenType == UserTokenType.Anonymous)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static bool IsNonePolicy(EndpointDescription description)

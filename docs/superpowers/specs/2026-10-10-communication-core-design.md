@@ -1535,6 +1535,8 @@ P6.2（计划 `docs/superpowers/plans/2026-10-12-p62-opcua.md`，Task 0–12）�
 
 **给后续 SDK 适配的教训**（验收所得）：进程内测试替身要能读出**服务器侧**的会话数与订阅数——会话泄漏、订阅复活、"取消之后后台照样连上"这几类缺陷从客户端侧完全看不出来，P6.2 的执行者因此把相应变异体记成了等价变异体。
 
+**2026-10-26 补：用户名密码登录**（P6.2 第 20 节的遗留项，用户选定只在 `None` 安全策略上做）。公开 API 只新增 `OpcUaClientOptions.UserName` / `Password`，默认匿名，不是破坏性变更；身份选择按 P62-D3 预留的位置集中在 `Sdk/OpcUaSdkIdentity`。一条行为修订：SDK 的 `ManagedSession` 把首次连接失败也交给重连策略（计划 F34），身份被拒时 `ConnectAsync` 原本挂到 `ConnectTimeout` 报 `Timeout`；现在由 `Sdk/OpcUaSdkReconnectPolicy` 在会话建立之前遇到 `AuthenticationFailed` 类状态码就停止重试，返回 `AuthenticationFailed`。会话建立之后的无限重连（P62-D2）不变。
+
 ### 20.10 实施修订（P3.2）
 
 P3.2（计划 `docs/superpowers/plans/2026-10-17-p32-webapi-server.md`，Task 0–9）是 MES 的 HTTP 服务端：`Junevy.Communication.WebApi.Server`，只面向 net8.0，只支持 REST 与 JSON。第 15.5 节的设计在以下各处被修订；本节以代码与计划为准。

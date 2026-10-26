@@ -275,4 +275,34 @@ public sealed class OpcUaEndToEndTests
             Assert.Equal((false, CommErrorKind.NotSupported), (record.Succeeded, record.ErrorKind));
         }
     }
+
+    [Theory]
+    [InlineData("secret", true, CommErrorKind.None)]
+    [InlineData("wrong", false, CommErrorKind.AuthenticationFailed)]
+    public async Task UserNameLogin_ConnectsWithTheRightPassword_AndReportsAuthenticationFailedOtherwise(
+        string password, bool connects, CommErrorKind expected)
+    {
+        await using OpcUaTestServer server = await OpcUaTestServerFactory.StartOwnAsync(options =>
+        {
+            options.AllowAnonymous = false;
+            options.UserName = "operator";
+            options.Password = "secret";
+        });
+        var page = new OpcUaSessionViewModel(ProtocolCatalog.Get(ProtocolKind.OpcUa), FakeServices.Create(new ManualUiDispatcher()))
+        {
+            EndpointUrl = server.EndpointUrl,
+            PkiRoot = OpcUaTestServerFactory.UniquePkiRoot(),
+            UserName = "operator",
+            Password = password,
+        };
+        await using (page)
+        {
+            await page.ConnectCommand.ExecuteAsync(null);
+
+            Assert.Equal(connects ? SessionState.Connected : SessionState.NotConnected, page.State);
+            OperationRecord record = Assert.Single(page.Operations);
+            Assert.Equal((connects, expected), (record.Succeeded, record.ErrorKind));
+            Assert.Equal(connects ? 1 : 0, server.SessionCount);
+        }
+    }
 }

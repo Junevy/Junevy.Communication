@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace Junevy.Communication.OpcUa;
 
 /// <summary>
-/// OPC UA 客户端。只支持 <c>None</c> 安全策略与匿名登录（P62-D3），只做客户端。
+/// OPC UA 客户端。只支持 <c>None</c> 安全策略，匿名或用户名密码登录（P62-D3），只做客户端。
 /// 会话交给 SDK 的 <c>ManagedSession</c>：重连与订阅转移由 SDK 完成（P62-D2、D11）。
 /// </summary>
 public sealed class OpcUaClient : IDisposable, IAsyncDisposable
@@ -48,12 +48,13 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// 连接：发现端点、选中 <c>None</c> + 匿名的端点并建立会话。
+    /// 连接：发现端点、选中 <c>None</c> 且提供所需身份令牌（匿名或用户名）的端点并建立会话。
     /// 已是 <see cref="OpcUaSessionState.Connected"/> 时直接成功；连接进行中返回
     /// <see cref="CommErrorKind.InvalidRequest"/>。首次连接失败不启动后台重连（P6-C11）。
     /// </summary>
     /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>连接结果；服务器没有 None 端点或不允许匿名时为 <see cref="CommErrorKind.NotSupported"/>。</returns>
+    /// <returns>连接结果；服务器没有 None 端点或不提供所需的身份令牌策略时为 <see cref="CommErrorKind.NotSupported"/>；
+    /// 身份被拒绝（如用户名或密码错误）时为 <see cref="CommErrorKind.AuthenticationFailed"/>。</returns>
     /// <exception cref="ObjectDisposedException">客户端已释放。</exception>
     public Task<CommResult> ConnectAsync(CancellationToken cancellationToken = default)
         => lifecycle.ConnectAsync(cancellationToken);
@@ -200,6 +201,8 @@ public sealed class OpcUaClient : IDisposable, IAsyncDisposable
         ApplicationName = source.ApplicationName,
         ApplicationUri = source.ApplicationUri,
         PkiRoot = source.PkiRoot,
+        UserName = source.UserName,
+        Password = source.Password,
         ConnectTimeout = source.ConnectTimeout,
         OperationTimeout = source.OperationTimeout,
         SessionTimeout = source.SessionTimeout,

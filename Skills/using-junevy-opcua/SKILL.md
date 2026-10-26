@@ -1,15 +1,15 @@
 ---
 name: using-junevy-opcua
-description: Use when a .NET project references Junevy.Communication.OpcUa or needs OPC UA client access — writing connect, read, write, browse or subscribe code, configuring NodeId text, handling OpcUaValue / OpcUaStatusCode and per-item status codes, tuning reconnect, registering with dependency injection, or troubleshooting NotSupported ("server has no None endpoint"), BadTypeMismatch writes, NotConnected during reconnect, and subscription handlers that block the SDK thread. Client only, .NET 8 only, None security policy and anonymous login only.
+description: Use when a .NET project references Junevy.Communication.OpcUa or needs OPC UA client access — writing connect, read, write, browse or subscribe code, configuring NodeId text, handling OpcUaValue / OpcUaStatusCode and per-item status codes, tuning reconnect, registering with dependency injection, or troubleshooting NotSupported ("server has no None endpoint"), BadTypeMismatch writes, NotConnected during reconnect, AuthenticationFailed on a wrong user name or password, and subscription handlers that block the SDK thread. Client only, .NET 8 only, None security policy only (anonymous or user name / password login).
 ---
 
 # using-junevy-opcua
 
-OPC UA client from the Junevy.Communication library: connect, read, write, browse, subscribe, session reconnect. **Client only, .NET 8 only, `None` security policy with anonymous login only.**
+OPC UA client from the Junevy.Communication library: connect, read, write, browse, subscribe, session reconnect. **Client only, .NET 8 only, `None` security policy only — anonymous or user name / password login.**
 
 ## Before anything else
 
-This version connects **only** to servers that offer the `None` security policy **and** allow anonymous logins. A server that has `None` disabled — the default on many real servers — gives `NotSupported`, and no session is ever attempted. Secure channels, client certificates and username logins are not implemented.
+This version connects **only** to servers that offer the `None` security policy **and**, on that endpoint, the login the options ask for: anonymous by default, or a user name when `UserName` is set. A server that has `None` disabled — the default on many real servers — or that accepts user names only on encrypted channels gives `NotSupported`, and no session is ever attempted. Secure channels (Sign / SignAndEncrypt), client certificates and certificate logins are not implemented.
 
 ## Minimum working code
 
@@ -40,6 +40,19 @@ CommResult<OpcUaSubscription> subscribed = await client.SubscribeAsync(
     new[] { "ns=2;s=Line1.Speed" },
     (_, args) => Console.WriteLine($"{args.NodeId} = {args.Value.Value}"));
 ```
+
+To log in with a user name, set `UserName` (and `Password`; `null` is sent as empty). Leaving `UserName` `null` logs in anonymously; a `Password` without `UserName` is rejected by `Create`:
+
+```csharp
+var options = new OpcUaClientOptions
+{
+    EndpointUrl = "opc.tcp://127.0.0.1:4840/",
+    UserName = "operator",
+    Password = "secret",
+};
+```
+
+The SDK encrypts the password with the server certificate when the server's user token policy asks for it; otherwise the password crosses the `None` channel in clear text. It is never logged.
 
 Options bind straight from `appsettings`:
 
@@ -111,13 +124,13 @@ Every operation returns `CommResult` or `CommResult<T>`. Decide on `ErrorKind`; 
 
 | You see | Meaning | What to do |
 |---|---|---|
-| `NotSupported` | The server offers no `None` endpoint, or no anonymous user token policy | Enable `None` + anonymous on the server, or wait for secure-channel support |
+| `NotSupported` | The server offers no `None` endpoint, or none with the requested login (anonymous, or user name when `UserName` is set); the message names the login | Enable `None` with that login on the server, switch login, or wait for secure-channel support |
 | `NotConnected` | Not `Connected` when the call was made (including while reconnecting) | Connect, or wait for the state |
 | `InvalidRequest` | Malformed node id, unknown `nsu=` URI, unsupported .NET type to write, empty or duplicated subscription node ids | Fix the request; nothing was sent |
 | `ConnectionClosed` | Refused, reset, dropped, or the client was disposed | Reconnect |
 | `Timeout` | `ConnectTimeout` or `OperationTimeout` elapsed | Retry, or raise the timeout |
 | `Cancelled` | The caller's token fired | Usually expected |
-| `AuthenticationFailed` | Anonymous login rejected by the server | Check the server's user token policies |
+| `AuthenticationFailed` | The server rejected the login: wrong user name or password (`BadUserAccessDenied` in `ProtocolErrorCode`), or anonymous refused | Fix the credentials or the server's user configuration; retrying does not help |
 | `ResourceExhausted` | Too many sessions / operations / subscriptions / monitored items | Back off or reduce the rate |
 | `ProtocolViolation` | Encoding or decoding error | Log the status code; usually a server or version issue |
 | `RemoteError` + `ProtocolErrorCode` | Any other Bad status from the server | Log the status code; it is the OPC UA status |
@@ -130,7 +143,7 @@ Every operation returns `CommResult` or `CommResult<T>`. Decide on `ErrorKind`; 
 
 An unexpected drop moves the state to `Reconnecting`; a background loop retries with exponential backoff (`ReconnectInterval` doubling up to `MaxReconnectInterval`), unlimited attempts. Operations during that window return `NotConnected` instead of waiting. On success the state becomes `Connected` again and subscriptions are re-established on the server — the same handler keeps receiving notifications and the server resends the current values.
 
-A **first** `ConnectAsync` that fails never starts the loop. `ConnectAsync` while already connected returns success without reconnecting; while `Connecting` or `Reconnecting` it returns `InvalidRequest` instead of queueing. `DisconnectAsync` and disposal stop the loop. `DisconnectAsync` only ends that session: connect again and the next drop is recovered as usual.
+A **first** `ConnectAsync` that fails never starts the loop. A rejected login on the first connect comes back as `AuthenticationFailed` within about one `ReconnectInterval`, not as `Timeout` after `ConnectTimeout`; once the session has been established, the reconnect loop keeps retrying even if the server starts rejecting the login. `ConnectAsync` while already connected returns success without reconnecting; while `Connecting` or `Reconnecting` it returns `InvalidRequest` instead of queueing. `DisconnectAsync` and disposal stop the loop. `DisconnectAsync` only ends that session: connect again and the next drop is recovered as usual.
 
 A `ConnectAsync` whose token fires (or whose `ConnectTimeout` elapses) returns at once; if the SDK still opens a session afterwards, it is closed immediately and never attached. Disposing a subscription while `Reconnecting` returns at once; it is removed after the session recovers and is not re-established.
 

@@ -2,10 +2,10 @@
 
 OPC UA client for the [Junevy.Communication](https://github.com/Junevy/Junevy.Communication) communication library.
 
-> **This version only connects to servers that offer the `None` security policy and allow anonymous logins.**
-> Many real servers disable `None` by default; connecting to those returns `NotSupported` without any
-> request being sent. Secure channels (Sign / SignAndEncrypt), client certificates and username logins are
-> not implemented yet.
+> **This version only connects to servers that offer the `None` security policy, logging in anonymously or
+> with a user name and password.** Many real servers disable `None` by default, and many accept user names only
+> on encrypted channels; connecting to those returns `NotSupported` without any request being sent. Secure
+> channels (Sign / SignAndEncrypt), client certificates and certificate logins are not implemented yet.
 
 - **Client only.** OPC UA servers are not part of this package.
 - **.NET 8 only.** Unlike the other packages of this repository, this one does not target .NET Framework 4.7.2, because the OPC UA 2.0 line no longer does.
@@ -55,6 +55,24 @@ OpcUaClient client = OpcUaClient.Create(options);
 ```
 
 `Create` validates the options once and takes a **snapshot**: changing the options object afterwards does not affect the client.
+
+## Logging in
+
+Leave `UserName` `null` (the default) to log in anonymously. Set it to log in with a user name and password:
+
+```csharp
+OpcUaClient client = OpcUaClient.Create(new OpcUaClientOptions
+{
+    EndpointUrl = "opc.tcp://127.0.0.1:4840/",
+    UserName = "operator",
+    Password = "secret",   // null is sent as an empty password
+});
+```
+
+- The client only picks a `None` endpoint that offers the requested kind of user token (anonymous or user name). If there is none, `ConnectAsync` returns `NotSupported` and names the login that was missing.
+- A wrong user name or password returns `AuthenticationFailed` with the server's status code (usually `BadUserAccessDenied`) as `ProtocolErrorCode`, after one retry `ReconnectInterval` later — not after `ConnectTimeout`.
+- When the server's user token policy names a security policy (the official server, for one, attaches `Basic256Sha256` to the user name token of its `None` endpoint), the SDK encrypts the password with the server certificate; no client certificate is needed for that. When the policy names none, the password crosses the `None` channel **in clear text**; use this only on a network you trust.
+- The password is never logged and never appears in an error message.
 
 ## Node ids
 
@@ -141,7 +159,7 @@ await subscription.DisposeAsync();
 3. While the state is not `Connected`, read, write, browse and subscribe all return `NotConnected` immediately — they are **not** queued and sent once the link is back.
 4. `DisconnectAsync` and disposal stop the loop and do not wait for a backoff to expire.
 
-A **first** `ConnectAsync` that fails never starts the loop. `ConnectAsync` while already connected returns success without reconnecting; while `Connecting` or `Reconnecting` it returns `InvalidRequest` instead of queueing behind the running attempt.
+A **first** `ConnectAsync` that fails never starts the loop. While a first connect is still running the SDK retries on its own, until `ConnectTimeout`; a rejected identity or certificate (anything classified `AuthenticationFailed`) stops those retries at once, so a wrong password is reported as such instead of as `Timeout`. After the session has been established once, the reconnect loop keeps retrying even on such rejections. `ConnectAsync` while already connected returns success without reconnecting; while `Connecting` or `Reconnecting` it returns `InvalidRequest` instead of queueing behind the running attempt.
 
 The SDK ignores cancellation while it discovers endpoints, so `ConnectAsync` stops waiting by itself: when the caller's token fires or `ConnectTimeout` elapses it returns at once, and a session the SDK still manages to open afterwards is closed straight away — it is never attached to the client and never left on the server.
 
@@ -164,6 +182,8 @@ OpcUaSessionState state = client.State;
 | `ApplicationName` | `Junevy.Communication.OpcUa` | Application name reported to the server. |
 | `ApplicationUri` | `urn:{machine}:{ApplicationName}` | Application URI; `null` derives it. |
 | `PkiRoot` | `%LocalAppData%\Junevy.Communication\OpcUa\pki` | Certificate store the SDK configuration needs. No client certificate is generated under the `None` policy. |
+| `UserName` | `null` | `null` logs in anonymously; otherwise the user name for a user name login. May not be empty or white space. |
+| `Password` | `null` | Password for `UserName`; `null` is sent as empty. Setting it without `UserName` is rejected. |
 | `ConnectTimeout` | `10000` | Milliseconds for endpoint discovery **and** session creation. |
 | `OperationTimeout` | `10000` | Milliseconds per service call. |
 | `SessionTimeout` | `60000` | Session timeout requested from the server. |
@@ -197,7 +217,7 @@ Failures come back as `CommResult` with an `ErrorKind` and, where the server sup
 | Connection refused, socket error | `ConnectionClosed` | — |
 | Read, write, browse or subscribe while not `Connected`, or racing a `DisconnectAsync` that closes the session as the call starts | `NotConnected` | — |
 | The session is closed by a concurrent disconnect or disposal while the call is on the wire | `ConnectionClosed` | — |
-| The server offers no `None` endpoint, or no anonymous user token policy | `NotSupported` | — |
+| The server offers no `None` endpoint, or none with the user token policy the options ask for (anonymous or user name) | `NotSupported` | — |
 | Malformed node id, unknown `nsu=` URI, unsupported .NET type to write, empty or duplicated subscription node ids | `InvalidRequest` | — |
 | Any operation after disposal | `ConnectionClosed` | — |
 | Any other SDK failure | `Unspecified` | — |
@@ -228,7 +248,7 @@ Pass an `ILoggerFactory` to `Create` (or let the container supply one) to get lo
 ## Verification status
 
 1. Verified only against the official OPC Foundation server hosted in-process. No real server — KEPServerEX, Prosys, Siemens, Beckhoff — has been used yet.
-2. Only the `None` security policy with anonymous login is supported. Many real servers disable `None` by default, so a connection to them returns `NotSupported` before any request is sent.
+2. Only the `None` security policy is supported, with anonymous or user name login. Many real servers disable `None` by default, and many accept user names only on Sign / SignAndEncrypt channels, so a connection to them returns `NotSupported` before any request is sent. User name login has been verified against the in-process server only, whose token policy has the password encrypted with the server certificate; a server that takes the password in clear text has not been tried.
 3. Built against OPC Foundation 2.0.1, released 2026-10; that version line is new and thinly documented.
 4. Writes are not converted: the .NET type must match the node's data type.
 
