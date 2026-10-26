@@ -70,6 +70,12 @@
 
 ## [Unreleased] — P7（Modbus 3.0.0-preview.1：迁移到 Plc 套件；Plc 套件扩展）
 
+### 验证（Verified）— 第三方从站互通（2026-10-26，P7-D17 第 ①③④⑥ 项）
+
+- 2026-10-26 [Modbus] 与独立实现的从站 pymodbus 3.16.1 互通验证，两个目标框架全部通过，库代码未改动。覆盖 Modbus TCP、RTU over TCP、Modbus UDP、RTU over UDP 与串口 RTU（COM20/COM21 虚拟对，9600）：功能码 01–06、0F、10、16、17，类型化读写，分包（125 / 123 / 2000 的边界），站号前缀，异常应答 02 与未知站号的异常应答；不支持 0x16 的设备返回异常码 01，关闭掩码写并允许读改写后改用 03 + 06；只接受 0F / 10 的设备在 `UseSingleWriteFunctions = false` 时只收到 0F / 10（含拆包的最后一包）。反向对照：去掉从站的功能码拒绝后，对应用例失败。
+- 2026-10-26 [Modbus.Tests] 新增 `Interop/PymodbusInteropTests`（网络，8 个用例）、`PymodbusSerialInteropTests`（串口，3 个）、`PymodbusScenarios`（两者共用的场景）、`PymodbusSlave`（子进程宿主，记录从站收到的站号与功能码）、`PymodbusFactAttribute`（未设置 `JUNEVY_PYMODBUS_PYTHON` 时跳过，串口用例还需要 `JUNEVY_SERIAL_PAIR`）与从站脚本 `Interop/pymodbus_slave.py`（只用 pymodbus，不引用本仓库代码）。新增 `RealSerialPairCollection`：串口互通用例与 `ModbusEndToEndSerialTests` 都打开 COM20/COM21，原来分属不同集合而并行，net472 下 3 遍中 2 遍出现"对端口 COM21 的访问被拒绝"；两者放进同一集合后连续 6 遍全绿。
+- 2026-10-26 [Modbus] README 的 "Verification status" 改为逐项结果表；仍未验证：真实设备与 Modbus Poll / Modbus Slave、强噪声线路上的 RTU 重新同步（②）、TCP 网关上站号 0 与 255 的含义（⑤）。
+
 ### 新增（Added）
 
 - 2026-10-19 [Plc] 只读地址钩子（P7-S1，计划 P7-D2）：`protected internal virtual bool IsReadOnly(TAddress address)`，默认 `false`。返回 `true` 时，`WriteAsync`、`WriteBitsAsync`（原生位写与读-改-写两条路径）、`WriteBytesAsync` 都返回 `InvalidRequest`，消息为 `The address '<Text>' is read-only.`；判断在地址解析之后、点数检查之前进行，不发请求，也不进入操作锁，断开状态下同样先返回这个失败。读取不受影响。测试：`PlcClientReadOnlyTests`（FakePlcClient 增加只读软元件 R、N、Y）。

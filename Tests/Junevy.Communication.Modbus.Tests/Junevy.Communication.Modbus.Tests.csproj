@@ -13,4 +13,9 @@
     <ProjectReference Include="..\Junevy.Communication.Testing\Junevy.Communication.Testing.csproj" />
   </ItemGroup>
 
+  <!-- 互通测试启动的第三方从站脚本（见 Interop/PymodbusInteropTests.cs）。 -->
+  <ItemGroup>
+    <None Update="Interop\pymodbus_slave.py" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

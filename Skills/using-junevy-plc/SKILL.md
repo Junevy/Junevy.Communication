@@ -157,7 +157,7 @@ Address forms on this client: symbolic zero-based (`HR100`, `C5`, `DI7`, `IR3`),
 
 On serial the framing defaults to RTU. `ModbusClientOptions.Framing = ModbusFraming.Rtu` on a TCP configuration gives RTU over TCP (gateways and serial servers). `ModbusFraming.Mbap` on serial is rejected at creation.
 
-Use `ModbusClientOptions.UseSingleWriteFunctions = false` for devices that accept only 0F and 10. Use `UseMaskWriteForBits = true` to write a register bit with 0x16. The Modbus README has the function-code map, the packet limits (125 and 2000 read, 123 and 1968 write), the error kinds and the migration table from 2.x.
+Use `ModbusClientOptions.UseSingleWriteFunctions = false` for devices that accept only 0F and 10. Use `UseMaskWriteForBits = true` to write a register bit with 0x16; a device without 0x16 answers exception 01 (`RemoteError`, `ProtocolErrorCode` 1), and then the fallback is `UseMaskWriteForBits = false` with `AllowReadModifyWriteBits = true` (03 then 06). The Modbus README has the function-code map, the packet limits (125 and 2000 read, 123 and 1968 write), the error kinds and the migration table from 2.x.
 
 Modbus-only operations: `MaskWriteRegisterAsync(address, andMask, orMask)` (0x16) and `ReadWriteMultipleRegistersAsync(readAddress, readCount, writeAddress, writeData)` (0x17). Neither splits into packets.
 
@@ -334,7 +334,7 @@ public static class McDependencyInjectionExample
 - **FINS: an end code that looks like a success (`0x0040`)**: the CPU set a status flag; the masked code is zero, so the operation succeeded. The client already logged the raw value.
 - **Odd string length on a word device**: MELSEC and FINS pad the encoded bytes with one `0x00` to keep whole words; a byte device (S7) writes exactly what you asked for.
 
-## Not Yet Verified (P2-D16, P4-D20)
+## Not Yet Verified (P2-D16, P4-D20, P7-D17)
 
 Nothing in these three packages has been checked against real hardware. The items below are inferred from manuals, published captures or community experience, and are tested against golden vectors only. Verify them on your own PLC or CPU before you rely on them.
 
@@ -354,6 +354,12 @@ FINS (P4-D20):
 2. The `EM` area codes (`0xA0` + group, `0x20` + group, groups 0–C) and the expansion into thirteen symbols.
 3. The end-code masking rule (major `& 0x7F`, minor `& 0x3F`, masked zero is success).
 4. What the CPU answers to a node-address request when you ask for a fixed client node — the client follows the response rather than your request.
+
+Modbus (P7-D17): interoperation with an independent slave (pymodbus 3.16.1) passed on 2026-10-26 for every framing and transport, including RTU over UDP, devices without 0x16 and devices that accept only 0F and 10. Not yet checked:
+
+1. Real devices and Modbus Poll / Modbus Slave.
+2. RTU resynchronisation on a noisy line.
+3. What station 0 and station 255 mean on a TCP gateway (vendor-specific).
 
 ## Protocol Author Guide
 

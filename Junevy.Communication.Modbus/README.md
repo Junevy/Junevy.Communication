@@ -276,9 +276,14 @@ Version 3 keeps the wire behaviour and the same function codes, but it changes t
 
 ## Verification status
 
-- The library has been tested against simulated devices in the test suite, not against real hardware. It has not been checked with Modbus Poll, Modbus Slave or any other third-party tool.
-- Resynchronisation of RTU frames on a noisy line has not been measured.
-- Mask write (0x16) is not supported by every device. Where it is not, the device returns exception 01.
-- Some devices accept only 0F and 10 and reject 05 and 06. Set `UseSingleWriteFunctions = false` for them.
-- Station 0 and station 255 mean different things on TCP gateways depending on the vendor.
-- RTU over UDP is rare. It is implemented from the specification only.
+Checked on 2026-10-26 against [pymodbus](https://github.com/pymodbus-dev/pymodbus) 3.16.1, an independent slave implementation, on `net8.0` and `net472`. The tests are in `Tests/Junevy.Communication.Modbus.Tests/Interop/` (`PymodbusInteropTests` for the network transports, `PymodbusSerialInteropTests` for serial); they run when `JUNEVY_PYMODBUS_PYTHON` names a `python.exe` with `pymodbus[serial]` installed (the serial cases also need `JUNEVY_SERIAL_PAIR`).
+
+| Item | Result |
+|---|---|
+| Interoperation with a third-party slave | Passed on Modbus TCP, RTU over TCP, Modbus UDP, RTU over UDP and RTU over a serial pair (COM20/COM21, 9600 baud): function codes 01–06, 0F, 10, 16 and 17, typed values, packet splitting, the station prefix and exception responses. |
+| Devices without mask write (0x16) | Passed. `MaskWriteRegisterAsync` and a register bit write with `UseMaskWriteForBits` return `RemoteError` with exception 01. With `UseMaskWriteForBits = false` and `AllowReadModifyWriteBits = true` the bit write uses 03 and 06 instead. |
+| Devices that accept only 0F and 10 | Passed. With the defaults, single writes return exception 01. With `UseSingleWriteFunctions = false` only 0F and 10 are sent, including the last packet of a split write. |
+| RTU over UDP | Passed (see the first row). |
+| Real hardware and Modbus Poll / Modbus Slave | Not checked yet. |
+| Resynchronisation of RTU frames on a noisy line | Not measured. |
+| Station 0 and station 255 on TCP gateways | Not checked. Their meaning depends on the vendor. |

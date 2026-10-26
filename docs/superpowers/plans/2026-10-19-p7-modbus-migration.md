@@ -44,7 +44,7 @@
 | P7-D14 | **依赖注入**：`ModbusClientConfig` 有 `Transport`、`Tcp`、`Udp`、`Serial`、`Options` 五个属性（与 `McClientConfig` 同形）；`ModbusClientCreator` 按 `Transport` 选择配置，选中的配置为 null 时抛 `ArgumentException`；`AddModbus()` 用 `TryAddEnumerable` 注册创建器，再调用 `AddPlcClients()`（幂等）。v2 的 `IModbusFactory`、`ModbusConnectionManager`、`ModbusFactoryBuilder`、`AddModbusFactory()` 由套件的 `PlcClientFactory`、`PlcClientFactoryBuilder` 取代。`PlcDataFormat` 不能由 JSON 绑定（与 P4 相同） | 设计 12.9、16；Modbus 支持三种传输，与 MELSEC 同形 |
 | P7-D15 | **0x16 与 0x17**（用户决定只保留这两个；都经 S2 发送，享有操作锁、重试与错误归类）：<br>• `MaskWriteRegisterAsync(string address, ushort andMask, ushort orMask, CancellationToken)` 返回 `Task<CommResult>`：<br>　- 地址必须是不带位号的 `HR`。`IR` 由 S1 返回 `InvalidRequest`；`C`、`DI` 与带位号的地址返回 `InvalidRequest`；<br>　- 只发一个请求，应答要原样回显。<br>• `ReadWriteMultipleRegistersAsync(string readAddress, int readCount, string writeAddress, ReadOnlyMemory<byte> writeData, CancellationToken)` 返回 `Task<CommResult<byte[]>>`：<br>　- 两个地址都必须是不带位号的 `HR`，并且站号相同，否则返回 `InvalidRequest`；<br>　- `readCount` 为 1–125；`writeData` 长度为偶数，按字计 1–121；两段的结束地址不超过 65535；<br>　- **不拆包**，超限返回 `InvalidRequest`；<br>　- 返回读出的 `2 × readCount` 字节（规范化布局）。规范规定设备先写后读。<br>两个方法的数据参数与返回值都用字节，与 `IPlcClient.ReadAsync` / `WriteAsync` 一致 | 用户决定；0x17 是一个原子事务，拆包会改变语义 |
 | P7-D16 | **v2 的去留与迁移**：<br>• Task 3 删除 v2 的全部生产代码与测试（`git rm`）。不保留兼容层，不加 `[Obsolete]` 转发（Q29 不留转发层）；<br>• README 新增 "Migrating from 2.x" 一节，内容按第 20 节；<br>• Modbus 的用法并入 Skill `using-junevy-plc`（与 MELSEC、S7、FINS 并列）。`Skills/using-junevy-modbus/SKILL.md` 改写为 v2 → v3 迁移指南，指向 `using-junevy-plc`；<br>• WPF 调试工具 `Junevy.Communication.Test` 在 Task 3 暂时去掉对 Modbus 的引用（保持可编译），在 Task 11 用 v3 恢复同等功能；<br>• AutomationSystem 的迁移不在本仓库做（第 24 节） | 用户决定原地替换；同一个包里并存两套 Modbus 只会增加维护面 |
-| P7-D17 | **已知不确定项**，写进 README 的 "Verification status"：<br>① 只与测试里的设备替身联调过，没有对真实设备或 Modbus Poll / Modbus Slave 这类工具验证；<br>② RTU 按字节重新同步在强噪声线路上的表现；<br>③ 0x16 的支持因设备而异（不支持时返回异常码 01）；<br>④ 少数设备只接受 10 而不接受 06（把 `UseSingleWriteFunctions` 设为 false）；<br>⑤ 站号 0 和 255 在 TCP 网关上的含义因厂商而异；<br>⑥ RTU over UDP 很少见，只按规范实现 | 诚实记录，留待真机验证 |
+| P7-D17 | **已知不确定项**，写进 README 的 "Verification status"：<br>① 只与测试里的设备替身联调过，没有对真实设备或 Modbus Poll / Modbus Slave 这类工具验证；<br>② RTU 按字节重新同步在强噪声线路上的表现；<br>③ 0x16 的支持因设备而异（不支持时返回异常码 01）；<br>④ 少数设备只接受 10 而不接受 06（把 `UseSingleWriteFunctions` 设为 false）；<br>⑤ 站号 0 和 255 在 TCP 网关上的含义因厂商而异；<br>⑥ RTU over UDP 很少见，只按规范实现 | 诚实记录，留待真机验证。**2026-10-26**：①（第三方从站部分）③④⑥ 已与 pymodbus 互通验证通过，见第 25.4 节；② ⑤ 由用户在现场验证；真实设备与 Modbus Poll / Modbus Slave 仍未核对 |
 | P7-D18 | **测试项目**：`Tests/Junevy.Communication.Modbus.Tests` 重写，改为 Import `build/Junevy.Communication.Tests.props`，目标 `net472;net8.0`（v2 的测试只有 net8.0）。使用共享测试库的 `DeviceSimulator`、`PlcMemory`、`DuplexClientChannel`、`ScriptedByteChannel`、`LoopbackTcp`、`Arrival`、`Polling`、`HexVector`。设备替身放在 `TestSupport/`，不放进共享测试库（第 1 节第 7 条） | 新增协议指南第四节；改共享测试库会让受影响的测试扩大到接近全量 |
 
 ---
@@ -542,7 +542,7 @@ protected Task<CommResult<T>> SendProtocolRequestAsync<T>(
 - 字符串的字节序独立于数值字序（例如寄存器内低字节在前的字符串）：与 P4 相同，只能通过 `DataFormat` 整体指定。
 - AutomationSystem 的 `Communication.Modbus` 适配层迁移到 v3（在 AutomationSystem 仓库单独做，参照第 20 节；它目前只用 01–04、06、0F、10，每个通道一个站号，自己做值编码）。
 - 正式发布与 `nuget push`（知识库 `待办与路线图.md` 的"正式发布"）。
-- 真机验证（P7-D17）。
+- 真机验证（P7-D17）。2026-10-26 已完成与第三方从站的互通部分（第 25.4 节），② ⑤ 与真实设备待用户现场验证。
 
 ---
 
@@ -958,3 +958,40 @@ Task 15 最终复测（同一口径；"目标"列来自第 3 节）：
 | Modbus.Tests（每个框架） | 307 通过、1 跳过（真实串口对），共 308 | — | 已记录 |
 | 公开类型（反射，net8.0 Debug） | 9（与 P7-D3 逐条列表一致；P7-D3 原写的"10"是计数错误，已改正） | 9 | 达成 |
 | 套件改动 | 只有 S1（`IsReadOnly`）与 S2（`SendProtocolRequestAsync`） | 只有 S1、S2 | 达成 |
+
+### 25.4 第三方从站互通验证（2026-10-26，P7-D17 第 ①③④⑥ 项）
+
+用户决定：② 强噪声线路上的 RTU 重新同步、⑤ TCP 网关上站号 0 与 255 的含义由用户在现场验证；其余各项本次完成。
+
+**方法**：没有真实设备与 Modbus Slave，改用独立实现的从站 pymodbus 3.16.1（Python，`pip install "pymodbus[serial]"`）。从站脚本 `Tests/Junevy.Communication.Modbus.Tests/Interop/pymodbus_slave.py` 只用 pymodbus，不引用本仓库代码，因此能发现"客户端与本仓库替身 `ModbusSlave` 犯同一个错误"的问题。脚本把收到的每个请求（站号、功能码）写到标准输出，测试据此断言客户端实际发出的功能码；`--reject` 让指定功能码返回异常码 01，模拟不支持这些功能码的设备。
+
+**运行**：
+
+```
+set JUNEVY_PYMODBUS_PYTHON=<装有 pymodbus[serial] 的 python.exe>
+set JUNEVY_SERIAL_PAIR=COM20,COM21
+dotnet test Tests/Junevy.Communication.Modbus.Tests --filter FullyQualifiedName~PymodbusInterop
+```
+
+未设置 `JUNEVY_PYMODBUS_PYTHON` 时 11 个用例全部跳过；串口用例还需要 `JUNEVY_SERIAL_PAIR`（客户端用第一个端口，从站用第二个）。
+
+**结果**（net8.0 与 net472 各 11 通过、0 失败、0 跳过；库代码未改动）：
+
+| 项 | 用例 | 覆盖内容 | 结果 |
+|---|---|---|---|
+| ① 互通 | `RoundTrip_TcpMbap`、`_TcpRtu`、`_UdpMbap`、`_UdpRtu`、`_SerialRtu` | 读 IR（从站生成的数据，含 Modicon 地址 `30006` 与 Int32 的 ABCD 解码）、DI；写单个与多个寄存器、线圈（核对功能码 06、10、05、0F）；Int32、Float、字符串；分包（读 200 个寄存器为 2 包，写 300 个为 3 包 10，读 2000 个离散输入为 1 包）；0x16 掩码写；`UseMaskWriteForBits` 的寄存器位写（核对功能码 16）；0x17 同一地址先写后读、不同地址互不影响；站号前缀 `s=2;`；越界地址的异常码 02；未知站号的异常应答 | 通过 |
+| ③ 不支持 0x16 | `DeviceWithoutMaskWrite_TcpMbap`、`_TcpRtu`、`_SerialRtu` | `MaskWriteRegisterAsync` 与掩码写方式的位写返回 `RemoteError`、异常码 01、消息含 "Illegal Function"，之后链路可用；关闭掩码写并允许读改写后，位写改为 03 + 06 | 通过 |
+| ④ 只接受 0F / 10 | `DeviceWithoutSingleWrites_TcpMbap`、`_UdpRtu`、`_SerialRtu` | 默认选项下单个写返回异常码 01；`UseSingleWriteFunctions = false` 后单个字、单个线圈、124 个字的拆包写只发 10 / 0F（默认会是 10 + 06） | 通过 |
+| ⑥ RTU over UDP | `RoundTrip_UdpRtu`、`DeviceWithoutSingleWrites_UdpRtu` | 同 ① | 通过 |
+
+**测试结构**：场景在 `PymodbusScenarios`；网络用例在 `PymodbusInteropTests`（`SocketTimingCollection`），串口用例在 `PymodbusSerialInteropTests`（新增的 `RealSerialPairCollection`，与 `ModbusEndToEndSerialTests` 同一集合）。
+
+**反向对照**：把 `DeviceWithoutSingleWrites_TcpMbap` 与 `DeviceWithoutMaskWrite_TcpRtu` 的 `--reject` 临时改为空，两者失败（期望 `RemoteError`，实际成功），恢复后通过。
+
+**观察**：
+
+- 未知站号：规范上网关应回 0B；pymodbus 3.16 的 `SimCore` 查不到站号时内部 `KeyError`，回 04（Server Device Failure）。客户端都正确解析为带原站号的异常应答，用例接受 04 或 0B。这是 pymodbus 的行为，不是本库的缺陷。
+- 串口用例使用 COM20/COM21 虚拟对，不经过真实线路，不能代替 ②。
+- 测试自身的问题（已修正）：最初串口互通用例与 `ModbusEndToEndSerialTests.RtuReadAndWrite_OverARealSerialPair` 分属不同集合，两者并行打开 COM21，net472 下 3 遍中 2 遍出现 `UnauthorizedAccessException`（对端口 COM21 的访问被拒绝）。拆出串口用例并与后者同放 `RealSerialPairCollection` 后，带环境变量连续 6 遍、两个目标各 323 通过；不带环境变量时各 311 通过、12 跳过。
+
+**仍未验证**：真实设备与 Modbus Poll / Modbus Slave；② 强噪声线路上的 RTU 重新同步；⑤ TCP 网关上站号 0 与 255 的含义。

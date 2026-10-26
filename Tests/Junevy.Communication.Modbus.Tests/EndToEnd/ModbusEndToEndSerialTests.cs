@@ -9,8 +9,9 @@ namespace Junevy.Communication.Modbus.Tests.EndToEnd;
 
 /// <summary>
 /// 端到端（串口，P7 Task 10）：<see cref="DuplexClientChannel"/> 与模拟从站通过内存管道相连，经 <see cref="ModbusProtocolProfile"/> 配置 RTU 分帧。
-/// 另有一个真实串口对的用例，未设置 <c>JUNEVY_SERIAL_PAIR</c> 时跳过（执行者不运行，由审阅者运行）。
+/// 另有一个真实串口对的用例，未设置 <c>JUNEVY_SERIAL_PAIR</c> 时跳过（执行者不运行，由审阅者运行）；它与互通测试共用端口，因此在 <see cref="RealSerialPairCollection"/> 中。
 /// </summary>
+[Collection(RealSerialPairCollection.Name)]
 public sealed class ModbusEndToEndSerialTests
 {
     [Fact(Timeout = 60000)]
