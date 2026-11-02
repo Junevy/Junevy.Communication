@@ -4,7 +4,7 @@ tags: [协议细节, Junevy.Communication, Modbus, Plc]
 
 # Modbus 协议
 
-> 代码基线：`Junevy.Communication.Modbus`（net472;net8.0，`3.0.0-preview.1`，P7）。依据：Modbus Application Protocol V1.1b3、Modbus over Serial Line V1.02，以及计划第 21 节的黄金向量（V-P、V-R、V-M 系列，CRC 用独立脚本计算）。**未经真机验证**（P7-D17）：没有用 Modbus Poll、Modbus Slave 或任何真实设备核对；2026-10-26 已与独立实现的从站 pymodbus 互通验证（见下文"验证状态"）。与代码冲突时以代码为准；设计差异见设计文档第 20.12 节。2.x 的笔记已移到 [[变更与决策/Modbus v2 归档/API参考/ModbusRtuClient]] 等处，仅供历史参考。
+> 代码基线：`Junevy.Communication.Modbus`（net472;net8.0，`3.0.0-preview.1`，P7）。依据：Modbus Application Protocol V1.1b3、Modbus over Serial Line V1.02，以及计划第 21 节的黄金向量（V-P、V-R、V-M 系列，CRC 用独立脚本计算）。**未经真实设备验证**（P7-D17）：2026-10-26 已与独立实现的从站 pymodbus 互通验证，2026-11-02 已与 Modbus Slave 8.2.3 核对（见下文"验证状态"）。与代码冲突时以代码为准；设计差异见设计文档第 20.12 节。2.x 的笔记已移到 [[变更与决策/Modbus v2 归档/API参考/ModbusRtuClient]] 等处，仅供历史参考。
 
 ## 支持范围（P7-D1）
 
@@ -140,9 +140,11 @@ tags: [协议细节, Junevy.Communication, Modbus, Plc]
 
 2026-10-26 与 pymodbus 3.16.1（独立实现的从站，脚本不引用本仓库代码）互通，net8.0 与 net472 各 11 个用例通过，库代码未改动。记录见 P7 计划第 25.4 节，测试在 `Tests/Junevy.Communication.Modbus.Tests/Interop/`（网络 `PymodbusInteropTests`、串口 `PymodbusSerialInteropTests`，需要 `JUNEVY_PYMODBUS_PYTHON`，见 [[测试/测试工程与验收方式]]）。
 
+2026-11-02 与 Modbus Slave 8.2.3（Witte Software）核对，Modbus TCP 与串口 RTU（虚拟对），四个数据区都已核对，两个目标各 24 个用例通过，库代码未改动。记录见 P7 计划第 25.5 节，测试是同目录的 `ModbusToolTcpInteropTests`、`ModbusToolSerialInteropTests`，需要 `JUNEVY_MODBUS_TOOL_TCP` / `JUNEVY_MODBUS_TOOL_SERIAL`。
+
 | # | 项 | 状态 |
 |---|---|---|
-| ① | 与第三方实现互通 | **通过**（pymodbus；TCP、RTU over TCP、UDP、RTU over UDP、串口 RTU 虚拟对）。真实设备与 Modbus Poll / Modbus Slave **未核对** |
+| ① | 与第三方实现互通 | **通过**（pymodbus；TCP、RTU over TCP、UDP、RTU over UDP、串口 RTU 虚拟对）。Modbus Slave **通过**（TCP、串口 RTU 虚拟对；01–06、0F、10、16、17 与异常应答；每个区只定义了 10 个，分包未核对）。真实设备**未核对** |
 | ② | RTU 按字节重新同步在强噪声线路上的表现 | 未测量，用户现场验证 |
 | ③ | 不支持 0x16 的设备 | **通过**：返回 `RemoteError`、异常码 01；绕过方法是关掉 `UseMaskWriteForBits`、打开 `AllowReadModifyWriteBits`（位写改为 03 + 06） |
 | ④ | 只接受 0F / 10 的设备 | **通过**：`UseSingleWriteFunctions = false` 后只发 0F / 10，拆包写的最后一包也是 10 |
@@ -150,6 +152,12 @@ tags: [协议细节, Junevy.Communication, Modbus, Plc]
 | ⑥ | RTU over UDP | **通过**（同 ①） |
 
 互通中看到的第三方行为：pymodbus 3.16 对未定义的站号回异常码 04（其 `SimCore` 内部 `KeyError`），规范上网关应回 0B。客户端两种都按异常应答处理。
+
+Modbus Slave 8.2.3 的行为：
+
+- **对未定义地址的 0x16 原样回显，不回异常**（01–06、0F、10、17 都回 02，越界的 05、0F 也不改动已定义的线圈）。回显是合规的确认，客户端无从分辨，所以 `MaskWriteRegisterAsync` 返回成功而实际没有写入。在意结果时要读回。
+- TCP 上站号 0、2、247、255 都应答，RTU 上只应答站号 1。这是当前配置下的一个样本，不能代替 ⑤。
+- 每个请求约 31 ms（手工帧同样），这是从站的速度。
 
 ## 黄金向量
 
