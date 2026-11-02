@@ -355,9 +355,9 @@ FINS (P4-D20):
 3. The end-code masking rule (major `& 0x7F`, minor `& 0x3F`, masked zero is success).
 4. What the CPU answers to a node-address request when you ask for a fixed client node — the client follows the response rather than your request.
 
-Modbus (P7-D17): interoperation with an independent slave (pymodbus 3.16.1) passed on 2026-10-26 for every framing and transport, including RTU over UDP, devices without 0x16 and devices that accept only 0F and 10. Not yet checked:
+Modbus (P7-D17): interoperation with an independent slave (pymodbus 3.16.1) passed on 2026-10-26 for every framing and transport, including RTU over UDP, devices without 0x16 and devices that accept only 0F and 10. Modbus Slave 8.2.3 passed on 2026-11-02 over Modbus TCP and RTU on a virtual serial pair, for all four areas (01–06, 0F, 10, 16, 17) and exception responses. It echoes 0x16 on an undefined address instead of returning exception 02, so `MaskWriteRegisterAsync` reports success although nothing was written; read back when it matters. Not yet checked:
 
-1. Real devices and Modbus Poll / Modbus Slave.
+1. Real devices; packet splitting against Modbus Slave (each area held 10 points; checked against pymodbus).
 2. RTU resynchronisation on a noisy line.
 3. What station 0 and station 255 mean on a TCP gateway (vendor-specific).
 

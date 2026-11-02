@@ -162,18 +162,22 @@ internal static class PymodbusScenarios
         return requests.Skip(mark).Select(request => request.Function).ToArray();
     }
 
-    private static T Ok<T>(CommResult<T> result)
+    /// <summary>断言成功并取出数据。</summary>
+    public static T Ok<T>(CommResult<T> result)
     {
         Assert.True(result.IsSuccess, $"{result.ErrorKind}: {result.ErrorMessage}");
         return result.Data!;
     }
 
-    private static void Ok(CommResult result) => Assert.True(result.IsSuccess, $"{result.ErrorKind}: {result.ErrorMessage}");
+    /// <summary>断言成功。</summary>
+    public static void Ok(CommResult result) => Assert.True(result.IsSuccess, $"{result.ErrorKind}: {result.ErrorMessage}");
 
-    private static void AssertRemoteError(CommResult result, long code, string name)
+    /// <summary>断言是带指定异常码的异常应答。</summary>
+    public static void AssertRemoteError(CommResult result, long code, string name)
         => AssertRemoteError(result.ErrorKind, result.ProtocolErrorCode, result.ErrorMessage, code, name);
 
-    private static void AssertRemoteError<T>(CommResult<T> result, long code, string name)
+    /// <summary>断言是带指定异常码的异常应答。</summary>
+    public static void AssertRemoteError<T>(CommResult<T> result, long code, string name)
         => AssertRemoteError(result.ErrorKind, result.ProtocolErrorCode, result.ErrorMessage, code, name);
 
     private static void AssertRemoteError(CommErrorKind kind, long? actualCode, string? message, long code, string name)

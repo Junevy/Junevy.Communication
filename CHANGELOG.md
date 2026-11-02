@@ -82,6 +82,16 @@
 
 ## [Unreleased] — P7（Modbus 3.0.0-preview.1：迁移到 Plc 套件；Plc 套件扩展）
 
+### 验证（Verified）— 与 Modbus Slave 软件核对（2026-11-02，P7-D17 第 ① 项）
+
+- 2026-11-02 [Modbus] 与 Modbus Slave 8.2.3（Witte Software）核对，**库代码未改动**。两条线路：Modbus TCP（127.0.0.1:502）与串口 RTU（从站 COM20，客户端 COM21，虚拟对）；net8.0 与 net472 各 20 个用例通过，连续 4 遍（整个 Modbus.Tests：未设置环境变量时各 311 通过、32 跳过，设置时各 331 通过、12 跳过）。客户端写入后用手工拼的帧核对从站实际的值，读取前用手工帧写入已知内容，不经过本仓库的协议代码。覆盖：功能码 03、06、10、16、17，类型化读写、字序、Modicon 地址（`40001`）、寄存器位（0x16 与读改写），异常应答 01 与 02，并发调用（值按寄存器区分，无串扰），连接循环，心跳；RTU 上不存在的站号超时后下一个请求正常；TCP 另有多条连接，以及经中继制造的断开、网络黑洞与迟到应答（旧应答在下一个请求等待期间到达时按事务号丢弃）。
+- 2026-11-02 [Modbus] 核对中看到的 Modbus Slave 行为：对未定义地址的 0x16 不回异常，而是原样回显（手工帧同样如此），因此 `MaskWriteRegisterAsync` 返回成功而实际没有写入，03、06、10、17 都回异常码 02；TCP 上站号 0、2、247、255 都应答（RTU 上只应答站号 1）；每个请求约 31 ms（手工帧同样），不是客户端的开销。
+- 2026-11-02 [Modbus] 这次**没有**覆盖：分包边界没有在 Modbus Slave 上核对（库的分包上限 125 / 123 / 2000 / 1968 是常量，从站每个区只定义了 10 个，触发不了；已与 pymodbus 验证）；虚拟串口对不受波特率与校验位影响，串口参数没有得到验证；真实设备、强噪声线路（②）与真实网关上的站号（⑤）仍未验证。第一轮从站只定义了 HR0–HR9，01、02、04、05、0F 只核对到异常码 01，补做见下文。
+- 2026-11-02 [Modbus.Tests] 新增 `Interop/ModbusToolTcpInteropTests`（11 个用例）、`ModbusToolSerialInteropTests`（9 个）、`ModbusToolScenarios`、`ModbusToolWire`（手工帧读写从站）、`TcpFaultRelay`（制造链路故障的中继）与 `ModbusToolFactAttribute`（未设置 `JUNEVY_MODBUS_TOOL_TCP` / `JUNEVY_MODBUS_TOOL_SERIAL` 时跳过）。用例结束时还原 HR0–HR9。`PymodbusScenarios` 的 `Ok`、`AssertRemoteError` 改为 public 供新场景复用。反向对照：起始地址加 1 时读写用例失败；MBAP 改回按顺序关联时 `LinkFaults` 在迟到应答一步失败。
+- 2026-11-02 [Modbus] 补做线圈、离散输入、输入寄存器的正向核对：用户在两个从站上各加了这三个区的窗口（站号 1，地址 0–9），**库代码仍未改动**；net8.0 与 net472 各 24 个用例通过，连续 3 遍（整个 Modbus.Tests：未设置环境变量时各 311 通过、36 跳过，设置时各 335 通过、12 跳过）。覆盖：01、02、04 的整段读（跨字节）、带偏移的一段与 Modicon 单点（`00010`、`10010`、`30010`），输入寄存器的 Int32 与寄存器位；05、0F 由手工帧核对落点与实际发出的功能码（`UseSingleWriteFunctions = false` 时单点也走 0F）；三个区越界的读与写都回异常码 02，越界写不改动已定义的线圈（与 0x16 不同，Modbus Slave 对越界的 05、0F 正常回 02）。反向对照：起始地址加 1 时 6 个用例都失败；位打包改为高位在前时线圈用例在落点核对一步失败；解包改为高位在前时线圈与离散输入用例在整段读一步失败。三处都已撤销。
+- 2026-11-02 [Modbus.Tests] `OtherAreas` 拆成 `Coils`、`DiscreteInputs`、`InputRegisters`（TCP 13 个、串口 11 个用例）。`ModbusToolWire` 加线圈与其他区的手工读写（`ReadBits`、`ReadWords`、`WriteCoils`），`KeepRegistersAsync` 改为 `KeepDataAsync`，结束时同时还原线圈 0–9，`RegisterCount` 改名 `AreaSize`。离散输入与输入寄存器只读，值由用户在从站软件里设置，用例要求 0–9 不全相同，否则发现不了地址偏移。
+- 2026-11-02 [文档] Modbus README 的 "Verification status"、Skill `using-junevy-plc` 与计划第 25.5 节更新上述结果。
+
 ### 验证（Verified）— 第三方从站互通（2026-10-26，P7-D17 第 ①③④⑥ 项）
 
 - 2026-10-26 [Modbus] 与独立实现的从站 pymodbus 3.16.1 互通验证，两个目标框架全部通过，库代码未改动。覆盖 Modbus TCP、RTU over TCP、Modbus UDP、RTU over UDP 与串口 RTU（COM20/COM21 虚拟对，9600）：功能码 01–06、0F、10、16、17，类型化读写，分包（125 / 123 / 2000 的边界），站号前缀，异常应答 02 与未知站号的异常应答；不支持 0x16 的设备返回异常码 01，关闭掩码写并允许读改写后改用 03 + 06；只接受 0F / 10 的设备在 `UseSingleWriteFunctions = false` 时只收到 0F / 10（含拆包的最后一包）。反向对照：去掉从站的功能码拒绝后，对应用例失败。

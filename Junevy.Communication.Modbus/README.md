@@ -278,12 +278,16 @@ Version 3 keeps the wire behaviour and the same function codes, but it changes t
 
 Checked on 2026-10-26 against [pymodbus](https://github.com/pymodbus-dev/pymodbus) 3.16.1, an independent slave implementation, on `net8.0` and `net472`. The tests are in `Tests/Junevy.Communication.Modbus.Tests/Interop/` (`PymodbusInteropTests` for the network transports, `PymodbusSerialInteropTests` for serial); they run when `JUNEVY_PYMODBUS_PYTHON` names a `python.exe` with `pymodbus[serial]` installed (the serial cases also need `JUNEVY_SERIAL_PAIR`).
 
+Checked on 2026-11-02 against Modbus Slave 8.2.3 (Witte Software) on both targets. The cases are `ModbusToolTcpInteropTests` and `ModbusToolSerialInteropTests` in the same folder; they run when `JUNEVY_MODBUS_TOOL_TCP` (for example `127.0.0.1:502`) or `JUNEVY_MODBUS_TOOL_SERIAL` (the client's end of a serial pair, for example `COM21` when the slave holds `COM20`) is set and the slave defines station 1 with holding registers HR0–HR9. Coils, discrete inputs and input registers at addresses 0–9 are optional: when they are not defined the cases expect exception 01, and when they are, set the discrete inputs and input registers to values that are not all the same. The cases overwrite the holding registers and coils and put the original values back.
+
 | Item | Result |
 |---|---|
 | Interoperation with a third-party slave | Passed on Modbus TCP, RTU over TCP, Modbus UDP, RTU over UDP and RTU over a serial pair (COM20/COM21, 9600 baud): function codes 01–06, 0F, 10, 16 and 17, typed values, packet splitting, the station prefix and exception responses. |
 | Devices without mask write (0x16) | Passed. `MaskWriteRegisterAsync` and a register bit write with `UseMaskWriteForBits` return `RemoteError` with exception 01. With `UseMaskWriteForBits = false` and `AllowReadModifyWriteBits = true` the bit write uses 03 and 06 instead. |
 | Devices that accept only 0F and 10 | Passed. With the defaults, single writes return exception 01. With `UseSingleWriteFunctions = false` only 0F and 10 are sent, including the last packet of a split write. |
 | RTU over UDP | Passed (see the first row). |
-| Real hardware and Modbus Poll / Modbus Slave | Not checked yet. |
+| Modbus Slave | Passed on Modbus TCP and on RTU over a virtual serial pair: function codes 01–06, 0F, 10, 16 and 17, typed values, word order, Modicon addresses (`00010`, `10010`, `30010`, `40001`), register bits, exception responses, concurrent callers, connect cycles and heartbeat. Over TCP also several clients at once, and a dropped link, a silent link and a late reply (made with a relay in front of the slave). Packet splitting was not checked against it: each area held 10 points, below the fixed request limits. Baud rate and parity were not checked: the virtual pair carries bytes regardless of them. |
+| Mask write to an undefined register on Modbus Slave | Modbus Slave 8.2.3 answers 0x16 on an undefined address with a normal echo instead of exception 02 (01–06, 0F, 10 and 17 do return 02). The echo is a valid acknowledgement, so `MaskWriteRegisterAsync` reports success although nothing was written. Read the register back when it matters. |
+| Real hardware | Not checked yet. |
 | Resynchronisation of RTU frames on a noisy line | Not measured. |
-| Station 0 and station 255 on TCP gateways | Not checked. Their meaning depends on the vendor. |
+| Station 0 and station 255 on TCP gateways | Not checked on a gateway. Their meaning depends on the vendor. One sample: Modbus Slave over TCP, as configured for the check, answered stations 0, 2, 247 and 255 alike. |

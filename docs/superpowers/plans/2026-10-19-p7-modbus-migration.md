@@ -44,7 +44,7 @@
 | P7-D14 | **依赖注入**：`ModbusClientConfig` 有 `Transport`、`Tcp`、`Udp`、`Serial`、`Options` 五个属性（与 `McClientConfig` 同形）；`ModbusClientCreator` 按 `Transport` 选择配置，选中的配置为 null 时抛 `ArgumentException`；`AddModbus()` 用 `TryAddEnumerable` 注册创建器，再调用 `AddPlcClients()`（幂等）。v2 的 `IModbusFactory`、`ModbusConnectionManager`、`ModbusFactoryBuilder`、`AddModbusFactory()` 由套件的 `PlcClientFactory`、`PlcClientFactoryBuilder` 取代。`PlcDataFormat` 不能由 JSON 绑定（与 P4 相同） | 设计 12.9、16；Modbus 支持三种传输，与 MELSEC 同形 |
 | P7-D15 | **0x16 与 0x17**（用户决定只保留这两个；都经 S2 发送，享有操作锁、重试与错误归类）：<br>• `MaskWriteRegisterAsync(string address, ushort andMask, ushort orMask, CancellationToken)` 返回 `Task<CommResult>`：<br>　- 地址必须是不带位号的 `HR`。`IR` 由 S1 返回 `InvalidRequest`；`C`、`DI` 与带位号的地址返回 `InvalidRequest`；<br>　- 只发一个请求，应答要原样回显。<br>• `ReadWriteMultipleRegistersAsync(string readAddress, int readCount, string writeAddress, ReadOnlyMemory<byte> writeData, CancellationToken)` 返回 `Task<CommResult<byte[]>>`：<br>　- 两个地址都必须是不带位号的 `HR`，并且站号相同，否则返回 `InvalidRequest`；<br>　- `readCount` 为 1–125；`writeData` 长度为偶数，按字计 1–121；两段的结束地址不超过 65535；<br>　- **不拆包**，超限返回 `InvalidRequest`；<br>　- 返回读出的 `2 × readCount` 字节（规范化布局）。规范规定设备先写后读。<br>两个方法的数据参数与返回值都用字节，与 `IPlcClient.ReadAsync` / `WriteAsync` 一致 | 用户决定；0x17 是一个原子事务，拆包会改变语义 |
 | P7-D16 | **v2 的去留与迁移**：<br>• Task 3 删除 v2 的全部生产代码与测试（`git rm`）。不保留兼容层，不加 `[Obsolete]` 转发（Q29 不留转发层）；<br>• README 新增 "Migrating from 2.x" 一节，内容按第 20 节；<br>• Modbus 的用法并入 Skill `using-junevy-plc`（与 MELSEC、S7、FINS 并列）。`Skills/using-junevy-modbus/SKILL.md` 改写为 v2 → v3 迁移指南，指向 `using-junevy-plc`；<br>• WPF 调试工具 `Junevy.Communication.Test` 在 Task 3 暂时去掉对 Modbus 的引用（保持可编译），在 Task 11 用 v3 恢复同等功能；<br>• AutomationSystem 的迁移不在本仓库做（第 24 节） | 用户决定原地替换；同一个包里并存两套 Modbus 只会增加维护面 |
-| P7-D17 | **已知不确定项**，写进 README 的 "Verification status"：<br>① 只与测试里的设备替身联调过，没有对真实设备或 Modbus Poll / Modbus Slave 这类工具验证；<br>② RTU 按字节重新同步在强噪声线路上的表现；<br>③ 0x16 的支持因设备而异（不支持时返回异常码 01）；<br>④ 少数设备只接受 10 而不接受 06（把 `UseSingleWriteFunctions` 设为 false）；<br>⑤ 站号 0 和 255 在 TCP 网关上的含义因厂商而异；<br>⑥ RTU over UDP 很少见，只按规范实现 | 诚实记录，留待真机验证。**2026-10-26**：①（第三方从站部分）③④⑥ 已与 pymodbus 互通验证通过，见第 25.4 节；② ⑤ 由用户在现场验证；真实设备与 Modbus Poll / Modbus Slave 仍未核对 |
+| P7-D17 | **已知不确定项**，写进 README 的 "Verification status"：<br>① 只与测试里的设备替身联调过，没有对真实设备或 Modbus Poll / Modbus Slave 这类工具验证；<br>② RTU 按字节重新同步在强噪声线路上的表现；<br>③ 0x16 的支持因设备而异（不支持时返回异常码 01）；<br>④ 少数设备只接受 10 而不接受 06（把 `UseSingleWriteFunctions` 设为 false）；<br>⑤ 站号 0 和 255 在 TCP 网关上的含义因厂商而异；<br>⑥ RTU over UDP 很少见，只按规范实现 | 诚实记录，留待真机验证。**2026-10-26**：①（第三方从站部分）③④⑥ 已与 pymodbus 互通验证通过，见第 25.4 节；② ⑤ 由用户在现场验证；真实设备仍未核对。**2026-11-02**：已与 Modbus Slave 8.2.3 核对（四个数据区，分包除外），见第 25.5 节 |
 | P7-D18 | **测试项目**：`Tests/Junevy.Communication.Modbus.Tests` 重写，改为 Import `build/Junevy.Communication.Tests.props`，目标 `net472;net8.0`（v2 的测试只有 net8.0）。使用共享测试库的 `DeviceSimulator`、`PlcMemory`、`DuplexClientChannel`、`ScriptedByteChannel`、`LoopbackTcp`、`Arrival`、`Polling`、`HexVector`。设备替身放在 `TestSupport/`，不放进共享测试库（第 1 节第 7 条） | 新增协议指南第四节；改共享测试库会让受影响的测试扩大到接近全量 |
 
 ---
@@ -994,4 +994,48 @@ dotnet test Tests/Junevy.Communication.Modbus.Tests --filter FullyQualifiedName~
 - 串口用例使用 COM20/COM21 虚拟对，不经过真实线路，不能代替 ②。
 - 测试自身的问题（已修正）：最初串口互通用例与 `ModbusEndToEndSerialTests.RtuReadAndWrite_OverARealSerialPair` 分属不同集合，两者并行打开 COM21，net472 下 3 遍中 2 遍出现 `UnauthorizedAccessException`（对端口 COM21 的访问被拒绝）。拆出串口用例并与后者同放 `RealSerialPairCollection` 后，带环境变量连续 6 遍、两个目标各 323 通过；不带环境变量时各 311 通过、12 跳过。
 
-**仍未验证**：真实设备与 Modbus Poll / Modbus Slave；② 强噪声线路上的 RTU 重新同步；⑤ TCP 网关上站号 0 与 255 的含义。
+**仍未验证**：真实设备与 Modbus Poll / Modbus Slave；② 强噪声线路上的 RTU 重新同步；⑤ TCP 网关上站号 0 与 255 的含义。（Modbus Slave 见第 25.5 节。）
+
+### 25.5 与 Modbus Slave 软件核对（2026-11-02，P7-D17 第 ① 项）
+
+**环境**：用户启动 Modbus Slave 8.2.3（Witte Software，`mbslave.exe`）的两个从站：Modbus TCP `127.0.0.1:502`，串口 RTU 在 COM20（客户端在虚拟对的另一端 COM21）。没有使用从站软件的界面（用户未授权屏幕访问），配置由只读探测得出：第一轮两个从站都只定义了保持寄存器 HR0–HR9（01、02、04 回异常码 01，其余地址回 02）；RTU 只应答站号 1。补做时用户在两个从站上各加了线圈、离散输入、输入寄存器的窗口，探测结果是三个区都定义了地址 0–9，越界回 02；保持寄存器仍是 HR0–HR9（扩到 300 个没有生效）。用户同时改了 RTU 从站 HR0–HR9 的值，之后的还原以新值为准。
+
+**方法**：`ModbusToolWire` 用手工拼的帧直接读写从站，不经过本仓库的协议代码。读的方向由手工帧写入已知内容，再由客户端解码；写的方向由客户端写入，再由手工帧核对落点。只比较"客户端自己写、自己读"发现不了地址偏移与字节序错误。功能码取自 Debug 级的 TX 日志。
+
+**运行**：
+
+```
+set JUNEVY_MODBUS_TOOL_TCP=127.0.0.1:502
+set JUNEVY_MODBUS_TOOL_SERIAL=COM21
+dotnet test Tests/Junevy.Communication.Modbus.Tests --filter FullyQualifiedName~ModbusTool
+```
+
+**结果**（第一轮：net8.0 与 net472 各 20 通过、0 失败，连续 4 遍。补做后：各 24 通过、0 失败，连续 3 遍；整个 Modbus.Tests 未设置这两个变量时各 311 通过、36 跳过，设置时各 335 通过、12 跳过。库代码两轮都未改动。pymodbus 的 11 个用例这次没有运行，`PymodbusScenarios` 只改了两个断言帮手的可见性）：
+
+| 用例 | 线路 | 覆盖内容 | 结果 |
+|---|---|---|---|
+| `ReadsDecodeWhatTheWireHolds` | TCP、串口 | 10 个字、`40001` 与 `40010`、Int32、float、字符串、Int16 负数、寄存器位、CDAB 字序 | 通过 |
+| `WritesLandOnTheWire` | TCP、串口 | 06、10（手工帧核对落点与功能码）、类型化写入、`UseSingleWriteFunctions = false` | 通过 |
+| `MaskWriteAndReadWrite` | TCP、串口 | 0x16 的结果公式、0x17 的先写后读与不同地址、寄存器位的 0x16 与读改写（03 + 06） | 通过 |
+| `ExceptionResponses` | TCP、串口 | 越界的 03、06、10、17 回异常码 02（含 126 个字拆包的第一包），之后链路可用 | 通过 |
+| `Coils` | TCP、串口 | 手工帧写入不对称内容后读：整段 10 点（跨字节）、`C3` 起 6 点、`00010`；05、0F 写入由手工帧核对落点与功能码，`UseSingleWriteFunctions = false` 时单点走 0F；越界的 01、05、0F 回 02，且不改动已定义的线圈 | 通过（第一轮未定义时核对的是异常码 01） |
+| `DiscreteInputs` | TCP、串口 | 以手工帧读到的值为准：整段 10 点、`DI3` 起 6 点、`10010`；越界回 02 | 通过（同上） |
+| `InputRegisters` | TCP、串口 | 以手工帧读到的值为准：整段 10 个、`IR3` 起 6 个、`30010`、Int32、寄存器位 `IR1.1`；越界回 02 | 通过（同上） |
+| `Stations` | TCP、串口 | TCP：站号 0、2、247、255 都应答；RTU：站号 2、247 超时，下一个请求正常，0 与 248 不发送 | 通过 |
+| `SoakAndConcurrency` | TCP、串口 | 连续读（TCP 500 次，串口 300 次）；并发读（16 × 25，8 × 25）；每个寄存器并发写后读（10 × 20，10 × 5）。值按寄存器区分，无串扰，无失败 | 通过 |
+| `SeveralClients` | TCP | 4 条连接各读 200 次 | 通过 |
+| `ConnectCycles` | TCP、串口 | 同一实例连接、读、断开，再新建实例（TCP 各 20 次，串口各 10 次） | 通过 |
+| `HeartbeatStaysHealthy` | TCP、串口 | 空闲 2 秒内持续探测，状态不变 | 通过 |
+| `LinkFaults` | TCP | 经 `TcpFaultRelay`：断开后重连、网络黑洞后恢复、迟到应答在下一个请求等待期间到达时被丢弃（连接不重建） | 通过 |
+
+**反向对照**：把 `StartOf` 的起始地址加 1：两条线路的 `ReadsDecodeWhatTheWireHolds` 与 `WritesLandOnTheWire` 失败。MBAP 改回按顺序关联（只留这一处改动）：`LinkFaults` 在迟到应答之后的读取一步失败。两处都已撤销，`git diff -- Junevy.Communication.Modbus` 为空。补做时另做三处，各自单独运行：起始地址加 1 时 `Coils`、`DiscreteInputs`、`InputRegisters` 在两条线路上都失败；位打包（写）改为高位在前时 `Coils` 在手工帧核对落点一步失败（读不受影响，所以失败只能来自落点核对）；解包（读）改为高位在前时 `Coils` 与 `DiscreteInputs` 在整段读一步失败。三处都已撤销，库代码只剩 README 的改动。
+
+**观察**：
+
+- **越界的 0x16 不回异常**：`16 00 0A FF FF 00 00` 原样回显，手工帧同样如此，其余功能码（01–06、0F、10、17）都回 02。回显是合规的确认，客户端无从分辨，所以 `MaskWriteRegisterAsync` 返回成功而实际没有写入（`ExceptionResponses` 钉住了这一点）。库不改；已写进 README 与 Skill。
+- **每个请求约 31 ms**：手工帧（NoDelay）的中位数同样是 31 ms，串口每次读约 46 ms。这是从站的响应速度，客户端没有增加可测的开销。
+- **TCP 上不按站号过滤**：是这个从站当前配置下的一个样本，不能代替 ⑤。
+- **虚拟串口对不受波特率与校验位影响**：9600 8N1、9600 8E1、19200 8N1、115200 8N1 都得到相同的应答，所以这次核对不能说明串口参数是对的。
+- **测试自身的问题（已修正）**：第一版的循环次数按 2000 次定，每次 31 ms，撞上了 xunit 的 `Timeout`。xunit 放弃用例但任务仍在后台运行，它继续写寄存器，导致下一个用例读到错值（表现为 `ReadsDecodeWhatTheWireHolds` 失败），并且把测试数据留在了从站上。按只读探测记录的值手工还原后，把次数降到与从站速度相符、时限放宽，之后没有再出现。这是一条通用教训：**xunit 的 `Timeout` 不会停止任务，访问共享外部设备的用例不能靠它兜底。**
+
+**仍未验证**：真实设备；Modbus Slave 上的分包边界（库的上限 125 / 123 / 2000 / 1968 是常量，要在从站软件里把保持寄存器扩到 126 个以上才能触发；已与 pymodbus 验证）；串口参数；② 强噪声线路上的 RTU 重新同步；⑤ 真实 TCP 网关上站号 0 与 255 的含义。
