@@ -29,7 +29,7 @@
                 <ColumnDefinition Width="*" MinWidth="600" />
             </Grid.ColumnDefinitions>
 
-            <jv:TreeView x:Name="ProtocolTree" Grid.Column="0" ItemsSource="{Binding Tree}" DisplayMode="Chevron">
+            <jv:TreeView x:Name="ProtocolTree" Grid.Column="0" ItemsSource="{Binding Tree}" DisplayMode="Indicator">
                 <i:Interaction.Triggers>
                     <i:EventTrigger EventName="ItemDoubleClick">
                         <i:InvokeCommandAction Command="{Binding OpenSessionCommand}" EventArgsParameterPath="Item" />
