@@ -1,12 +1,13 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace Junevy.Communication.Modbus.Tests.Interop;
+namespace Junevy.Communication.Testing;
 
 /// <summary>
-/// 客户端与 Modbus Slave 之间的 TCP 中继，用来制造链路故障：不必动从站软件，从站看到的就是真实的断连与新连接。
+/// 客户端与第三方设备软件之间的 TCP 中继，用来制造链路故障：不必动设备软件，设备看到的就是真实的断连与新连接。
+/// 原为 Modbus 互通测试所写，S7 互通测试共用后移入本库。
 /// </summary>
-internal sealed class TcpFaultRelay : IAsyncDisposable
+public sealed class TcpFaultRelay : IAsyncDisposable
 {
     private const int BufferSize = 1024;
 
@@ -18,6 +19,9 @@ internal sealed class TcpFaultRelay : IAsyncDisposable
     private readonly Task acceptLoop;
     private int connections;
 
+    /// <summary>在回环地址的随机端口上开始监听，每个接入的连接都转发到目标地址。</summary>
+    /// <param name="targetHost">设备的主机名或地址。</param>
+    /// <param name="targetPort">设备的端口。</param>
     public TcpFaultRelay(string targetHost, int targetPort)
     {
         this.targetHost = targetHost;
@@ -35,10 +39,10 @@ internal sealed class TcpFaultRelay : IAsyncDisposable
     /// <summary>为 true 时丢弃两个方向的数据，连接保持（模拟网络黑洞）。</summary>
     public volatile bool Blackhole;
 
-    /// <summary>从站应答在中继里停留的毫秒数（模拟迟到的应答）。</summary>
+    /// <summary>设备应答在中继里停留的毫秒数（模拟迟到的应答）。</summary>
     public volatile int ReplyDelay;
 
-    /// <summary>断开当前所有连接（模拟网线或从站侧断开）。</summary>
+    /// <summary>断开当前所有连接（模拟网线或设备侧断开）。</summary>
     public void DropConnections()
     {
         lock (sync)
@@ -49,6 +53,8 @@ internal sealed class TcpFaultRelay : IAsyncDisposable
         }
     }
 
+    /// <summary>停止监听并断开所有连接。</summary>
+    /// <returns>表示释放完成的任务。</returns>
     public async ValueTask DisposeAsync()
     {
         listener.Stop();

@@ -21,7 +21,7 @@ Address-based PLC client suite for .NET (net472 + net8.0) by Junevy, version `1.
 - Modbus TCP, RTU or UDP is a protocol on this suite (`ModbusClient`, see the Modbus Quick Start below). `using-junevy-modbus` is the v2 to v3 migration guide.
 - Byte channels without PLC semantics (raw TCP, UDP or serial): use `using-junevy-channels`.
 - FINS/UDP, Host Link over serial, S7comm-plus or symbolic access, OPC UA, SECS/GEM: not implemented. S7 and FINS here are TCP-only, and S7 is only claimed for S7-1200/1500.
-- Real-PLC validation: none of the three protocols has been checked against real hardware. MELSEC is verified against the manual's examples, S7 and FINS against the P4 plan's golden vectors. See "Not Yet Verified".
+- Real-PLC validation: none of the three protocols has been checked against real hardware. MELSEC is verified against the manual's examples, S7 and FINS against the P4 plan's golden vectors. S7 has also been checked against one third-party software server (HslCommunicationDemo 12.9.2, 2026-11-03: handshake, typed values, strings, bits, packet splitting at PDU 240, device errors, link faults); that server does not check the TSAP and accepts writes over the PDU, so CPU-specific behaviour is still open. See "Verification Status" and "Not Yet Verified" in the Siemens README.
 
 ## Package Selection
 

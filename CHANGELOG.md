@@ -2,6 +2,23 @@
 
 本项目所有显著变更记录于此。格式参考 Keep a Changelog，版本遵循 SemVer。
 
+## [Unreleased] — Siemens：与第三方 S7 服务器核对
+
+### 新增（Added）
+
+- 2026-11-03 [Tests] 与 HslCommunicationDemo 12.9.2 的西门子 S7 虚拟服务器（127.0.0.1:102，软件服务器，不是 CPU）核对 S7 客户端，net8.0 与 net472 各 12 条、连续 3 遍全部通过。库代码没有改动。
+  - `Interop/S7ToolInteropTests`（12 条）与场景 `S7ToolScenarios`。设置 `JUNEVY_S7_TOOL_TCP`（如 `127.0.0.1:102`）时运行（`S7ToolFactAttribute`），未设置时显示为 Skipped。服务器要求：DB1（至少 4096 字节）、DB2、M、I、Q 可读写，DB100 不存在。
+  - `S7ToolWire` 自己拼 TPKT、COTP CR、Setup Communication 与 Read / Write Var 帧读写服务器，不经过本仓库的协议代码，是每条断言的判据；`KeepDataAsync` 结束时还原 DB1 的 0–4095 字节与 DB2、M、I、Q 的前 64 字节。
+  - 覆盖：握手与协商值（服务器对 960 与 480 都回答 240），PG / OP / Basic 与槽 0–2，Int16 至 Int64、Float、Double、无符号类型、`CDAB` 字序，通用字符串与 String / WString 的头，奇数长度字节访问，DB1 / DB2 / M / I / Q 互不串扰，原生位写与跨字节位串，PDU 240 下的拆包（3000 字节与两个边界，每个作业帧不超过 PDU），返回码 0x0A / 0x05 与其消息，500 次连续读、16 个并发调用方、4 个客户端、20 次连接循环、心跳探测 `MB0`，经中继的断开、黑洞与迟到应答（`ResetOnRequestTimeout` 开、关两种）。
+  - 发现：服务器拒绝 223 字节的读（0x05），读上限 PDU − 18 在它上面是紧的；它接受超出 PDU 一个字节的写，所以写上限 PDU − 28（P4-D20 ②）仍未证实。它不检查远端 TSAP。`0x8104`（P4-D20 ①）没有核对。
+  - 反向对照（各改一处、运行后还原）：地址字段字节号加 1 ⇒ 12 条失败；位写入位号反序 ⇒ 2 条失败；读上限改为 PDU − 17 ⇒ `PacketSplitting` 失败；默认字序改为 `DCBA` ⇒ 8 条失败。
+  - 验收：`build/test-affected.ps1`（17 个测试项目、29 个测试宿主，设置 `JUNEVY_S7_TOOL_TCP`）8454 通过、0 失败、104 跳过；Siemens 每个目标 328 通过。
+
+### 修改（Changed）
+
+- 2026-11-03 [Tests] `TcpFaultRelay` 从 `Junevy.Communication.Modbus.Tests/Interop` 移到共享的 `Junevy.Communication.Testing`（公开类型，命名空间 `Junevy.Communication.Testing`，补齐 XML 注释），供 Modbus 与 S7 的互通测试共用，行为不变。
+- 2026-11-03 [Siemens] README 新增 "Verification Status" 一节，"Not Yet Verified" 第 2 条注明这次核对也未能证实写上限；`using-junevy-plc` Skill 的验证说明同步更新。
+
 ## [Unreleased] — OpcUa：用户名密码登录（P6.2 第 20 节的遗留项）
 
 ### 新增（Added）

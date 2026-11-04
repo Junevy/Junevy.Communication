@@ -2,7 +2,7 @@
 
 Siemens S7 client: the classic S7comm PDU carried over ISO-on-TCP (RFC 1006, port 102), built on the protocol-neutral PLC suite. It connects with a two-step handshake (COTP CR/CC, then Setup Communication), reads and writes the `DB`, `M`, `I` and `Q` areas by address with the typed API, splits large operations into packets, and gets reconnect, heartbeat, timeouts and retries from the channel family.
 
-> **Preview and validation status**: the package ships as `1.0.0-preview.1`. The frames were assembled from public protocol descriptions and are checked against the golden vectors of the P4 plan. It has **not been verified against a real PLC**; see [Not Yet Verified](#not-yet-verified-p4-d20).
+> **Preview and validation status**: the package ships as `1.0.0-preview.1`. The frames were assembled from public protocol descriptions and are checked against the golden vectors of the P4 plan. It has **not been verified against a real PLC**. It has been checked against one third-party software server; see [Verification Status](#verification-status) and [Not Yet Verified](#not-yet-verified-p4-d20).
 
 ## Target Frameworks
 
@@ -236,12 +236,26 @@ public static class S7DependencyInjectionExample
 }
 ```
 
+## Verification Status
+
+Checked on 2026-11-03 against the Siemens S7 virtual server of HslCommunicationDemo 12.9.2 (a software server, not a CPU) on both targets. The cases are `S7ToolInteropTests` in `Tests/Junevy.Communication.Siemens.Tests/Interop`. They run when `JUNEVY_S7_TOOL_TCP` (for example `127.0.0.1:102`) is set and the server has DB1 (at least 4096 bytes), DB2, M, I and Q writable and no DB100. Every value is checked with hand-built frames that do not use this package's protocol code. The cases overwrite DB1 bytes 0–4095 and the first 64 bytes of DB2, M, I and Q, and put the original values back.
+
+| Item | Result |
+|---|---|
+| Handshake | Passed. The server answered PDU 240 both to this client's 960 and to a request for 480. It accepted `PG`, `OP` and `Basic` on slots 0, 1 and 2, so it does not check the remote TSAP; a CPU may. |
+| Typed values and strings | Passed: Int16 to Int64, Float, Double, unsigned types, word order `CDAB`, raw strings, `String` and `WString` headers (a header longer than the declared maximum is `ProtocolViolation`), odd-length byte access, and `DB1`, `DB2`, `M`, `I` and `Q` kept apart. |
+| Bits | Passed: a bit write changes only its bit, one request per bit, and runs cross byte boundaries. |
+| Packet splitting | Passed at PDU 240: 222 bytes per read and 212 per write, 3000-byte runs and both boundaries. The server rejects a 223-byte read (return code `0x05`), which confirms the read limit on this server. It accepts a 213-byte write (S7 part 241 bytes), so it does not confirm the write limit (item 2 below). |
+| Device errors | Passed: a missing data block is `0x0A`, an address past the end of an area is `0x05`, also when only the second packet of a split read is out of range, and the link stays usable. |
+| Link | Passed: 500 sequential reads, 16 concurrent callers, 4 clients at once, 20 connect cycles (each repeats the handshake), the `MB0` heartbeat probe, and, through a relay in front of the server, a dropped link, a silent link and a late reply with `ResetOnRequestTimeout` on and off. |
+| Not checked | The `0x8104` answer for PUT/GET (the server was not set up to refuse it), and everything CPU-specific: area sizes, TSAP checks and the negotiated values of a real S7-1200/1500. |
+
 ## Not Yet Verified (P4-D20)
 
 These rules are derived from the frame layout or from community experience, not from a CPU. They are covered by tests against the plan's golden vectors only:
 
 1. **`0x8104` means "PUT/GET not permitted"**: widely reported, not documented by Siemens. The hint text is attached to that combination because of that report.
-2. **The write limit `PDU − 28`**: derived from the fixed header and item-header fields. Snap7 uses the more conservative `PDU − 35`.
+2. **The write limit `PDU − 28`**: derived from the fixed header and item-header fields. Snap7 uses the more conservative `PDU − 35`. The HslCommunicationDemo server accepts a write one byte over the PDU, so it could not confirm the limit either.
 
 Everything else in this package is a claim about unverified behaviour on real hardware as well: the negotiation values CPUs answer with, the per-CPU area sizes, and the acceptability of `PG` / `OP` / `Basic` connections on a given CPU. Check them on your own hardware before production use.
 
